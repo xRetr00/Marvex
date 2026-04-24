@@ -1,10 +1,10 @@
-# Adapters Package
+# Provider Adapters Package
 
 Status: skeleton only.
 
-Ownership: Concrete external integration boundary.
+Ownership: Provider adapter placement boundary.
 
-Responsibility: Future adapters that satisfy ports after contract approval and library decisions.
+Responsibility: Future concrete adapters that satisfy provider ports.
 
 Forbidden responsibilities:
 
@@ -12,9 +12,10 @@ Forbidden responsibilities:
 - Business policy.
 - Tool execution.
 - Memory, intent, voice, UI, desktop context, or proactive behavior.
-- Custom SDK code before library research.
+- Provider behavior before an approved adapter task.
 
 Dependency direction:
 
 - May depend on ports and approved contracts.
 - Must not be imported by Core, ports, CLI, or telemetry.
+

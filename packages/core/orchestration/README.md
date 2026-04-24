@@ -1,21 +1,22 @@
-# Core Package
+# Core Orchestration Package
 
 Status: skeleton only.
 
-Ownership: Core runtime boundary.
+Ownership: Core turn orchestration boundary.
 
-Responsibility: Future turn lifecycle orchestration through approved contracts and ports.
+Responsibility: Future coordination of approved turn lifecycle steps through contracts and ports.
 
 Forbidden responsibilities:
 
 - Provider-specific logic.
 - Provider payload construction.
-- HTTP calls to providers.
+- HTTP calls.
 - Tool execution.
 - Memory, intent, voice, UI, desktop context, or proactive behavior.
 - Hidden global state.
 
 Dependency direction:
 
-- May depend only on contracts and ports.
+- May depend on approved contracts and ports only.
 - Must not depend on adapters, CLI, telemetry implementation, services, or future workers.
+

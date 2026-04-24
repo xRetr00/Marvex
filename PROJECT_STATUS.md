@@ -1,10 +1,10 @@
 # Project Status
 
-current_phase: planning_only
+current_phase: skeleton_bootstrap
 
-implementation_status: not_started
+implementation_status: skeleton_only
 
-accepted_docs: false
+accepted_docs: true
 
 allowed_current_work:
 
@@ -12,6 +12,8 @@ allowed_current_work:
 - templates
 - validation scripts
 - README-only placeholder folders
+- skeleton package placeholders
+- approved task slices only
 
 forbidden_current_work:
 
@@ -28,8 +30,8 @@ forbidden_current_work:
 
 status_rule:
 
-Until `accepted_docs` is changed to `true` through an explicit accepted documentation review, agents may not create product code. Governance validation scripts are allowed because they protect the workspace.
+Docs are accepted, and Task 005 skeleton bootstrap has started/completed. Product implementation remains forbidden except for approved task slices with real task specs, approved contracts, tests, validation, and final reports.
 
-acceptance_rule:
+next_allowed_task:
 
-Docs may be accepted only after all planning blockers are fixed, `python scripts/run_all_checks.py` passes, and the user explicitly approves the updated planning set.
+Task 006 contracts-only.

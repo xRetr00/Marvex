@@ -1,7 +1,20 @@
-# Contracts Package Placeholder
+# Contracts Package
 
-Status: placeholder.
+Status: skeleton only.
 
-This package will eventually hold stable JSON contract definitions after docs are accepted and the relevant contract is approved in `docs/CONTRACT_APPROVALS.md`.
+Ownership: Stable contract boundary.
 
-Forbidden now: implementation files.
+Responsibility: Future implementation-neutral contract definitions after approval in `docs/CONTRACT_APPROVALS.md`.
+
+Forbidden responsibilities:
+
+- Business logic.
+- Provider-specific logic.
+- Core orchestration.
+- Runtime side effects.
+
+Dependency direction:
+
+- Must remain dependency-light and implementation-neutral.
+- May be used by Core, ports, adapters, CLI, and telemetry after contract approval.
+- Must not depend on Core, ports, adapters, CLI, telemetry implementation, or services.

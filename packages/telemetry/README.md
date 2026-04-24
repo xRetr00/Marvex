@@ -1,7 +1,21 @@
-# Telemetry Package Placeholder
+# Telemetry Package
 
-Status: placeholder.
+Status: skeleton only.
 
-This package will eventually hold telemetry lifecycle implementation after docs are accepted and the telemetry contract is approved in `docs/CONTRACT_APPROVALS.md`.
+Ownership: Trace and diagnostics boundary.
 
-Forbidden now: implementation files.
+Responsibility: Future trace lifecycle and structured diagnostics after contract approval.
+
+Forbidden responsibilities:
+
+- Core orchestration.
+- Provider behavior.
+- CLI interaction.
+- Tool execution.
+- Memory, intent, voice, UI, desktop context, or proactive behavior.
+- Logging secrets or raw sensitive transcripts by default.
+
+Dependency direction:
+
+- Must remain isolated from Core, adapters, CLI, and services.
+- May depend on approved contracts after telemetry contract approval.
