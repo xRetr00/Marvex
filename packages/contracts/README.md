@@ -1,17 +1,20 @@
 # Contracts Package
 
-Status: skeleton only.
+Status: contracts-only implementation.
 
 Ownership: Stable contract boundary.
 
-Responsibility: Future implementation-neutral contract definitions after approval in `docs/CONTRACT_APPROVALS.md`.
+Responsibility: Implementation-neutral Pydantic models and JSON schemas for approved v1 contracts.
 
 Forbidden responsibilities:
 
 - Business logic.
 - Provider-specific logic.
-- Core orchestration.
+- Core runtime coordination.
 - Runtime side effects.
+- HTTP calls.
+- CLI behavior.
+- Telemetry runtime behavior.
 
 Dependency direction:
 
