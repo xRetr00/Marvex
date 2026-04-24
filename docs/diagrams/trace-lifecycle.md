@@ -14,3 +14,4 @@ stateDiagram-v2
 
 Every state transition must carry the same `trace_id`.
 
+This diagram is normative for the required V1 lifecycle events listed in `docs/TELEMETRY.md`.

@@ -37,5 +37,4 @@ Only after contracts:
 
 ## Rule
 
-The roadmap is not permission to implement. Each phase requires accepted task specs and validation.
-
+The roadmap is not permission to implement. Each phase requires `accepted_docs: true`, approved contracts, real task spec files, and validation.

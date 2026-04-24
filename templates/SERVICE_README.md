@@ -6,6 +6,10 @@ status: placeholder_only
 
 contract_status: not_approved
 
+contract_registry_name:
+
+implementation_allowed: no
+
 ownership:
 
 allowed_when_approved:
@@ -23,4 +27,3 @@ shutdown_protocol:
 trace_id_rules:
 
 error_envelope_rules:
-

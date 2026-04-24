@@ -10,13 +10,29 @@ allowed_files:
 
 forbidden_files:
 
-contracts_touched:
+contract_impact:
+
+contract_approval_required:
+
+ownership_boundary:
+
+single_ownership_boundary:
+
+standalone_module_owner:
+
+why_not_central_orchestration:
+
+god_object_avoidance:
+
+dependency_direction:
+
+file_size_risk:
 
 library_decisions_required:
 
 tests_required:
 
-validation_required:
+validation_commands:
 
 rollback_plan:
 
@@ -25,4 +41,3 @@ acceptance_criteria:
 failure_conditions:
 
 final_report_required:
-

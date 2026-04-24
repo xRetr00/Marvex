@@ -4,7 +4,7 @@ current_phase: planning_only
 
 implementation_status: not_started
 
-accepted_docs: true
+accepted_docs: false
 
 allowed_current_work:
 
@@ -28,5 +28,8 @@ forbidden_current_work:
 
 status_rule:
 
-Until `accepted_docs` is changed to `true` through an accepted documentation review, agents may not create product code. Governance validation scripts are allowed because they protect the workspace.
+Until `accepted_docs` is changed to `true` through an explicit accepted documentation review, agents may not create product code. Governance validation scripts are allowed because they protect the workspace.
 
+acceptance_rule:
+
+Docs may be accepted only after all planning blockers are fixed, `python scripts/run_all_checks.py` passes, and the user explicitly approves the updated planning set.

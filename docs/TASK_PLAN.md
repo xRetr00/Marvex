@@ -1,5 +1,19 @@
 # Task Plan
 
+## Global Task Rules
+
+Planning tasks may edit only docs, templates, diagrams, placeholder READMEs, and validation scripts.
+
+Implementation tasks require:
+
+- `PROJECT_STATUS.md` with `accepted_docs: true`
+- a real task spec file, not only a task id
+- approved contracts in `docs/CONTRACT_APPROVALS.md`
+- explicit allowed and forbidden files
+- ownership boundary and anti-god-object answers
+- tests and validation commands
+- rollback plan and final report format
+
 ## 1. Create architecture docs.
 
 Goal: Establish the architecture decision, system boundaries, and v1 scope.
@@ -84,7 +98,7 @@ Required final report format: changed files, validation result, placeholder stat
 
 Goal: Add implementation-neutral contract definitions after docs are accepted.
 
-Allowed files: contract package files approved by contract task spec.
+Allowed files: contract package files approved by contract task spec and `docs/CONTRACT_APPROVALS.md`.
 
 Forbidden files: provider adapters, Core behavior, CLI behavior, UI, tools, memory.
 
@@ -100,7 +114,7 @@ Required final report format: changed files, tests, validation result, contract 
 
 Goal: Add a deterministic fake provider behind the provider port.
 
-Allowed files: approved adapter and tests only.
+Allowed files: approved adapter and tests only, as named by a real task spec.
 
 Forbidden files: Core policy changes, LM Studio code, UI, tools, memory.
 
@@ -116,7 +130,7 @@ Required final report format: changed files, tests, validation result, risks.
 
 Goal: Add minimal Core Service turn orchestration through the provider interface.
 
-Allowed files: approved Core files, Core tests, API tests.
+Allowed files: approved Core files, Core tests, API tests, as named by a real task spec.
 
 Forbidden files: UI, tools, memory, voice, desktop context, provider-specific Core branches.
 
@@ -132,7 +146,7 @@ Required final report format: changed files, tests, validation result, Core risk
 
 Goal: Add structured trace lifecycle events for v1 turn flow.
 
-Allowed files: telemetry package, Core telemetry integration, telemetry tests.
+Allowed files: telemetry package, Core telemetry integration, telemetry tests, as named by a real task spec.
 
 Forbidden files: unrelated feature modules.
 
@@ -148,7 +162,7 @@ Required final report format: changed files, tests, validation result, telemetry
 
 Goal: Add LM Studio Responses-compatible adapter and CLI flow after library verification.
 
-Allowed files: provider adapter, CLI client, adapter tests, CLI tests, library decision docs.
+Allowed files: provider adapter, CLI client, adapter tests, CLI tests, library decision docs, as named by a real task spec.
 
 Forbidden files: UI, tools, memory, voice, desktop context, custom SDK without library research.
 
@@ -159,4 +173,3 @@ Acceptance criteria: CLI sends text, Core calls provider through interface, tele
 Failure conditions: provider logic leaks into Core or the adapter is built without 2026 library verification.
 
 Required final report format: changed files, tests, validation result, dependency risks.
-

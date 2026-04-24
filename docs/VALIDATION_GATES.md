@@ -12,7 +12,7 @@ python scripts/run_all_checks.py
 
 ### Docs Accepted Gate
 
-Implementation is blocked while `PROJECT_STATUS.md` has `accepted_docs: false`.
+Implementation is blocked while `PROJECT_STATUS.md` has `accepted_docs: false`. The only allowed source files in that state are governance validation scripts under `scripts/`.
 
 ### Workspace Policy Gate
 
@@ -20,7 +20,7 @@ Expected folders and required documents must exist.
 
 ### Service Placeholder Gate
 
-Every `services/*` folder must remain README-only until its contract is approved.
+Every `services/*` folder must remain README-only until its service contract is approved in `docs/CONTRACT_APPROVALS.md` and `implementation_allowed` is `yes`.
 
 ### Forbidden Modules Gate
 
@@ -40,5 +40,10 @@ Dependency recommendations must include official source, maintenance status, why
 
 ### Task Spec Gate
 
-Implementation tasks require a task spec or documented task id.
+Every implementation task requires a real task spec file. A task id alone is not sufficient.
 
+The task spec must define goal, allowed files, forbidden files, contract impact, ownership boundary, tests required, validation commands, rollback plan, and final report format.
+
+### Contract Approval Gate
+
+Implementation may use only contracts listed in `docs/CONTRACT_APPROVALS.md` with approval status `approved` and `implementation_allowed` set to `yes`.

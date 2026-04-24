@@ -1,6 +1,6 @@
 # Service Placeholder Policy
 
-Every service placeholder folder must remain README-only until its contract is approved.
+Every service placeholder folder must remain README-only until its matching contract is approved in `docs/CONTRACT_APPROVALS.md` and `implementation_allowed` is `yes`.
 
 This applies to:
 
@@ -16,3 +16,14 @@ Any non-README file in a service placeholder fails validation.
 
 Service placeholder README files may describe intended ownership, forbidden work, and contract requirements. They may not contain implementation code.
 
+## Contract Mapping
+
+| folder | required contract |
+| --- | --- |
+| `services/core` | `CoreService` |
+| `services/provider_worker` | `ProviderWorker` |
+| `services/tool_worker` | `ToolWorker` |
+| `services/intent_worker` | `IntentWorker` |
+| `services/voice_worker` | `VoiceWorker` |
+| `services/desktop_agent` | `DesktopAgent` |
+| `services/shell` | `Shell` |

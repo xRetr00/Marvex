@@ -12,7 +12,9 @@ The bootstrap is complete only when:
 - `python scripts/run_all_checks.py` passes
 - no product implementation exists
 - no legacy code is copied or reused
-- `PROJECT_STATUS.md` says docs are not accepted yet
+- `PROJECT_STATUS.md` says `accepted_docs: false` until the user explicitly accepts the blocker fixes
+- contract approval status is documented in `docs/CONTRACT_APPROVALS.md`
+- implementation tasks require real task spec files, not task ids alone
 - future agents can understand exactly what is allowed before implementation
 
 ## V1 Foundation Acceptance
@@ -27,3 +29,4 @@ After docs are accepted and implementation begins, v1 foundation is correct only
 - fake provider tests pass
 - LM Studio payload tests pass
 
+V1 implementation may not start while `PROJECT_STATUS.md` has `accepted_docs: false`.

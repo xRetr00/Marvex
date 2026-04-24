@@ -38,6 +38,7 @@ REQUIRED_FILES = [
     "docs/ARCHITECTURE.md",
     "docs/PROCESS_MODEL.md",
     "docs/CONTRACTS.md",
+    "docs/CONTRACT_APPROVALS.md",
     "docs/IPC_API.md",
     "docs/TELEMETRY.md",
     "docs/LIBRARY_POLICY.md",
@@ -84,6 +85,49 @@ def accepted_docs() -> bool:
     return "accepted_docs: true" in status.lower()
 
 
+def status_text() -> str:
+    return (ROOT / "PROJECT_STATUS.md").read_text(encoding="utf-8").lower()
+
+
+def validate_contract_registry() -> list[str]:
+    failures = []
+    path = ROOT / "docs/CONTRACT_APPROVALS.md"
+    if not path.is_file():
+        return ["missing required file: docs/CONTRACT_APPROVALS.md"]
+
+    text = path.read_text(encoding="utf-8").lower()
+    required_columns = [
+        "contract_name",
+        "schema_version",
+        "approval_status",
+        "approver",
+        "approval_date",
+        "implementation_allowed",
+    ]
+    for column in required_columns:
+        if column not in text:
+            failures.append(f"contract approval registry missing column: {column}")
+
+    for line in text.splitlines():
+        if not line.startswith("|") or "---" in line or "contract_name" in line:
+            continue
+        cells = [cell.strip() for cell in line.strip("|").split("|")]
+        if len(cells) != 6:
+            failures.append(f"contract approval row must have 6 columns: {line}")
+            continue
+        name, _, status, approver, date, allowed = cells
+        if status not in {"draft", "approved", "deprecated", "blocked"}:
+            failures.append(f"{name} has invalid approval_status: {status}")
+        if allowed not in {"yes", "no"}:
+            failures.append(f"{name} has invalid implementation_allowed: {allowed}")
+        if allowed == "yes" and status != "approved":
+            failures.append(f"{name} allows implementation without approved status")
+        if status == "approved" and (approver == "none" or date == "none"):
+            failures.append(f"{name} approved without approver/date")
+
+    return failures
+
+
 def main() -> int:
     failures = []
 
@@ -96,6 +140,15 @@ def main() -> int:
             failures.append(f"missing required file: {rel}")
 
     docs_accepted = accepted_docs()
+    project_status = status_text()
+    if not docs_accepted:
+        if "current_phase: planning_only" not in project_status:
+            failures.append("accepted_docs false requires current_phase: planning_only")
+        if "implementation_status: not_started" not in project_status:
+            failures.append("accepted_docs false requires implementation_status: not_started")
+
+    failures.extend(validate_contract_registry())
+
     for path in ROOT.rglob("*"):
         if not path.is_file():
             continue
@@ -115,4 +168,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
