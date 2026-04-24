@@ -4,7 +4,7 @@ current_phase: planning_only
 
 implementation_status: not_started
 
-accepted_docs: false
+accepted_docs: true
 
 allowed_current_work:
 
