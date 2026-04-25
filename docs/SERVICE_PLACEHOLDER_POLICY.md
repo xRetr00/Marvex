@@ -16,6 +16,8 @@ Any non-README file in a service placeholder fails validation.
 
 Service placeholder README files may describe intended ownership, forbidden work, and contract requirements. They may not contain implementation code.
 
+Service placeholders are not a substitute for runtime architecture boundaries. Runtime concerns such as factory, registry, dispatch, and lifecycle belong in runtime modules, not in placeholder service folders or port contracts.
+
 ## Contract Mapping
 
 | folder | required contract |

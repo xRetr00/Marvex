@@ -26,6 +26,14 @@ god_object_avoidance:
 
 dependency_direction:
 
+port_minimal_method_surface:
+
+port_forbidden_implementation_names:
+
+port_runtime_owner_for_selection_dispatch:
+
+port_god_file_prevention:
+
 file_size_risk:
 
 library_decisions_required:

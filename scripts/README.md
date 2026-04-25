@@ -17,5 +17,6 @@ Scripts:
 - `check_task_spec.py`
 - `check_library_decisions.py`
 - `check_file_size_policy.py`
+- `check_port_boundaries.py`
 - `check_vaxil_boundary.py`
 

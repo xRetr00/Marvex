@@ -8,6 +8,7 @@ version = "0.1.0"
 description = "Marvex v1 contract package"
 requires-python = ">=3.11"
 dependencies = [
+  "litellm==1.83.13",
   "pydantic>=2,<3",
 ]
 

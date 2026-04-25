@@ -74,6 +74,48 @@ The Core sends `ProviderRequest` to a Provider Adapter through a port. The Core 
 
 `previous_response_id` belongs in the provider contract and adapter behavior, not in hidden Core state.
 
+## Port Contract Discipline
+
+Ports are minimal contracts only. A port is not a manager, registry, router, implementation container, or runtime.
+
+`ProviderPort` must remain tiny:
+
+- It defines only provider interface methods and request/response contract types.
+- It must not mention concrete provider names such as LiteLLM, LM Studio, OpenAI, OpenRouter, Anthropic, or Gemini.
+- It must not contain provider selection, retry policy, API key handling, config loading, streaming logic, tool logic, history logic, or parsing logic.
+- Concrete providers live under `packages/adapters/providers/<provider_name>/`.
+
+Tool ports must remain tiny:
+
+- `ToolExecutorPort` defines only `execute(ToolCall) -> ToolResult`.
+- Tool ports must not contain built-in tool implementations.
+- Built-in tools live under `packages/adapters/tools/<tool_family>/<tool_name>.py`.
+- Tool selection, permission, and dispatch live in `tool_runtime/`, not in port files.
+
+## Folder Boundary Guidance
+
+- `packages/ports/` = interfaces only
+- `packages/adapters/` = concrete implementations
+- `runtime/` = factory, registry, dispatch, lifecycle
+- `packages/core/` = orchestration using ports only
+- `apps/` = clients only
+
+## Provider Architecture Path
+
+`Core -> ProviderPort -> ProviderRuntime/Factory -> LiteLLMAdapter / LMStudioResponsesAdapter / FakeProvider`
+
+## Tool Architecture Path
+
+`Core -> ToolRegistryPort/ToolExecutorPort -> ToolRuntime/Dispatcher -> individual tool adapters`
+
+## Anti-God-File Review Checks
+
+- Any port contract file over 120 lines fails review unless explicitly justified.
+- Any port contract file mentioning concrete implementation names fails review.
+- Any adapter file importing Core fails review.
+- Any Core file importing adapters fails review.
+- Any registry or factory file over 250 lines requires split or explicit justification.
+
 ## Anti-Spaghetti Rules
 
 - No god files.

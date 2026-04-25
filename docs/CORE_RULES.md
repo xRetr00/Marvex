@@ -9,9 +9,17 @@ The Core Service owns turn orchestration. It does not own every decision in the 
 - Core cannot import tools directly.
 - Core cannot own provider-specific logic.
 - Core only talks to ports and interfaces.
+- Ports are contracts only, never registries, routers, runtimes, or implementation containers.
+- `ProviderPort` must remain a minimal method contract and must not mention concrete providers.
+- Tool ports must remain minimal contracts only, including `ToolExecutorPort: execute(ToolCall) -> ToolResult`.
+- Core cannot import adapters.
+- Adapters cannot import Core.
+- Selection, dispatch, retry, and lifecycle logic live in runtime layers, not in ports.
 - Core must not use hidden global state.
 - No god files.
 - No file over 500 lines without explicit justification.
+- No port contract file over 120 lines without explicit justification.
+- No registry or factory file over 250 lines without split or explicit justification.
 - No feature before contract.
 - No provider-specific branches in the orchestrator.
 

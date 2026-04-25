@@ -30,6 +30,16 @@ V1-forbidden modules must not appear as implementation directories.
 
 No non-doc file may exceed 500 lines without explicit justification.
 
+### Port Boundary Gate
+
+Port files are interface contracts only.
+
+- Port contract files over 120 lines fail unless explicitly justified.
+- Port contract files mentioning concrete implementation names fail.
+- Adapter files importing Core fail.
+- Core files importing adapters fail.
+- Registry and factory files over 250 lines require split or explicit justification.
+
 ### Vaxil Boundary Gate
 
 Vaxil may be mentioned only as a cautionary research source. Code reuse language and imports are forbidden.

@@ -31,6 +31,15 @@ The agent must identify:
 - No UI logic in Core.
 - No tool execution in UI.
 - No giant orchestrator.
+- Ports are minimal contracts only, not managers, registries, routers, factories, or implementation containers.
+- `ProviderPort` may define only the provider interface contract.
+- Port files must not mention LiteLLM, LM Studio, OpenAI, OpenRouter, Anthropic, Gemini, or other concrete provider names.
+- Port files must not contain provider selection, retry policy, API key handling, config loading, streaming logic, tool logic, history logic, or parsing logic.
+- Tool ports stay minimal; `ToolExecutorPort` is contract-only with `execute(ToolCall) -> ToolResult`.
+- Built-in tools live under `packages/adapters/tools/<tool_family>/<tool_name>.py`.
+- Tool selection, permission, and dispatch belong to `tool_runtime/`, not ports.
+- Any adapter importing Core is forbidden.
+- Any Core file importing adapters is forbidden.
 
 ## Anti-God-Object Task Checks
 
@@ -42,6 +51,13 @@ Every implementation task spec must answer:
 - How does the design avoid creating a new god object?
 - What is the file size risk?
 - What dependency direction is allowed?
+
+If a task introduces or changes a port, the task spec must also answer:
+
+- What is the minimal method surface?
+- What implementation names are forbidden?
+- What runtime owns selection and dispatch?
+- How will we prevent this port from becoming a god file?
 
 ## Validation Rules
 
