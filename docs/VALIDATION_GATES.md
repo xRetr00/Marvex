@@ -40,6 +40,17 @@ Port files are interface contracts only.
 - Core files importing adapters fail.
 - Registry and factory files over 250 lines require split or explicit justification.
 
+### ProviderRuntime Boundary Gate
+
+ProviderRuntime is the only boundary allowed to import approved concrete provider adapters.
+
+- Core must not import ProviderRuntime or adapters.
+- CLI must not import concrete provider adapters.
+- ProviderPort must not mention concrete provider names.
+- ProviderRuntime may import only approved provider adapters.
+- ProviderRuntime must not contain routing, fallback, retry, session, history, plugin, daemon, server, health routing, or model routing logic.
+- Strict runtime scans target Python source files only, not README files.
+
 ### Vaxil Boundary Gate
 
 Vaxil may be mentioned only as a cautionary research source. Code reuse language and imports are forbidden.
