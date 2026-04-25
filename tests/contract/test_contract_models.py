@@ -27,10 +27,12 @@ def test_turn_input_accepts_documented_shape():
         trace_id="trace-001",
         turn_id="turn-001",
         input_text="Hello",
+        previous_response_id="resp-previous",
         source=Source.CLI,
         metadata={},
     )
 
+    assert turn.previous_response_id == "resp-previous"
     assert turn.source == Source.CLI
     assert turn.metadata == {}
 
@@ -41,6 +43,7 @@ def test_required_fields_are_enforced():
             schema_version="0.1-draft",
             trace_id="trace-001",
             input_text="Hello",
+            previous_response_id=None,
             source=Source.CLI,
             metadata={},
         )
@@ -53,6 +56,7 @@ def test_required_ids_reject_empty_strings():
             trace_id="",
             turn_id="turn-001",
             input_text="Hello",
+            previous_response_id=None,
             source=Source.CLI,
             metadata={},
         )
@@ -65,9 +69,44 @@ def test_unknown_top_level_fields_are_rejected():
             trace_id="trace-001",
             turn_id="turn-001",
             input_text="Hello",
+            previous_response_id=None,
             source=Source.CLI,
             metadata={},
             unexpected=True,
+        )
+
+
+def test_turn_input_previous_response_id_is_required_and_nullable():
+    with_previous = TurnInput(
+        schema_version="0.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_text="Hello",
+        previous_response_id="resp-001",
+        source=Source.CLI,
+        metadata={},
+    )
+    with_null = TurnInput(
+        schema_version="0.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_text="Hello",
+        previous_response_id=None,
+        source=Source.CLI,
+        metadata={},
+    )
+
+    assert with_previous.previous_response_id == "resp-001"
+    assert with_null.previous_response_id is None
+
+    with pytest.raises(ValidationError):
+        TurnInput(
+            schema_version="0.1-draft",
+            trace_id="trace-001",
+            turn_id="turn-001",
+            input_text="Hello",
+            source=Source.CLI,
+            metadata={},
         )
 
 

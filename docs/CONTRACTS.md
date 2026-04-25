@@ -60,6 +60,7 @@ Fields:
 - `trace_id`: string, required, non-empty.
 - `turn_id`: string, required, non-empty.
 - `input_text`: string, required, may be empty only if an approved future input mode defines that behavior.
+- `previous_response_id`: string or null, required, nullable.
 - `source`: string enum, required, initially `cli`.
 - `metadata`: object, required, may be empty.
 
@@ -77,6 +78,7 @@ Example:
   "trace_id": "trace-001",
   "turn_id": "turn-001",
   "input_text": "Hello",
+  "previous_response_id": null,
   "source": "cli",
   "metadata": {}
 }
@@ -163,8 +165,8 @@ Can write: Core only.
 
 Conversation continuity:
 
-- CLI may pass `previous_response_id` for simple sessions through `TurnInput.metadata.previous_response_id`.
-- Core may copy that value into `ProviderRequest.previous_response_id` after validation.
+- CLI may pass `previous_response_id` for simple sessions through `TurnInput.previous_response_id`.
+- Core may copy `TurnInput.previous_response_id` into `ProviderRequest.previous_response_id` after validation.
 - Core returns `provider_response_id` in `TurnOutput`.
 - Core must not maintain hidden global conversation history in v1.
 - A future session store must be explicit, contract-owned, and approved before implementation.

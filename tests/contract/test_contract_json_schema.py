@@ -25,6 +25,7 @@ def test_json_schemas_mark_documented_fields_required():
         "trace_id",
         "turn_id",
         "input_text",
+        "previous_response_id",
         "source",
         "metadata",
     }

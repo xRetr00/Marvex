@@ -55,6 +55,7 @@ def test_contracts_round_trip_through_json():
             trace_id="trace-001",
             turn_id="turn-001",
             input_text="Hello",
+            previous_response_id="resp-previous",
             source=Source.CLI,
             metadata={},
         ),
@@ -113,3 +114,19 @@ def test_contracts_round_trip_through_json():
         serialized = example.model_dump_json()
         restored = type(example).model_validate_json(serialized)
         assert restored.model_dump(mode="json") == example.model_dump(mode="json")
+
+
+def test_turn_input_previous_response_id_round_trips_when_null():
+    turn = TurnInput(
+        schema_version="0.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_text="Hello",
+        previous_response_id=None,
+        source=Source.CLI,
+        metadata={},
+    )
+
+    restored = TurnInput.model_validate_json(turn.model_dump_json())
+
+    assert restored.previous_response_id is None

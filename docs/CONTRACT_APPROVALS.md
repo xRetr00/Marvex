@@ -17,7 +17,7 @@ This registry controls whether a documented contract may be used for implementat
 
 | contract_name | schema_version | approval_status | approver | approval_date | implementation_allowed |
 | --- | --- | --- | --- | --- | --- |
-| TurnInput | 0.1-draft | approved | user | 2026-04-24 | yes |
+| TurnInput | 0.1.1-draft | approved | user | 2026-04-24 | yes |
 | TurnOutput | 0.1-draft | approved | user | 2026-04-24 | yes |
 | FinalResponse | 0.1-draft | approved | user | 2026-04-24 | yes |
 | ProviderRequest | 0.1-draft | approved | user | 2026-04-24 | yes |

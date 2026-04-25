@@ -29,6 +29,7 @@ class TurnInput(ContractModel):
     trace_id: NonEmptyString = Field(..., min_length=1)
     turn_id: NonEmptyString = Field(..., min_length=1)
     input_text: str
+    previous_response_id: NonEmptyString | None
     source: Source
     metadata: JsonObject
 

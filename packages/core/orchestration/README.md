@@ -12,11 +12,10 @@ Forbidden responsibilities:
 - Provider payload construction.
 - HTTP calls.
 - Tool execution.
-- Memory, intent, voice, UI, desktop context, or proactive behavior.
+- Future module domains outside turn coordination.
 - Hidden global state.
 
 Dependency direction:
 
 - May depend on approved contracts and ports only.
-- Must not depend on adapters, CLI, telemetry implementation, services, or future workers.
-
+- Must not depend on concrete integrations, clients, diagnostics runtime, services, or future workers.
