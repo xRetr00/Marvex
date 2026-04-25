@@ -1,2 +1,6 @@
 desktop.ini
 PROJECT_STATUS.md
+pycache/
+__pycache__/
+*.pyc
+*.pyo

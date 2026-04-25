@@ -1,1 +1,3 @@
-"""Provider port boundary placeholder."""
+from .provider_port import ProviderPort
+
+__all__ = ["ProviderPort"]

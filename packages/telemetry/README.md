@@ -12,7 +12,7 @@ Forbidden responsibilities:
 - Provider behavior.
 - CLI interaction.
 - Tool execution.
-- Memory, intent, voice, UI, desktop context, or proactive behavior.
+- Future module domains outside trace diagnostics.
 - Logging secrets or raw sensitive transcripts by default.
 
 Dependency direction:

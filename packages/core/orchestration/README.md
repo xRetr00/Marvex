@@ -18,4 +18,4 @@ Forbidden responsibilities:
 Dependency direction:
 
 - May depend on approved contracts and ports only.
-- Must not depend on concrete integrations, clients, diagnostics runtime, services, or future workers.
+- Must not depend on concrete integrations, user-facing callers, diagnostics runtime, process boundaries, or future workers.

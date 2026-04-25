@@ -11,6 +11,7 @@ from packages.adapters.providers.fake import (
     FakeProviderConfig,
     FakeProviderMode,
 )
+from packages.ports.provider import ProviderPort
 
 
 def make_request(previous_response_id: str | None = "prev-001") -> ProviderRequest:
@@ -36,6 +37,23 @@ def test_success_response_validates_as_provider_response():
     assert validated.turn_id == "turn-001"
     assert validated.finish_reason == FinishReason.STOP
     assert validated.error is None
+
+
+def test_fake_provider_satisfies_provider_port():
+    assert isinstance(FakeProvider(), ProviderPort)
+
+
+def test_provider_port_source_no_longer_imports_any():
+    source = (
+        Path("packages")
+        / "ports"
+        / "provider"
+        / "provider_port.py"
+    ).read_text(encoding="utf-8")
+
+    assert "Any" not in source
+    assert "ProviderRequest" in source
+    assert "ProviderResponse" in source
 
 
 def test_configured_output_text_and_response_id_are_used():
