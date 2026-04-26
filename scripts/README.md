@@ -16,6 +16,8 @@ Scripts:
 - `check_forbidden_modules.py`
 - `check_task_spec.py`
 - `check_library_decisions.py`
+- `check_schema_versions.py`
+- `check_project_status.py`
 - `check_file_size_policy.py`
 - `check_port_boundaries.py`
 - `check_provider_runtime_boundaries.py`
@@ -24,6 +26,15 @@ Scripts:
 `check_provider_runtime_boundaries.py` enforces the Core, CLI, ProviderPort,
 and ProviderRuntime dependency boundary so provider selection stays inside
 ProviderRuntime.
+
+`check_library_decisions.py` enforces required decision fields and confirms each
+runtime dependency in `[project].dependencies` has a matching decision record.
+
+`check_schema_versions.py` enforces the active Provider Foundation schema
+version policy from `docs/SCHEMA_VERSION_POLICY.md`.
+
+`check_project_status.py` prevents stale project status after major governance
+milestones.
 
 Manual smoke scripts:
 

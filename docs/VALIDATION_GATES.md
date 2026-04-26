@@ -59,6 +59,24 @@ Vaxil may be mentioned only as a cautionary research source. Code reuse language
 
 Dependency recommendations must include official source, maintenance status, why use it, why not custom code, and fallback if abandoned.
 
+Runtime dependencies listed in `[project].dependencies` must have matching
+decision records under `docs/library-decisions/` with `pyproject dependency`
+and `declared dependency` fields.
+
+### Schema Version Gate
+
+Active Provider Foundation docs, examples, tests, and approval rows must use the
+schema version defined in `docs/SCHEMA_VERSION_POLICY.md`.
+
+Deprecated schema versions may be mentioned only as historical notes in the
+schema-version policy and in validation code that rejects deprecated active
+references.
+
+### Project Status Gate
+
+`PROJECT_STATUS.md` must reflect completed milestones and must not point to
+stale next tasks after a governance cleanup has completed.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

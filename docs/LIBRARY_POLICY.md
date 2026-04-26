@@ -14,6 +14,8 @@ Every dependency recommendation must include:
 - why use it
 - why not custom code
 - fallback if abandoned
+- pyproject dependency
+- declared dependency
 
 ## Required Research Areas
 
@@ -38,6 +40,8 @@ Before implementing custom code, check for maintained libraries for:
 - Do not AI-code custom SDKs if a maintained SDK exists.
 - Do not wrap a library so heavily that the wrapper becomes a second SDK.
 - Do not add a dependency without a library decision document.
+- Runtime dependencies in `[project].dependencies` must have matching decision
+  records under `docs/library-decisions/`.
 - Do not rely on stale model knowledge for dependency status.
 - Do not use random blog posts as authority.
 
@@ -49,4 +53,3 @@ Every external dependency must have a fallback plan:
 - isolate behind an adapter
 - remove feature if nonessential
 - implement only after an RFC if no maintained option exists
-

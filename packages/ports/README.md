@@ -1,10 +1,10 @@
 # Ports Package
 
-Status: skeleton only.
+Status: minimal Provider Foundation implementation.
 
 Ownership: Interface boundary between Core and external capabilities.
 
-Responsibility: Future signature-only interfaces approved by contract tasks.
+Responsibility: Signature-only interfaces approved by contract tasks.
 
 Forbidden responsibilities:
 
@@ -17,4 +17,5 @@ Forbidden responsibilities:
 Dependency direction:
 
 - May depend on approved contracts only.
-- Must not depend on Core, adapters, CLI, telemetry implementation, services, or provider SDKs.
+- Must not depend on Core, adapters, CLI, telemetry implementation, services, or
+  provider SDKs.

@@ -1,10 +1,11 @@
 # Provider Port Package
 
-Status: skeleton only.
+Status: minimal Provider Foundation implementation.
 
 Ownership: Provider interface boundary.
 
-Responsibility: Future provider-facing signatures used by Core and provider adapters.
+Responsibility: Define the provider-facing signature used by Core and provider
+adapters.
 
 Forbidden responsibilities:
 
@@ -17,5 +18,5 @@ Forbidden responsibilities:
 Dependency direction:
 
 - May depend on approved contracts only.
-- Must not depend on Core, adapters, CLI, telemetry implementation, or provider SDKs.
-
+- Must not depend on Core, adapters, CLI, telemetry implementation, or provider
+  SDKs.

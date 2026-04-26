@@ -1,10 +1,12 @@
 # Adapters Package
 
-Status: skeleton only.
+Status: Provider Foundation adapters implemented.
 
 Ownership: Concrete external integration boundary.
 
-Responsibility: Future adapters that satisfy ports after contract approval and library decisions.
+Responsibility: House concrete adapters that satisfy ports after contract
+approval and library decisions. Current provider adapters include fake, LiteLLM,
+and LM Studio Responses.
 
 Forbidden responsibilities:
 
@@ -16,5 +18,6 @@ Forbidden responsibilities:
 
 Dependency direction:
 
-- May depend on ports and approved contracts.
+- May depend on approved contracts and approved external SDKs inside adapter
+  boundaries.
 - Must not be imported by Core, ports, CLI, or telemetry.

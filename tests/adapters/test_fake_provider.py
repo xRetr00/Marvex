@@ -16,7 +16,7 @@ from packages.ports.provider import ProviderPort
 
 def make_request(previous_response_id: str | None = "prev-001") -> ProviderRequest:
     return ProviderRequest(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         model="test-model",
@@ -32,7 +32,7 @@ def test_success_response_validates_as_provider_response():
 
     validated = ProviderResponse.model_validate(response.model_dump())
     assert validated.provider_name == "fake"
-    assert validated.schema_version == "0.1-draft"
+    assert validated.schema_version == "0.1.1-draft"
     assert validated.trace_id == "trace-001"
     assert validated.turn_id == "turn-001"
     assert validated.finish_reason == FinishReason.STOP

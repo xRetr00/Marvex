@@ -37,9 +37,15 @@ V1 turn lifecycle:
 
 ## Storage
 
-V1 may start with local structured log files. The storage choice must be documented before implementation.
+Current Provider Foundation implementation emits lifecycle events through the
+`TelemetrySink` protocol. The default runtime sink is `NoopTelemetrySink`, and
+tests may inject recording sinks.
 
-Default V1 storage:
+No default persistent telemetry storage is implemented yet. Persistent trace
+storage is future explicit work and requires its own approved task spec before
+implementation.
+
+Future storage guidance:
 
 - Location: `.marvex/logs/` under the workspace or configured user data directory.
 - Format: newline-delimited JSON trace events.

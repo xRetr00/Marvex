@@ -1,4 +1,7 @@
-# Core Tests Placeholder
+# Core Tests
 
-Core tests will validate turn orchestration through fake adapters after Core implementation is approved.
+Status: active Core orchestration tests.
 
+These tests validate turn orchestration through provider-port-compatible fakes,
+previous response id propagation, telemetry lifecycle emission, and Core
+boundary restrictions.
