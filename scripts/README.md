@@ -24,3 +24,11 @@ Scripts:
 `check_provider_runtime_boundaries.py` enforces the Core, CLI, ProviderPort,
 and ProviderRuntime dependency boundary so provider selection stays inside
 ProviderRuntime.
+
+Manual smoke scripts:
+
+- `smoke_providers.py`
+
+`smoke_providers.py` is developer-only manual verification for provider paths.
+It is intentionally excluded from `run_all_checks.py` and must not become a CI
+dependency.
