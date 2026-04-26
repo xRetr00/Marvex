@@ -1,4 +1,7 @@
-# API Tests Placeholder
+# API Tests
 
-API tests will validate health, version, turns, traces, and event endpoints after implementation is approved.
+Status: active CLI vertical slice tests.
 
+These tests validate one-shot CLI behavior through ProviderRuntime and
+TurnOrchestrator while keeping concrete provider adapter selection out of the
+CLI.

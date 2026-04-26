@@ -1,4 +1,6 @@
-# Contract Tests Placeholder
+# Contract Tests
 
-Contract tests will validate JSON schemas and compatibility after contracts are implemented.
+Status: active contract validation tests.
 
+These tests validate approved contract models, JSON schemas, serialization, and
+schema compatibility expectations.

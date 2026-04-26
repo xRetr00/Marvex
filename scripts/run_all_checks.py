@@ -13,6 +13,8 @@ CHECKS = [
     "check_forbidden_modules.py",
     "check_task_spec.py",
     "check_library_decisions.py",
+    "check_schema_versions.py",
+    "check_project_status.py",
     "check_file_size_policy.py",
     "check_port_boundaries.py",
     "check_provider_runtime_boundaries.py",

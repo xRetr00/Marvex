@@ -1,8 +1,8 @@
-# Tests Placeholder
+# Tests
 
-Status: placeholder.
+Status: active Provider Foundation test suite.
 
-Tests are required before behavior changes once implementation begins.
+Current coverage includes contracts, provider runtime boundaries, adapters,
+Core turn orchestration, CLI behavior, and telemetry sinks.
 
-Forbidden now: product tests that imply unapproved implementation.
-
+All behavior changes require focused tests and `python scripts/run_all_checks.py`.

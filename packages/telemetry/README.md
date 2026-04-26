@@ -1,13 +1,15 @@
 # Telemetry Package
 
-Status: skeleton only.
+Status: minimal Provider Foundation lifecycle implementation.
 
 Ownership: Trace and diagnostics boundary.
 
-Responsibility: Future trace lifecycle and structured diagnostics after contract approval.
+Responsibility: Provide `TelemetrySink`, `NoopTelemetrySink`, and trace event
+construction for the v1 turn lifecycle.
 
 Forbidden responsibilities:
 
+- Persistent trace storage until an approved storage task exists.
 - Core orchestration.
 - Provider behavior.
 - CLI interaction.
@@ -17,5 +19,5 @@ Forbidden responsibilities:
 
 Dependency direction:
 
-- Must remain isolated from Core, adapters, CLI, and services.
-- May depend on approved contracts after telemetry contract approval.
+- May depend on approved contracts.
+- Must remain isolated from adapters, CLI, and services.

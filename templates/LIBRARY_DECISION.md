@@ -12,6 +12,10 @@ why not custom code:
 
 fallback if abandoned:
 
+pyproject dependency:
+
+declared dependency:
+
 verified date:
 
 verified by:
@@ -19,4 +23,3 @@ verified by:
 scope:
 
 risks:
-

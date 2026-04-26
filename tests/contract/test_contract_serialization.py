@@ -29,7 +29,7 @@ def test_contracts_round_trip_through_json():
         metadata={},
     )
     trace_event = TraceEvent(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         event_id="event-001",
         timestamp=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
@@ -39,7 +39,7 @@ def test_contracts_round_trip_through_json():
         data={},
     )
     error = ErrorEnvelope(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         error_id="error-001",
         code=ErrorCode.VALIDATION_ERROR,
@@ -51,7 +51,7 @@ def test_contracts_round_trip_through_json():
 
     examples = [
         TurnInput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             input_text="Hello",
@@ -61,7 +61,7 @@ def test_contracts_round_trip_through_json():
         ),
         final_response,
         TurnOutput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             final_response=final_response,
@@ -70,7 +70,7 @@ def test_contracts_round_trip_through_json():
             error=None,
         ),
         ProviderRequest(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             model="local-model",
@@ -80,7 +80,7 @@ def test_contracts_round_trip_through_json():
             provider_options={},
         ),
         ProviderResponse(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             provider_name="lmstudio_responses",
@@ -94,7 +94,7 @@ def test_contracts_round_trip_through_json():
         trace_event,
         error,
         HealthCheck(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             service="core",
             status=HealthStatus.OK,
             version="0.1.0",
@@ -102,10 +102,10 @@ def test_contracts_round_trip_through_json():
             dependencies={},
         ),
         VersionInfo(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             service="core",
             service_version="0.1.0",
-            contract_versions={"TurnInput": "0.1-draft"},
+            contract_versions={"TurnInput": "0.1.1-draft"},
             build={},
         ),
     ]
@@ -118,7 +118,7 @@ def test_contracts_round_trip_through_json():
 
 def test_turn_input_previous_response_id_round_trips_when_null():
     turn = TurnInput(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         input_text="Hello",

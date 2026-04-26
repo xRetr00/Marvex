@@ -17,7 +17,7 @@ def make_request(
     provider_options: dict[str, object] | None = None,
 ) -> ProviderRequest:
     return ProviderRequest(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         model="openrouter/test-model",

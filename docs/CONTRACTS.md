@@ -74,7 +74,7 @@ Example:
 
 ```json
 {
-  "schema_version": "0.1-draft",
+  "schema_version": "0.1.1-draft",
   "trace_id": "trace-001",
   "turn_id": "turn-001",
   "input_text": "Hello",
@@ -108,7 +108,7 @@ Example:
 
 ```json
 {
-  "schema_version": "0.1-draft",
+  "schema_version": "0.1.1-draft",
   "trace_id": "trace-001",
   "turn_id": "turn-001",
   "final_response": {

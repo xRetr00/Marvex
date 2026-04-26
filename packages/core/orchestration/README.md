@@ -1,15 +1,16 @@
 # Core Orchestration Package
 
-Status: skeleton only.
+Status: minimal Provider Foundation implementation.
 
 Ownership: Core turn orchestration boundary.
 
-Responsibility: Future coordination of approved turn lifecycle steps through contracts and ports.
+Responsibility: Coordinate the approved v1 turn lifecycle through contracts,
+an injected provider port, and injected/noop telemetry sinks.
 
 Forbidden responsibilities:
 
 - Provider-specific logic.
-- Provider payload construction.
+- Provider runtime selection.
 - HTTP calls.
 - Tool execution.
 - Future module domains outside turn coordination.
@@ -17,5 +18,6 @@ Forbidden responsibilities:
 
 Dependency direction:
 
-- May depend on approved contracts and ports only.
-- Must not depend on concrete integrations, user-facing callers, diagnostics runtime, process boundaries, or future workers.
+- May depend on approved contracts, provider ports, and telemetry sink contracts.
+- Must not depend on concrete integrations, user-facing callers, process
+  boundaries, or future workers.

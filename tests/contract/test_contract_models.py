@@ -23,7 +23,7 @@ from packages.contracts import (
 
 def test_turn_input_accepts_documented_shape():
     turn = TurnInput(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         input_text="Hello",
@@ -40,7 +40,7 @@ def test_turn_input_accepts_documented_shape():
 def test_required_fields_are_enforced():
     with pytest.raises(ValidationError):
         TurnInput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             input_text="Hello",
             previous_response_id=None,
@@ -52,7 +52,7 @@ def test_required_fields_are_enforced():
 def test_required_ids_reject_empty_strings():
     with pytest.raises(ValidationError):
         TurnInput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="",
             turn_id="turn-001",
             input_text="Hello",
@@ -65,7 +65,7 @@ def test_required_ids_reject_empty_strings():
 def test_unknown_top_level_fields_are_rejected():
     with pytest.raises(ValidationError):
         TurnInput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             input_text="Hello",
@@ -78,7 +78,7 @@ def test_unknown_top_level_fields_are_rejected():
 
 def test_turn_input_previous_response_id_is_required_and_nullable():
     with_previous = TurnInput(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         input_text="Hello",
@@ -87,7 +87,7 @@ def test_turn_input_previous_response_id_is_required_and_nullable():
         metadata={},
     )
     with_null = TurnInput(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         input_text="Hello",
@@ -101,7 +101,7 @@ def test_turn_input_previous_response_id_is_required_and_nullable():
 
     with pytest.raises(ValidationError):
         TurnInput(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             input_text="Hello",
@@ -123,7 +123,7 @@ def test_invalid_enum_values_are_rejected():
 
 def test_nullable_required_fields_must_be_present_and_may_be_null():
     request = ProviderRequest(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         model="local-model",
@@ -138,7 +138,7 @@ def test_nullable_required_fields_must_be_present_and_may_be_null():
 
     with pytest.raises(ValidationError):
         ProviderRequest(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             turn_id="turn-001",
             model="local-model",
@@ -150,7 +150,7 @@ def test_nullable_required_fields_must_be_present_and_may_be_null():
 
 def test_error_envelope_accepts_known_codes_and_rejects_unknown_codes():
     envelope = ErrorEnvelope(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         error_id="error-001",
         code=ErrorCode.VALIDATION_ERROR,
@@ -164,7 +164,7 @@ def test_error_envelope_accepts_known_codes_and_rejects_unknown_codes():
 
     with pytest.raises(ValidationError):
         ErrorEnvelope(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             trace_id="trace-001",
             error_id="error-001",
             code="UNKNOWN_CODE",
@@ -184,7 +184,7 @@ def test_turn_output_accepts_nested_response_events_and_nullable_error():
         metadata={},
     )
     event = TraceEvent(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         event_id="event-001",
         timestamp=datetime(2026, 4, 24, 12, 0, tzinfo=UTC),
@@ -195,7 +195,7 @@ def test_turn_output_accepts_nested_response_events_and_nullable_error():
     )
 
     output = TurnOutput(
-        schema_version="0.1-draft",
+        schema_version="0.1.1-draft",
         trace_id="trace-001",
         turn_id="turn-001",
         final_response=response,
@@ -212,7 +212,7 @@ def test_turn_output_accepts_nested_response_events_and_nullable_error():
 def test_health_check_rejects_negative_uptime():
     with pytest.raises(ValidationError):
         HealthCheck(
-            schema_version="0.1-draft",
+            schema_version="0.1.1-draft",
             service="core",
             status=HealthStatus.OK,
             version="0.1.0",

@@ -1,10 +1,17 @@
 # Provider Adapters Package
 
-Status: skeleton only.
+Status: Provider Foundation adapters implemented.
 
 Ownership: Provider adapter placement boundary.
 
-Responsibility: Future concrete adapters that satisfy provider ports.
+Responsibility: Concrete provider adapters that convert approved provider
+contracts to provider SDK calls or deterministic fake responses.
+
+Current approved adapters:
+
+- `fake`
+- `litellm`
+- `lmstudio_responses`
 
 Forbidden responsibilities:
 
@@ -12,10 +19,9 @@ Forbidden responsibilities:
 - Business policy.
 - Tool execution.
 - Memory, intent, voice, UI, desktop context, or proactive behavior.
-- Provider behavior before an approved adapter task.
+- Provider selection or runtime registration policy.
 
 Dependency direction:
 
-- May depend on ports and approved contracts.
+- May depend on approved contracts and approved provider SDKs.
 - Must not be imported by Core, ports, CLI, or telemetry.
-

@@ -1,25 +1,46 @@
 # Project Status
 
-current_phase: skeleton_bootstrap
+current_phase: provider_foundation_governance_cleanup
 
-implementation_status: skeleton_only
+implementation_status: provider_foundation_completed
 
 accepted_docs: true
+
+completed_foundation:
+
+- contracts
+- ProviderPort
+- FakeProvider
+- LiteLLMProvider
+- LMStudioResponsesProvider
+- ProviderRuntime
+- TurnOrchestrator
+- minimal telemetry lifecycle
+- CLI vertical slice
+- manual provider smoke harness
+- validation gates
+
+current_cleanup_gate:
+
+Task 018 Provider Foundation Governance Cleanup
 
 allowed_current_work:
 
 - documentation
 - templates
 - validation scripts
-- README-only placeholder folders
-- skeleton package placeholders
+- README governance updates
+- library decision records
+- schema-version reference cleanup in docs and tests
 - approved task slices only
 
 forbidden_current_work:
 
-- Marvex product implementation
-- provider implementation before contract approval
-- core service implementation before contract approval
+- unapproved product behavior changes
+- provider behavior changes
+- CLI behavior changes
+- telemetry runtime behavior changes
+- contract model behavior changes
 - UI implementation
 - tools
 - memory
@@ -30,8 +51,10 @@ forbidden_current_work:
 
 status_rule:
 
-Docs are accepted, and Task 005 skeleton bootstrap has started/completed. Product implementation remains forbidden except for approved task slices with real task specs, approved contracts, tests, validation, and final reports.
+Provider Foundation completed. Task 018 is a cleanup gate to align documentation,
+dependency governance, schema-version policy, and validation with the completed
+foundation before starting the next subsystem.
 
-next_allowed_task:
+next_subsystem_after_cleanup:
 
-Task 006 contracts-only.
+Process Readiness.
