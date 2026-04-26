@@ -9,6 +9,7 @@ description = "Marvex v1 contract package"
 requires-python = ">=3.11"
 dependencies = [
   "litellm==1.83.13",
+  "openai==2.24.0",
   "pydantic>=2,<3",
 ]
 

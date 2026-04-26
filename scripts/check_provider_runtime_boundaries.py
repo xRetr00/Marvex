@@ -41,15 +41,21 @@ PORT_FORBIDDEN = [
 PROVIDER_RUNTIME_ALLOWED_ADAPTER_IMPORTS = [
     "from packages.adapters.providers.fake import FakeProvider",
     "from packages.adapters.providers.litellm import LiteLLMProvider",
+    "from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider",
 ]
 PROVIDER_RUNTIME_ALLOWED_ADAPTER_NAMES = {
     "FakeProvider",
     "LiteLLMProvider",
+    "LMStudioResponsesProvider",
 }
 
 PROVIDER_RUNTIME_FORBIDDEN_IMPORTS = [
-    re.compile(r"^\s*from\s+packages\.adapters\.providers\.(?!fake\b|litellm\b)"),
-    re.compile(r"^\s*import\s+packages\.adapters\.providers\.(?!fake\b|litellm\b)"),
+    re.compile(
+        r"^\s*from\s+packages\.adapters\.providers\.(?!fake\b|litellm\b|lmstudio_responses\b)"
+    ),
+    re.compile(
+        r"^\s*import\s+packages\.adapters\.providers\.(?!fake\b|litellm\b|lmstudio_responses\b)"
+    ),
 ]
 PROVIDER_RUNTIME_AGGREGATE_IMPORT = re.compile(
     r"^\s*from\s+packages\.adapters\.providers\s+import\s+(.+)$"

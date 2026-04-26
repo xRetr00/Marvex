@@ -23,6 +23,16 @@ def test_create_litellm_provider_returns_provider_port_compatible_provider():
     assert isinstance(provider, LiteLLMProvider)
 
 
+def test_create_lmstudio_responses_provider_returns_provider_port_compatible_provider():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(ProviderRuntimeConfig(provider_name="lmstudio_responses"))
+
+    assert isinstance(provider, ProviderPort)
+    assert isinstance(provider, LMStudioResponsesProvider)
+
+
 def test_unknown_provider_fails_clearly():
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 

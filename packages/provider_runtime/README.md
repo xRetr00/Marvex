@@ -6,6 +6,12 @@ Ownership: Provider creation wiring for approved provider adapters.
 
 Responsibility: Create an approved provider adapter from explicit runtime config.
 
+Approved provider names:
+
+- `fake`
+- `litellm`
+- `lmstudio_responses`
+
 Forbidden responsibilities:
 
 - Core orchestration.

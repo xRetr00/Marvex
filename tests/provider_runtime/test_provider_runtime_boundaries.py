@@ -20,6 +20,8 @@ def test_cli_source_uses_provider_runtime_and_not_concrete_adapters():
     assert "packages.adapters" not in source
     assert "FakeProvider" not in source
     assert "LiteLLMProvider" not in source
+    assert "LMStudioResponsesProvider" not in source
+    assert "lmstudio_responses" not in source
     assert "_create_provider_for_cli_bootstrap" not in source
 
 
@@ -73,10 +75,21 @@ def test_provider_runtime_python_source_has_no_forbidden_runtime_logic_tokens():
         "desktop",
         "tool",
         "mcp",
-        "lmstudio",
     ]
 
     for path in python_sources("packages/provider_runtime"):
         source = path.read_text(encoding="utf-8").lower()
 
         assert [token for token in forbidden if token in source] == []
+
+
+def test_provider_runtime_source_allows_only_approved_provider_adapter_imports():
+    source = read_text("packages/provider_runtime/provider_runtime.py")
+
+    assert "from packages.adapters.providers.fake import FakeProvider" in source
+    assert "from packages.adapters.providers.litellm import LiteLLMProvider" in source
+    assert (
+        "from packages.adapters.providers.lmstudio_responses import "
+        "LMStudioResponsesProvider"
+    ) in source
+    assert "packages.adapters.providers." in source

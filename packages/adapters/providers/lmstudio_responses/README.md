@@ -1,21 +1,23 @@
 # LM Studio Responses Adapter Package
 
-Status: skeleton only.
+Status: native v1 provider adapter.
 
-Ownership: Future LM Studio Responses-compatible provider adapter.
+Ownership: LM Studio Responses-compatible provider adapter.
 
-Responsibility: Future placement for adapter code after library verification and contract approval.
+Responsibility: Convert approved provider contracts to LM Studio OpenAI-compatible Responses calls and convert SDK responses back to approved provider contracts.
 
 Forbidden responsibilities:
 
-- HTTP calls before the adapter task is approved.
-- Provider payload construction before the adapter task is approved.
 - Fake provider behavior.
 - Core orchestration.
+- ProviderRuntime registration or selection.
 - Model routing or fallback policy.
+- Retry policy.
+- Session storage or manual history reconstruction.
+- Streaming, tools, MCP, memory, intent, voice, UI, desktop context, or proactive behavior.
 
 Dependency direction:
 
-- May depend on provider ports and approved contracts when implementation is approved.
+- May depend on approved contracts and the OpenAI Python SDK.
+- Must satisfy the provider port structurally.
 - Must not be imported by Core, ports, CLI, or telemetry.
-
