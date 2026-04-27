@@ -1,8 +1,10 @@
 # IPC API
 
-Marvex uses localhost HTTP, WebSocket, and JSON communication between the app shell and services.
+Marvex will use localhost HTTP, WebSocket, and JSON communication between the app shell and services in a future process/runtime phase.
 
-V1 uses plain JSON over HTTP for request-response flows and WebSocket for event streams.
+Provider Foundation currently has JSON contracts only. Task 019 formalizes
+health and version contracts for process readiness but does not implement HTTP
+servers, endpoints, subprocesses, daemons, or networking.
 
 ## Localhost Security Defaults
 
@@ -18,15 +20,25 @@ V1 uses plain JSON over HTTP for request-response flows and WebSocket for event 
 - Ports must default to configurable local ports. If a preferred port is busy, the service may choose an available local port and report it through startup output or a local discovery file.
 - Port selection must not silently expose a service on a remote interface.
 
-## V1 HTTP Endpoints
+## Future HTTP Endpoints
+
+The following endpoints are future explicit tasks. Their response contracts
+exist now, but no endpoint implementation exists in Task 019.
 
 ### GET /health
 
 Returns `HealthCheck`.
 
+`HealthCheck` currently has no timestamp field. `uptime_seconds` is future
+runtime uptime in non-negative seconds. `dependencies` is a JSON object only;
+there is no approved nested dependency-status schema yet.
+
 ### GET /version
 
 Returns `VersionInfo`.
+
+`VersionInfo` currently has no timestamp field. `contract_versions` and `build`
+are JSON objects; detailed build metadata shape is future contract work.
 
 ### POST /v1/turns
 
@@ -67,6 +79,6 @@ Error responses must use `ErrorEnvelope`.
 
 - Every request carries `trace_id`.
 - Every response declares schema version.
-- Every service exposes health and version.
+- Every future service exposes health and version.
 - No service may return unstructured exceptions.
 - No module may depend on in-process calls if it is defined as process-ready.

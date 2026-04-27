@@ -18,6 +18,7 @@ from packages.contracts import (
     TraceStage,
     TurnInput,
     TurnOutput,
+    VersionInfo,
 )
 
 
@@ -218,4 +219,215 @@ def test_health_check_rejects_negative_uptime():
             version="0.1.0",
             uptime_seconds=-1,
             dependencies={},
+        )
+
+
+def test_health_check_accepts_valid_shape():
+    health = HealthCheck(
+        schema_version="0.1.1-draft",
+        service="core",
+        status=HealthStatus.OK,
+        version="0.1.0",
+        uptime_seconds=0,
+        dependencies={},
+    )
+
+    assert health.schema_version == "0.1.1-draft"
+    assert health.service == "core"
+    assert health.status == HealthStatus.OK
+    assert health.version == "0.1.0"
+    assert health.uptime_seconds == 0
+    assert health.dependencies == {}
+
+
+def test_health_check_accepts_all_allowed_status_values():
+    for status in HealthStatus:
+        health = HealthCheck(
+            schema_version="0.1.1-draft",
+            service="core",
+            status=status.value,
+            version="0.1.0",
+            uptime_seconds=1.0,
+            dependencies={},
+        )
+
+        assert health.status == status
+
+
+def test_health_check_rejects_unknown_status():
+    with pytest.raises(ValidationError):
+        HealthCheck(
+            schema_version="0.1.1-draft",
+            service="core",
+            status="unknown",
+            version="0.1.0",
+            uptime_seconds=1.0,
+            dependencies={},
+        )
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "schema_version",
+        "service",
+        "status",
+        "version",
+        "uptime_seconds",
+        "dependencies",
+    ],
+)
+def test_health_check_rejects_missing_required_fields(missing_field):
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "service": "core",
+        "status": HealthStatus.OK,
+        "version": "0.1.0",
+        "uptime_seconds": 1.0,
+        "dependencies": {},
+    }
+    payload.pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        HealthCheck(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("service", ""),
+        ("version", ""),
+    ],
+)
+def test_health_check_rejects_empty_service_and_version(field, value):
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "service": "core",
+        "status": HealthStatus.OK,
+        "version": "0.1.0",
+        "uptime_seconds": 1.0,
+        "dependencies": {},
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        HealthCheck(**payload)
+
+
+def test_health_check_rejects_non_object_dependencies():
+    with pytest.raises(ValidationError):
+        HealthCheck(
+            schema_version="0.1.1-draft",
+            service="core",
+            status=HealthStatus.OK,
+            version="0.1.0",
+            uptime_seconds=1.0,
+            dependencies=[],
+        )
+
+
+def test_health_check_rejects_extra_fields():
+    with pytest.raises(ValidationError):
+        HealthCheck(
+            schema_version="0.1.1-draft",
+            service="core",
+            status=HealthStatus.OK,
+            version="0.1.0",
+            uptime_seconds=1.0,
+            dependencies={},
+            endpoint="/health",
+        )
+
+
+def test_version_info_accepts_valid_shape():
+    version = VersionInfo(
+        schema_version="0.1.1-draft",
+        service="core",
+        service_version="0.1.0",
+        contract_versions={"HealthCheck": "0.1.1-draft"},
+        build={},
+    )
+
+    assert version.schema_version == "0.1.1-draft"
+    assert version.service == "core"
+    assert version.service_version == "0.1.0"
+    assert version.contract_versions == {"HealthCheck": "0.1.1-draft"}
+    assert version.build == {}
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    [
+        "schema_version",
+        "service",
+        "service_version",
+        "contract_versions",
+        "build",
+    ],
+)
+def test_version_info_rejects_missing_required_fields(missing_field):
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "service": "core",
+        "service_version": "0.1.0",
+        "contract_versions": {"HealthCheck": "0.1.1-draft"},
+        "build": {},
+    }
+    payload.pop(missing_field)
+
+    with pytest.raises(ValidationError):
+        VersionInfo(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("service", ""),
+        ("service_version", ""),
+    ],
+)
+def test_version_info_rejects_empty_service_and_service_version(field, value):
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "service": "core",
+        "service_version": "0.1.0",
+        "contract_versions": {"HealthCheck": "0.1.1-draft"},
+        "build": {},
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        VersionInfo(**payload)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("contract_versions", []),
+        ("build", []),
+    ],
+)
+def test_version_info_rejects_non_object_contract_versions_and_build(field, value):
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "service": "core",
+        "service_version": "0.1.0",
+        "contract_versions": {"HealthCheck": "0.1.1-draft"},
+        "build": {},
+    }
+    payload[field] = value
+
+    with pytest.raises(ValidationError):
+        VersionInfo(**payload)
+
+
+def test_version_info_rejects_extra_fields():
+    with pytest.raises(ValidationError):
+        VersionInfo(
+            schema_version="0.1.1-draft",
+            service="core",
+            service_version="0.1.0",
+            contract_versions={"HealthCheck": "0.1.1-draft"},
+            build={},
+            endpoint="/version",
         )

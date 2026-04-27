@@ -33,13 +33,17 @@ Every subprocess must expose:
 - trace_id propagation
 - JSON error envelope
 
+`HealthCheck` and `VersionInfo` contracts exist now for future process
+readiness. Task 019 does not add a subprocess runtime, process supervisor,
+daemon, HTTP server, or network behavior.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
 
 ## Startup Order
 
-V1:
+Future process mode:
 
 1. CLI starts or connects to Core Service.
 2. Core Service reports health and version.
@@ -56,3 +60,6 @@ Future:
 4. Each worker reports health and version.
 5. Shell and Core exchange events over localhost APIs.
 
+Current Provider Foundation runtime is still in-process/CLI driven. Health and
+version reporting are contract-ready only until a future explicit service
+runtime task implements them.

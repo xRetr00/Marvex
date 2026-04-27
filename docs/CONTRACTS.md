@@ -240,14 +240,20 @@ Can write: module that detects the error.
 
 Purpose: Runtime liveness and readiness status for a service.
 
+This contract exists now for process readiness. Task 019 does not implement a
+runtime health check, process supervisor, HTTP endpoint, or service daemon.
+
 Fields:
 
 - `schema_version`: string, required, non-empty.
 - `service`: string, required, non-empty.
-- `status`: string enum, required.
+- `status`: string enum, required. Allowed values: `ok`, `degraded`, `starting`, `stopping`, `error`.
 - `version`: string, required, non-empty.
-- `uptime_seconds`: number, required, non-negative.
-- `dependencies`: object, required, may be empty.
+- `uptime_seconds`: number, required, non-negative. In a future runtime, this is seconds since the reporting service started.
+- `dependencies`: object, required, may be empty. No nested dependency-status schema is approved yet.
+
+No timestamp field exists on `HealthCheck`. If a future service needs observed
+time, that field requires an approved contract change.
 
 Owner: service contract package.
 
@@ -259,13 +265,20 @@ Can write: service being checked.
 
 Purpose: Stable service and contract version declaration.
 
+This contract exists now for process readiness. Task 019 does not implement a
+runtime version check, process supervisor, HTTP endpoint, or service daemon.
+
 Fields:
 
 - `schema_version`: string, required, non-empty.
 - `service`: string, required, non-empty.
 - `service_version`: string, required, non-empty.
-- `contract_versions`: object, required, may be empty only before implementation.
-- `build`: object, required, may be empty only before implementation.
+- `contract_versions`: object, required, may be empty only before runtime implementation.
+- `build`: object, required, may be empty only before runtime implementation.
+
+No timestamp field exists on `VersionInfo`. If a future service needs build time
+or observed time, that value must be carried inside an approved `build` shape or
+a future contract change.
 
 Owner: service contract package.
 
