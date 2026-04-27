@@ -34,8 +34,9 @@ Every subprocess must expose:
 - JSON error envelope
 
 `HealthCheck` and `VersionInfo` contracts exist now for future process
-readiness. Task 019 does not add a subprocess runtime, process supervisor,
-daemon, HTTP server, or network behavior.
+readiness. Task 020 adds a local in-memory object provider for these contracts.
+It does not add a subprocess runtime, process supervisor, daemon, HTTP server,
+or network behavior.
 
 ## Failure Rule
 
@@ -61,5 +62,5 @@ Future:
 5. Shell and Core exchange events over localhost APIs.
 
 Current Provider Foundation runtime is still in-process/CLI driven. Health and
-version reporting are contract-ready only until a future explicit service
-runtime task implements them.
+version reporting can be built locally from explicit in-memory config, but
+service runtime exposure remains future explicit work.
