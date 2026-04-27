@@ -2,9 +2,9 @@
 
 Marvex will use localhost HTTP, WebSocket, and JSON communication between the app shell and services in a future process/runtime phase.
 
-Provider Foundation currently has JSON contracts only. Task 019 formalizes
-health and version contracts for process readiness but does not implement HTTP
-servers, endpoints, subprocesses, daemons, or networking.
+Provider Foundation currently has JSON contracts and a local in-memory
+health/version object provider only. Task 020 does not implement HTTP servers,
+endpoints, subprocesses, daemons, or networking.
 
 ## Localhost Security Defaults
 
@@ -23,7 +23,8 @@ servers, endpoints, subprocesses, daemons, or networking.
 ## Future HTTP Endpoints
 
 The following endpoints are future explicit tasks. Their response contracts
-exist now, but no endpoint implementation exists in Task 019.
+exist now and can be built locally from explicit in-memory config, but no
+endpoint implementation exists in Task 020.
 
 ### GET /health
 
