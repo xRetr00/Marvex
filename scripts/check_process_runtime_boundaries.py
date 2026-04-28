@@ -58,6 +58,7 @@ FORBIDDEN_TOKENS = [
 ]
 
 PROCESS_RUNTIME_IMPORT_TOKEN = "packages.process_runtime"
+CLI_PROCESS_RUNTIME_ALLOWED = {"apps/cli/main.py"}
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -158,7 +159,10 @@ def _scan_unapproved_integrations(failures: list[str]) -> None:
             if text is None:
                 continue
             if PROCESS_RUNTIME_IMPORT_TOKEN in text:
-                failures.append(f"{_rel(path)} mentions {PROCESS_RUNTIME_IMPORT_TOKEN}")
+                rel = _rel(path)
+                if root == CLI_ROOT and rel in CLI_PROCESS_RUNTIME_ALLOWED:
+                    continue
+                failures.append(f"{rel} mentions {PROCESS_RUNTIME_IMPORT_TOKEN}")
 
 
 def main() -> int:

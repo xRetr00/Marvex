@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: http_endpoint_contract_planning
+current_phase: cli_health_version_commands
 
-implementation_status: process_readiness_local_runtime_completed
+implementation_status: process_readiness_cli_health_version_completed
 
 accepted_docs: true
 
@@ -26,6 +26,7 @@ completed_process_readiness:
 - Task 020 ProcessRuntime local health/version provider completed
 - Task 021 ProcessRuntime boundary gate completed
 - Task 026 HTTP Endpoint Contract Planning completed
+- Task 028 CLI Health/Version Commands completed
 
 completed_governance_gates:
 
@@ -37,7 +38,7 @@ completed_governance_gates:
 
 current_governance_gate:
 
-Task 026 HTTP Endpoint Contract Planning
+Task 028 CLI Health/Version Commands
 
 allowed_current_work:
 
@@ -90,8 +91,13 @@ localhost-only HTTP endpoint contracts for health/version responses without
 implementing HTTP runtime behavior, service mode, daemon behavior, subprocess
 runtime, CLI integration, Core integration, or dependency additions.
 
-next_allowed_work_after_task_026:
+Task 028 adds local CLI health/version commands using ProcessRuntime contract
+objects from explicit in-memory config. It does not add HTTP endpoints, service
+mode, daemon behavior, subprocess runtime, provider health checks, config
+files, environment reads, Core integration, or ProviderRuntime integration.
 
-Only a small approved task slice after an approved task plan. The likely next
-candidate is a CLI health/version command plan, but it is not authorized for
-implementation yet.
+next_allowed_work_after_task_028:
+
+Only a small approved task slice after an approved task plan. Likely candidates
+are status/audit cleanup or a future service-runtime planning slice; no further
+implementation is authorized by this status file.

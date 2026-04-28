@@ -40,6 +40,7 @@ Provider Foundation is complete:
 - Minimal telemetry lifecycle events through `TelemetrySink` and
   `NoopTelemetrySink`.
 - One-shot CLI vertical slice.
+- Local CLI health/version commands for process readiness reporting.
 - Manual provider smoke harness with fake, LiteLLM, and LM Studio targets.
 
 Process Readiness has started:
@@ -49,6 +50,8 @@ Process Readiness has started:
   from explicit in-memory configuration.
 - The ProcessRuntime boundary gate keeps local health/version object
   construction isolated until an approved integration task.
+- The CLI can expose local health/version contract objects without starting a
+  service.
 
 Git workflow governance exists:
 

@@ -1,6 +1,7 @@
+import json
 from types import SimpleNamespace
 
-from packages.contracts import ProviderRequest
+from packages.contracts import HealthCheck, ProviderRequest, VersionInfo
 
 
 def test_fake_provider_path_returns_deterministic_response(capsys):
@@ -160,6 +161,62 @@ def test_litellm_path_uses_mocked_litellm_call(monkeypatch, capsys):
     ]
 
 
+def test_health_command_prints_human_health_output(capsys):
+    from apps.cli.main import main
+
+    exit_code = main(["health"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "service: marvex" in output
+    assert "status: ok" in output
+    assert "version: 0.1.0" in output
+    assert "uptime_seconds: 0.0" in output
+
+
+def test_health_command_json_output_validates_as_health_check(capsys):
+    from apps.cli.main import main
+
+    exit_code = main(["health", "--json"])
+
+    output = capsys.readouterr().out
+    health = HealthCheck.model_validate(json.loads(output))
+    assert exit_code == 0
+    assert health.service == "marvex"
+    assert health.status == "ok"
+    assert health.version == "0.1.0"
+    assert health.uptime_seconds == 0.0
+    assert health.dependencies == {}
+
+
+def test_version_command_prints_human_version_output(capsys):
+    from apps.cli.main import main
+
+    exit_code = main(["version"])
+
+    output = capsys.readouterr().out
+    assert exit_code == 0
+    assert "service: marvex" in output
+    assert "service_version: 0.1.0" in output
+
+
+def test_version_command_json_output_validates_as_version_info(capsys):
+    from apps.cli.main import main
+
+    exit_code = main(["version", "--json"])
+
+    output = capsys.readouterr().out
+    version = VersionInfo.model_validate(json.loads(output))
+    assert exit_code == 0
+    assert version.service == "marvex"
+    assert version.service_version == "0.1.0"
+    assert version.contract_versions == {
+        "HealthCheck": "0.1.1-draft",
+        "VersionInfo": "0.1.1-draft",
+    }
+    assert version.build == {"version": "0.1.0"}
+
+
 def test_cli_source_has_no_forbidden_modules_or_features():
     from pathlib import Path
 
@@ -190,6 +247,13 @@ def test_cli_source_has_no_forbidden_modules_or_features():
         "packages.adapters",
         "fakeprovider",
         "litellmprovider",
+        "http",
+        "os.environ",
+        "getenv",
+        "open(",
+        "service runtime",
+        "provider health",
+        "provider probe",
     ]
 
     assert [token for token in forbidden if token in source] == []
@@ -212,3 +276,16 @@ def test_cli_imports_public_turn_orchestrator_only():
 
     assert "from packages.core.orchestration import TurnOrchestrator" in source
     assert "packages.core.orchestration.turn_orchestrator" not in source
+
+
+def test_process_runtime_boundary_allows_only_cli_main_integration():
+    from pathlib import Path
+
+    source = (Path("scripts") / "check_process_runtime_boundaries.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'CLI_PROCESS_RUNTIME_ALLOWED = {"apps/cli/main.py"}' in source
+    assert "for root in [CORE_ROOT, CLI_ROOT, PROVIDER_RUNTIME_ROOT]" in source
+    assert "if root == CLI_ROOT and rel in CLI_PROCESS_RUNTIME_ALLOWED:" in source
+    assert "PROVIDER_RUNTIME_ROOT" in source

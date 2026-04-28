@@ -59,7 +59,9 @@ construction until an explicit future integration task.
 - ProcessRuntime may import contracts and approved standard-library modules only.
 - ProcessRuntime must not import Core, adapters, ProviderRuntime, telemetry, apps, or services.
 - ProcessRuntime Python source must not contain HTTP, server, daemon, subprocess, supervisor, thread, socket, requests, httpx, urllib, filesystem, environment, CLI, provider runtime, tool, memory, intent, voice, or desktop behavior tokens.
-- Core, CLI, and ProviderRuntime must not import or mention `packages.process_runtime` yet.
+- Core and ProviderRuntime must not import or mention `packages.process_runtime`.
+- CLI may import or mention `packages.process_runtime` only from
+  `apps/cli/main.py` for approved local health/version commands.
 - `packages/process_runtime/process_runtime.py` over 250 lines requires the explicit phrase `process runtime size justification`.
 - Strict runtime scans target Python source files only, not README or documentation files.
 
