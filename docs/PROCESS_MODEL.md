@@ -35,8 +35,9 @@ Every subprocess must expose:
 
 `HealthCheck` and `VersionInfo` contracts exist now for future process
 readiness. Task 020 adds a local in-memory object provider for these contracts.
-It does not add a subprocess runtime, process supervisor, daemon, HTTP server,
-or network behavior.
+Task 026 plans future HTTP endpoint contracts for those objects. Neither task
+adds a subprocess runtime, process supervisor, daemon, HTTP server, service
+runtime, socket listener, or network behavior.
 
 ## Failure Rule
 
@@ -61,6 +62,7 @@ Future:
 4. Each worker reports health and version.
 5. Shell and Core exchange events over localhost APIs.
 
-Current Provider Foundation runtime is still in-process/CLI driven. Health and
-version reporting can be built locally from explicit in-memory config, but
-service runtime exposure remains future explicit work.
+Current Provider Foundation runtime is still in-process/CLI driven. Current
+ProcessRuntime remains local-only object construction from explicit in-memory
+config. HTTP exposure remains future explicit service-runtime work and must not
+be inferred from the presence of health/version contracts or endpoint planning.

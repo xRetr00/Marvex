@@ -1,6 +1,6 @@
 # Project Status
 
-current_phase: status_readme_drift_cleanup
+current_phase: http_endpoint_contract_planning
 
 implementation_status: process_readiness_local_runtime_completed
 
@@ -25,6 +25,7 @@ completed_process_readiness:
 - Task 019 Health and Version Contract Slice completed
 - Task 020 ProcessRuntime local health/version provider completed
 - Task 021 ProcessRuntime boundary gate completed
+- Task 026 HTTP Endpoint Contract Planning completed
 
 completed_governance_gates:
 
@@ -32,10 +33,11 @@ completed_governance_gates:
 - Task 021 ProcessRuntime Boundary Validation Gate
 - Task 022 Git Workflow Governance completed
 - Task 023 Process Readiness Architecture Audit completed
+- Task 024 Status and README Drift Cleanup completed
 
 current_governance_gate:
 
-Task 024 Status and README Drift Cleanup
+Task 026 HTTP Endpoint Contract Planning
 
 allowed_current_work:
 
@@ -83,7 +85,13 @@ and Git workflow governance work.
 Task 024 is the current governance cleanup. It aligns README.md,
 PROJECT_STATUS.md, and project-status validation with the post-Task-022 state.
 
-next_allowed_work_after_task_024:
+Task 026 is the current governance planning slice. It documents future
+localhost-only HTTP endpoint contracts for health/version responses without
+implementing HTTP runtime behavior, service mode, daemon behavior, subprocess
+runtime, CLI integration, Core integration, or dependency additions.
 
-Only a small approved task slice. Likely options are CLI health/version command
-or HTTP endpoint contract planning after an approved task plan.
+next_allowed_work_after_task_026:
+
+Only a small approved task slice after an approved task plan. The likely next
+candidate is a CLI health/version command plan, but it is not authorized for
+implementation yet.
