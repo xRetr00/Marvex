@@ -42,6 +42,14 @@ tests_required:
 
 validation_commands:
 
+git_workflow_required:
+
+branch_required:
+
+commit_required:
+
+push_required:
+
 rollback_plan:
 
 acceptance_criteria:

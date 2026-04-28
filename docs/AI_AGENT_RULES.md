@@ -6,6 +6,9 @@ This project will be built by AI coding agents. The user is not expected to veri
 
 Every task starts with a task spec.
 
+Every task must follow `docs/GIT_RULES.md`. Normal small and medium tasks run
+directly on `main`; agents must not create branches automatically.
+
 The agent must identify:
 
 - goal
@@ -20,6 +23,9 @@ The agent must identify:
 ## Implementation Rules
 
 - One slice only.
+- Follow `docs/GIT_RULES.md` for plan, approval, implementation, validation, commit, and push flow.
+- Do not create a branch unless the user explicitly approves it first.
+- Do not start the next task while the current task has uncommitted changes.
 - No "fix all bugs" prompts.
 - No unrelated edits.
 - No architecture changes during bug fixes.
@@ -75,6 +81,9 @@ Final report must include:
 - changed files
 - tests run
 - validation result
+- commit hash or explicit no-commit reason
+- push status
+- current Git status summary
 - risks
 - deferred work
 
@@ -88,3 +97,5 @@ The agent must stop and report instead of coding if:
 - the task would create a god object
 - the task requires custom SDK code while a maintained SDK may exist
 - the task edits unrelated files
+- the current task has uncommitted changes and the agent is asked to start another task
+- branch creation would be needed but the user has not approved creating a branch

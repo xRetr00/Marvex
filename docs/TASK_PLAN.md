@@ -4,6 +4,21 @@
 
 Planning tasks may edit only docs, templates, diagrams, placeholder READMEs, and validation scripts.
 
+Normal small and medium tasks must follow `docs/GIT_RULES.md` and run directly
+on `main`.
+
+The required task flow is plan, user approval, implementation, validation,
+commit to `main`, push `main`, and only then the next task.
+
+Agents must not create branches automatically. Branches require user approval
+first and are limited to large subsystems, risky refactors, or explicitly
+approved cases.
+
+Agents must not start Task N+1 while Task N has uncommitted changes.
+
+Tags may be created only after validation passes and the user approves, or when
+a milestone clearly requires the tag.
+
 Implementation tasks require:
 
 - `PROJECT_STATUS.md` with `accepted_docs: true`
