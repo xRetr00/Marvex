@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: git_workflow_governance
+current_phase: status_readme_drift_cleanup
 
-implementation_status: provider_foundation_completed
+implementation_status: process_readiness_local_runtime_completed
 
 accepted_docs: true
 
@@ -22,18 +22,20 @@ completed_foundation:
 
 completed_process_readiness:
 
-- Task 019 Health and Version Contract Slice
-- Task 020 Health/Version Runtime Provider
-- Task 021 ProcessRuntime Boundary Validation Gate
+- Task 019 Health and Version Contract Slice completed
+- Task 020 ProcessRuntime local health/version provider completed
+- Task 021 ProcessRuntime boundary gate completed
 
 completed_governance_gates:
 
 - Task 018 Provider Foundation Governance Cleanup
 - Task 021 ProcessRuntime Boundary Validation Gate
+- Task 022 Git Workflow Governance completed
+- Task 023 Process Readiness Architecture Audit completed
 
 current_governance_gate:
 
-Task 022 Marvex Git Workflow Rules
+Task 024 Status and README Drift Cleanup
 
 allowed_current_work:
 
@@ -67,13 +69,21 @@ Provider Foundation completed. Task 018 Provider Foundation Governance Cleanup
 aligned documentation, dependency governance, schema-version policy, and
 validation with the completed foundation before starting the next subsystem.
 
-Process Readiness has completed the contract slice, local health/version runtime
-provider, and ProcessRuntime boundary validation gate through Task 021.
+Process Readiness has started. Process Readiness contracts completed through
+Task 019. ProcessRuntime local provider completed through Task 020.
+ProcessRuntime boundary gate completed through Task 021.
 
-Task 022 is the current Git workflow governance gate. It establishes the default
+Git workflow governance completed through Task 022. It establishes the default
 main-first task flow, branch approval requirement, and commit/push discipline for
 future Marvex tasks.
 
-next_subsystem_after_cleanup:
+Task 023 audit completed. It found README/status drift after Process Readiness
+and Git workflow governance work.
 
-Process Readiness.
+Task 024 is the current governance cleanup. It aligns README.md,
+PROJECT_STATUS.md, and project-status validation with the post-Task-022 state.
+
+next_allowed_work_after_task_024:
+
+Only a small approved task slice. Likely options are CLI health/version command
+or HTTP endpoint contract planning after an approved task plan.

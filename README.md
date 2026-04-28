@@ -27,7 +27,7 @@ report.
 
 ## Current Implementation
 
-Provider Foundation is implemented:
+Provider Foundation is complete:
 
 - Pydantic contract models and JSON schema generation.
 - `ProviderPort` as a tiny contract-only provider boundary.
@@ -41,6 +41,20 @@ Provider Foundation is implemented:
   `NoopTelemetrySink`.
 - One-shot CLI vertical slice.
 - Manual provider smoke harness with fake, LiteLLM, and LM Studio targets.
+
+Process Readiness has started:
+
+- Health/version contracts exist as `HealthCheck` and `VersionInfo`.
+- A local `ProcessRuntime` health/version provider builds those contract objects
+  from explicit in-memory configuration.
+- The ProcessRuntime boundary gate keeps local health/version object
+  construction isolated until an approved integration task.
+
+Git workflow governance exists:
+
+- Normal small and medium tasks run directly on `main`.
+- Branches require explicit approval before creation.
+- Task flow is plan, approval, implementation, validation, commit, and push.
 
 ## Current Boundary
 
@@ -63,4 +77,9 @@ Forbidden now:
 - Voice, vision, desktop context, proactive behavior.
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
-The next subsystem after Task 018 cleanup is Process Readiness.
+
+No HTTP endpoint exists yet. No service daemon exists yet. No subprocess runtime
+or service mode exists yet.
+
+Next likely work after approved status cleanup is a small approved task slice,
+such as a CLI health/version command or HTTP endpoint contract planning.
