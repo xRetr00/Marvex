@@ -51,6 +51,18 @@ ProviderRuntime is the only boundary allowed to import approved concrete provide
 - ProviderRuntime must not contain routing, fallback, retry, session, history, plugin, daemon, server, health routing, or model routing logic.
 - Strict runtime scans target Python source files only, not README files.
 
+### ProcessRuntime Boundary Gate
+
+ProcessRuntime is limited to local HealthCheck and VersionInfo object
+construction until an explicit future integration task.
+
+- ProcessRuntime may import contracts and approved standard-library modules only.
+- ProcessRuntime must not import Core, adapters, ProviderRuntime, telemetry, apps, or services.
+- ProcessRuntime Python source must not contain HTTP, server, daemon, subprocess, supervisor, thread, socket, requests, httpx, urllib, filesystem, environment, CLI, provider runtime, tool, memory, intent, voice, or desktop behavior tokens.
+- Core, CLI, and ProviderRuntime must not import or mention `packages.process_runtime` yet.
+- `packages/process_runtime/process_runtime.py` over 250 lines requires the explicit phrase `process runtime size justification`.
+- Strict runtime scans target Python source files only, not README or documentation files.
+
 ### Vaxil Boundary Gate
 
 Vaxil may be mentioned only as a cautionary research source. Code reuse language and imports are forbidden.

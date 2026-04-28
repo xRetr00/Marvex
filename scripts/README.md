@@ -21,11 +21,18 @@ Scripts:
 - `check_file_size_policy.py`
 - `check_port_boundaries.py`
 - `check_provider_runtime_boundaries.py`
+- `check_process_runtime_boundaries.py`
 - `check_vaxil_boundary.py`
 
 `check_provider_runtime_boundaries.py` enforces the Core, CLI, ProviderPort,
 and ProviderRuntime dependency boundary so provider selection stays inside
 ProviderRuntime.
+
+`check_process_runtime_boundaries.py` enforces the ProcessRuntime dependency
+boundary so local health/version object construction stays isolated until an
+explicit future integration task. Strict forbidden behavior token scans apply
+only to Python source files under `packages/process_runtime/`, not README or
+documentation files.
 
 `check_library_decisions.py` enforces required decision fields and confirms each
 runtime dependency in `[project].dependencies` has a matching decision record.
