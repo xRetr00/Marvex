@@ -10,6 +10,24 @@ allowed_files:
 
 forbidden_files:
 
+context_pack:
+
+  required_files_to_inspect:
+
+  optional_files_to_inspect:
+
+  forbidden_read_areas:
+
+  search_scope:
+
+  large_file_read_policy:
+
+  full_repo_scan_allowed:
+
+  context_budget_risk:
+
+  scope_expansion_approval_required:
+
 contract_impact:
 
 contract_approval_required:

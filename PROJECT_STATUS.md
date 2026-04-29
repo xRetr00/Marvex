@@ -1,6 +1,6 @@
 # Project Status
 
-current_phase: cli_health_version_commands
+current_phase: agent_context_architecture_governance
 
 implementation_status: process_readiness_cli_health_version_completed
 
@@ -35,10 +35,11 @@ completed_governance_gates:
 - Task 022 Git Workflow Governance completed
 - Task 023 Process Readiness Architecture Audit completed
 - Task 024 Status and README Drift Cleanup completed
+- Task 031 Agent Context Architecture governance completed
 
 current_governance_gate:
 
-Task 028 CLI Health/Version Commands
+Task 031 Agent Context Architecture governance
 
 allowed_current_work:
 
@@ -96,8 +97,13 @@ objects from explicit in-memory config. It does not add HTTP endpoints, service
 mode, daemon behavior, subprocess runtime, provider health checks, config
 files, environment reads, Core integration, or ProviderRuntime integration.
 
-next_allowed_work_after_task_028:
+Task 031 adds agent context architecture docs and mandatory read-budget rules.
+It does not change product behavior, runtime behavior, CLI behavior, provider
+behavior, or validation scripts.
+
+next_allowed_work_after_task_031:
 
 Only a small approved task slice after an approved task plan. Likely candidates
-are status/audit cleanup or a future service-runtime planning slice; no further
+are a Task 032 validation gate for Context Pack requirements or a future
+service-runtime planning slice; no further
 implementation is authorized by this status file.

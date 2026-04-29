@@ -4,6 +4,14 @@
 
 Planning tasks may edit only docs, templates, diagrams, placeholder READMEs, and validation scripts.
 
+Every task spec must include a Context Pack defining required files to inspect,
+optional files to inspect, forbidden read areas, search scope, large-file read
+policy, whether full-repo scans are allowed, context budget risk, and whether
+scope expansion requires approval.
+
+Agents must read `docs/SYSTEM_MAP.md`, `docs/MODULE_INDEX.md`, and the task
+Context Pack before source discovery.
+
 Normal small and medium tasks must follow `docs/GIT_RULES.md` and run directly
 on `main`.
 
@@ -23,6 +31,7 @@ Implementation tasks require:
 
 - `PROJECT_STATUS.md` with `accepted_docs: true`
 - a real task spec file, not only a task id
+- a Context Pack
 - approved contracts in `docs/CONTRACT_APPROVALS.md`
 - explicit allowed and forbidden files
 - ownership boundary and anti-god-object answers

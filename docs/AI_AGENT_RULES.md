@@ -14,11 +14,32 @@ The agent must identify:
 - goal
 - allowed files
 - forbidden files
+- Context Pack
 - contract impact
 - ownership boundary
 - tests required
 - validation commands required
 - rollback plan
+
+## Context Budget Rules
+
+Agents must obey `docs/AGENT_CONTEXT_RULES.md`.
+
+Before source reads, agents must use the task spec Context Pack and the
+orientation docs:
+
+- `docs/SYSTEM_MAP.md`
+- `docs/MODULE_INDEX.md`
+
+Agents must not perform broad repo discovery unless the task explicitly allows a
+repo-wide audit or the user approves widening scope.
+
+Agents must not run broad `rg`, repo-wide `rg --files`, or whole-file reads of
+large files by default. They must start with targeted searches inside the
+allowed task scope.
+
+Agents must stop and ask before expanding read scope outside the Context Pack,
+allowed files, or approved task boundary.
 
 ## Implementation Rules
 
@@ -33,6 +54,7 @@ The agent must identify:
 - No feature before contract.
 - No implementation task without a real task spec file.
 - No task id as a substitute for a task spec.
+- No broad repository discovery without Context Pack approval.
 - No provider logic in Core.
 - No UI logic in Core.
 - No tool execution in UI.

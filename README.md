@@ -13,6 +13,10 @@ or moved into subprocesses.
 Implementation is allowed only through approved task slices with contracts,
 tests, validation scripts, and final reports.
 
+Agents should start orientation with `docs/SYSTEM_MAP.md`,
+`docs/MODULE_INDEX.md`, and `docs/AGENT_CONTEXT_RULES.md` before broad source
+discovery.
+
 AI agents must run the validation scripts before finishing any task, including a
 one-line hotfix. The required command is:
 
