@@ -91,6 +91,17 @@ references.
 `PROJECT_STATUS.md` must reflect completed milestones and must not point to
 stale next tasks after a governance cleanup has completed.
 
+### Agent Context Budget Gate
+
+The agent context architecture docs must remain present and discoverable.
+
+- `docs/SYSTEM_MAP.md`, `docs/MODULE_INDEX.md`, and `docs/AGENT_CONTEXT_RULES.md` must exist.
+- `docs/AI_AGENT_RULES.md` must point agents to `docs/AGENT_CONTEXT_RULES.md`.
+- `docs/TASK_PLAN.md` must mention the Context Pack requirement.
+- `templates/TASK_SPEC.md` must retain the mandatory `context_pack` fields.
+- `docs/AGENT_CONTEXT_RULES.md` must retain the core read-budget rules for no default full-repo scan, no broad `rg`, no repo-wide `rg --files` unless approved, justified large-file reads, and approval before widening scope.
+- This gate uses targeted phrase and field checks only. It does not inspect shell history or enforce actual agent tool usage.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

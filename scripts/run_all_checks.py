@@ -12,6 +12,7 @@ CHECKS = [
     "check_service_placeholders.py",
     "check_forbidden_modules.py",
     "check_task_spec.py",
+    "check_agent_context_budget.py",
     "check_library_decisions.py",
     "check_schema_versions.py",
     "check_project_status.py",

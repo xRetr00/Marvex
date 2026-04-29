@@ -15,6 +15,7 @@ Scripts:
 - `check_service_placeholders.py`
 - `check_forbidden_modules.py`
 - `check_task_spec.py`
+- `check_agent_context_budget.py`
 - `check_library_decisions.py`
 - `check_schema_versions.py`
 - `check_project_status.py`
@@ -42,6 +43,11 @@ version policy from `docs/SCHEMA_VERSION_POLICY.md`.
 
 `check_project_status.py` prevents stale project status after major governance
 milestones.
+
+`check_agent_context_budget.py` keeps the agent context architecture docs
+discoverable and verifies the task-spec Context Pack fields remain present. It
+uses targeted phrase and field checks only; it does not inspect shell history or
+attempt to enforce actual agent tool usage.
 
 Manual smoke scripts:
 

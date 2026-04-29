@@ -1,6 +1,6 @@
 # Project Status
 
-current_phase: agent_context_architecture_governance
+current_phase: agent_context_budget_validation_gate
 
 implementation_status: process_readiness_cli_health_version_completed
 
@@ -36,10 +36,11 @@ completed_governance_gates:
 - Task 023 Process Readiness Architecture Audit completed
 - Task 024 Status and README Drift Cleanup completed
 - Task 031 Agent Context Architecture governance completed
+- Task 032 Agent Context Budget Validation Gate completed
 
 current_governance_gate:
 
-Task 031 Agent Context Architecture governance
+Task 032 Agent Context Budget Validation Gate
 
 allowed_current_work:
 
@@ -101,9 +102,13 @@ Task 031 adds agent context architecture docs and mandatory read-budget rules.
 It does not change product behavior, runtime behavior, CLI behavior, provider
 behavior, or validation scripts.
 
-next_allowed_work_after_task_031:
+Task 032 adds a lightweight validation gate for agent context architecture docs
+and task-spec Context Pack fields. It does not change product behavior, runtime
+behavior, CLI behavior, provider behavior, or actual agent tool execution.
+
+next_allowed_work_after_task_032:
 
 Only a small approved task slice after an approved task plan. Likely candidates
-are a Task 032 validation gate for Context Pack requirements or a future
-service-runtime planning slice; no further
-implementation is authorized by this status file.
+are future service-runtime planning, governance cleanup, or another narrow
+Process Readiness slice; no further implementation is authorized by this status
+file.
