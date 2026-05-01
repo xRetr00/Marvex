@@ -2,6 +2,14 @@
 
 The active v1 Provider Foundation schema version is `0.1.1-draft`.
 
+Documentation-only assistant envelope drafts currently use `0.1.1-draft` for
+examples and draft approval rows only. This does not approve assistant envelope
+implementation.
+
+A distinct assistant envelope schema version may be required before
+implementation approval. No schema version split is approved by the current
+draft docs.
+
 `0.1-draft` is deprecated historical only. It may be mentioned only in this
 policy document and in validation code that rejects deprecated active
 references.

@@ -14,6 +14,10 @@ These contracts are draft documentation only.
 
 Do not create Pydantic models from this document until contracts are approved.
 
+File size justification: this draft keeps the four assistant envelope contracts,
+their shared reference shapes, examples, and implementation block together so
+approval reviewers can evaluate cross-contract semantics in one place.
+
 ## Direct Rules
 
 The provider turn is not the assistant turn.
@@ -90,6 +94,102 @@ Hybrid reference strategy:
   tool output, memory content, UI render payloads, TTS data, or dispatch
   instructions.
 
+`payload_ref` shape:
+
+```json
+{
+  "ref_type": "payload",
+  "ref_id": "payload-001",
+  "kind": "text",
+  "uri": null
+}
+```
+
+Rules:
+
+- `ref_type` is closed to `payload`.
+- `ref_id` is a non-empty string.
+- `kind` is initially `text`.
+- `uri` is nullable and must be local/non-provider unless future storage
+  contracts approve another location.
+- `payload_ref` must not point to arbitrary provider content.
+
+`session_ref` shape:
+
+```json
+{
+  "ref_type": "session",
+  "ref_id": "session-001"
+}
+```
+
+Rules:
+
+- no session body
+- no conversation history
+- no provider history
+
+`identity_ref` shape:
+
+```json
+{
+  "ref_type": "identity",
+  "ref_id": "local-profile-001"
+}
+```
+
+Rules:
+
+- no profile body
+- no personal data body
+
+`tool_result_ref` shape:
+
+```json
+{
+  "ref_type": "tool_result",
+  "ref_id": "tool-result-001"
+}
+```
+
+`memory_result_ref` shape:
+
+```json
+{
+  "ref_type": "memory_result",
+  "ref_id": "memory-result-001"
+}
+```
+
+`output_event_ref` shape:
+
+```json
+{
+  "ref_type": "output_event",
+  "ref_id": "output-event-001"
+}
+```
+
+`session_result_ref` shape:
+
+```json
+{
+  "ref_type": "session_result",
+  "ref_id": "session-result-001"
+}
+```
+
+These reference shapes are minimal. They do not approve the referenced contract
+families for implementation.
+
+## Draft Schema Version Policy
+
+Assistant envelope draft contracts continue to use `0.1.1-draft` for documentation and examples only.
+
+A distinct assistant envelope schema version may be required before implementation approval.
+
+No schema version split is approved by this draft.
+
 ## InputEvent
 
 Purpose: Normalize external input from CLI, future Shell, Voice, Desktop, and
@@ -103,8 +203,8 @@ Fields:
 - `source`: assistant-envelope enum, required. Allowed draft values: `cli`, `shell`, `voice`, `desktop`, `proactive`, `system`.
 - `input_modality`: assistant-envelope enum, required. Allowed draft values: `text`, `speech`, `desktop_event`, `system_event`.
 - `payload`: object or null, required, nullable. For first approval, the only allowed object shape is the minimal normalized text payload.
-- `payload_ref`: string or null, required, nullable. References normalized payload content and must not point to arbitrary provider content.
-- `session_ref`: string or null, required, nullable. References future session state without embedding session body.
+- `payload_ref`: payload_ref object or null, required, nullable. References normalized payload content and must not point to arbitrary provider content.
+- `session_ref`: session_ref object or null, required, nullable. References future session state without embedding session body.
 - `privacy`: object, required, may be empty. Local classification metadata only.
 - `timestamp`: string, required, ISO 8601 UTC.
 - `metadata`: object, required, may be empty.
@@ -133,6 +233,8 @@ Draft rules:
 Privacy rules:
 
 - `privacy` is local classification metadata only.
+- Minimal shape: `sensitivity` and `redaction_needed`.
+- sensitivity: `normal`, `sensitive`, `secret`.
 - Allowed: sensitivity classification, redaction-needed boolean, and local handling notes.
 - Policy decisions, access grants, permission results, identity/profile data, and redaction results are forbidden in `privacy`.
 
@@ -152,7 +254,7 @@ Example:
   "payload_ref": null,
   "session_ref": null,
   "privacy": {
-    "sensitivity": "standard",
+    "sensitivity": "normal",
     "redaction_needed": false,
     "handling_notes": null
   },
@@ -171,8 +273,8 @@ Fields:
 - `trace_id`: string, required, non-empty.
 - `turn_id`: string, required, non-empty.
 - `input_event_id`: string, required, non-empty.
-- `session_ref`: string or null, required, nullable. Reference only; no session body.
-- `identity_ref`: string or null, required, nullable. Reference only; no identity/profile body.
+- `session_ref`: session_ref object or null, required, nullable. Reference only; no session body.
+- `identity_ref`: identity_ref object or null, required, nullable. Reference only; no identity/profile body.
 - `user_visible_input`: string or null, required, nullable.
 - `assistant_mode`: assistant-envelope enum, required. Allowed draft values: `default`, `diagnostic`.
 - `policy_context`: object, required, may be empty. Seed-only inputs to PolicyRuntime.
@@ -191,7 +293,9 @@ Draft rules:
 Policy context rules:
 
 - `policy_context` is seed-only.
+- Minimal shape: `requested_capabilities` and `sensitivity`.
 - Allowed: requested capability labels, sensitivity hints, local context classification, and other non-decision inputs to PolicyRuntime.
+- Requested capabilities are labels only.
 - Policy allow/deny results, permission grants, tool scopes, memory write approval, policy engine output, and identity/session bodies are forbidden in `policy_context`.
 
 Example:
@@ -208,7 +312,7 @@ Example:
   "assistant_mode": "default",
   "policy_context": {
     "requested_capabilities": [],
-    "sensitivity_hint": "standard",
+    "sensitivity": "normal",
     "local_context_classification": "none"
   },
   "metadata": {}
@@ -226,12 +330,12 @@ Fields:
 - `trace_id`: string, required, non-empty.
 - `turn_id`: string, required, non-empty.
 - `assistant_final_response`: AssistantFinalResponse or null, required, nullable.
-- `output_events`: array, required, may be empty. Empty or reference/summary only until `OutputEvent` is approved.
+- `output_events`: array of output_event_ref objects, required, may be empty. Empty or reference/summary only until `OutputEvent` is approved.
 - `stage_summaries`: array of minimal stage summary objects, required, may be empty.
-- `provider_turn_refs`: array of provider turn reference/summary objects, required, may be empty.
-- `tool_result_refs`: array, required, may be empty. References only until `ToolResult` is approved.
-- `memory_result_refs`: array, required, may be empty. References only until `MemoryResult` is approved.
-- `session_result_ref`: string or null, required, nullable. Reference only; no session body.
+- `provider_turn_refs`: array of provider_turn_ref objects, required, may be empty.
+- `tool_result_refs`: array of tool_result_ref objects, required, may be empty. References only until `ToolResult` is approved.
+- `memory_result_refs`: array of memory_result_ref objects, required, may be empty. References only until `MemoryResult` is approved.
+- `session_result_ref`: session_result_ref object or null, required, nullable. Reference only; no session body.
 - `error`: ErrorEnvelope or null, required, nullable.
 - `metadata`: object, required, may be empty.
 
@@ -250,6 +354,7 @@ Minimal `stage_summaries` item shape:
 
 Rules for `stage_summaries`:
 
+- status values: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.
 - No raw subsystem state, raw provider responses, tool outputs, memory content, prompt text, or hidden context blocks may appear in `stage_summaries`.
 - Stage-level failures belong in `stage_summaries` via `status` and `error_ref`.
 
@@ -267,6 +372,7 @@ Minimal `provider_turn_refs` item shape:
 
 Rules for `provider_turn_refs`:
 
+- status values: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.
 - No embedded `ProviderRequest`.
 - No embedded `ProviderResponse`.
 - No central `provider_response_id`.
@@ -421,7 +527,7 @@ Fields:
 - `schema_version`: string, required, non-empty.
 - `response_type`: assistant-envelope enum, required. Allowed draft values: `text`, `error`, `payload_ref`.
 - `text`: string or null, required, nullable.
-- `payload_ref`: string or null, required, nullable.
+- `payload_ref`: payload_ref object or null, required, nullable.
 - `output_channel_intent`: assistant-envelope enum, required. Allowed draft values: `default`, `display`, `speech`, `both`.
 - `safe_for_display`: boolean, required.
 - `safe_for_speech`: boolean, required.
@@ -436,7 +542,7 @@ Draft rules:
 - TTS/UI details must not be provider-response fields.
 - For `response_type=text`, `text` must be non-null and `payload_ref` must be null.
 - For `response_type=payload_ref`, `payload_ref` must be non-null.
-- For `response_type=error`, `text` should contain user-safe error text unless explicitly suppressed by a future approved contract.
+- For `response_type=error`, `text` must contain user-safe error text in this draft.
 - Non-error responses require at least one content carrier.
 - `output_channel_intent` is intent only, not dispatch.
 - OutputRuntime owns actual dispatch later.

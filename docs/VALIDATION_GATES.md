@@ -179,6 +179,15 @@ This gate requires:
   `payload`/`payload_ref` carrier rules, seed-only `policy_context`, minimal
   stage summary shape, provider-reference constraints, and candidate-only memory
   write wording.
+- Draft docs include concrete reference formats for payload, session, identity,
+  provider turn, tool result, memory result, output event, and session result
+  references.
+- Draft docs include minimal nested shapes for `privacy` and `policy_context`
+  and closed status values for stage/provider summaries.
+- The gate parses fenced JSON examples in `docs/ASSISTANT_TURN_CONTRACTS.md`
+  and fails on invalid JSON.
+- The gate checks that implementation files do not define assistant envelope
+  contract classes while approval remains draft/no.
 - Implementation is blocked while approval rows are `draft` and
   `implementation_allowed: no`.
 - Provider-foundation contracts are not silently reclassified as assistant

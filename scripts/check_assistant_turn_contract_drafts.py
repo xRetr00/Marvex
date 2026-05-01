@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import re
 from pathlib import Path
 
 
@@ -8,6 +10,12 @@ ASSISTANT_TURN_CONTRACTS = ROOT / "docs" / "ASSISTANT_TURN_CONTRACTS.md"
 CONTRACT_APPROVALS = ROOT / "docs" / "CONTRACT_APPROVALS.md"
 VALIDATION_GATES = ROOT / "docs" / "VALIDATION_GATES.md"
 RUN_ALL_CHECKS = ROOT / "scripts" / "run_all_checks.py"
+IMPLEMENTATION_SCAN_ROOTS = [
+    ROOT / "packages",
+    ROOT / "apps",
+    ROOT / "services",
+    ROOT / "tests",
+]
 
 CONTRACTS = [
     "InputEvent",
@@ -66,9 +74,32 @@ REQUIRED_DOC_PHRASES = [
     "Hybrid reference strategy",
     "Cross-runtime references must be constrained strings or minimal typed references/summaries.",
     "References must not embed subsystem bodies.",
+    "`payload_ref` shape:",
+    '"ref_type": "payload"',
+    '"ref_id": "payload-001"',
+    '"uri": null',
+    "`session_ref` shape:",
+    '"ref_type": "session"',
+    '"ref_id": "session-001"',
+    "`identity_ref` shape:",
+    '"ref_type": "identity"',
+    '"ref_id": "local-profile-001"',
+    "`tool_result_ref` shape:",
+    '"ref_type": "tool_result"',
+    "`memory_result_ref` shape:",
+    '"ref_type": "memory_result"',
+    "`output_event_ref` shape:",
+    '"ref_type": "output_event"',
+    "`session_result_ref` shape:",
+    '"ref_type": "session_result"',
+    "sensitivity: `normal`, `sensitive`, `secret`.",
+    '"sensitivity": "normal"',
+    '"redaction_needed": false',
+    '"requested_capabilities": []',
     '"stage_name": "provider_reasoning"',
     '"status": "completed"',
     '"error_ref": null',
+    "status values: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.",
     "No raw subsystem state, raw provider responses, tool outputs, memory content, prompt text, or hidden context blocks may appear in `stage_summaries`.",
     '"turn_ref": "provider-turn-001"',
     "No embedded `ProviderRequest`.",
@@ -88,7 +119,7 @@ REQUIRED_DOC_PHRASES = [
     "must not become an alias for FinalResponse",
     "For `response_type=text`, `text` must be non-null and `payload_ref` must be null.",
     "For `response_type=payload_ref`, `payload_ref` must be non-null.",
-    "For `response_type=error`, `text` should contain user-safe error text unless explicitly suppressed by a future approved contract.",
+    "For `response_type=error`, `text` must contain user-safe error text in this draft.",
     "Non-error responses require at least one content carrier.",
     "`output_channel_intent` is intent only, not dispatch.",
     "OutputRuntime owns actual dispatch later.",
@@ -97,6 +128,9 @@ REQUIRED_DOC_PHRASES = [
     "`memory_write_candidate_hint` is a candidate hint only.",
     "`memory_write_candidate_hint` is not memory write approval.",
     "`memory_write_candidate_hint` cannot cause writeback without a future `MemoryWriteCandidate` and PolicyRuntime approval.",
+    "Assistant envelope draft contracts continue to use `0.1.1-draft` for documentation and examples only.",
+    "A distinct assistant envelope schema version may be required before implementation approval.",
+    "No schema version split is approved by this draft.",
 ]
 
 REQUIRED_FIELDS = {
@@ -172,6 +206,21 @@ def _section(text: str, heading: str) -> str:
     return text[start:next_heading]
 
 
+def _json_examples(text: str) -> list[object]:
+    examples: list[object] = []
+    for match in re.finditer(r"```json\s*(.*?)\s*```", text, re.DOTALL):
+        examples.append(json.loads(match.group(1)))
+    return examples
+
+
+def _iter_python_files() -> list[Path]:
+    paths: list[Path] = []
+    for root in IMPLEMENTATION_SCAN_ROOTS:
+        if root.is_dir():
+            paths.extend(root.rglob("*.py"))
+    return sorted(paths)
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -199,6 +248,26 @@ def main() -> int:
                 failures.append(f"docs/ASSISTANT_TURN_CONTRACTS.md {contract} missing field: {field}")
         if "```json" not in section:
             failures.append(f"docs/ASSISTANT_TURN_CONTRACTS.md {contract} missing JSON example")
+        try:
+            examples = _json_examples(section)
+        except json.JSONDecodeError as exc:
+            failures.append(
+                f"docs/ASSISTANT_TURN_CONTRACTS.md {contract} has invalid JSON example: {exc}"
+            )
+            examples = []
+        has_complete_example = False
+        for example in examples:
+            if not isinstance(example, dict):
+                failures.append(
+                    f"docs/ASSISTANT_TURN_CONTRACTS.md {contract} example must be a JSON object"
+                )
+                continue
+            if all(field in example for field in REQUIRED_FIELDS[contract]):
+                has_complete_example = True
+        if examples and not has_complete_example:
+            failures.append(
+                f"docs/ASSISTANT_TURN_CONTRACTS.md {contract} missing complete JSON example"
+            )
 
     for contract in CONTRACTS:
         expected_row = f"| {contract} | 0.1.1-draft | draft | none | none | no |"
@@ -219,6 +288,19 @@ def main() -> int:
 
     if "check_assistant_turn_contract_drafts.py" not in run_all_checks:
         failures.append("scripts/run_all_checks.py must run check_assistant_turn_contract_drafts.py")
+
+    implementation_patterns = [
+        "class InputEvent",
+        "class AssistantTurnInput",
+        "class AssistantTurnResult",
+        "class AssistantFinalResponse",
+    ]
+    for path in _iter_python_files():
+        text = path.read_text(encoding="utf-8")
+        rel = path.relative_to(ROOT).as_posix()
+        for pattern in implementation_patterns:
+            if pattern in text:
+                failures.append(f"{rel} must not implement assistant envelope contract: {pattern}")
 
     if failures:
         for failure in failures:

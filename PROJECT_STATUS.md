@@ -44,10 +44,11 @@ completed_governance_gates:
 - Task 046B Assistant Turn Envelope Governance completed
 - Task 047 Assistant Turn Envelope Schema Draft completed
 - Task 050 Assistant Envelope Contract Semantic Revision completed
+- Task 052 Assistant Envelope Schema Hardening completed
 
 current_governance_gate:
 
-Task 050 Assistant Envelope Contract Semantic Revision
+Task 052 Assistant Envelope Schema Hardening
 
 allowed_current_work:
 
@@ -162,6 +163,13 @@ shapes, seed-only `policy_context`, candidate-only memory write hint semantics,
 and stricter validation. Contracts remain draft/no. It does not create Pydantic
 models, approve contracts, change runtime behavior, add dependencies, or change
 provider/CLI/Core behavior.
+
+Task 052 hardens the documentation-only assistant envelope drafts with concrete
+reference formats, explicit nested `privacy` and `policy_context` shapes, closed
+stage/provider status values, assistant envelope schema-version notes, and JSON
+example parsing in validation. Contracts remain draft/no. It does not create
+Pydantic models, approve contracts, change runtime behavior, add dependencies,
+or change provider/CLI/Core behavior.
 
 next_allowed_work_after_task_032:
 
