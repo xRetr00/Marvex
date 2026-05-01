@@ -9,6 +9,7 @@ from uuid import uuid4
 from packages.contracts import Source, TurnInput
 from packages.core.orchestration import TurnOrchestrator
 from packages.decision_runtime.decision_pipeline_factory import run_dev_decision_pipeline
+from packages.decision_runtime.decision_preflight_factory import run_dev_turn_preflight
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -41,7 +42,7 @@ def _run_decision_dry_run(user_input: str) -> int:
 
 def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     if args.decision_preflight:
-        _print_decision_preflight(args.text)
+        _print_decision_preflight(args.text, enabled=True)
 
     try:
         provider = create_provider(ProviderRuntimeConfig(provider_name=args.provider))
@@ -71,10 +72,10 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def _print_decision_preflight(user_input: str) -> None:
+def _print_decision_preflight(user_input: str, enabled: bool) -> None:
     print(
         json.dumps(
-            {"decision_preflight": run_dev_decision_pipeline(user_input)},
+            {"turn_preflight": run_dev_turn_preflight(user_input, enabled=enabled)},
             sort_keys=True,
         )
     )

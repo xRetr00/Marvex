@@ -1,5 +1,5 @@
 import json
-from types import SimpleNamespace
+from pathlib import Path
 
 from packages.contracts import FinishReason, ProviderRequest, ProviderResponse
 
@@ -24,7 +24,7 @@ class RecordingProvider:
         )
 
 
-def test_normal_cli_turn_path_is_unchanged_without_preflight(capsys):
+def test_normal_cli_without_preflight_remains_unchanged(capsys):
     from apps.cli.main import main
 
     exit_code = main(
@@ -45,25 +45,25 @@ def test_normal_cli_turn_path_is_unchanged_without_preflight(capsys):
     assert lines[2].startswith("trace_id: ")
 
 
-def test_decision_preflight_runs_before_provider_and_provider_still_runs(monkeypatch, capsys):
+def test_cli_preflight_uses_turn_preflight_boundary_before_provider(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
     calls: list[str] = []
 
-    def fake_preflight(input_text: str, enabled: bool) -> dict[str, object]:
+    def fake_turn_preflight(input_text: str, enabled: bool) -> dict[str, object]:
         calls.append(f"preflight:{enabled}")
         return {
             "enabled": enabled,
             "observed": True,
-            "final_action": "proceed",
-            "reason_code": "pipeline.proceed",
+            "final_action": "clarify",
+            "reason_code": "validator.dev_clarify",
             "blocking_applied": False,
             "decision_pipeline_result": {
                 "prompt_plan": {"tool_surface_exposed": []},
             },
         }
 
-    monkeypatch.setattr(cli_main, "run_dev_turn_preflight", fake_preflight)
+    monkeypatch.setattr(cli_main, "run_dev_turn_preflight", fake_turn_preflight)
     monkeypatch.setattr(
         cli_main,
         "create_provider",
@@ -86,33 +86,12 @@ def test_decision_preflight_runs_before_provider_and_provider_still_runs(monkeyp
     preflight = json.loads(lines[0])
     assert exit_code == 0
     assert calls == ["preflight:True", "provider"]
-    assert preflight["turn_preflight"]["final_action"] == "proceed"
+    assert preflight["turn_preflight"]["final_action"] == "clarify"
+    assert preflight["turn_preflight"]["blocking_applied"] is False
     assert lines[1] == "recorded output"
 
 
-def test_clarify_preflight_does_not_block_provider(capsys):
-    from apps.cli.main import main
-
-    exit_code = main(
-        [
-            "--decision-preflight",
-            "--text",
-            "",
-            "--provider",
-            "fake",
-            "--model",
-            "fake-model",
-        ]
-    )
-
-    lines = capsys.readouterr().out.strip().splitlines()
-    preflight = json.loads(lines[0])
-    assert exit_code == 0
-    assert preflight["turn_preflight"]["final_action"] == "clarify"
-    assert lines[1] == "fake provider response"
-
-
-def test_deny_preflight_summary_does_not_block_provider(monkeypatch, capsys):
+def test_cli_preflight_deny_still_does_not_block_provider(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
     monkeypatch.setattr(
@@ -146,10 +125,11 @@ def test_deny_preflight_summary_does_not_block_provider(monkeypatch, capsys):
     preflight = json.loads(lines[0])
     assert exit_code == 0
     assert preflight["turn_preflight"]["final_action"] == "deny"
+    assert preflight["turn_preflight"]["blocking_applied"] is False
     assert lines[1] == "fake provider response"
 
 
-def test_preflight_output_is_summarized_without_prompt_or_runtime_payloads(capsys):
+def test_cli_preflight_output_has_no_prompt_tools_mcp_memory_or_provider_payload(capsys):
     from apps.cli.main import main
 
     exit_code = main(
@@ -164,8 +144,7 @@ def test_preflight_output_is_summarized_without_prompt_or_runtime_payloads(capsy
         ]
     )
 
-    first_line = capsys.readouterr().out.strip().splitlines()[0]
-    payload = json.loads(first_line)
+    payload = json.loads(capsys.readouterr().out.strip().splitlines()[0])
     encoded = json.dumps(payload).lower()
     assert exit_code == 0
     assert payload["turn_preflight"]["decision_pipeline_result"]["prompt_plan"]["tool_surface_exposed"] == []
@@ -174,3 +153,10 @@ def test_preflight_output_is_summarized_without_prompt_or_runtime_payloads(capsy
     assert "mcp" not in encoded
     assert "memory" not in encoded
     assert "provider_payload" not in encoded
+
+
+def test_cli_turn_preflight_no_longer_calls_raw_decision_pipeline_helper() -> None:
+    source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8")
+
+    assert "run_dev_turn_preflight" in source
+    assert "_print_decision_preflight(args.text)" not in source
