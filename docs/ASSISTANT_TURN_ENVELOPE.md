@@ -133,9 +133,9 @@ envelope, and metadata.
 
 User-facing assistant response independent of provider response shape.
 
-Planning categories may include text or multimodal payload reference, response
-type, safety/display/speech flags, output channel intent, memory writeback
-eligibility hint, finish reason, and metadata.
+Planning categories may include text or payload reference, response type,
+safety/display/speech flags, output channel intent, memory write candidate hint,
+finish reason, and metadata.
 
 These are not final schemas.
 
@@ -224,7 +224,7 @@ assistant turn history.
 - no `AssistantTurnResult` replaced by provider `TurnOutput`
 - no `InputEvent` used as an unnormalized raw UI, voice, desktop, or proactive
   blob
-- no memory writeback eligibility inferred directly from provider output
+- no memory write candidate hint inferred directly from provider output
 - no policy decisions embedded in provider or router metadata
 - no desktop context injected directly into provider input
 

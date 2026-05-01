@@ -175,6 +175,10 @@ This gate requires:
 - Each draft contract lists required fields and a small JSON example.
 - `docs/CONTRACT_APPROVALS.md` lists the four assistant-envelope contracts as
   draft/no only.
+- Draft docs include closed assistant-envelope enum values, exact
+  `payload`/`payload_ref` carrier rules, seed-only `policy_context`, minimal
+  stage summary shape, provider-reference constraints, and candidate-only memory
+  write wording.
 - Implementation is blocked while approval rows are `draft` and
   `implementation_allowed: no`.
 - Provider-foundation contracts are not silently reclassified as assistant

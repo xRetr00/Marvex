@@ -43,10 +43,11 @@ completed_governance_gates:
 - Task 045B Library Research Matrix Governance completed
 - Task 046B Assistant Turn Envelope Governance completed
 - Task 047 Assistant Turn Envelope Schema Draft completed
+- Task 050 Assistant Envelope Contract Semantic Revision completed
 
 current_governance_gate:
 
-Task 047 Assistant Turn Envelope Schema Draft
+Task 050 Assistant Envelope Contract Semantic Revision
 
 allowed_current_work:
 
@@ -153,6 +154,14 @@ It adds draft/no approval rows and a validation gate that keeps implementation
 blocked while approval is draft/no. It does not create Pydantic models, approve
 contracts for implementation, change runtime behavior, add dependencies, or
 change provider/CLI/Core behavior.
+
+Task 050 tightens the documentation-only assistant envelope contract semantics.
+It adds closed draft assistant-envelope enums, exact text-first payload/content
+carrier rules, hybrid reference strategy, minimal stage summary and provider ref
+shapes, seed-only `policy_context`, candidate-only memory write hint semantics,
+and stricter validation. Contracts remain draft/no. It does not create Pydantic
+models, approve contracts, change runtime behavior, add dependencies, or change
+provider/CLI/Core behavior.
 
 next_allowed_work_after_task_032:
 
