@@ -126,6 +126,20 @@ runtime_ownership_gate:
 
   explicitly_forbidden_for_this_task:
 
+library_research_matrix_gate:
+
+  library_research_or_decision_record:
+
+  new_dependency_or_custom_infrastructure_proposed:
+
+  subsystem_specific_library_decision_record_required:
+
+  avoid_framework_library_owning_core_or_assistantturnruntime:
+
+  libraries_stay_behind_ports_adapters_runtimes:
+
+  thin_glue_only:
+
 ownership_boundary:
 
 single_ownership_boundary:

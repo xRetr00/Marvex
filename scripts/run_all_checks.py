@@ -16,6 +16,7 @@ CHECKS = [
     "check_assistant_turn_spine.py",
     "check_assistant_turn_contract_map.py",
     "check_runtime_ownership.py",
+    "check_library_research_matrix.py",
     "check_library_decisions.py",
     "check_schema_versions.py",
     "check_project_status.py",

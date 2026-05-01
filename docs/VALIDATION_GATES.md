@@ -161,6 +161,32 @@ This gate requires:
 The gate targets governance docs and task templates only. It does not implement
 runtime behavior.
 
+### Library Research Matrix Gate
+
+Future subsystem implementation requires a library decision record before custom
+code or new dependency.
+
+This gate requires:
+
+- `docs/LIBRARY_RESEARCH_MATRIX.md` exists.
+- `docs/LIBRARY_RESEARCH_MATRIX.md` states the current approved
+  provider-foundation posture: LiteLLM, OpenAI SDK, and Pydantic.
+- `docs/LIBRARY_RESEARCH_MATRIX.md` states that Task 045A expanded discovery
+  beyond the first shortlist.
+- `docs/LIBRARY_RESEARCH_MATRIX.md` references broad ecosystem discovery
+  sources such as `awesome-python`, `best-of-python`, `awesome-llm-apps`, an
+  awesome agent-framework list, and an MCP ecosystem/source list.
+- `docs/LIBRARY_RESEARCH_MATRIX.md` states that no framework or library may own
+  Core or AssistantTurnRuntime.
+- `docs/LIBRARY_RESEARCH_MATRIX.md` states libraries must stay behind
+  ports/adapters/runtimes.
+- `templates/TASK_SPEC.md` requires tasks proposing custom infrastructure or new
+  dependencies to name the library research or decision record.
+- `scripts/run_all_checks.py` runs the library research matrix gate.
+
+The gate targets governance docs and task templates only. It does not approve
+libraries, add dependencies, or inspect product runtime behavior.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

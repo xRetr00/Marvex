@@ -4,6 +4,11 @@ Marvex must avoid custom overcoding. If a mature, maintained, ready library exis
 
 Agents must verify current library choices in 2026 before recommending them. Use official documentation or maintained GitHub repositories only.
 
+The ecosystem-wide discovery posture is tracked in
+`docs/LIBRARY_RESEARCH_MATRIX.md`. That matrix is not an approval record; it
+identifies research candidates, adapter-only/pattern-only candidates, central
+runtime takeover risks, and future decision-record areas.
+
 ## Required Library Decision Fields
 
 Every dependency recommendation must include:

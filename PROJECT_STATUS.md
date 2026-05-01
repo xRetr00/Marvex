@@ -40,10 +40,11 @@ completed_governance_gates:
 - Task 042 Assistant Turn Spine Governance completed
 - Task 043B Assistant Turn Contract Map Governance completed
 - Task 044B Runtime Ownership Governance completed
+- Task 045B Library Research Matrix Governance completed
 
 current_governance_gate:
 
-Task 044B Runtime Ownership Governance
+Task 045B Library Research Matrix Governance
 
 allowed_current_work:
 
@@ -127,6 +128,13 @@ runtimes own domain selection/dispatch/lifecycle/execution, adapters own externa
 protocols, and ports remain minimal contracts only. It adds governance
 documentation and a validation gate only. It does not implement runtime code,
 contracts, dependencies, service placeholders, or product behavior.
+
+Task 045B persists the ecosystem-wide library research matrix from Task 045A.
+It records the current approved provider-foundation library posture, broader
+discovery sources, future decision-record areas, adapter-only/pattern-only
+candidates, no-framework-takeover rules, and thin-glue limits. It adds
+governance documentation and a validation gate only. It does not approve
+libraries, add dependencies, implement runtime code, or change product behavior.
 
 next_allowed_work_after_task_032:
 

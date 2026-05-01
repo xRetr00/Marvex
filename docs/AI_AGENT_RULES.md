@@ -18,6 +18,7 @@ The agent must identify:
 - Assistant Turn Spine fit for assistant-level work
 - Assistant Turn Contract Map input/output ownership and approval status
 - Runtime Ownership fit for runtime-related work
+- Library Research Matrix fit for custom infrastructure or dependency work
 - contract impact
 - ownership boundary
 - tests required
@@ -62,6 +63,8 @@ allowed files, or approved task boundary.
   the Assistant Turn Contract Map before implementation.
 - Runtime-related work must identify the owning runtime and pass the Runtime
   Ownership gate before implementation.
+- Work proposing custom infrastructure or new dependencies must name the relevant
+  library research or decision record from `docs/LIBRARY_RESEARCH_MATRIX.md`.
 - No implementation task without a real task spec file.
 - No task id as a substitute for a task spec.
 - No broad repository discovery without Context Pack approval.
@@ -131,6 +134,8 @@ The agent must stop and report instead of coding if:
 - the task requires a forbidden v1 module
 - the task would create a god object
 - the task requires custom SDK code while a maintained SDK may exist
+- the task proposes custom infrastructure or a new dependency without answering
+  the Library Research Matrix gate
 - the task edits unrelated files
 - the current task has uncommitted changes and the agent is asked to start another task
 - branch creation would be needed but the user has not approved creating a branch
