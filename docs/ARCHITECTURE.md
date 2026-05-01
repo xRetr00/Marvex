@@ -58,6 +58,11 @@ foundation/test path. Future assistant-level intent, tools, memory, voice,
 desktop, policy, UI, proactive behavior, and service runtime work must follow
 `docs/ASSISTANT_TURN_SPINE.md` and approved contracts before implementation.
 
+Runtime ownership is explicit: Core owns the assistant lifecycle envelope,
+AssistantTurnRuntime owns assistant stage dispatch, subsystem runtimes own domain
+selection/dispatch/lifecycle/execution, adapters own external protocols, and
+ports remain minimal contracts only.
+
 ## Service-Ready Modular Core
 
 Every future module must be designed as if it may later run in a separate process:

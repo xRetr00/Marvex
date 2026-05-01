@@ -48,6 +48,10 @@ These are provider-foundation responsibilities. Assistant-level lifecycle work
 requires an approved Assistant Turn Spine and approved assistant contracts before
 implementation.
 
+For future assistant runtime work, Core owns the assistant lifecycle envelope.
+AssistantTurnRuntime owns assistant stage dispatch. Core must not own assistant
+stage internals.
+
 Core does not own:
 
 - provider protocol details

@@ -17,6 +17,7 @@ The agent must identify:
 - Context Pack
 - Assistant Turn Spine fit for assistant-level work
 - Assistant Turn Contract Map input/output ownership and approval status
+- Runtime Ownership fit for runtime-related work
 - contract impact
 - ownership boundary
 - tests required
@@ -59,6 +60,8 @@ allowed files, or approved task boundary.
   implementation.
 - Assistant-level work must name input/output contracts and approval status from
   the Assistant Turn Contract Map before implementation.
+- Runtime-related work must identify the owning runtime and pass the Runtime
+  Ownership gate before implementation.
 - No implementation task without a real task spec file.
 - No task id as a substitute for a task spec.
 - No broad repository discovery without Context Pack approval.

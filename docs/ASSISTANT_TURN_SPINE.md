@@ -73,6 +73,10 @@ error envelopes, and final result assembly. Core must not own provider
 protocols, memory storage, tool execution, desktop capture, speech, UI rendering,
 or library-specific behavior.
 
+The accepted runtime ownership decision is documented in
+`docs/RUNTIME_OWNERSHIP.md`: Core owns the assistant lifecycle envelope, while
+AssistantTurnRuntime owns assistant stage dispatch.
+
 ## Stage Ownership Principles
 
 - CLI is a client boundary. It must not own intent, memory, tools, policy,

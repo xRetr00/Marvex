@@ -139,6 +139,28 @@ This gate requires:
 The gate targets governance docs and task templates only. It does not approve
 contracts and does not inspect runtime behavior.
 
+### Runtime Ownership Gate
+
+Core owns the assistant lifecycle envelope. AssistantTurnRuntime owns assistant
+stage dispatch. Subsystem runtimes own domain selection, dispatch, lifecycle, and
+execution.
+
+This gate requires:
+
+- `docs/RUNTIME_OWNERSHIP.md` exists.
+- `docs/RUNTIME_OWNERSHIP.md` states that Core owns lifecycle envelope, not
+  assistant stage internals.
+- `docs/RUNTIME_OWNERSHIP.md` states that AssistantTurnRuntime owns stage
+  dispatch, not subsystem internals.
+- `docs/RUNTIME_OWNERSHIP.md` states ProviderRuntime and ContextBuilder
+  forbidden responsibilities.
+- `templates/TASK_SPEC.md` requires runtime-related tasks to identify runtime
+  ownership.
+- `scripts/run_all_checks.py` runs the runtime ownership gate.
+
+The gate targets governance docs and task templates only. It does not implement
+runtime behavior.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

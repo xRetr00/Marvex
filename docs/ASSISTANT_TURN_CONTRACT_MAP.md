@@ -22,6 +22,10 @@ The provider turn is not the assistant turn.
 Assistant-level modules require Assistant Turn Spine alignment, approved
 contracts, runtime ownership clarity, and library research where relevant.
 
+Runtime ownership rules are defined in `docs/RUNTIME_OWNERSHIP.md`. Contracts
+must name the runtime that owns their dispatch and lifecycle before
+implementation.
+
 ## Existing Provider Foundation Contracts
 
 Approved provider-foundation contracts:

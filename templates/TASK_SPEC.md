@@ -92,6 +92,40 @@ assistant_turn_contract_map_gate:
 
   current_contract_is_provider_foundation_only:
 
+runtime_ownership_gate:
+
+  which_runtime_owns_this_work:
+
+  is_runtime_approved_for_implementation:
+
+  which_contract_owns_runtime_input:
+
+  which_contract_owns_runtime_output:
+
+  which_layer_owns_dispatch:
+
+  which_layer_owns_selection:
+
+  which_layer_owns_lifecycle:
+
+  which_layer_owns_failure_cancellation_behavior:
+
+  how_trace_id_is_propagated:
+
+  which_policy_checkpoints_apply:
+
+  which_maintained_library_sdk_or_repo_was_considered_before_custom_code:
+
+  avoid_expanding_core_into_god_object:
+
+  avoid_expanding_assistantturnruntime_into_subsystem_internals:
+
+  avoid_expanding_providerruntime_into_routing_session_history_fallback:
+
+  avoid_putting_memory_tool_policy_behavior_into_contextbuilder:
+
+  explicitly_forbidden_for_this_task:
+
 ownership_boundary:
 
 single_ownership_boundary:

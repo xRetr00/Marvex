@@ -39,10 +39,11 @@ completed_governance_gates:
 - Task 032 Agent Context Budget Validation Gate completed
 - Task 042 Assistant Turn Spine Governance completed
 - Task 043B Assistant Turn Contract Map Governance completed
+- Task 044B Runtime Ownership Governance completed
 
 current_governance_gate:
 
-Task 043B Assistant Turn Contract Map Governance
+Task 044B Runtime Ownership Governance
 
 allowed_current_work:
 
@@ -119,6 +120,13 @@ approved contracts are provider-foundation contracts, not assistant-turn
 contracts. It adds governance documentation and a validation gate only. It does
 not create Pydantic models, approve contracts, change runtime behavior, add
 dependencies, or implement assistant-level modules.
+
+Task 044B persists the runtime ownership decision that Core owns the assistant
+lifecycle envelope, AssistantTurnRuntime owns assistant stage dispatch, subsystem
+runtimes own domain selection/dispatch/lifecycle/execution, adapters own external
+protocols, and ports remain minimal contracts only. It adds governance
+documentation and a validation gate only. It does not implement runtime code,
+contracts, dependencies, service placeholders, or product behavior.
 
 next_allowed_work_after_task_032:
 
