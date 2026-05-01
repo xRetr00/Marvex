@@ -15,6 +15,7 @@ The agent must identify:
 - allowed files
 - forbidden files
 - Context Pack
+- Assistant Turn Spine fit for assistant-level work
 - contract impact
 - ownership boundary
 - tests required
@@ -52,6 +53,9 @@ allowed files, or approved task boundary.
 - No architecture changes during bug fixes.
 - No implementation before docs are accepted.
 - No feature before contract.
+- The provider turn is not the assistant turn.
+- Assistant-level work must answer the Assistant Turn Spine gate before
+  implementation.
 - No implementation task without a real task spec file.
 - No task id as a substitute for a task spec.
 - No broad repository discovery without Context Pack approval.
@@ -114,6 +118,9 @@ Final report must include:
 The agent must stop and report instead of coding if:
 
 - the task has no approved contract
+- the task mentions assistant-level intent, tools, memory, voice, desktop, UI,
+  proactive behavior, service runtime, HTTP/IPC, or telemetry persistence without
+  answering the Assistant Turn Spine gate
 - the task has no real task spec file
 - the task requires a forbidden v1 module
 - the task would create a god object

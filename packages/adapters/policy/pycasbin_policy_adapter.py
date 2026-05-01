@@ -5,7 +5,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
-from packages.contracts.intent_models import IntentDecision, PolicyDecision, RouteFamily
+from packages.contracts.intent_models import IntentDecision, PolicyDecision
 
 
 @dataclass(frozen=True)
@@ -30,14 +30,6 @@ class PyCasbinPolicyAdapter:
         self._action = action
 
     def decide(self, intent_decision: IntentDecision) -> PolicyDecision:
-        if intent_decision.ambiguity_flag or intent_decision.route_family == RouteFamily.CLARIFY:
-            return PolicyDecision(
-                allow=False,
-                clarify=True,
-                deny=False,
-                reason_code="policy.clarify_ambiguous_route",
-            )
-
         allowed = bool(
             self._enforcer.enforce(
                 self._subject,

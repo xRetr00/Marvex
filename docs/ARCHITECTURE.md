@@ -53,6 +53,11 @@ The Core Service owns turn orchestration only. It does not own provider-specific
 
 The Core talks through ports and stable JSON contracts.
 
+The provider turn is not the assistant turn. The current provider path is only a
+foundation/test path. Future assistant-level intent, tools, memory, voice,
+desktop, policy, UI, proactive behavior, and service runtime work must follow
+`docs/ASSISTANT_TURN_SPINE.md` and approved contracts before implementation.
+
 ## Service-Ready Modular Core
 
 Every future module must be designed as if it may later run in a separate process:
@@ -104,6 +109,14 @@ Tool ports must remain tiny:
 
 `Core -> ProviderPort -> ProviderRuntime/Factory -> LiteLLMAdapter / LMStudioResponsesAdapter / FakeProvider`
 
+## Decision Runtime Boundary
+
+Decision runtime owns decision pipeline wiring and execution helpers. CLI and
+Core must not import decision runtime modules directly for diagnostic behavior.
+Decision factories are composition helpers only: no dev components, payload
+shaping, routing behavior, validation behavior, policy behavior, or business
+decisions.
+
 ## Tool Architecture Path
 
 `Core -> ToolRegistryPort/ToolExecutorPort -> ToolRuntime/Dispatcher -> individual tool adapters`
@@ -126,4 +139,3 @@ Tool ports must remain tiny:
 - No tool execution in UI.
 - No features before contracts.
 - No custom SDKs when maintained libraries exist.
-

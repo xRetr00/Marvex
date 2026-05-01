@@ -8,6 +8,7 @@ The Core Service owns turn orchestration. It does not own every decision in the 
 - Core cannot import LM Studio directly.
 - Core cannot import tools directly.
 - Core cannot own provider-specific logic.
+- Core cannot treat the provider turn as the assistant turn.
 - Core only talks to ports and interfaces.
 - Ports are contracts only, never registries, routers, runtimes, or implementation containers.
 - `ProviderPort` must remain a minimal method contract and must not mention concrete providers.
@@ -43,6 +44,10 @@ Core owns:
 - final response normalization
 - trace lifecycle emission
 
+These are provider-foundation responsibilities. Assistant-level lifecycle work
+requires an approved Assistant Turn Spine and approved assistant contracts before
+implementation.
+
 Core does not own:
 
 - provider protocol details
@@ -53,4 +58,3 @@ Core does not own:
 - desktop context
 - proactive behavior
 - intent classification
-

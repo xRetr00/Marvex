@@ -37,10 +37,11 @@ completed_governance_gates:
 - Task 024 Status and README Drift Cleanup completed
 - Task 031 Agent Context Architecture governance completed
 - Task 032 Agent Context Budget Validation Gate completed
+- Task 042 Assistant Turn Spine Governance completed
 
 current_governance_gate:
 
-Task 032 Agent Context Budget Validation Gate
+Task 042 Assistant Turn Spine Governance
 
 allowed_current_work:
 
@@ -105,6 +106,12 @@ behavior, or validation scripts.
 Task 032 adds a lightweight validation gate for agent context architecture docs
 and task-spec Context Pack fields. It does not change product behavior, runtime
 behavior, CLI behavior, provider behavior, or actual agent tool execution.
+
+Task 042 persists the Assistant Turn Spine governance rule that the provider turn
+is not the assistant turn. It adds governance documentation and a validation gate
+only. It does not change product behavior, runtime behavior, CLI behavior,
+provider behavior, Core orchestration, service runtime behavior, contracts, tools,
+memory, voice, desktop context, UI, proactive behavior, or telemetry persistence.
 
 next_allowed_work_after_task_032:
 

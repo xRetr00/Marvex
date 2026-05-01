@@ -34,6 +34,7 @@ Before implementing custom code, check for maintained libraries for:
 - vector search if needed later
 - MCP support
 - STT and TTS wrappers if useful later
+- Assistant Turn Spine subsystems before custom implementation
 
 ## Library Rules
 

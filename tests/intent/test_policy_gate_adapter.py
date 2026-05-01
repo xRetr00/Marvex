@@ -40,19 +40,19 @@ def test_policy_allows_route_when_injected_enforcer_allows_capability() -> None:
     assert enforcer.calls == [("marvex", "direct_answer", "use")]
 
 
-def test_policy_clarifies_ambiguous_route_before_capability_check() -> None:
+def test_policy_does_not_own_route_ambiguity_decisions() -> None:
     enforcer = FakeEnforcer({"grounded_lookup"})
     adapter = PyCasbinPolicyAdapter(enforcer=enforcer)
 
     decision = adapter.decide(intent(RouteFamily.GROUNDED_LOOKUP, confidence=0.31, ambiguous=True))
 
     assert decision == PolicyDecision(
-        allow=False,
-        clarify=True,
+        allow=True,
+        clarify=False,
         deny=False,
-        reason_code="policy.clarify_ambiguous_route",
+        reason_code="policy.allowed",
     )
-    assert enforcer.calls == []
+    assert enforcer.calls == [("marvex", "grounded_lookup", "use")]
 
 
 def test_policy_denies_route_when_enforcer_rejects_capability() -> None:

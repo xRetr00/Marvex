@@ -102,6 +102,25 @@ The agent context architecture docs must remain present and discoverable.
 - `docs/AGENT_CONTEXT_RULES.md` must retain the core read-budget rules for no default full-repo scan, no broad `rg`, no repo-wide `rg --files` unless approved, justified large-file reads, and approval before widening scope.
 - This gate uses targeted phrase and field checks only. It does not inspect shell history or enforce actual agent tool usage.
 
+### Assistant Turn Spine Gate
+
+The provider turn is not the assistant turn. The current provider path is only a
+foundation/test path.
+
+This gate requires:
+
+- `docs/ASSISTANT_TURN_SPINE.md` exists.
+- `docs/ASSISTANT_TURN_SPINE.md` states that the provider turn is not the
+  assistant turn.
+- `docs/AI_AGENT_RULES.md` references the Assistant Turn Spine.
+- `templates/TASK_SPEC.md` includes Assistant Turn Spine gate questions.
+- Future implementation task specs that mention assistant-level tools, memory,
+  voice, desktop, proactive behavior, UI, HTTP/IPC, service runtime, or telemetry
+  persistence must also mention Assistant Turn Spine and contract approval.
+
+The gate is intentionally conservative. It targets task specs, templates, and
+governance docs, not historical reports.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

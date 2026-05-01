@@ -32,6 +32,54 @@ contract_impact:
 
 contract_approval_required:
 
+assistant_turn_spine_gate:
+
+  Assistant Turn Spine gate required for assistant-level work.
+
+  Provider Turn is not Assistant Turn.
+
+  This section must explain how the task avoids turning provider turn into assistant turn.
+
+  where_does_this_fit_in_assistant_turn_spine:
+
+  which contract owns its input:
+
+  which_contract_owns_input:
+
+  which contract owns its output:
+
+  which_contract_owns_output:
+
+  is_contract_approved_for_implementation:
+
+  which runtime owns dispatch:
+
+  which_runtime_owns_dispatch_selection_lifecycle_or_composition:
+
+  which_port_is_minimal_boundary:
+
+  which_adapter_owns_external_library_or_protocol_code:
+
+  which maintained library was considered:
+
+  which_maintained_library_sdk_or_repo_was_considered_before_custom_code:
+
+  if_custom_code_why_no_maintained_option_is_suitable:
+
+  how_this_avoids_turning_provider_turn_into_assistant_turn:
+
+  how_this_avoids_growing_TurnOrchestrator_into_god_object:
+
+  how_this_avoids_expanding_ProviderRuntime_into_routing_fallback_session_history:
+
+  how_this_preserves_future_process_separation:
+
+  how_trace_id_is_propagated:
+
+  where_policy_checks_are_enforced:
+
+  what_is_explicitly_forbidden:
+
 ownership_boundary:
 
 single_ownership_boundary:

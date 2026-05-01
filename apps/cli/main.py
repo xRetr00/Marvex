@@ -8,8 +8,6 @@ from uuid import uuid4
 
 from packages.contracts import Source, TurnInput
 from packages.core.orchestration import TurnOrchestrator
-from packages.decision_runtime.decision_pipeline_factory import run_dev_decision_pipeline
-from packages.decision_runtime.decision_preflight_factory import run_dev_turn_preflight
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -28,22 +26,12 @@ def main(argv: list[str] | None = None) -> int:
         return _run_health(json_output=args.json_output)
     if args.command == "version":
         return _run_version(json_output=args.json_output)
-    if args.command == "decision-dry-run":
-        return _run_decision_dry_run(args.user_input)
 
     _require_turn_args(parser, args)
     return _run_turn(args, parser)
 
 
-def _run_decision_dry_run(user_input: str) -> int:
-    print(json.dumps(run_dev_decision_pipeline(user_input), sort_keys=True))
-    return 0
-
-
 def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    if args.decision_preflight:
-        _print_decision_preflight(args.text, enabled=True)
-
     try:
         provider = create_provider(ProviderRuntimeConfig(provider_name=args.provider))
     except ValueError as exc:
@@ -70,15 +58,6 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         print(f"provider_response_id: {output.provider_response_id}")
     print(f"trace_id: {output.trace_id}")
     return 0
-
-
-def _print_decision_preflight(user_input: str, enabled: bool) -> None:
-    print(
-        json.dumps(
-            {"turn_preflight": run_dev_turn_preflight(user_input, enabled=enabled)},
-            sort_keys=True,
-        )
-    )
 
 
 def _run_health(*, json_output: bool) -> int:
@@ -149,15 +128,11 @@ def _build_parser() -> argparse.ArgumentParser:
     version_parser = subparsers.add_parser("version")
     version_parser.add_argument("--json", action="store_true", dest="json_output")
 
-    decision_parser = subparsers.add_parser("decision-dry-run")
-    decision_parser.add_argument("user_input")
-
     parser.add_argument("--text")
     parser.add_argument("--provider")
     parser.add_argument("--model")
     parser.add_argument("--instructions")
     parser.add_argument("--previous-response-id")
-    parser.add_argument("--decision-preflight", action="store_true")
     return parser
 
 

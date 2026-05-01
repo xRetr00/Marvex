@@ -8,6 +8,9 @@ Responsibility: Terminal request submission to Core for a single text turn, plus
 local process readiness health/version reporting from explicit in-memory
 runtime config.
 
+Decision diagnostics are not a CLI surface. The CLI must not import decision
+runtime or decision adapter modules.
+
 Forbidden responsibilities:
 
 - Core orchestration.

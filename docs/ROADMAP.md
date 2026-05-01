@@ -38,3 +38,7 @@ Only after contracts:
 ## Rule
 
 The roadmap is not permission to implement. Each phase requires `accepted_docs: true`, approved contracts, real task spec files, and validation.
+
+The provider turn is not the assistant turn. Future modules must pass the
+Assistant Turn Spine gate in `docs/ASSISTANT_TURN_SPINE.md` before
+implementation.

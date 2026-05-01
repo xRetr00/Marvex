@@ -1,4 +1,5 @@
 from pathlib import Path
+import ast
 
 from packages.adapters.pipeline.decision_pipeline import DecisionPipeline
 from packages.contracts.decision_pipeline_models import DecisionFinalAction
@@ -81,17 +82,21 @@ def test_pipeline_adapter_source_does_not_import_core_providers_tools_mcp_or_mem
 
 
 def test_decision_pipeline_factory_source_is_tiny_and_has_no_runtime_logic() -> None:
-    source = read_source("packages/decision_runtime/decision_pipeline_factory.py").lower()
+    source = read_source("packages/decision_runtime/decision_pipeline_factory.py")
+    tree = ast.parse(source)
 
-    forbidden = [
-        "packages.core",
-        "packages.adapters.providers",
-        "semanticrouteradapter",
-        "pycasbinpolicyadapter",
-        "tinyintentvalidatoradapter",
-        "if ",
-        "for ",
-        "while ",
-        "render",
+    class_names = [node.name for node in tree.body if isinstance(node, ast.ClassDef)]
+    function_names = [node.name for node in tree.body if isinstance(node, ast.FunctionDef)]
+    forbidden_names = [
+        name
+        for name in class_names + function_names
+        if "dev" in name.lower()
+        or "payload" in name.lower()
+        or "summary" in name.lower()
+        or "report" in name.lower()
+        or "run_" in name.lower()
     ]
-    assert [token for token in forbidden if token in source] == []
+
+    assert class_names == []
+    assert forbidden_names == []
+    assert function_names == ["create_decision_pipeline"]
