@@ -92,6 +92,18 @@ assistant_turn_contract_map_gate:
 
   current_contract_is_provider_foundation_only:
 
+assistant_turn_envelope_gate:
+
+  touches_provider_foundation_contracts:
+
+  touches_assistant_envelope_contracts:
+
+  assistant_envelope_contracts_named:
+
+  provider_contracts_not_repurposed:
+
+  assistant_contracts_wrap_or_reference_provider_contracts:
+
 runtime_ownership_gate:
 
   which_runtime_owns_this_work:

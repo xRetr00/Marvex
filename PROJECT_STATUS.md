@@ -41,10 +41,11 @@ completed_governance_gates:
 - Task 043B Assistant Turn Contract Map Governance completed
 - Task 044B Runtime Ownership Governance completed
 - Task 045B Library Research Matrix Governance completed
+- Task 046B Assistant Turn Envelope Governance completed
 
 current_governance_gate:
 
-Task 045B Library Research Matrix Governance
+Task 046B Assistant Turn Envelope Governance
 
 allowed_current_work:
 
@@ -135,6 +136,15 @@ discovery sources, future decision-record areas, adapter-only/pattern-only
 candidates, no-framework-takeover rules, and thin-glue limits. It adds
 governance documentation and a validation gate only. It does not approve
 libraries, add dependencies, implement runtime code, or change product behavior.
+
+Task 046B persists the smallest assistant turn envelope direction from Task 046.
+It records `InputEvent`, `AssistantTurnInput`, `AssistantTurnResult`, and
+`AssistantFinalResponse` as the planned assistant-level envelope above provider
+foundation. It protects `TurnInput`, `TurnOutput`, `FinalResponse`,
+`ProviderRequest`, and `ProviderResponse` from being silently repurposed as
+assistant-turn contracts. It adds governance documentation and a validation gate
+only. It does not create Pydantic models, approve contracts, implement runtime
+code, add dependencies, or change product behavior.
 
 next_allowed_work_after_task_032:
 

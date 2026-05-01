@@ -17,6 +17,7 @@ The agent must identify:
 - Context Pack
 - Assistant Turn Spine fit for assistant-level work
 - Assistant Turn Contract Map input/output ownership and approval status
+- Assistant Turn Envelope distinction for future assistant contract work
 - Runtime Ownership fit for runtime-related work
 - Library Research Matrix fit for custom infrastructure or dependency work
 - contract impact
@@ -61,6 +62,9 @@ allowed files, or approved task boundary.
   implementation.
 - Assistant-level work must name input/output contracts and approval status from
   the Assistant Turn Contract Map before implementation.
+- Assistant contract work must distinguish provider-foundation contracts from
+  assistant-envelope contracts and must not repurpose `TurnInput`, `TurnOutput`,
+  or `FinalResponse` as assistant-turn contracts.
 - Runtime-related work must identify the owning runtime and pass the Runtime
   Ownership gate before implementation.
 - Work proposing custom infrastructure or new dependencies must name the relevant

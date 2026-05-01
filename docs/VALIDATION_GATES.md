@@ -139,6 +139,31 @@ This gate requires:
 The gate targets governance docs and task templates only. It does not approve
 contracts and does not inspect runtime behavior.
 
+### Assistant Turn Envelope Gate
+
+The smallest assistant-level envelope is `InputEvent`, `AssistantTurnInput`,
+`AssistantTurnResult`, and `AssistantFinalResponse`.
+
+This gate requires:
+
+- `docs/ASSISTANT_TURN_ENVELOPE.md` exists.
+- `docs/ASSISTANT_TURN_ENVELOPE.md` states that `TurnInput, TurnOutput, and FinalResponse must not be silently repurposed` as assistant-turn contracts.
+- `docs/ASSISTANT_TURN_ENVELOPE.md` states provider contracts remain
+  provider-foundation scoped.
+- `docs/ASSISTANT_TURN_ENVELOPE.md` states assistant-level contracts must wrap
+  or reference provider-foundation contracts, not mutate them into assistant
+  contracts.
+- `docs/ASSISTANT_TURN_ENVELOPE.md` includes anti-escape-hatch rules for
+  `TurnInput.metadata`, `ProviderRequest.provider_options`,
+  `ProviderResponse.raw_metadata`, CLI args, and `TraceEvent.data`.
+- `templates/TASK_SPEC.md` requires future assistant contract tasks to identify
+  whether work touches provider-foundation contracts or assistant-envelope
+  contracts.
+- `scripts/run_all_checks.py` runs the assistant turn envelope gate.
+
+The gate targets governance docs and task templates only. It does not implement
+contracts, approve contracts, or inspect runtime behavior.
+
 ### Runtime Ownership Gate
 
 Core owns the assistant lifecycle envelope. AssistantTurnRuntime owns assistant

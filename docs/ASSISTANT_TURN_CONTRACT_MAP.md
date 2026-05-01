@@ -26,6 +26,12 @@ Runtime ownership rules are defined in `docs/RUNTIME_OWNERSHIP.md`. Contracts
 must name the runtime that owns their dispatch and lifecycle before
 implementation.
 
+The smallest assistant-level envelope direction is documented in
+`docs/ASSISTANT_TURN_ENVELOPE.md`: `InputEvent`, `AssistantTurnInput`,
+`AssistantTurnResult`, and `AssistantFinalResponse` sit above provider
+foundation and must wrap or reference provider-foundation contracts rather than
+repurposing them.
+
 ## Existing Provider Foundation Contracts
 
 Approved provider-foundation contracts:

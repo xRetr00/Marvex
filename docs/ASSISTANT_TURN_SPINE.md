@@ -120,6 +120,10 @@ turn contract replaces or wraps them.
 See `docs/ASSISTANT_TURN_CONTRACT_MAP.md` for the governance map that protects
 provider-foundation contracts from becoming assistant-turn shortcuts.
 
+See `docs/ASSISTANT_TURN_ENVELOPE.md` for the smallest planned assistant-level
+envelope above provider foundation: `InputEvent`, `AssistantTurnInput`,
+`AssistantTurnResult`, and `AssistantFinalResponse`.
+
 ## Library Research Zones
 
 Before custom implementation, future tasks must research maintained libraries,

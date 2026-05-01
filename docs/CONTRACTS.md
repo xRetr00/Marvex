@@ -8,6 +8,8 @@ Current approved contracts are provider-foundation contracts, not assistant-turn
 contracts. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and
 `FinalResponse` must not be silently repurposed as full assistant-turn contracts.
 Assistant-level contract planning lives in `docs/ASSISTANT_TURN_CONTRACT_MAP.md`.
+The smallest planned assistant envelope lives in
+`docs/ASSISTANT_TURN_ENVELOPE.md`.
 
 ## General Validation Rules
 
