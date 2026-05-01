@@ -164,6 +164,26 @@ This gate requires:
 The gate targets governance docs and task templates only. It does not implement
 contracts, approve contracts, or inspect runtime behavior.
 
+### Assistant Turn Contract Drafts Gate
+
+Draft assistant-envelope contracts must remain documentation-only until approved.
+
+This gate requires:
+
+- `docs/ASSISTANT_TURN_CONTRACTS.md` documents `InputEvent`,
+  `AssistantTurnInput`, `AssistantTurnResult`, and `AssistantFinalResponse`.
+- Each draft contract lists required fields and a small JSON example.
+- `docs/CONTRACT_APPROVALS.md` lists the four assistant-envelope contracts as
+  draft/no only.
+- Implementation is blocked while approval rows are `draft` and
+  `implementation_allowed: no`.
+- Provider-foundation contracts are not silently reclassified as assistant
+  contracts.
+- `scripts/run_all_checks.py` runs the assistant turn contract drafts gate.
+
+The gate targets documentation and approval rows only. It does not implement
+Pydantic models, approve contracts, or inspect runtime behavior.
+
 ### Runtime Ownership Gate
 
 Core owns the assistant lifecycle envelope. AssistantTurnRuntime owns assistant

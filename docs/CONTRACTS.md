@@ -10,6 +10,7 @@ contracts. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and
 Assistant-level contract planning lives in `docs/ASSISTANT_TURN_CONTRACT_MAP.md`.
 The smallest planned assistant envelope lives in
 `docs/ASSISTANT_TURN_ENVELOPE.md`.
+Draft assistant envelope schemas live in `docs/ASSISTANT_TURN_CONTRACTS.md`.
 
 ## General Validation Rules
 

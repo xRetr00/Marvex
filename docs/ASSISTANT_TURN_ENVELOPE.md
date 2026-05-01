@@ -21,6 +21,9 @@ The smallest assistant-level envelope is:
 These are planning-level contract families. This document does not implement
 Pydantic models, approve contracts, or change runtime behavior.
 
+Draft schema documentation for these families lives in
+`docs/ASSISTANT_TURN_CONTRACTS.md`.
+
 ## Direct Rule
 
 The provider turn is not the assistant turn.

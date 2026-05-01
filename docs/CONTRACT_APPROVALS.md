@@ -8,6 +8,10 @@ The current approved contracts are provider-foundation contracts, not
 assistant-turn contracts. Task 043B does not approve any assistant-level
 contracts.
 
+Draft assistant-envelope contracts may be listed here with
+`approval_status: draft` and `implementation_allowed: no`. That listing is
+documentation only and does not approve implementation.
+
 ## Approval Fields
 
 - `contract_name`: Stable contract or service contract name.
@@ -30,6 +34,10 @@ contracts.
 | ErrorEnvelope | 0.1.1-draft | approved | user | 2026-04-24 | yes |
 | HealthCheck | 0.1.1-draft | approved | user | 2026-04-24 | yes |
 | VersionInfo | 0.1.1-draft | approved | user | 2026-04-24 | yes |
+| InputEvent | 0.1.1-draft | draft | none | none | no |
+| AssistantTurnInput | 0.1.1-draft | draft | none | none | no |
+| AssistantTurnResult | 0.1.1-draft | draft | none | none | no |
+| AssistantFinalResponse | 0.1.1-draft | draft | none | none | no |
 | CoreService | 0.1.1-draft | draft | none | none | no |
 | ProviderWorker | 0.1.1-draft | draft | none | none | no |
 | ToolWorker | 0.1.1-draft | draft | none | none | no |

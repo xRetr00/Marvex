@@ -42,10 +42,11 @@ completed_governance_gates:
 - Task 044B Runtime Ownership Governance completed
 - Task 045B Library Research Matrix Governance completed
 - Task 046B Assistant Turn Envelope Governance completed
+- Task 047 Assistant Turn Envelope Schema Draft completed
 
 current_governance_gate:
 
-Task 046B Assistant Turn Envelope Governance
+Task 047 Assistant Turn Envelope Schema Draft
 
 allowed_current_work:
 
@@ -145,6 +146,13 @@ foundation. It protects `TurnInput`, `TurnOutput`, `FinalResponse`,
 assistant-turn contracts. It adds governance documentation and a validation gate
 only. It does not create Pydantic models, approve contracts, implement runtime
 code, add dependencies, or change product behavior.
+
+Task 047 drafts documentation-only schemas for `InputEvent`,
+`AssistantTurnInput`, `AssistantTurnResult`, and `AssistantFinalResponse`.
+It adds draft/no approval rows and a validation gate that keeps implementation
+blocked while approval is draft/no. It does not create Pydantic models, approve
+contracts for implementation, change runtime behavior, add dependencies, or
+change provider/CLI/Core behavior.
 
 next_allowed_work_after_task_032:
 
