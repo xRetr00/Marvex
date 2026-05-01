@@ -4,6 +4,11 @@ All contracts are JSON-compatible. Product code must not invent private shapes f
 
 Contracts are implementation-draft until approved in `docs/CONTRACT_APPROVALS.md`.
 
+Current approved contracts are provider-foundation contracts, not assistant-turn
+contracts. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and
+`FinalResponse` must not be silently repurposed as full assistant-turn contracts.
+Assistant-level contract planning lives in `docs/ASSISTANT_TURN_CONTRACT_MAP.md`.
+
 ## General Validation Rules
 
 - `schema_version`, `trace_id`, and `turn_id` are required wherever listed.

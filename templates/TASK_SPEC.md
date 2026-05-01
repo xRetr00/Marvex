@@ -80,6 +80,18 @@ assistant_turn_spine_gate:
 
   what_is_explicitly_forbidden:
 
+assistant_turn_contract_map_gate:
+
+  input_output_contracts_named:
+
+  contract_approval_status_identified:
+
+  provider_foundation_contracts_not_repurposed:
+
+  assistant_level_contract_family_required:
+
+  current_contract_is_provider_foundation_only:
+
 ownership_boundary:
 
 single_ownership_boundary:

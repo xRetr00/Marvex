@@ -4,6 +4,10 @@ This registry controls whether a documented contract may be used for implementat
 
 `docs/CONTRACTS.md` describes intended contract shapes. A contract is not implementation-approved until this registry says `approval_status: approved` and `implementation_allowed: yes`.
 
+The current approved contracts are provider-foundation contracts, not
+assistant-turn contracts. Task 043B does not approve any assistant-level
+contracts.
+
 ## Approval Fields
 
 - `contract_name`: Stable contract or service contract name.

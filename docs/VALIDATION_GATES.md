@@ -121,6 +121,24 @@ This gate requires:
 The gate is intentionally conservative. It targets task specs, templates, and
 governance docs, not historical reports.
 
+### Assistant Turn Contract Map Gate
+
+Current approved contracts are provider-foundation contracts, not assistant-turn contracts.
+
+This gate requires:
+
+- `docs/ASSISTANT_TURN_CONTRACT_MAP.md` exists.
+- The contract map states that provider-foundation contracts must not be silently
+  repurposed as assistant-turn contracts.
+- The contract map lists required assistant-level contract families before
+  implementation.
+- `templates/TASK_SPEC.md` requires assistant-level implementation tasks to name
+  input/output contracts and approval status.
+- `scripts/run_all_checks.py` runs the contract map gate.
+
+The gate targets governance docs and task templates only. It does not approve
+contracts and does not inspect runtime behavior.
+
 ### Task Spec Gate
 
 Every implementation task requires a real task spec file. A task id alone is not sufficient.

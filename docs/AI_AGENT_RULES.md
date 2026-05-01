@@ -16,6 +16,7 @@ The agent must identify:
 - forbidden files
 - Context Pack
 - Assistant Turn Spine fit for assistant-level work
+- Assistant Turn Contract Map input/output ownership and approval status
 - contract impact
 - ownership boundary
 - tests required
@@ -56,6 +57,8 @@ allowed files, or approved task boundary.
 - The provider turn is not the assistant turn.
 - Assistant-level work must answer the Assistant Turn Spine gate before
   implementation.
+- Assistant-level work must name input/output contracts and approval status from
+  the Assistant Turn Contract Map before implementation.
 - No implementation task without a real task spec file.
 - No task id as a substitute for a task spec.
 - No broad repository discovery without Context Pack approval.

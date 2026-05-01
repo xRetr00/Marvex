@@ -38,10 +38,11 @@ completed_governance_gates:
 - Task 031 Agent Context Architecture governance completed
 - Task 032 Agent Context Budget Validation Gate completed
 - Task 042 Assistant Turn Spine Governance completed
+- Task 043B Assistant Turn Contract Map Governance completed
 
 current_governance_gate:
 
-Task 042 Assistant Turn Spine Governance
+Task 043B Assistant Turn Contract Map Governance
 
 allowed_current_work:
 
@@ -112,6 +113,12 @@ is not the assistant turn. It adds governance documentation and a validation gat
 only. It does not change product behavior, runtime behavior, CLI behavior,
 provider behavior, Core orchestration, service runtime behavior, contracts, tools,
 memory, voice, desktop context, UI, proactive behavior, or telemetry persistence.
+
+Task 043B persists the Assistant Turn Contract Map governance rule that current
+approved contracts are provider-foundation contracts, not assistant-turn
+contracts. It adds governance documentation and a validation gate only. It does
+not create Pydantic models, approve contracts, change runtime behavior, add
+dependencies, or implement assistant-level modules.
 
 next_allowed_work_after_task_032:
 

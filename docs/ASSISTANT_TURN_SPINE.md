@@ -113,6 +113,9 @@ modules. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and
 `FinalResponse` remain provider-foundation contracts until an approved assistant
 turn contract replaces or wraps them.
 
+See `docs/ASSISTANT_TURN_CONTRACT_MAP.md` for the governance map that protects
+provider-foundation contracts from becoming assistant-turn shortcuts.
+
 ## Library Research Zones
 
 Before custom implementation, future tasks must research maintained libraries,
