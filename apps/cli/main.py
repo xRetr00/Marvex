@@ -40,6 +40,9 @@ def _run_decision_dry_run(user_input: str) -> int:
 
 
 def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
+    if args.decision_preflight:
+        _print_decision_preflight(args.text)
+
     try:
         provider = create_provider(ProviderRuntimeConfig(provider_name=args.provider))
     except ValueError as exc:
@@ -66,6 +69,15 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         print(f"provider_response_id: {output.provider_response_id}")
     print(f"trace_id: {output.trace_id}")
     return 0
+
+
+def _print_decision_preflight(user_input: str) -> None:
+    print(
+        json.dumps(
+            {"decision_preflight": run_dev_decision_pipeline(user_input)},
+            sort_keys=True,
+        )
+    )
 
 
 def _run_health(*, json_output: bool) -> int:
@@ -144,6 +156,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--instructions")
     parser.add_argument("--previous-response-id")
+    parser.add_argument("--decision-preflight", action="store_true")
     return parser
 
 
