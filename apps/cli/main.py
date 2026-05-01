@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from datetime import UTC, datetime
 from uuid import uuid4
 
 from packages.contracts import Source, TurnInput
 from packages.core.orchestration import TurnOrchestrator
+from packages.decision_runtime.decision_pipeline_factory import run_dev_decision_pipeline
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -25,9 +27,16 @@ def main(argv: list[str] | None = None) -> int:
         return _run_health(json_output=args.json_output)
     if args.command == "version":
         return _run_version(json_output=args.json_output)
+    if args.command == "decision-dry-run":
+        return _run_decision_dry_run(args.user_input)
 
     _require_turn_args(parser, args)
     return _run_turn(args, parser)
+
+
+def _run_decision_dry_run(user_input: str) -> int:
+    print(json.dumps(run_dev_decision_pipeline(user_input), sort_keys=True))
+    return 0
 
 
 def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
@@ -126,6 +135,9 @@ def _build_parser() -> argparse.ArgumentParser:
 
     version_parser = subparsers.add_parser("version")
     version_parser.add_argument("--json", action="store_true", dest="json_output")
+
+    decision_parser = subparsers.add_parser("decision-dry-run")
+    decision_parser.add_argument("user_input")
 
     parser.add_argument("--text")
     parser.add_argument("--provider")
