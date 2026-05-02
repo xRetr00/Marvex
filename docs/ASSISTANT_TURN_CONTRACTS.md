@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This document drafts the first assistant-level envelope contracts above the
+This document defines the approved first assistant-level envelope contracts above the
 provider foundation:
 
 - `InputEvent`
@@ -10,11 +10,11 @@ provider foundation:
 - `AssistantTurnResult`
 - `AssistantFinalResponse`
 
-These contracts are draft documentation only.
+These contracts are approved documentation contracts for future implementation.
 
-Do not create Pydantic models from this document until contracts are approved.
+Pydantic contract models for these contracts live in `packages/contracts/models.py`.
 
-File size justification: this draft keeps the four assistant envelope contracts,
+File size justification: this document keeps the four assistant envelope contracts,
 their shared reference shapes, examples, and implementation block together so
 approval reviewers can evaluate cross-contract semantics in one place.
 
@@ -24,10 +24,10 @@ The provider turn is not the assistant turn.
 
 The provider path is only a foundation/test path.
 
-These draft contracts are not implementation-approved. They cannot be used by
-runtime code, Core, CLI, ProviderRuntime, adapters, services, or tests as active
-models until `docs/CONTRACT_APPROVALS.md` marks them `approved` with
-`implementation_allowed: yes`.
+These contracts are approved for future implementation by
+`docs/CONTRACT_APPROVALS.md`.
+
+This document does not implement them, create Pydantic models, or change runtime behavior.
 
 No assistant data may be hidden in provider-foundation extension fields.
 
@@ -51,7 +51,7 @@ Provider-foundation contracts must not be silently reclassified as assistant
 contracts. Assistant-level contracts may wrap or reference provider-foundation
 contracts, but must not mutate them into assistant contracts.
 
-## Draft Common Rules
+## Contract Common Rules
 
 - All objects are JSON-compatible.
 - `schema_version` is required and non-empty.
@@ -65,7 +65,7 @@ contracts, but must not mutate them into assistant contracts.
 - Id fields must be non-empty strings.
 - Examples use active schema version `0.1.1-draft`.
 
-## Draft Assistant Envelope Enums
+## Assistant Envelope Enums
 
 These are assistant-envelope enums, not provider-foundation enums.
 
@@ -76,8 +76,8 @@ These are assistant-envelope enums, not provider-foundation enums.
 - output_channel_intent: `default`, `display`, `speech`, `both`.
 - finish_reason: `stop`, `length`, `cancelled`, `error`, `unknown`.
 
-These values are closed for this draft. Expanding any enum requires contract
-review before implementation approval.
+These values are closed for the approved assistant envelope contracts. Expanding
+any enum requires contract review before implementation.
 
 ## Reference Strategy
 
@@ -182,13 +182,15 @@ Rules:
 These reference shapes are minimal. They do not approve the referenced contract
 families for implementation.
 
-## Draft Schema Version Policy
+## Assistant Envelope Schema Version Policy
 
-Assistant envelope draft contracts continue to use `0.1.1-draft` for documentation and examples only.
+Approved assistant envelope contracts use `0.1.1-draft` for documentation,
+examples, and approval rows.
 
-A distinct assistant envelope schema version may be required before implementation approval.
+A distinct assistant envelope schema version may be required before future
+breaking contract changes.
 
-No schema version split is approved by this draft.
+No schema version split is approved by these contracts.
 
 ## InputEvent
 
@@ -200,12 +202,12 @@ Fields:
 - `schema_version`: string, required, non-empty.
 - `trace_id`: string, required, non-empty.
 - `event_id`: string, required, non-empty.
-- `source`: assistant-envelope enum, required. Allowed draft values: `cli`, `shell`, `voice`, `desktop`, `proactive`, `system`.
-- `input_modality`: assistant-envelope enum, required. Allowed draft values: `text`, `speech`, `desktop_event`, `system_event`.
-- `payload`: object or null, required, nullable. For first approval, the only allowed object shape is the minimal normalized text payload.
+- `source`: assistant-envelope enum, required. Allowed values: `cli`, `shell`, `voice`, `desktop`, `proactive`, `system`.
+- `input_modality`: assistant-envelope enum, required. Allowed values: `text`, `speech`, `desktop_event`, `system_event`.
+- `payload`: object or null, required, nullable. For this approved envelope, the only allowed object shape is the minimal normalized text payload.
 - `payload_ref`: payload_ref object or null, required, nullable. References normalized payload content and must not point to arbitrary provider content.
 - `session_ref`: session_ref object or null, required, nullable. References future session state without embedding session body.
-- `privacy`: object, required, may be empty. Local classification metadata only.
+- `privacy`: object, required. Minimal local classification object with required keys `sensitivity` and `redaction_needed`.
 - `timestamp`: string, required, ISO 8601 UTC.
 - `metadata`: object, required, may be empty.
 
@@ -218,13 +220,13 @@ Minimal normalized text payload:
 }
 ```
 
-Draft rules:
+Contract rules:
 
 - The payload and payload_ref relationship is explicit.
 - Exactly one of `payload` or `payload_ref` must be non-null.
 - Both null is invalid.
-- Both present is invalid for first approval.
-- `payload` is allowed only as a minimal normalized text payload for first approval.
+- Both present is invalid for this approved envelope.
+- `payload` is allowed only as a minimal normalized text payload for this approved envelope.
 - Raw UI trees, raw audio, screenshots, desktop captures, binary blobs, provider requests, provider responses, and encoded JSON strings are forbidden in `payload`.
 - `payload_ref` must not point to arbitrary provider content.
 - `InputEvent` must not be a raw unnormalized UI/voice/blob dump.
@@ -233,9 +235,9 @@ Draft rules:
 Privacy rules:
 
 - `privacy` is local classification metadata only.
-- Minimal shape: `sensitivity` and `redaction_needed`.
+- Required keys: `sensitivity`, `redaction_needed`.
 - sensitivity: `normal`, `sensitive`, `secret`.
-- Allowed: sensitivity classification, redaction-needed boolean, and local handling notes.
+- redaction_needed: boolean.
 - Policy decisions, access grants, permission results, identity/profile data, and redaction results are forbidden in `privacy`.
 
 Example:
@@ -255,8 +257,7 @@ Example:
   "session_ref": null,
   "privacy": {
     "sensitivity": "normal",
-    "redaction_needed": false,
-    "handling_notes": null
+    "redaction_needed": false
   },
   "timestamp": "2026-05-01T12:00:00Z",
   "metadata": {}
@@ -276,11 +277,11 @@ Fields:
 - `session_ref`: session_ref object or null, required, nullable. Reference only; no session body.
 - `identity_ref`: identity_ref object or null, required, nullable. Reference only; no identity/profile body.
 - `user_visible_input`: string or null, required, nullable.
-- `assistant_mode`: assistant-envelope enum, required. Allowed draft values: `default`, `diagnostic`.
-- `policy_context`: object, required, may be empty. Seed-only inputs to PolicyRuntime.
+- `assistant_mode`: assistant-envelope enum, required. Allowed values: `default`, `diagnostic`.
+- `policy_context`: object, required. Minimal seed object with required keys `requested_capabilities` and `sensitivity`.
 - `metadata`: object, required, may be empty.
 
-Draft rules:
+Contract rules:
 
 - Must not alias TurnInput.
 - Provider-foundation turn compatibility, if needed later, must use explicit fields or references approved for that purpose, not metadata.
@@ -293,9 +294,10 @@ Draft rules:
 Policy context rules:
 
 - `policy_context` is seed-only.
-- Minimal shape: `requested_capabilities` and `sensitivity`.
-- Allowed: requested capability labels, sensitivity hints, local context classification, and other non-decision inputs to PolicyRuntime.
+- Required keys: `requested_capabilities`, `sensitivity`.
+- Allowed: requested capability labels, sensitivity hints, and other non-decision inputs to PolicyRuntime.
 - Requested capabilities are labels only.
+- sensitivity uses the same values as `privacy`: `normal`, `sensitive`, `secret`.
 - Policy allow/deny results, permission grants, tool scopes, memory write approval, policy engine output, and identity/session bodies are forbidden in `policy_context`.
 
 Example:
@@ -312,8 +314,7 @@ Example:
   "assistant_mode": "default",
   "policy_context": {
     "requested_capabilities": [],
-    "sensitivity": "normal",
-    "local_context_classification": "none"
+    "sensitivity": "normal"
   },
   "metadata": {}
 }
@@ -362,7 +363,8 @@ Minimal `provider_turn_refs` item shape:
 
 ```json
 {
-  "turn_ref": "provider-turn-001",
+  "ref_type": "provider_turn",
+  "ref_id": "provider-turn-001",
   "stage_name": "provider_reasoning",
   "provider_name": "fake",
   "status": "completed",
@@ -372,7 +374,7 @@ Minimal `provider_turn_refs` item shape:
 
 Rules for `provider_turn_refs`:
 
-- status values: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.
+- Provider refs use the same closed status values as stage summaries: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.
 - No embedded `ProviderRequest`.
 - No embedded `ProviderResponse`.
 - No central `provider_response_id`.
@@ -466,7 +468,8 @@ Example: successful result with provider ref:
   ],
   "provider_turn_refs": [
     {
-      "turn_ref": "provider-turn-001",
+      "ref_type": "provider_turn",
+      "ref_id": "provider-turn-001",
       "stage_name": "provider_reasoning",
       "provider_name": "fake",
       "status": "completed",
@@ -525,24 +528,24 @@ Purpose: User-facing assistant response independent of provider response shape.
 Fields:
 
 - `schema_version`: string, required, non-empty.
-- `response_type`: assistant-envelope enum, required. Allowed draft values: `text`, `error`, `payload_ref`.
+- `response_type`: assistant-envelope enum, required. Allowed values: `text`, `error`, `payload_ref`.
 - `text`: string or null, required, nullable.
 - `payload_ref`: payload_ref object or null, required, nullable.
-- `output_channel_intent`: assistant-envelope enum, required. Allowed draft values: `default`, `display`, `speech`, `both`.
+- `output_channel_intent`: assistant-envelope enum, required. Allowed values: `default`, `display`, `speech`, `both`.
 - `safe_for_display`: boolean, required.
 - `safe_for_speech`: boolean, required.
 - `memory_write_candidate_hint`: boolean, required.
-- `finish_reason`: assistant-envelope enum, required. Allowed draft values: `stop`, `length`, `cancelled`, `error`, `unknown`.
+- `finish_reason`: assistant-envelope enum, required. Allowed values: `stop`, `length`, `cancelled`, `error`, `unknown`.
 - `metadata`: object, required, may be empty.
 
-Draft rules:
+Contract rules:
 
 - `AssistantFinalResponse` may wrap the current `FinalResponse` conceptually, but must not become an alias for FinalResponse.
 - Text-first behavior is supported without blocking future payload-ref output.
 - TTS/UI details must not be provider-response fields.
 - For `response_type=text`, `text` must be non-null and `payload_ref` must be null.
 - For `response_type=payload_ref`, `payload_ref` must be non-null.
-- For `response_type=error`, `text` must contain user-safe error text in this draft.
+- For `response_type=error`, `text` must contain user-safe error text.
 - Non-error responses require at least one content carrier.
 - `output_channel_intent` is intent only, not dispatch.
 - OutputRuntime owns actual dispatch later.
@@ -586,17 +589,17 @@ Example: error response:
 }
 ```
 
-## Implementation Block
+## Implementation Boundary
 
-These four contracts remain draft-only until a future approval task explicitly
-changes `docs/CONTRACT_APPROVALS.md`.
+These four contracts are approved in `docs/CONTRACT_APPROVALS.md` for future
+implementation.
 
-Implementation remains blocked while approval status is `draft` and
-`implementation_allowed` is `no`.
+This contract model implementation does not add runtime behavior.
 
-Forbidden until approval:
+Future runtime integration still requires a separate approved implementation task.
 
-- Pydantic models for these contracts
+Forbidden outside a separate approved runtime task:
+
 - Core orchestration changes using these contracts
 - AssistantTurnRuntime implementation
 - provider behavior changes

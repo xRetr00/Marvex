@@ -53,3 +53,60 @@ class ErrorCode(str, Enum):
     TELEMETRY_WRITE_FAILED = "TELEMETRY_WRITE_FAILED"
     SERVICE_UNHEALTHY = "SERVICE_UNHEALTHY"
     INTERNAL_ERROR = "INTERNAL_ERROR"
+
+
+class AssistantInputSource(str, Enum):
+    CLI = "cli"
+    SHELL = "shell"
+    VOICE = "voice"
+    DESKTOP = "desktop"
+    PROACTIVE = "proactive"
+    SYSTEM = "system"
+
+
+class InputModality(str, Enum):
+    TEXT = "text"
+    SPEECH = "speech"
+    DESKTOP_EVENT = "desktop_event"
+    SYSTEM_EVENT = "system_event"
+
+
+class AssistantMode(str, Enum):
+    DEFAULT = "default"
+    DIAGNOSTIC = "diagnostic"
+
+
+class AssistantResponseType(str, Enum):
+    TEXT = "text"
+    ERROR = "error"
+    PAYLOAD_REF = "payload_ref"
+
+
+class OutputChannelIntent(str, Enum):
+    DEFAULT = "default"
+    DISPLAY = "display"
+    SPEECH = "speech"
+    BOTH = "both"
+
+
+class AssistantFinishReason(str, Enum):
+    STOP = "stop"
+    LENGTH = "length"
+    CANCELLED = "cancelled"
+    ERROR = "error"
+    UNKNOWN = "unknown"
+
+
+class StageStatus(str, Enum):
+    PENDING = "pending"
+    SKIPPED = "skipped"
+    COMPLETED = "completed"
+    DEGRADED = "degraded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class Sensitivity(str, Enum):
+    NORMAL = "normal"
+    SENSITIVE = "sensitive"
+    SECRET = "secret"

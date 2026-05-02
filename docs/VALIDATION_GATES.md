@@ -164,38 +164,44 @@ This gate requires:
 The gate targets governance docs and task templates only. It does not implement
 contracts, approve contracts, or inspect runtime behavior.
 
-### Assistant Turn Contract Drafts Gate
+### Assistant Turn Contract Approval Gate
 
-Draft assistant-envelope contracts must remain documentation-only until approved.
+Approved assistant-envelope contracts must remain governed separately from
+runtime behavior after the explicit model implementation task creates contract
+models.
 
 This gate requires:
 
 - `docs/ASSISTANT_TURN_CONTRACTS.md` documents `InputEvent`,
   `AssistantTurnInput`, `AssistantTurnResult`, and `AssistantFinalResponse`.
-- Each draft contract lists required fields and a small JSON example.
+- Each approved contract lists required fields and a small JSON example.
 - `docs/CONTRACT_APPROVALS.md` lists the four assistant-envelope contracts as
-  draft/no only.
-- Draft docs include closed assistant-envelope enum values, exact
+  approved/yes with approver `user` and approval date `2026-05-01`.
+- Contract docs include closed assistant-envelope enum values, exact
   `payload`/`payload_ref` carrier rules, seed-only `policy_context`, minimal
   stage summary shape, provider-reference constraints, and candidate-only memory
   write wording.
-- Draft docs include concrete reference formats for payload, session, identity,
+- Contract docs include concrete reference formats for payload, session, identity,
   provider turn, tool result, memory result, output event, and session result
   references.
-- Draft docs include minimal nested shapes for `privacy` and `policy_context`
+- Contract docs include minimal nested shapes for `privacy` and `policy_context`
   and closed status values for stage/provider summaries.
+- Contract docs require `privacy` and `policy_context` minimal keys, and provider
+  turn refs must use the typed `ref_type` / `ref_id` reference strategy.
 - The gate parses fenced JSON examples in `docs/ASSISTANT_TURN_CONTRACTS.md`
   and fails on invalid JSON.
-- The gate checks that implementation files do not define assistant envelope
-  contract classes while approval remains draft/no.
-- Implementation is blocked while approval rows are `draft` and
-  `implementation_allowed: no`.
+- The gate checks that `packages/contracts/models.py` defines the four
+  assistant envelope contract classes.
+- The gate checks that no app, service, runtime, or test helper defines
+  duplicate assistant envelope contract classes.
+- Approval is limited to these four assistant envelope contracts and does not
+  authorize runtime behavior.
 - Provider-foundation contracts are not silently reclassified as assistant
   contracts.
-- `scripts/run_all_checks.py` runs the assistant turn contract drafts gate.
+- `scripts/run_all_checks.py` runs the assistant turn contract approval gate.
 
-The gate targets documentation and approval rows only. It does not implement
-Pydantic models, approve contracts, or inspect runtime behavior.
+The gate targets documentation, approval rows, and contract model placement
+only. It does not authorize runtime behavior.
 
 ### Runtime Ownership Gate
 

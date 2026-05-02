@@ -45,10 +45,12 @@ completed_governance_gates:
 - Task 047 Assistant Turn Envelope Schema Draft completed
 - Task 050 Assistant Envelope Contract Semantic Revision completed
 - Task 052 Assistant Envelope Schema Hardening completed
+- Task 054 Assistant Envelope Approval Cleanup completed
+- Task 056 Assistant Envelope Contract Approval completed
 
 current_governance_gate:
 
-Task 052 Assistant Envelope Schema Hardening
+Task 056 Assistant Envelope Contract Approval
 
 allowed_current_work:
 
@@ -170,6 +172,21 @@ stage/provider status values, assistant envelope schema-version notes, and JSON
 example parsing in validation. Contracts remain draft/no. It does not create
 Pydantic models, approve contracts, change runtime behavior, add dependencies,
 or change provider/CLI/Core behavior.
+
+Task 054 resolves the final documentation cleanup found by Task 053. It makes
+`privacy` and `policy_context` wording consistent with their required minimal
+shapes, normalizes provider turn references to the typed `ref_type` / `ref_id`
+strategy, and keeps stage/provider status values aligned. Contracts remain
+draft/no. It does not create Pydantic models, approve contracts, change runtime
+behavior, add dependencies, or change provider/CLI/Core behavior.
+
+Task 056 approves the four assistant envelope contracts: `InputEvent`,
+`AssistantTurnInput`, `AssistantTurnResult`, and `AssistantFinalResponse`.
+Approval permits future implementation tasks to use these contracts, but this
+task does not create Pydantic models, change runtime behavior, add dependencies,
+or change provider/CLI/Core behavior. The validation gate now checks approved
+rows, JSON examples, semantic hardening phrases, provider-foundation separation,
+and absence of implementation classes.
 
 next_allowed_work_after_task_032:
 

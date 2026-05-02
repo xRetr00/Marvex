@@ -4,13 +4,14 @@ This registry controls whether a documented contract may be used for implementat
 
 `docs/CONTRACTS.md` describes intended contract shapes. A contract is not implementation-approved until this registry says `approval_status: approved` and `implementation_allowed: yes`.
 
-The current approved contracts are provider-foundation contracts, not
-assistant-turn contracts. Task 043B does not approve any assistant-level
-contracts.
+The current approved contracts include provider-foundation contracts and the
+smallest assistant envelope contracts. Provider-foundation contracts are still
+not full assistant-turn contracts.
 
-Draft assistant-envelope contracts may be listed here with
-`approval_status: draft` and `implementation_allowed: no`. That listing is
-documentation only and does not approve implementation.
+The approved assistant-envelope contracts may be used by future implementation
+tasks, but approval does not implement Pydantic models, runtime behavior, Core
+behavior, CLI behavior, ProviderRuntime behavior, tools, memory, voice, UI,
+desktop, proactive behavior, HTTP, IPC, or service runtime.
 
 ## Approval Fields
 
@@ -34,10 +35,10 @@ documentation only and does not approve implementation.
 | ErrorEnvelope | 0.1.1-draft | approved | user | 2026-04-24 | yes |
 | HealthCheck | 0.1.1-draft | approved | user | 2026-04-24 | yes |
 | VersionInfo | 0.1.1-draft | approved | user | 2026-04-24 | yes |
-| InputEvent | 0.1.1-draft | draft | none | none | no |
-| AssistantTurnInput | 0.1.1-draft | draft | none | none | no |
-| AssistantTurnResult | 0.1.1-draft | draft | none | none | no |
-| AssistantFinalResponse | 0.1.1-draft | draft | none | none | no |
+| InputEvent | 0.1.1-draft | approved | user | 2026-05-01 | yes |
+| AssistantTurnInput | 0.1.1-draft | approved | user | 2026-05-01 | yes |
+| AssistantTurnResult | 0.1.1-draft | approved | user | 2026-05-01 | yes |
+| AssistantFinalResponse | 0.1.1-draft | approved | user | 2026-05-01 | yes |
 | CoreService | 0.1.1-draft | draft | none | none | no |
 | ProviderWorker | 0.1.1-draft | draft | none | none | no |
 | ToolWorker | 0.1.1-draft | draft | none | none | no |

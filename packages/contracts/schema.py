@@ -1,9 +1,13 @@
 from typing import Any
 
 from .models import (
+    AssistantFinalResponse,
+    AssistantTurnInput,
+    AssistantTurnResult,
     ErrorEnvelope,
     FinalResponse,
     HealthCheck,
+    InputEvent,
     ProviderRequest,
     ProviderResponse,
     TraceEvent,
@@ -23,6 +27,10 @@ CONTRACT_MODELS = {
     "ErrorEnvelope": ErrorEnvelope,
     "HealthCheck": HealthCheck,
     "VersionInfo": VersionInfo,
+    "InputEvent": InputEvent,
+    "AssistantTurnInput": AssistantTurnInput,
+    "AssistantTurnResult": AssistantTurnResult,
+    "AssistantFinalResponse": AssistantFinalResponse,
 }
 
 

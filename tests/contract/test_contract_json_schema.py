@@ -14,6 +14,10 @@ def test_contract_schemas_include_all_v1_contracts():
         "ErrorEnvelope",
         "HealthCheck",
         "VersionInfo",
+        "InputEvent",
+        "AssistantTurnInput",
+        "AssistantTurnResult",
+        "AssistantFinalResponse",
     }
 
 
@@ -47,6 +51,57 @@ def test_json_schemas_mark_documented_fields_required():
         "service_version",
         "contract_versions",
         "build",
+    }
+    assert set(schemas["InputEvent"]["required"]) == {
+        "schema_version",
+        "trace_id",
+        "event_id",
+        "source",
+        "input_modality",
+        "payload",
+        "payload_ref",
+        "session_ref",
+        "privacy",
+        "timestamp",
+        "metadata",
+    }
+    assert set(schemas["AssistantTurnInput"]["required"]) == {
+        "schema_version",
+        "trace_id",
+        "turn_id",
+        "input_event_id",
+        "session_ref",
+        "identity_ref",
+        "user_visible_input",
+        "assistant_mode",
+        "policy_context",
+        "metadata",
+    }
+    assert set(schemas["AssistantTurnResult"]["required"]) == {
+        "schema_version",
+        "trace_id",
+        "turn_id",
+        "assistant_final_response",
+        "output_events",
+        "stage_summaries",
+        "provider_turn_refs",
+        "tool_result_refs",
+        "memory_result_refs",
+        "session_result_ref",
+        "error",
+        "metadata",
+    }
+    assert set(schemas["AssistantFinalResponse"]["required"]) == {
+        "schema_version",
+        "response_type",
+        "text",
+        "payload_ref",
+        "output_channel_intent",
+        "safe_for_display",
+        "safe_for_speech",
+        "memory_write_candidate_hint",
+        "finish_reason",
+        "metadata",
     }
 
 

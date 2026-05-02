@@ -16,6 +16,7 @@ IMPLEMENTATION_SCAN_ROOTS = [
     ROOT / "services",
     ROOT / "tests",
 ]
+APPROVED_MODEL_FILE = ROOT / "packages" / "contracts" / "models.py"
 
 CONTRACTS = [
     "InputEvent",
@@ -28,17 +29,18 @@ REQUIRED_SECTIONS = [
     "## Purpose",
     "## Direct Rules",
     "## Relationship To Provider Foundation",
-    "## Draft Common Rules",
+    "## Contract Common Rules",
     "## InputEvent",
     "## AssistantTurnInput",
     "## AssistantTurnResult",
     "## AssistantFinalResponse",
-    "## Implementation Block",
+    "## Implementation Boundary",
 ]
 
 REQUIRED_DOC_PHRASES = [
-    "These contracts are draft documentation only.",
-    "Do not create Pydantic models from this document until contracts are approved.",
+    "These contracts are approved documentation contracts for future implementation.",
+    "Pydantic contract models for these contracts live in `packages/contracts/models.py`.",
+    "These contracts are approved for future implementation by",
     "TurnInput and TurnOutput remain provider-foundation contracts.",
     "FinalResponse remains provider-foundation final response until explicitly migrated or wrapped.",
     "ProviderRequest and ProviderResponse remain provider-only.",
@@ -57,15 +59,19 @@ REQUIRED_DOC_PHRASES = [
     "payload and payload_ref relationship",
     "Exactly one of `payload` or `payload_ref` must be non-null.",
     "Both null is invalid.",
-    "Both present is invalid for first approval.",
+    "Both present is invalid for this approved envelope.",
     '"kind": "text"',
     "Raw UI trees, raw audio, screenshots, desktop captures, binary blobs, provider requests, provider responses, and encoded JSON strings are forbidden in `payload`.",
     "`payload_ref` must not point to arbitrary provider content.",
     "`privacy` is local classification metadata only.",
+    "Required keys: `sensitivity`, `redaction_needed`.",
+    "redaction_needed: boolean.",
     "Policy decisions, access grants, permission results, identity/profile data, and redaction results are forbidden in `privacy`.",
     "Must not include provider request fields.",
     "Must not alias TurnInput.",
     "`policy_context` is seed-only.",
+    "Required keys: `requested_capabilities`, `sensitivity`.",
+    "Requested capabilities are labels only.",
     "Policy allow/deny results, permission grants, tool scopes, memory write approval, policy engine output, and identity/session bodies are forbidden in `policy_context`.",
     "For text modality, `user_visible_input` must be a non-null string.",
     "For non-text modalities, `user_visible_input` may be null only when a future approved payload/reference contract supplies a user-visible representation.",
@@ -101,7 +107,9 @@ REQUIRED_DOC_PHRASES = [
     '"error_ref": null',
     "status values: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.",
     "No raw subsystem state, raw provider responses, tool outputs, memory content, prompt text, or hidden context blocks may appear in `stage_summaries`.",
-    '"turn_ref": "provider-turn-001"',
+    '"ref_type": "provider_turn"',
+    '"ref_id": "provider-turn-001"',
+    "Provider refs use the same closed status values as stage summaries: `pending`, `skipped`, `completed`, `degraded`, `failed`, `cancelled`.",
     "No embedded `ProviderRequest`.",
     "No embedded `ProviderResponse`.",
     "No central `provider_response_id`.",
@@ -119,7 +127,7 @@ REQUIRED_DOC_PHRASES = [
     "must not become an alias for FinalResponse",
     "For `response_type=text`, `text` must be non-null and `payload_ref` must be null.",
     "For `response_type=payload_ref`, `payload_ref` must be non-null.",
-    "For `response_type=error`, `text` must contain user-safe error text in this draft.",
+    "For `response_type=error`, `text` must contain user-safe error text.",
     "Non-error responses require at least one content carrier.",
     "`output_channel_intent` is intent only, not dispatch.",
     "OutputRuntime owns actual dispatch later.",
@@ -128,9 +136,11 @@ REQUIRED_DOC_PHRASES = [
     "`memory_write_candidate_hint` is a candidate hint only.",
     "`memory_write_candidate_hint` is not memory write approval.",
     "`memory_write_candidate_hint` cannot cause writeback without a future `MemoryWriteCandidate` and PolicyRuntime approval.",
-    "Assistant envelope draft contracts continue to use `0.1.1-draft` for documentation and examples only.",
-    "A distinct assistant envelope schema version may be required before implementation approval.",
-    "No schema version split is approved by this draft.",
+    "Approved assistant envelope contracts use `0.1.1-draft` for documentation,",
+    "A distinct assistant envelope schema version may be required before future",
+    "No schema version split is approved by these contracts.",
+    "This contract model implementation does not add runtime behavior.",
+    "Future runtime integration still requires a separate approved implementation task.",
 ]
 
 REQUIRED_FIELDS = {
@@ -270,26 +280,36 @@ def main() -> int:
             )
 
     for contract in CONTRACTS:
-        expected_row = f"| {contract} | 0.1.1-draft | draft | none | none | no |"
+        expected_row = f"| {contract} | 0.1.1-draft | approved | user | 2026-05-01 | yes |"
         if expected_row not in approvals:
             failures.append(
-                "docs/CONTRACT_APPROVALS.md must contain draft/no row: "
+                "docs/CONTRACT_APPROVALS.md must contain approved/yes row: "
                 f"{expected_row}"
             )
-        forbidden_row = f"| {contract} | 0.1.1-draft | approved |"
+        forbidden_row = f"| {contract} | 0.1.1-draft | draft |"
         if forbidden_row in approvals:
-            failures.append(f"{contract} must not be approved for implementation")
+            failures.append(f"{contract} must not remain draft after approval")
 
     validation_lower = validation_gates.lower()
-    if "assistant turn contract drafts gate" not in validation_lower:
-        failures.append("docs/VALIDATION_GATES.md must document Assistant Turn Contract Drafts Gate")
-    if "draft/no only" not in validation_lower:
-        failures.append("docs/VALIDATION_GATES.md must state assistant draft rows are draft/no only")
+    if "assistant turn contract approval gate" not in validation_lower:
+        failures.append("docs/VALIDATION_GATES.md must document Assistant Turn Contract Approval Gate")
+    if "approved/yes" not in validation_lower:
+        failures.append("docs/VALIDATION_GATES.md must state assistant envelope rows are approved/yes")
 
     if "check_assistant_turn_contract_drafts.py" not in run_all_checks:
         failures.append("scripts/run_all_checks.py must run check_assistant_turn_contract_drafts.py")
 
-    implementation_patterns = [
+    implementation_patterns = {
+        "class InputEvent": False,
+        "class AssistantTurnInput": False,
+        "class AssistantTurnResult": False,
+        "class AssistantFinalResponse": False,
+    }
+    for pattern in implementation_patterns:
+        if pattern not in APPROVED_MODEL_FILE.read_text(encoding="utf-8"):
+            failures.append(f"packages/contracts/models.py must implement assistant envelope contract: {pattern}")
+
+    forbidden_patterns = [
         "class InputEvent",
         "class AssistantTurnInput",
         "class AssistantTurnResult",
@@ -298,8 +318,8 @@ def main() -> int:
     for path in _iter_python_files():
         text = path.read_text(encoding="utf-8")
         rel = path.relative_to(ROOT).as_posix()
-        for pattern in implementation_patterns:
-            if pattern in text:
+        for pattern in forbidden_patterns:
+            if path != APPROVED_MODEL_FILE and pattern in text:
                 failures.append(f"{rel} must not implement assistant envelope contract: {pattern}")
 
     if failures:
@@ -307,7 +327,7 @@ def main() -> int:
             print(f"FAIL {failure}")
         return 1
 
-    print("PASS assistant turn contract drafts gate")
+    print("PASS assistant turn contract approval gate")
     return 0
 
 
