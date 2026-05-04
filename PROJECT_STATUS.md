@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: agent_context_budget_validation_gate
+current_phase: assistant_envelope_contracts_accepted
 
-implementation_status: process_readiness_cli_health_version_completed
+implementation_status: assistant_envelope_contract_models_accepted
 
 accepted_docs: true
 
@@ -19,6 +19,7 @@ completed_foundation:
 - CLI vertical slice
 - manual provider smoke harness
 - validation gates
+- assistant envelope contract models
 
 completed_process_readiness:
 
@@ -47,10 +48,12 @@ completed_governance_gates:
 - Task 052 Assistant Envelope Schema Hardening completed
 - Task 054 Assistant Envelope Approval Cleanup completed
 - Task 056 Assistant Envelope Contract Approval completed
+- Task 057 Assistant Envelope Contract Models accepted
+- Task 061 Project Status Alignment completed
 
 current_governance_gate:
 
-Task 056 Assistant Envelope Contract Approval
+Task 061 Project Status Alignment
 
 allowed_current_work:
 
@@ -59,6 +62,7 @@ allowed_current_work:
 - project status updates
 - Git workflow governance
 - approved task slices only
+- narrow assistant-runtime foundation slices with a separate approved task spec
 
 forbidden_current_work:
 
@@ -69,6 +73,9 @@ forbidden_current_work:
 - CLI behavior changes
 - telemetry runtime behavior changes
 - contract model behavior changes
+- assistant-runtime integration without a separate approved task spec
+- provider bridge behavior without a separate approved task spec
+- service contract implementation without separate approval
 - validation script changes outside an approved validation task
 - UI implementation
 - tools
@@ -188,9 +195,25 @@ or change provider/CLI/Core behavior. The validation gate now checks approved
 rows, JSON examples, semantic hardening phrases, provider-foundation separation,
 and absence of implementation classes.
 
-next_allowed_work_after_task_032:
+Task 057 implements and accepts the four approved assistant envelope contract
+models: `InputEvent`, `AssistantTurnInput`, `AssistantTurnResult`, and
+`AssistantFinalResponse`. The implementation is contracts-only and keeps the
+provider foundation separate from the assistant envelope. It does not implement
+`AssistantTurnRuntime`, provider bridge behavior, service contracts, memory,
+tools, voice, UI, desktop agent behavior, proactive behavior, HTTP/IPC/service
+daemon behavior, or process runtime behavior.
 
-Only a small approved task slice after an approved task plan. Likely candidates
-are future service-runtime planning, governance cleanup, or another narrow
-Process Readiness slice; no further implementation is authorized by this status
-file.
+Task 061 aligns project status after assistant envelope acceptance. Latest
+recorded validation passed with `python -m pytest -q` reporting 221 passed and
+1 skipped, and `python scripts/run_all_checks.py` reporting all validation
+checks passed.
+
+next_allowed_work_after_task_061:
+
+Only a small approved task slice after an approved task plan. The next allowed
+implementation direction is a narrow assistant-runtime foundation slice, but
+runtime integration still requires a separate task spec with explicit allowed
+files, forbidden files, tests, validation commands, and rollback plan. Memory,
+tools, voice, UI, desktop agent behavior, proactive behavior, service contracts,
+HTTP/IPC/service daemon behavior, process runtime behavior, and provider bridge
+behavior remain future-only unless separately approved.
