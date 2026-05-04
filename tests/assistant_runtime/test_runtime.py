@@ -54,6 +54,26 @@ def test_runtime_creates_no_provider_refs_or_provider_response_id():
     assert "provider_response_id" not in dumped
 
 
+def test_runtime_does_not_use_metadata_as_hidden_state():
+    turn_input = _turn_input("Hello").model_copy(
+        update={
+            "metadata": {
+                "provider": "lmstudio",
+                "provider_response_id": "resp-001",
+                "session_dispatch": "resume",
+                "model_routing": "fast",
+            }
+        }
+    )
+
+    result = AssistantTurnRuntime().run(turn_input)
+
+    assert result.assistant_final_response is not None
+    assert result.assistant_final_response.text == "Assistant runtime received input."
+    assert result.provider_turn_refs == []
+    assert result.metadata == {}
+
+
 @pytest.mark.parametrize("user_visible_input", [None, "", "   "])
 def test_runtime_hard_failure_behavior_is_contract_valid(user_visible_input):
     result = AssistantTurnRuntime().run(_turn_input(user_visible_input))

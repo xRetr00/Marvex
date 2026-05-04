@@ -203,6 +203,20 @@ This gate requires:
 The gate targets documentation, approval rows, and contract model placement
 only. It does not authorize runtime behavior.
 
+### Assistant Runtime Boundary Gate
+
+AssistantRuntime is limited to pure assistant-envelope helper and no-provider
+skeleton behavior until a separate task approves runtime integration.
+
+- `packages/assistant_runtime` Python source may import approved contracts and
+  local assistant-runtime helpers.
+- `packages/assistant_runtime` Python source must not import or mention Core,
+  ProviderRuntime, adapters, ports, CLI apps, services, concrete providers,
+  provider bridge terms, or future subsystem runtime behavior.
+- Strict scans target Python source files only, not README or documentation
+  files.
+- `scripts/run_all_checks.py` runs the assistant runtime boundary gate.
+
 ### Runtime Ownership Gate
 
 Core owns the assistant lifecycle envelope. AssistantTurnRuntime owns assistant

@@ -17,6 +17,7 @@ CHECKS = [
     "check_assistant_turn_contract_map.py",
     "check_assistant_turn_envelope.py",
     "check_assistant_turn_contract_drafts.py",
+    "check_assistant_runtime_boundaries.py",
     "check_runtime_ownership.py",
     "check_library_research_matrix.py",
     "check_library_decisions.py",
