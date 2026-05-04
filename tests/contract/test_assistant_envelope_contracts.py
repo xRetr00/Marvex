@@ -130,6 +130,12 @@ def test_payload_ref_accepts_null_uri():
     assert ref.uri is None
 
 
+def test_payload_ref_accepts_local_uri():
+    ref = _contract("PayloadRef").model_validate(_payload_ref(uri="local://payloads/001"))
+
+    assert ref.uri == "local://payloads/001"
+
+
 @pytest.mark.parametrize("uri", ["https://provider.example/payload-001", "provider:abc"])
 def test_payload_ref_rejects_external_or_provider_uri(uri: str):
     with pytest.raises(ValidationError):
