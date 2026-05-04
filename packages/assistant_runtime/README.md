@@ -9,10 +9,12 @@ Current responsibilities:
 - create `AssistantTurnInput` from an existing input event
 - assemble text `AssistantFinalResponse` objects
 - assemble no-provider success or hard-failure `AssistantTurnResult` objects
+- run a minimal deterministic `AssistantTurnRuntime` skeleton over an existing
+  `AssistantTurnInput`
 
 Non-responsibilities:
 
-- no `AssistantTurnRuntime` dispatcher
+- no provider-stage dispatcher
 - no Core, CLI, ProviderRuntime, adapter, port, or service integration
 - no provider bridge or provider calls
 - no memory, tools, voice, UI, desktop, proactive, HTTP, IPC, daemon, or process

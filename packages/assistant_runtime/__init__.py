@@ -4,8 +4,10 @@ from .result_assembly import (
     build_text_final_response,
     build_text_success_turn_result,
 )
+from .runtime import AssistantTurnRuntime
 
 __all__ = [
+    "AssistantTurnRuntime",
     "build_hard_failure_turn_result",
     "build_text_final_response",
     "build_text_input_event",
