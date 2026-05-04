@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .enums import (
     AssistantFinishReason,
@@ -134,6 +134,19 @@ class PayloadRef(ContractModel):
     kind: Literal["text"]
     uri: str | None
 
+    @field_validator("uri")
+    @classmethod
+    def _validate_local_uri(cls, uri: str | None) -> str | None:
+        if uri is None:
+            return None
+        if not uri.strip():
+            raise ValueError("payload_ref uri must be null or a local URI")
+        if uri != uri.strip():
+            raise ValueError("payload_ref uri must not include surrounding whitespace")
+        if not uri.lower().startswith("local://"):
+            raise ValueError("payload_ref uri must be local and non-provider")
+        return uri
+
 
 class SessionRef(ContractModel):
     ref_type: Literal["session"]
@@ -208,14 +221,17 @@ class AssistantFinalResponse(ContractModel):
     @model_validator(mode="after")
     def _validate_content_carrier(self) -> AssistantFinalResponse:
         if self.response_type == AssistantResponseType.TEXT:
-            if self.text is None:
+            if self.text is None or not self.text.strip():
                 raise ValueError("text response requires text")
             if self.payload_ref is not None:
                 raise ValueError("text response must not include payload_ref")
         if self.response_type == AssistantResponseType.PAYLOAD_REF:
             if self.payload_ref is None:
                 raise ValueError("payload_ref response requires payload_ref")
-        if self.response_type == AssistantResponseType.ERROR and self.text is None:
+        if (
+            self.response_type == AssistantResponseType.ERROR
+            and (self.text is None or not self.text.strip())
+        ):
             raise ValueError("error response requires user-safe text")
         return self
 
