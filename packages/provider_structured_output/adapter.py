@@ -43,6 +43,40 @@ def validate_structured_payload(
         )
 
 
+def validate_structured_result(
+    result: object,
+    target_model: type[TargetModel],
+    *,
+    trace_id: str | None = None,
+    schema_version: str = DEFAULT_SCHEMA_VERSION,
+) -> TargetModel | ErrorEnvelope:
+    data = _payload_data(result)
+    effective_trace_id = _trace_id(data, trace_id)
+    payload = _field_value(data, "structured_payload")
+
+    if payload is None:
+        return ErrorEnvelope(
+            schema_version=schema_version,
+            trace_id=effective_trace_id,
+            error_id="structured-output-missing-payload",
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Structured payload is missing.",
+            recoverable=False,
+            source=ERROR_SOURCE,
+            details={
+                "target": target_model.__name__,
+                "field": "structured_payload",
+            },
+        )
+
+    return validate_structured_payload(
+        payload,
+        target_model,
+        trace_id=effective_trace_id,
+        schema_version=schema_version,
+    )
+
+
 def _payload_data(payload: object) -> object:
     if isinstance(payload, BaseModel):
         return payload.model_dump()
@@ -67,6 +101,12 @@ def _trace_id(data: object, fallback: str | None) -> str:
         if isinstance(candidate, str) and candidate:
             return candidate
     return "trace-unavailable"
+
+
+def _field_value(data: object, field_name: str) -> object:
+    if isinstance(data, Mapping):
+        return data.get(field_name)
+    return getattr(data, field_name, None)
 
 
 def _validation_errors(exc: ValidationError) -> list[dict[str, str]]:

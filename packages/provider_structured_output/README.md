@@ -16,3 +16,7 @@ Non-responsibilities:
 The package accepts already-available structured data, validates it with a
 caller-supplied Marvex contract model, and returns either the validated model or
 an `ErrorEnvelope`.
+
+`validate_structured_result(...)` is the narrow mapping helper for result-shaped
+data. It extracts `structured_payload` and delegates validation to
+`validate_structured_payload(...)`.
