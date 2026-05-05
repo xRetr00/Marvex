@@ -24,6 +24,12 @@ def _valid_response_payload(**overrides: object) -> dict[str, object]:
     return payload
 
 
+STRUCTURED_RESULT_HANDOFF_EXAMPLE = {
+    "trace_id": "trace-handoff-001",
+    "structured_payload": _valid_response_payload(text="Handoff example."),
+}
+
+
 @dataclass
 class FakeStructuredPayload:
     schema_version: str
@@ -181,6 +187,46 @@ def test_result_mapping_does_not_create_provider_refs_or_response_ids():
         AssistantFinalResponse,
     )
 
+    assert isinstance(result, AssistantFinalResponse)
+    dumped = result.model_dump()
+    assert "provider_turn_refs" not in dumped
+    response_id_key = "provider" + "_response_id"
+    assert response_id_key not in dumped
+
+
+def test_handoff_example_shape_validates_into_target_contract():
+    result = validate_structured_result(
+        STRUCTURED_RESULT_HANDOFF_EXAMPLE,
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, AssistantFinalResponse)
+    assert result.text == "Handoff example."
+
+
+def test_handoff_example_requires_structured_payload():
+    missing_payload_example = {"trace_id": "trace-handoff-missing-001"}
+
+    result = validate_structured_result(
+        missing_payload_example,
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == "trace-handoff-missing-001"
+    assert result.details == {
+        "target": "AssistantFinalResponse",
+        "field": "structured_payload",
+    }
+
+
+def test_handoff_example_does_not_require_or_create_response_metadata():
+    result = validate_structured_result(
+        STRUCTURED_RESULT_HANDOFF_EXAMPLE,
+        AssistantFinalResponse,
+    )
+
+    assert "result_metadata" not in STRUCTURED_RESULT_HANDOFF_EXAMPLE
     assert isinstance(result, AssistantFinalResponse)
     dumped = result.model_dump()
     assert "provider_turn_refs" not in dumped
