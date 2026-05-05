@@ -40,6 +40,27 @@ Immediate direction:
 No future task is blocked on adopting a candidate. Future tasks are blocked on
 doing an adapter/port review before adding any candidate dependency.
 
+Task 067B correction:
+
+- The "adopt now: none" decision remains valid after deeper Promptify and
+  AutoPrompt review.
+- Promptify is stronger than Task 067 recorded. It is a real Python candidate
+  for a future provider structured-output spike because it combines Pydantic
+  schemas, Jinja prompts, LiteLLM, safe parsing, batch/async support, and basic
+  eval metrics.
+- Promptify should not be adopted before the next contract-only InputEvent
+  binding slice. It should be spiked before Marvex builds provider bridge
+  structured-output behavior that asks models for typed extraction,
+  classification, or summarization.
+- AutoPrompt should not be used for Codex-agent prompts or current Marvex
+  assistant prompts. Its prompt-calibration architecture is dataset/eval
+  oriented and includes an optimizer manager, LangChain, Argilla, FAISS,
+  pandas/scikit-learn, and annotation/iteration workflows.
+- Marvex should not create a broad custom prompt task format now. Keep thin
+  contract-owned task code. If prompt tasks become product artifacts, first
+  evaluate a narrow adapter around Promptify, Instructor, Outlines, Guidance, or
+  provider-native structured outputs.
+
 ## 2. Reviewed Sources
 
 Requested source lists reviewed:
@@ -70,6 +91,12 @@ Official sources reviewed for serious candidates:
 
 - LMQL: `https://github.com/eth-sri/lmql`, `https://lmql.ai/`
 - Microsoft Prompt Engine: `https://github.com/microsoft/prompt-engine`
+- Promptify: `https://github.com/promptslab/Promptify`,
+  `https://promptify.readthedocs.io/`
+- AutoPrompt: `https://github.com/Eladlev/AutoPrompt`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/architecture.md`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/how-it-works.md`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/examples.md`
 - LynxPrompt: `https://github.com/GeiserX/LynxPrompt`, `https://lynxprompt.com/`
 - flompt: `https://github.com/Nyrok/flompt`, `https://flompt.dev/`
 - DeepEval: `https://github.com/confident-ai/deepeval`, `https://deepeval.com/docs/introduction`
@@ -103,6 +130,103 @@ metadata for serious GitHub-hosted candidates.
 ## 3. Candidate Matrix
 
 ### Prompt Management / Prompt Templates
+
+#### Promptify
+
+- category: prompt management / structured outputs / prompt task pipelines
+- official source: `https://github.com/promptslab/Promptify`,
+  `https://promptify.readthedocs.io/`
+- maintenance status: active. GitHub snapshot checked 2026-05-05: Python,
+  Apache-2.0, last pushed 2026-03-27, about 4.6k stars, 60 open issues.
+- implementation type: Python library
+- language/runtime: Python 3.9+ per current `pyproject.toml`; docs still contain
+  older Python/OpenAI wording, so adoption would need install/runtime
+  verification.
+- dependency footprint: `litellm>=1.50.0,<=1.82.6`, `jinja2>=3.1`,
+  `pydantic>=2.0`, `tenacity>=8.2`; optional eval extras include `rouge-score`
+  and `nltk`.
+- overlap with LiteLLM already used by Marvex: significant. Promptify wraps
+  LiteLLM as a universal backend, while Marvex already isolates LiteLLM behind a
+  provider adapter. Direct adoption inside AssistantTurnRuntime would bypass
+  ProviderRuntime/provider-adapter ownership.
+- Pydantic/structured outputs: yes. Current repo/docs present Pydantic
+  structured outputs, custom Pydantic schemas, safe parser fallback, and built-in
+  task schemas.
+- local model support: yes through LiteLLM/model strings such as Ollama in the
+  current README; older docs mention Hugging Face hub-style model support.
+- Python/Windows fit: good in principle because it is Python. Actual Windows
+  verification is still required because LiteLLM/provider extras and eval extras
+  may pull heavier dependencies.
+- current Marvex fit: strong candidate for a future provider structured-output
+  spike; not appropriate for current no-provider assistant_runtime.
+- why use: could replace custom prompt-template, structured-output parsing,
+  task-specific extraction/classification, few-shot examples, safe JSON parsing,
+  batch execution, and simple eval metric scaffolding for provider-backed NLP
+  tasks.
+- why not custom: prompt templates plus parser recovery plus Pydantic result
+  conversion is exactly the kind of glue Marvex should not hand-roll once a
+  provider bridge needs typed LLM output.
+- what custom code it cannot replace: Assistant OS contracts, InputEvent
+  binding, runtime ownership, provider adapter boundaries, policy/session/tool
+  decisions, Core orchestration, or validation gates.
+- why not use now: current assistant_runtime has no provider execution and no
+  prompt rendering. Adding Promptify now would smuggle provider/task semantics
+  into the runtime skeleton.
+- isolation boundary if adopted: provider structured-output adapter or
+  PromptTaskRuntime adapter. AssistantTurnRuntime would call Marvex contracts,
+  not Promptify directly.
+- fallback if abandoned: OpenAI Structured Outputs, Instructor, Outlines,
+  Guidance, or plain provider-native call plus Pydantic validation behind the
+  same adapter.
+- decision: spike soon, not adopt now.
+
+#### AutoPrompt
+
+- category: prompt optimization / prompt calibration / prompt task pipelines
+- official source: `https://github.com/Eladlev/AutoPrompt`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/architecture.md`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/how-it-works.md`,
+  `https://github.com/Eladlev/AutoPrompt/blob/main/docs/examples.md`
+- maintenance status: active enough but heavier and less directly product-fit.
+  GitHub snapshot checked 2026-05-05: Python, Apache-2.0, last pushed
+  2025-12-02, latest release V0.2 on 2024-03-06, about 3k stars, 23 open
+  issues.
+- implementation type: framework / calibration pipeline
+- language/runtime: Python. Current `pyproject.toml` requires Python `>=3.12`.
+- dependency footprint: heavy for Marvex's current phase. `pyproject.toml`
+  includes Argilla, FAISS CPU, LangChain, LangChain community/core/openai,
+  pandas, scikit-learn, and related utilities; `requirements.txt` also lists
+  OpenAI, tiktoken, transformers, sentence-transformers, wandb, Pillow, and
+  Google GenAI integration.
+- overlap with LiteLLM already used by Marvex: indirect. AutoPrompt uses
+  LangChain/OpenAI-oriented estimator paths rather than Marvex's LiteLLM adapter
+  boundary.
+- Pydantic/structured outputs: not the main fit. It is prompt calibration and
+  optimization, not a Pydantic structured-output adapter.
+- local model support: possible through LangChain/community integrations, but
+  not cleanly aligned with Marvex's current provider boundary.
+- Python/Windows fit: uncertain. FAISS, sentence-transformers, Argilla server,
+  and LangChain ecosystem dependencies need explicit Windows validation.
+- current Marvex fit: poor for AssistantTurnRuntime and Codex-agent prompts;
+  possible future eval/prompt-optimization research after replay datasets exist.
+- why use: could help optimize prompt wording against labeled examples for
+  classification/generation tasks.
+- why not custom: prompt optimization over datasets should not become bespoke
+  loops once Marvex has real eval data.
+- what custom code it could replace: future prompt optimization experiments,
+  dataset-based prompt calibration, and iterative prompt improvement harnesses.
+- what custom code it cannot replace: contract definitions, InputEvent binding,
+  provider adapter ownership, structured output validation, runtime dispatch, or
+  policy/session/tool boundaries.
+- why not use now: it introduces dataset management, estimators, evaluator,
+  optimizer manager, annotation flow, LangChain, Argilla, FAISS, and iterative
+  pipelines before Marvex has prompt datasets or provider bridge behavior.
+- isolation boundary if adopted: tests/evals-only prompt-optimization harness,
+  never assistant_runtime, Core, ProviderRuntime, or dev prompt source of truth.
+- fallback if abandoned: DeepEval/InspectAI style evals, Promptify task evals,
+  DSPy, or simple pytest replay fixtures.
+- decision: defer; do not use for Codex-agent prompts or current Marvex
+  assistant prompts.
 
 #### Microsoft Prompt Engine
 
@@ -247,6 +371,45 @@ metadata for serious GitHub-hosted candidates.
   Core/AssistantTurnRuntime.
 - fallback if abandoned: OpenAI Structured Outputs, Instructor, or Pydantic.
 - decision: reject for current Marvex phase.
+
+#### Guidance
+
+- category: structured outputs / constrained generation / prompt programming
+- official source: `https://github.com/guidance-ai/guidance`
+- maintenance status: active. GitHub snapshot checked 2026-05-05: MIT, last
+  pushed 2026-04-10, about 21.4k stars.
+- implementation type: library / prompt programming language
+- language/runtime: Python ecosystem, with model backend integrations.
+- current Marvex fit: future-only for constrained local/provider generation.
+- why use: can constrain and guide generation more directly than prompt text.
+- why not custom: token-level control and constrained generation are hard.
+- why not use now: prompt programming would add a new execution model before
+  provider bridge ownership is approved.
+- isolation boundary if adopted: provider structured-output adapter or local
+  model adapter.
+- fallback if abandoned: OpenAI Structured Outputs, Instructor, Outlines, or
+  Promptify.
+- decision: defer.
+
+#### DSPy
+
+- category: prompt optimization / agent task pipelines
+- official source: `https://github.com/stanfordnlp/dspy`
+- maintenance status: very active. GitHub snapshot checked 2026-05-05: Python,
+  MIT, last pushed 2026-05-05, about 34.2k stars.
+- implementation type: framework/library
+- language/runtime: Python
+- current Marvex fit: too broad for current phase.
+- why use: mature automatic prompt/program optimization.
+- why not custom: optimizer design and evaluation loops are hard.
+- why not use now: DSPy would impose a programming model and optimization
+  pipeline before Marvex has replay datasets, provider bridge behavior, or eval
+  boundaries.
+- isolation boundary if adopted: tests/evals prompt optimization harness or
+  isolated future PromptTaskRuntime experiment.
+- fallback if abandoned: AutoPrompt/Promptify evals or deterministic replay
+  fixtures.
+- decision: defer.
 
 ### Context Delivery / Compaction and Harness Engineering
 
@@ -581,17 +744,41 @@ switches before any screen/audio/context tool is considered.
 
 Should any future task be blocked until a candidate is adopted?
 
-No. Future tasks should be blocked only if they attempt prompt management,
-structured provider output, eval/observability, MCP, memory, desktop context, or
-agent orchestration without a focused adapter/library decision.
+Yes, narrowly: before provider bridge structured-output behavior asks a model
+for typed task output, run a Promptify/structured-output spike or adapter
+decision. No candidate needs to be adopted before InputEvent binding.
+
+Future tasks should otherwise be blocked only if they attempt prompt management,
+eval/observability, MCP, memory, desktop context, or agent orchestration without
+a focused adapter/library decision.
+
+Task 067B specific answers:
+
+- Promptify should be spiked before Marvex builds provider bridge
+  structured-output behavior, but not before contract-only InputEvent binding.
+- AutoPrompt should not be used for Codex-agent prompts or current Marvex
+  assistant prompts. It belongs, if anywhere, in a future tests/evals prompt
+  optimization harness.
+- Marvex should not create a broad prompt task format now. Keep repo task specs
+  and contracts; evaluate Promptify/Instructor/Outlines/Guidance/provider-native
+  schemas before product prompt tasks.
+- Current assistant_runtime custom code remains justified because it is
+  no-provider contract glue and none of these tools should own InputEvent or
+  AssistantTurnInput construction.
+- Tool ownership if adopted:
+  - Promptify: provider structured-output adapter or PromptTaskRuntime adapter.
+  - AutoPrompt: tests/evals prompt optimization only.
+  - Guidance/Outlines/Instructor/OpenAI Structured Outputs: provider adapter.
+  - DSPy: tests/evals prompt optimization or isolated future prompt task worker.
 
 ## 5. Recommendation for Next 5 Tasks
 
 1. Task 068: continue assistant_runtime custom thin code for InputEvent binding.
    Decision: continue custom thin code. Keep it contract-only and no-provider.
-2. Task 069: write a provider structured-output adapter decision before any
-   provider bridge asks a model for typed data. Decision: write adapter boundary
-   first. Re-evaluate OpenAI Structured Outputs, Instructor, and Outlines.
+2. Task 069: run a provider structured-output spike/adapter decision before any
+   provider bridge asks a model for typed data. Decision: spike Promptify first,
+   comparing it against OpenAI Structured Outputs, Instructor, Outlines,
+   Guidance, and existing Pydantic validation.
 3. Task 070: add assistant/provider replay fixture shape before adopting evals.
    Decision: defer eval tools; create deterministic local fixtures first.
 4. Task 071: observability export boundary planning. Decision: write adapter
