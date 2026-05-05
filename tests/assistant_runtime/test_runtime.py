@@ -7,14 +7,19 @@ from packages.assistant_runtime.runtime import AssistantTurnRuntime
 from packages.contracts import AssistantTurnResult, ErrorCode, StageStatus
 
 
-def _turn_input(user_visible_input: str | None = "Hello"):
+def _input_event(user_visible_input: str | None = "Hello", *, event_id: str = "event-001"):
     event = build_text_input_event(
         schema_version="0.1.1-draft",
         trace_id="trace-001",
-        event_id="event-001",
+        event_id=event_id,
         text=user_visible_input or "",
         timestamp=datetime(2026, 5, 4, 12, 0, tzinfo=UTC),
     )
+    return event
+
+
+def _turn_input(user_visible_input: str | None = "Hello"):
+    event = _input_event(user_visible_input)
     turn_input = build_turn_input_from_event(
         schema_version="0.1.1-draft",
         trace_id="trace-001",
@@ -32,6 +37,54 @@ def test_runtime_accepts_valid_assistant_turn_input():
     result = runtime.run(_turn_input("Hello"))
 
     assert isinstance(result, AssistantTurnResult)
+
+
+def test_runtime_without_input_event_still_succeeds():
+    result = AssistantTurnRuntime().run(_turn_input("Hello"))
+
+    assert result.assistant_final_response is not None
+    assert result.error is None
+
+
+def test_runtime_with_matching_input_event_succeeds():
+    input_event = _input_event("Hello", event_id="event-001")
+    turn_input = build_turn_input_from_event(
+        schema_version="0.1.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_event=input_event,
+    )
+
+    result = AssistantTurnRuntime().run(turn_input, input_event=input_event)
+
+    assert result.assistant_final_response is not None
+    assert result.error is None
+    assert result.provider_turn_refs == []
+    assert "provider_response_id" not in result.model_dump()
+
+
+def test_runtime_with_mismatched_input_event_hard_fails_deterministically():
+    input_event = _input_event("Hello", event_id="event-actual")
+    turn_input = build_turn_input_from_event(
+        schema_version="0.1.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_event=input_event,
+    ).model_copy(update={"input_event_id": "event-expected"})
+
+    result = AssistantTurnRuntime().run(turn_input, input_event=input_event)
+
+    assert result.assistant_final_response is None
+    assert result.error is not None
+    assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert result.error.error_id == "turn-001:input-validation"
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization"
+    ]
+    assert result.stage_summaries[0].status == StageStatus.FAILED
+    assert result.stage_summaries[0].error_ref == "turn-001:input-validation"
+    assert result.provider_turn_refs == []
+    assert "provider_response_id" not in result.model_dump()
 
 
 def test_runtime_returns_valid_result_and_preserves_trace_and_turn_ids():
@@ -123,6 +176,22 @@ def test_runtime_does_not_treat_metadata_as_input_event_linkage():
         "input_normalization",
         "final_response_assembly",
     ]
+    assert result.error is None
+
+
+def test_runtime_ignores_metadata_when_binding_input_event():
+    input_event = _input_event("Hello", event_id="event-001")
+    turn_input = build_turn_input_from_event(
+        schema_version="0.1.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        input_event=input_event,
+        metadata={"input_event_id": "different-event"},
+    )
+
+    result = AssistantTurnRuntime().run(turn_input, input_event=input_event)
+
+    assert result.assistant_final_response is not None
     assert result.error is None
 
 

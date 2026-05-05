@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from packages.contracts import AssistantTurnInput, AssistantTurnResult, ErrorCode
+from packages.contracts import AssistantTurnInput, AssistantTurnResult, ErrorCode, InputEvent
 
 from .result_assembly import (
     build_hard_failure_turn_result,
@@ -13,8 +13,20 @@ def _blank(value: str | None) -> bool:
 
 
 class AssistantTurnRuntime:
-    def run(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
-        if _blank(turn_input.user_visible_input) or _blank(turn_input.input_event_id):
+    def run(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        input_event: InputEvent | None = None,
+    ) -> AssistantTurnResult:
+        event_mismatch = (
+            input_event is not None and turn_input.input_event_id != input_event.event_id
+        )
+        if (
+            _blank(turn_input.user_visible_input)
+            or _blank(turn_input.input_event_id)
+            or event_mismatch
+        ):
             return build_hard_failure_turn_result(
                 schema_version=turn_input.schema_version,
                 trace_id=turn_input.trace_id,
