@@ -95,6 +95,37 @@ def test_runtime_does_not_use_metadata_as_hidden_state():
     ]
 
 
+def test_runtime_hard_fails_blank_input_event_id():
+    turn_input = _turn_input("Hello").model_copy(update={"input_event_id": "   "})
+
+    result = AssistantTurnRuntime().run(turn_input)
+
+    assert result.assistant_final_response is None
+    assert result.error is not None
+    assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert result.error.error_id == "turn-001:input-validation"
+    assert result.stage_summaries[0].status == StageStatus.FAILED
+    assert result.stage_summaries[0].error_ref == "turn-001:input-validation"
+    assert result.provider_turn_refs == []
+    assert "provider_response_id" not in result.model_dump()
+
+
+def test_runtime_does_not_treat_metadata_as_input_event_linkage():
+    turn_input = _turn_input("Hello").model_copy(
+        update={"metadata": {"input_event_id": "different-event"}}
+    )
+
+    result = AssistantTurnRuntime().run(turn_input)
+
+    assert result.assistant_final_response is not None
+    assert result.assistant_final_response.text == "Assistant runtime received input."
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization",
+        "final_response_assembly",
+    ]
+    assert result.error is None
+
+
 @pytest.mark.parametrize("user_visible_input", [None, "", "   "])
 def test_runtime_hard_failure_behavior_is_contract_valid(user_visible_input):
     result = AssistantTurnRuntime().run(_turn_input(user_visible_input))
@@ -105,6 +136,7 @@ def test_runtime_hard_failure_behavior_is_contract_valid(user_visible_input):
     assert result.assistant_final_response is None
     assert result.error is not None
     assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert result.error.error_id == "turn-001:input-validation"
     assert [stage.stage_name for stage in result.stage_summaries] == [
         "input_normalization"
     ]

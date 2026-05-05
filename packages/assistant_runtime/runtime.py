@@ -8,12 +8,13 @@ from .result_assembly import (
 )
 
 
+def _blank(value: str | None) -> bool:
+    return value is None or not value.strip()
+
+
 class AssistantTurnRuntime:
     def run(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
-        if (
-            turn_input.user_visible_input is None
-            or not turn_input.user_visible_input.strip()
-        ):
+        if _blank(turn_input.user_visible_input) or _blank(turn_input.input_event_id):
             return build_hard_failure_turn_result(
                 schema_version=turn_input.schema_version,
                 trace_id=turn_input.trace_id,
