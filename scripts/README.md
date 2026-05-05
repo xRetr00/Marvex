@@ -23,6 +23,7 @@ Scripts:
 - `check_port_boundaries.py`
 - `check_provider_runtime_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
+- `check_provider_structured_output_boundaries.py`
 - `check_process_runtime_boundaries.py`
 - `check_vaxil_boundary.py`
 
@@ -34,6 +35,12 @@ ProviderRuntime.
 boundary so the no-provider assistant-runtime skeleton stays isolated from Core,
 ProviderRuntime, adapters, ports, apps, services, provider bridge terms,
 concrete providers, and future subsystem behavior.
+
+`check_provider_structured_output_boundaries.py` enforces the no-network
+provider structured-output adapter boundary so validation stays isolated from
+Core, AssistantRuntime, ProviderRuntime, adapters, ports, apps, services,
+concrete providers, prompt rendering, provider response ids, and deferred
+frameworks.
 
 `check_process_runtime_boundaries.py` enforces the ProcessRuntime dependency
 boundary so local health/version object construction stays isolated until an

@@ -217,6 +217,20 @@ skeleton behavior until a separate task approves runtime integration.
   files.
 - `scripts/run_all_checks.py` runs the assistant runtime boundary gate.
 
+### Provider Structured Output Boundary Gate
+
+Provider structured output is limited to no-network validation of already
+available structured payloads into approved Marvex-owned Pydantic contracts.
+
+- `packages/provider_structured_output` Python source may import
+  `packages.contracts`, Pydantic, and standard-library modules only.
+- `packages/provider_structured_output` Python source must not import Core,
+  AssistantRuntime, ProviderRuntime, adapters, ports, CLI apps, or services.
+- `packages/provider_structured_output` Python source must not mention concrete
+  providers, prompt rendering, provider response ids, or deferred structured
+  output frameworks.
+- `scripts/run_all_checks.py` runs the provider structured output boundary gate.
+
 ### Runtime Ownership Gate
 
 Core owns the assistant lifecycle envelope. AssistantTurnRuntime owns assistant
