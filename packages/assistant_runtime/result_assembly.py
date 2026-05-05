@@ -39,6 +39,22 @@ def build_text_final_response(
     )
 
 
+def build_stage_summary(
+    *,
+    stage_name: str,
+    status: StageStatus,
+    error_ref: str | None = None,
+) -> StageSummary:
+    return StageSummary(
+        stage_name=stage_name,
+        status=status,
+        started_at=None,
+        completed_at=None,
+        ref=None,
+        error_ref=error_ref,
+    )
+
+
 def build_text_success_turn_result(
     *,
     schema_version: str,
@@ -57,13 +73,13 @@ def build_text_success_turn_result(
         ),
         output_events=[],
         stage_summaries=[
-            StageSummary(
+            build_stage_summary(
+                stage_name="input_normalization",
+                status=StageStatus.COMPLETED,
+            ),
+            build_stage_summary(
                 stage_name="final_response_assembly",
                 status=StageStatus.COMPLETED,
-                started_at=None,
-                completed_at=None,
-                ref=None,
-                error_ref=None,
             )
         ],
         provider_turn_refs=[],
@@ -104,12 +120,9 @@ def build_hard_failure_turn_result(
         assistant_final_response=None,
         output_events=[],
         stage_summaries=[
-            StageSummary(
+            build_stage_summary(
                 stage_name="input_normalization",
                 status=StageStatus.FAILED,
-                started_at=None,
-                completed_at=None,
-                ref=None,
                 error_ref=error_id,
             )
         ],

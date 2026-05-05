@@ -46,6 +46,23 @@ def test_runtime_returns_valid_result_and_preserves_trace_and_turn_ids():
     assert result.assistant_final_response.text == "Assistant runtime received input."
 
 
+def test_runtime_success_includes_expected_stage_summaries():
+    result = AssistantTurnRuntime().run(_turn_input("Hello"))
+
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization",
+        "final_response_assembly",
+    ]
+    assert [stage.status for stage in result.stage_summaries] == [
+        StageStatus.COMPLETED,
+        StageStatus.COMPLETED,
+    ]
+    assert all(stage.started_at is None for stage in result.stage_summaries)
+    assert all(stage.completed_at is None for stage in result.stage_summaries)
+    assert all(stage.ref is None for stage in result.stage_summaries)
+    assert all(stage.error_ref is None for stage in result.stage_summaries)
+
+
 def test_runtime_creates_no_provider_refs_or_provider_response_id():
     result = AssistantTurnRuntime().run(_turn_input("Hello"))
     dumped = result.model_dump()
@@ -72,6 +89,10 @@ def test_runtime_does_not_use_metadata_as_hidden_state():
     assert result.assistant_final_response.text == "Assistant runtime received input."
     assert result.provider_turn_refs == []
     assert result.metadata == {}
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization",
+        "final_response_assembly",
+    ]
 
 
 @pytest.mark.parametrize("user_visible_input", [None, "", "   "])
@@ -84,4 +105,8 @@ def test_runtime_hard_failure_behavior_is_contract_valid(user_visible_input):
     assert result.assistant_final_response is None
     assert result.error is not None
     assert result.error.code == ErrorCode.VALIDATION_ERROR
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization"
+    ]
     assert result.stage_summaries[0].status == StageStatus.FAILED
+    assert result.stage_summaries[0].error_ref == f"{result.turn_id}:input-validation"

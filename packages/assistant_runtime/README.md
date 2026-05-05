@@ -9,6 +9,7 @@ Current responsibilities:
 - create `AssistantTurnInput` from an existing input event
 - assemble text `AssistantFinalResponse` objects
 - assemble no-provider success or hard-failure `AssistantTurnResult` objects
+- build deterministic reference-only stage summaries for the no-provider path
 - run a minimal deterministic `AssistantTurnRuntime` skeleton over an existing
   `AssistantTurnInput`
 

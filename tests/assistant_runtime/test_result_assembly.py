@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from packages.contracts import AssistantFinishReason, ErrorCode, StageStatus
 from packages.assistant_runtime.result_assembly import (
+    build_stage_summary,
     build_hard_failure_turn_result,
     build_text_final_response,
     build_text_success_turn_result,
@@ -37,6 +38,41 @@ def test_success_result_assembly_returns_turn_result_with_final_response():
     assert result.error is None
 
 
+def test_build_stage_summary_uses_reference_only_contract_shape():
+    summary = build_stage_summary(
+        stage_name="input_normalization",
+        status=StageStatus.COMPLETED,
+        error_ref=None,
+    )
+
+    assert summary.stage_name == "input_normalization"
+    assert summary.status == StageStatus.COMPLETED
+    assert summary.started_at is None
+    assert summary.completed_at is None
+    assert summary.ref is None
+    assert summary.error_ref is None
+
+
+def test_success_result_assembly_uses_explicit_no_provider_stage_summaries():
+    result = build_text_success_turn_result(
+        schema_version="0.1.1-draft",
+        trace_id="trace-001",
+        turn_id="turn-001",
+        text="Done.",
+    )
+
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization",
+        "final_response_assembly",
+    ]
+    assert [stage.status for stage in result.stage_summaries] == [
+        StageStatus.COMPLETED,
+        StageStatus.COMPLETED,
+    ]
+    assert all(stage.ref is None for stage in result.stage_summaries)
+    assert all(stage.error_ref is None for stage in result.stage_summaries)
+
+
 def test_hard_failure_result_assembly_returns_error_without_final_response():
     result = build_hard_failure_turn_result(
         schema_version="0.1.1-draft",
@@ -53,6 +89,9 @@ def test_hard_failure_result_assembly_returns_error_without_final_response():
     assert result.error.trace_id == "trace-001"
     assert result.stage_summaries[0].status == StageStatus.FAILED
     assert result.stage_summaries[0].error_ref == "error-001"
+    assert [stage.stage_name for stage in result.stage_summaries] == [
+        "input_normalization"
+    ]
 
 
 def test_result_assembly_does_not_create_provider_response_id():
