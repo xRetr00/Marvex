@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from packages.contracts import AssistantFinalResponse, ErrorCode, ErrorEnvelope
 from packages.provider_structured_output import (
     validate_fake_adapter_structured_result,
@@ -362,6 +364,129 @@ def test_fake_adapter_shaped_mapping_does_not_create_refs_or_response_ids():
     )
 
     assert isinstance(result, AssistantFinalResponse)
+    dumped = result.model_dump()
+    assert "provider_turn_refs" not in dumped
+    response_id_key = "provider" + "_response_id"
+    assert response_id_key not in dumped
+
+
+@pytest.mark.parametrize(
+    ("explicit_trace_id", "expected_trace_id"),
+    [
+        ("trace-explicit-adapter-001", "trace-explicit-adapter-001"),
+        (None, "trace-unavailable"),
+    ],
+)
+def test_fake_adapter_shaped_missing_trace_id_is_deterministic(
+    explicit_trace_id: str | None,
+    expected_trace_id: str,
+):
+    result = validate_fake_adapter_structured_result(
+        {"result": {"structured_payload": _valid_response_payload(text="")}},
+        AssistantFinalResponse,
+        trace_id=explicit_trace_id,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == expected_trace_id
+    assert result.schema_version == "0.1.1-draft"
+    assert result.source == "provider_structured_output"
+    assert result.code == ErrorCode.VALIDATION_ERROR
+    assert result.details["target"] == "AssistantFinalResponse"
+    assert result.details["errors"]
+
+
+@pytest.mark.parametrize(
+    ("adapter_result", "trace_id"),
+    [
+        (
+            {"trace_id": "trace-adapter-none-payload-001", "result": {"structured_payload": None}},
+            "trace-adapter-none-payload-001",
+        ),
+        (
+            {
+                "trace_id": "trace-adapter-refusal-001",
+                "refusal": {"message": "fake refusal marker"},
+                "result": {},
+            },
+            "trace-adapter-refusal-001",
+        ),
+        (
+            {
+                "trace_id": "trace-adapter-incomplete-001",
+                "incomplete": True,
+                "result": {},
+            },
+            "trace-adapter-incomplete-001",
+        ),
+        (
+            {
+                "trace_id": "trace-adapter-metadata-payload-001",
+                "metadata": {"structured_payload": _valid_response_payload(text="Ignored.")},
+                "result": {},
+            },
+            "trace-adapter-metadata-payload-001",
+        ),
+        (
+            {"trace_id": "trace-adapter-result-metadata-payload-001",
+             "result": {"metadata": {"structured_payload": _valid_response_payload(text="Ignored.")}}},
+            "trace-adapter-result-metadata-payload-001",
+        ),
+    ],
+)
+def test_fake_adapter_shaped_missing_payload_cases_return_error_envelope(
+    adapter_result: dict[str, object],
+    trace_id: str,
+):
+    result = validate_fake_adapter_structured_result(adapter_result, AssistantFinalResponse)
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == trace_id
+    assert result.error_id == "structured-output-missing-payload"
+    assert result.details == {
+        "target": "AssistantFinalResponse",
+        "field": "structured_payload",
+    }
+
+
+@pytest.mark.parametrize(
+    ("payload", "trace_id"),
+    [
+        ("not a structured object", "trace-adapter-scalar-payload-001"),
+        ({}, "trace-adapter-empty-payload-001"),
+    ],
+)
+def test_fake_adapter_shaped_invalid_payload_cases_return_error_envelope(
+    payload: object,
+    trace_id: str,
+):
+    result = validate_fake_adapter_structured_result(
+        {"trace_id": trace_id, "result": {"structured_payload": payload}},
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == trace_id
+    assert result.error_id == "structured-output-validation-error"
+    assert result.details["target"] == "AssistantFinalResponse"
+    assert result.details["errors"]
+
+
+def test_fake_adapter_shaped_metadata_fields_do_not_change_valid_mapping():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-metadata-001",
+            "result": {
+                "structured_payload": _valid_response_payload(text="Metadata ignored."),
+                "metadata": {"response_id": "fake-response-001", "model": "fake-model"},
+            },
+            "metadata": {"response_id": "fake-top-level-response-001"},
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, AssistantFinalResponse)
+    assert result.text == "Metadata ignored."
     dumped = result.model_dump()
     assert "provider_turn_refs" not in dumped
     response_id_key = "provider" + "_response_id"
