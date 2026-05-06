@@ -335,3 +335,52 @@ providers, render prompts, add dependencies, or change ProviderRuntime.
 After Task 070, if the adapter skeleton proves a real provider call is needed,
 run a narrow OpenAI Structured Outputs compatibility spike using the existing
 OpenAI SDK path before considering Promptify or Instructor.
+
+## 7. Task 073 Handoff Contract Gate
+
+decision date: 2026-05-06
+
+Decision: keep the result-shaped handoff object as a README/test fixture for
+now. Do not promote it into a formal Marvex contract yet.
+
+Current tested fixture shape:
+
+- `trace_id`
+- `structured_payload`
+
+Reasoning:
+
+- The shape has only been proven by no-network examples and tests.
+- No provider bridge or provider adapter has emitted this shape yet.
+- The boundary has not yet proven how missing payloads, malformed structured
+  payloads, refusal-like results, incomplete results, or provider-side error
+  result shapes should be represented at the handoff point.
+- Promoting the shape now would freeze field names and ownership before the
+  bridge boundary has real pressure from adapter-shaped data.
+- Existing Marvex-owned Pydantic contracts already validate the nested target
+  payload, so a new outer contract is not needed for the current skeleton.
+
+What must be proven before formalizing:
+
+1. A no-network provider bridge skeleton can construct the handoff shape from
+   fake adapter-shaped result data without changing ProviderRuntime, provider
+   adapters, Core, AssistantTurnRuntime, CLI, services, or dependencies.
+2. The skeleton can preserve `trace_id` and pass `structured_payload` into
+   `validate_structured_result(...)` without adding provider references or
+   response identifiers.
+3. Missing, malformed, incomplete, and error-like result-shaped data can map to
+   deterministic `ErrorEnvelope` objects without a new dependency or retry
+   policy.
+4. A later provider-native structured-output compatibility spike confirms
+   whether real provider responses can supply an equivalent already-structured
+   payload shape.
+
+Next implementation-safe task:
+
+Run a no-network provider bridge skeleton task that uses fake adapter-shaped
+result data and the existing `validate_structured_result(...)` helper. The task
+must not change ProviderRuntime, provider adapters, Core, AssistantTurnRuntime,
+CLI, services, dependencies, or contracts.
+
+AssistantTurnRuntime must not change yet. ProviderRuntime and provider adapters
+must not change in this decision task. No dependencies should be added.
