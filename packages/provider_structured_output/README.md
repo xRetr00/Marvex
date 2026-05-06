@@ -21,6 +21,11 @@ an `ErrorEnvelope`.
 data. It extracts `structured_payload` and delegates validation to
 `validate_structured_payload(...)`.
 
+`validate_fake_adapter_structured_result(...)` is a no-network skeleton helper
+for fake adapter-shaped data. It extracts `trace_id` and
+`result.structured_payload`, builds the current handoff shape, and delegates to
+`validate_structured_result(...)`.
+
 Expected handoff shape:
 
 ```json

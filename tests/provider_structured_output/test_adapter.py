@@ -2,6 +2,7 @@ from dataclasses import dataclass
 
 from packages.contracts import AssistantFinalResponse, ErrorCode, ErrorEnvelope
 from packages.provider_structured_output import (
+    validate_fake_adapter_structured_result,
     validate_structured_payload,
     validate_structured_result,
 )
@@ -47,6 +48,18 @@ class FakeStructuredPayload:
 @dataclass
 class FakeStructuredResult:
     trace_id: str
+    structured_payload: object | None
+
+
+@dataclass
+class FakeAdapterResult:
+    trace_id: str
+    result: object | None = None
+    error: object | None = None
+
+
+@dataclass
+class FakeAdapterPayloadResult:
     structured_payload: object | None
 
 
@@ -227,6 +240,127 @@ def test_handoff_example_does_not_require_or_create_response_metadata():
     )
 
     assert "result_metadata" not in STRUCTURED_RESULT_HANDOFF_EXAMPLE
+    assert isinstance(result, AssistantFinalResponse)
+    dumped = result.model_dump()
+    assert "provider_turn_refs" not in dumped
+    response_id_key = "provider" + "_response_id"
+    assert response_id_key not in dumped
+
+
+def test_fake_adapter_shaped_result_validates_into_target_contract():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-001",
+            "result": {
+                "structured_payload": _valid_response_payload(text="Adapter mapped."),
+            },
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, AssistantFinalResponse)
+    assert result.text == "Adapter mapped."
+
+
+def test_fake_adapter_shaped_object_result_validates_into_target_contract():
+    fake_result = FakeAdapterResult(
+        trace_id="trace-adapter-002",
+        result=FakeAdapterPayloadResult(
+            structured_payload=_valid_response_payload(text="Object adapter mapped.")
+        ),
+    )
+
+    result = validate_fake_adapter_structured_result(
+        fake_result,
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, AssistantFinalResponse)
+    assert result.text == "Object adapter mapped."
+
+
+def test_fake_adapter_shaped_missing_payload_returns_error_envelope():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-missing-001",
+            "result": {},
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == "trace-adapter-missing-001"
+    assert result.code == ErrorCode.VALIDATION_ERROR
+    assert result.source == "provider_structured_output"
+    assert result.details == {
+        "target": "AssistantFinalResponse",
+        "field": "structured_payload",
+    }
+
+
+def test_fake_adapter_shaped_malformed_payload_returns_error_envelope():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-malformed-001",
+            "result": {
+                "structured_payload": _valid_response_payload(text=""),
+            },
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == "trace-adapter-malformed-001"
+    assert result.details["target"] == "AssistantFinalResponse"
+    assert result.details["errors"]
+
+
+def test_fake_adapter_shaped_error_result_returns_error_envelope():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-error-001",
+            "error": {"message": "fake adapter result unavailable"},
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == "trace-adapter-error-001"
+    assert result.error_id == "structured-output-adapter-result-error"
+    assert result.code == ErrorCode.VALIDATION_ERROR
+    assert result.source == "provider_structured_output"
+    assert result.details == {
+        "target": "AssistantFinalResponse",
+        "field": "error",
+    }
+
+
+def test_fake_adapter_shaped_mapping_preserves_trace_id_for_validation_errors():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-preserved-001",
+            "result": {
+                "structured_payload": _valid_response_payload(text=""),
+            },
+        },
+        AssistantFinalResponse,
+    )
+
+    assert isinstance(result, ErrorEnvelope)
+    assert result.trace_id == "trace-adapter-preserved-001"
+
+
+def test_fake_adapter_shaped_mapping_does_not_create_refs_or_response_ids():
+    result = validate_fake_adapter_structured_result(
+        {
+            "trace_id": "trace-adapter-003",
+            "result": {
+                "structured_payload": _valid_response_payload(),
+            },
+        },
+        AssistantFinalResponse,
+    )
+
     assert isinstance(result, AssistantFinalResponse)
     dumped = result.model_dump()
     assert "provider_turn_refs" not in dumped

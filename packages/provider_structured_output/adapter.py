@@ -77,6 +77,45 @@ def validate_structured_result(
     )
 
 
+def validate_fake_adapter_structured_result(
+    adapter_result: object,
+    target_model: type[TargetModel],
+    *,
+    trace_id: str | None = None,
+    schema_version: str = DEFAULT_SCHEMA_VERSION,
+) -> TargetModel | ErrorEnvelope:
+    data = _payload_data(adapter_result)
+    effective_trace_id = _trace_id(data, trace_id)
+
+    if _field_value(data, "error") is not None:
+        return ErrorEnvelope(
+            schema_version=schema_version,
+            trace_id=effective_trace_id,
+            error_id="structured-output-adapter-result-error",
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Adapter-shaped result includes an error.",
+            recoverable=False,
+            source=ERROR_SOURCE,
+            details={
+                "target": target_model.__name__,
+                "field": "error",
+            },
+        )
+
+    result_data = _payload_data(_field_value(data, "result"))
+    handoff = {
+        "trace_id": effective_trace_id,
+        "structured_payload": _field_value(result_data, "structured_payload"),
+    }
+
+    return validate_structured_result(
+        handoff,
+        target_model,
+        trace_id=effective_trace_id,
+        schema_version=schema_version,
+    )
+
+
 def _payload_data(payload: object) -> object:
     if isinstance(payload, BaseModel):
         return payload.model_dump()
