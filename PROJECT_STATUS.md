@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: assistant_envelope_contracts_accepted
+current_phase: provider_structured_output_skeleton_complete
 
-implementation_status: assistant_envelope_contract_models_accepted
+implementation_status: provider_structured_output_skeleton_ready_for_compatibility_spike
 
 accepted_docs: true
 
@@ -20,6 +20,9 @@ completed_foundation:
 - manual provider smoke harness
 - validation gates
 - assistant envelope contract models
+- assistant_runtime foundation helpers
+- provider_structured_output no-network validation skeleton
+- fake adapter-shaped structured result pressure tests
 
 completed_process_readiness:
 
@@ -50,10 +53,11 @@ completed_governance_gates:
 - Task 056 Assistant Envelope Contract Approval completed
 - Task 057 Assistant Envelope Contract Models accepted
 - Task 061 Project Status Alignment completed
+- Task 077 Project Status Alignment After Provider Structured-Output Skeleton completed
 
 current_governance_gate:
 
-Task 061 Project Status Alignment
+Task 077 Project Status Alignment After Provider Structured-Output Skeleton
 
 allowed_current_work:
 
@@ -63,6 +67,8 @@ allowed_current_work:
 - Git workflow governance
 - approved task slices only
 - narrow assistant-runtime foundation slices with a separate approved task spec
+- provider-native structured-output compatibility spike/spec work after Task 077
+  status alignment
 
 forbidden_current_work:
 
@@ -75,6 +81,12 @@ forbidden_current_work:
 - contract model behavior changes
 - assistant-runtime integration without a separate approved task spec
 - provider bridge behavior without a separate approved task spec
+- real provider-native structured-output bridge behavior without a separate
+  approved compatibility spike/spec
+- ProviderRuntime structured-output behavior changes without a separate
+  approved task spec
+- Core or CLI assistant-runtime provider integration without a separate approved
+  task spec
 - service contract implementation without separate approval
 - validation script changes outside an approved validation task
 - UI implementation
@@ -208,12 +220,68 @@ recorded validation passed with `python -m pytest -q` reporting 221 passed and
 1 skipped, and `python scripts/run_all_checks.py` reporting all validation
 checks passed.
 
-next_allowed_work_after_task_061:
+Task 070 adds the no-network provider structured-output adapter skeleton using
+existing Pydantic validation and fake/result-shaped payloads. It does not call
+providers, render prompts, add dependencies, change ProviderRuntime, change
+Core, change CLI, or implement provider-native structured-output execution.
 
-Only a small approved task slice after an approved task plan. The next allowed
-implementation direction is a narrow assistant-runtime foundation slice, but
-runtime integration still requires a separate task spec with explicit allowed
-files, forbidden files, tests, validation commands, and rollback plan. Memory,
-tools, voice, UI, desktop agent behavior, proactive behavior, service contracts,
-HTTP/IPC/service daemon behavior, process runtime behavior, and provider bridge
-behavior remain future-only unless separately approved.
+Task 071 adds provider structured-output mapping around
+`validate_structured_result(...)` and approved Marvex contracts. It remains
+no-network validation and does not implement a real provider bridge.
+
+Task 073 records the provider structured-output handoff decision. The handoff
+shape remains a README/test fixture, not a formal Marvex contract. It carries
+`trace_id` and `structured_payload` only, and it must not freeze provider
+response identifiers, runtime references, refusal semantics, incomplete
+semantics, retry policy, or provider adapter behavior before real provider
+pressure exists.
+
+Task 074 adds a fake provider structured-output bridge path for no-network
+adapter-shaped data. It pressure-tests mapping boundaries without changing
+ProviderRuntime, provider adapters, Core, AssistantTurnRuntime, CLI, services,
+contracts, or dependencies.
+
+Task 075 pressure-tests fake structured results through the provider structured
+output boundary. Task 075 is completed, committed, and pushed on `main` at
+commit `8d8b1dd Task 075 pressure test fake structured results`.
+
+Current boundary state after Task 075:
+
+- `assistant_runtime` remains a thin no-provider assistant-envelope helper
+  layer. It normalizes input, builds `AssistantTurnInput`, assembles
+  deterministic no-provider `AssistantTurnResult` objects, and contains only a
+  minimal deterministic `AssistantTurnRuntime` skeleton.
+- `provider_structured_output` remains a no-network Pydantic validation and fake
+  pressure-helper layer. It validates already-available structured payloads into
+  Marvex-owned contracts and returns validated models or `ErrorEnvelope`.
+- No real provider-native structured-output bridge exists yet.
+- No provider adapter emits real provider-native structured-output payloads yet.
+- No ProviderRuntime structured-output behavior exists yet.
+- No Core or CLI assistant-runtime provider integration exists yet.
+- No formal structured-output handoff contract exists yet.
+- Refusal and incomplete semantics remain future work.
+- Tools, memory, voice, UI, desktop agent behavior, proactive behavior,
+  HTTP/IPC/service daemon behavior, and process-worker behavior remain
+  future-only unless separately approved.
+
+Task 077 aligns project status after the provider structured-output skeleton and
+fake adapter-shaped pressure tests. Latest recorded validation passed with
+`python -m pytest -q` reporting 281 passed and 1 skipped, and
+`python scripts/run_all_checks.py` reporting all validation checks passed.
+
+next_allowed_work_after_task_077:
+
+The next allowed direction is a provider-native structured-output compatibility
+spike/spec, after this Task 077 status alignment. That next task may investigate
+real provider-native structured-output compatibility, but it must keep provider
+specifics behind adapter/provider-runtime ownership and must not silently expand
+Core, CLI, AssistantTurnRuntime, services, tools, memory, voice, UI, desktop
+agent behavior, proactive behavior, HTTP/IPC/service daemon behavior, or process
+runtime behavior.
+
+Any provider-native compatibility spike must be a separate approved task spec
+with explicit allowed files, forbidden files, tests, validation commands,
+rollback plan, and a clear answer on whether provider-native structured outputs
+plus Pydantic validation are sufficient before adding a dependency such as
+Promptify, Instructor, Outlines, Guidance, Pydantic AI, LangGraph, or any other
+structured-output framework.
