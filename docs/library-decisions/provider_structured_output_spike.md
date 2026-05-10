@@ -777,3 +777,67 @@ Security rules:
 Implementation remains blocked until a separate task approves this shape,
 creates tests, and decides whether it belongs as a Pydantic model, internal
 adapter-local dataclass, or documentation-only fixture before contract approval.
+
+## 14. Task 084 Fallback Result Model Implementation
+
+decision date: 2026-05-10
+
+Purpose: implement the Task 083 typed fallback result shape inside the
+`provider_structured_output` validation boundary only.
+
+Implemented boundary-local shape:
+
+- `StructuredOutputFallbackResult` is a Pydantic-owned result model in
+  `provider_structured_output`.
+- It is not a Core contract.
+- It is not a ProviderRuntime API.
+- It is not an AssistantTurnRuntime handoff.
+- It is not a telemetry storage format or user-facing final response contract.
+- It does not execute providers, parse prompts, repair JSON, retry calls, or
+  mutate provider prompts.
+
+Implemented common fields:
+
+- `schema_version`
+- `trace_id`
+- `turn_id`
+- `state`
+- `target_contract`
+- `sanitized_message`
+- `sanitized_error_code`
+- `parsed_payload`
+- `raw_preview`
+- `metadata`
+
+Implemented states:
+
+- `valid_structured_result`
+- `invalid_structured_output`
+- `provider_error`
+- `provider_timeout`
+- `refusal_unresolved_or_provider_specific`
+- `incomplete_unresolved_or_provider_specific`
+
+Implemented helper constructors:
+
+- `create_valid_structured_result(...)`
+- `create_invalid_structured_output(...)`
+- `create_provider_error(...)`
+- `create_provider_timeout(...)`
+- `create_refusal_unresolved(...)`
+- `create_incomplete_unresolved(...)`
+
+Security and determinism rules now enforced by the boundary model/tests:
+
+- required identity/state/message fields are non-empty.
+- unknown top-level fields are rejected.
+- `sanitized_error_code` is null or a stable uppercase/snake-like code.
+- `parsed_payload` and `metadata` must be JSON-compatible.
+- `raw_preview` is null by default and bounded to 300 characters when present.
+- direct Pydantic or provider exception strings are not copied into
+  `sanitized_message`.
+- full raw provider output is not represented by this result shape.
+
+Runtime integration remains blocked. A later task must separately approve any
+adapter-local fallback use, ProviderRuntime exposure, AssistantTurnRuntime
+handoff, Core/CLI behavior, telemetry storage, or user-facing response mapping.

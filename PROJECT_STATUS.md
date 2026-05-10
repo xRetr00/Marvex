@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_fallback_result_shape_spec
+current_phase: structured_output_fallback_result_model
 
-implementation_status: structured_output_fallback_result_shape_spec_complete_implementation_blocked
+implementation_status: structured_output_fallback_result_model_complete_runtime_integration_blocked
 
 accepted_docs: true
 
@@ -23,6 +23,7 @@ completed_foundation:
 - assistant_runtime foundation helpers
 - provider_structured_output no-network validation skeleton
 - fake adapter-shaped structured result pressure tests
+- provider_structured_output fallback result model and deterministic mapping helpers
 
 completed_process_readiness:
 
@@ -60,10 +61,11 @@ completed_governance_gates:
 - Task 081 Structured Output Fallback Decision After LM Studio Spike completed
 - Task 082 Structured Output Fallback Design Spec completed
 - Task 083 Structured Output Fallback Result Shape Spec completed
+- Task 084 Structured Output Fallback Result Model completed
 
 current_governance_gate:
 
-Task 083 Structured Output Fallback Result Shape Spec
+Task 084 Structured Output Fallback Result Model
 
 allowed_current_work:
 
@@ -87,6 +89,8 @@ allowed_current_work:
   contracts, tests, validation commands, and boundary constraints
 - typed fallback result shape implementation only after separate approval inside
   the provider_structured_output boundary
+- provider_structured_output fallback result model maintenance inside its
+  existing boundary only
 
 forbidden_current_work:
 
@@ -436,3 +440,31 @@ accepted by a separate implementation task with explicit allowed files, tests,
 validation commands, and boundary constraints. A future task must decide whether
 the shape is implemented as a Pydantic model, internal adapter-local dataclass,
 or remains a documentation-only fixture before broader contract approval.
+
+Task 084 implements `StructuredOutputFallbackResult` inside the
+`provider_structured_output` boundary only. The model rejects unknown top-level
+fields, requires non-empty common identity/state fields, keeps `raw_preview`
+null by default and bounded when present, requires JSON-compatible
+`parsed_payload` and `metadata`, and keeps stable sanitized error codes. The
+boundary now exposes deterministic helper constructors for
+`valid_structured_result`, `invalid_structured_output`, `provider_error`,
+`provider_timeout`, `refusal_unresolved_or_provider_specific`, and
+`incomplete_unresolved_or_provider_specific`. Task 084 does not implement
+provider-native structured output, add dependencies, create parser/retry
+behavior, promote a handoff contract, or change ProviderRuntime, provider
+adapters, Core, CLI, AssistantTurnRuntime, services, ports, or product/runtime
+behavior.
+
+Latest recorded validation after Task 084 passed with
+`python -m pytest tests/provider_structured_output -q` reporting 45 passed,
+`python scripts/check_provider_structured_output_boundaries.py` reporting PASS,
+`python scripts/check_project_status.py` reporting PASS, and
+`python scripts/run_all_checks.py` reporting all validation checks passed.
+
+next_allowed_work_after_task_084:
+
+Runtime integration remains blocked pending a separate approved task. The next
+implementation step may design or implement adapter-local fallback use, but only
+with explicit allowed files, tests, integration boundaries, and no promotion to
+Core, ProviderRuntime API, AssistantTurnRuntime API, telemetry storage, or
+user-facing response contracts without separate approval.
