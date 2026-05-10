@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_fallback_design_spec
+current_phase: structured_output_fallback_result_shape_spec
 
-implementation_status: structured_output_fallback_design_spec_complete_implementation_blocked
+implementation_status: structured_output_fallback_result_shape_spec_complete_implementation_blocked
 
 accepted_docs: true
 
@@ -59,10 +59,11 @@ completed_governance_gates:
 - Task 080 LM Studio Responses Structured Output Manual Spike Observed
 - Task 081 Structured Output Fallback Decision After LM Studio Spike completed
 - Task 082 Structured Output Fallback Design Spec completed
+- Task 083 Structured Output Fallback Result Shape Spec completed
 
 current_governance_gate:
 
-Task 082 Structured Output Fallback Design Spec
+Task 083 Structured Output Fallback Result Shape Spec
 
 allowed_current_work:
 
@@ -84,6 +85,8 @@ allowed_current_work:
   validation, deterministic failure mapping, and sanitized error output
 - fallback implementation task only after separate approval with explicit
   contracts, tests, validation commands, and boundary constraints
+- typed fallback result shape implementation only after separate approval inside
+  the provider_structured_output boundary
 
 forbidden_current_work:
 
@@ -102,6 +105,9 @@ forbidden_current_work:
   evidence or an accepted fallback design
 - fallback behavior implementation before a separate approved implementation
   task
+- promoting the fallback result shape to Core, ProviderRuntime,
+  AssistantTurnRuntime, telemetry storage, or user-facing response contracts
+  without separate approval
 - ProviderRuntime structured-output behavior changes without a separate
   approved task spec
 - Core or CLI assistant-runtime provider integration without a separate approved
@@ -400,3 +406,33 @@ constraints. Future work may either run another manual provider-native model
 spike or implement a small adapter-local fallback mapper outside Core,
 ProviderRuntime, AssistantTurnRuntime, CLI, services, and ports if separately
 approved.
+
+Task 083 defines the typed fallback result shape spec without implementing it.
+The draft shape is `StructuredOutputFallbackResult` owned by the
+`provider_structured_output` validation/mapping boundary only. Required common
+fields are `schema_version`, `trace_id`, `turn_id`, `state`, `target_contract`,
+`sanitized_message`, `sanitized_error_code`, `parsed_payload`, `raw_preview`,
+and `metadata`. Draft states are `valid_structured_result`,
+`invalid_structured_output`, `provider_error`, `provider_timeout`,
+`refusal_unresolved_or_provider_specific`, and
+`incomplete_unresolved_or_provider_specific`. The spec requires null
+`raw_preview` by default, forbids full raw provider output in the result,
+requires sanitized validation errors and stable non-secret error codes, and
+states that the shape is not a Core contract, handoff contract, ProviderRuntime
+API, AssistantTurnRuntime API, telemetry storage format, or user-facing final
+response contract. Task 083 does not implement fallback behavior, add
+dependencies, create parser/retry behavior, promote a handoff contract, or
+change ProviderRuntime, provider adapters, Core, CLI, AssistantTurnRuntime,
+services, ports, or product/runtime behavior.
+
+Latest recorded validation after Task 083 passed with
+`python scripts/check_project_status.py` reporting PASS and
+`python scripts/run_all_checks.py` reporting all validation checks passed.
+
+next_allowed_work_after_task_083:
+
+Structured-output implementation remains blocked until this typed shape is
+accepted by a separate implementation task with explicit allowed files, tests,
+validation commands, and boundary constraints. A future task must decide whether
+the shape is implemented as a Pydantic model, internal adapter-local dataclass,
+or remains a documentation-only fixture before broader contract approval.

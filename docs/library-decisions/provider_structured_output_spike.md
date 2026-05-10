@@ -702,3 +702,78 @@ Future tasks still required before product behavior:
 Implementation remains blocked until this fallback design is accepted by a
 separate implementation task with explicit allowed files, tests, validation
 commands, and boundary constraints.
+
+## 13. Task 083 Fallback Result Shape Spec
+
+decision date: 2026-05-10
+
+Purpose: define the typed result shape for a future provider-structured-output
+fallback mapper. This is a draft implementation target for the
+`provider_structured_output` boundary only.
+
+Ownership boundary:
+
+- `provider_structured_output` owns validation and fallback mapping shape only.
+- Core does not own fallback parsing.
+- ProviderRuntime integration remains future work.
+- AssistantTurnRuntime handoff remains future work.
+- This shape is not a Core contract, handoff contract, ProviderRuntime API,
+  AssistantTurnRuntime API, telemetry storage format, or user-facing final
+  response contract.
+
+Draft result name: `StructuredOutputFallbackResult`.
+
+Required common fields:
+
+- `schema_version`: string, required.
+- `trace_id`: string, required, copied from caller context.
+- `turn_id`: string, required, copied from caller context.
+- `state`: closed enum, required.
+- `target_contract`: string, required, non-secret contract/model name.
+- `sanitized_message`: string, required, no raw provider output or exception
+  string copies.
+- `sanitized_error_code`: string or null, required, stable and non-secret.
+- `parsed_payload`: object or null, required.
+- `raw_preview`: string or null, required, null by default.
+- `metadata`: object, required, may be empty, no hidden assistant state.
+
+Draft states and field rules:
+
+| state | required state-specific fields | nullable fields | forbidden fields | raw provider text retained | telemetry safe | user-facing safe | trace/turn preservation |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `valid_structured_result` | `parsed_payload` | `sanitized_error_code`, `raw_preview` | provider ids, raw output, exception objects | no | yes, if metadata is empty or sanitized | no | copy caller `trace_id` and `turn_id` |
+| `invalid_structured_output` | `sanitized_error_code` | `parsed_payload`, `raw_preview` | raw output, exception strings, repair details | no | yes | no | copy caller `trace_id` and `turn_id` |
+| `provider_error` | `sanitized_error_code` | `parsed_payload`, `raw_preview` | SDK exception object, raw response body | no | yes | no | copy caller `trace_id` and `turn_id` |
+| `provider_timeout` | `sanitized_error_code` | `parsed_payload`, `raw_preview` | timeout stack trace, environment data | no | yes | no | copy caller `trace_id` and `turn_id` |
+| `refusal_unresolved_or_provider_specific` | `sanitized_error_code` | `parsed_payload`, `raw_preview` | inferred policy text, raw refusal body | no | yes | no | copy caller `trace_id` and `turn_id` |
+| `incomplete_unresolved_or_provider_specific` | `sanitized_error_code` | `parsed_payload`, `raw_preview` | partial raw output, provider metadata blobs | no | yes | no | copy caller `trace_id` and `turn_id` |
+
+State mapping rules:
+
+- invalid JSON maps to `invalid_structured_output`.
+- JSON that is structurally valid but fails target Pydantic validation maps to
+  `invalid_structured_output`.
+- provider transport or API errors map to `provider_error`.
+- timeout maps to `provider_timeout`.
+- refusal-like behavior maps to `refusal_unresolved_or_provider_specific` only
+  when the provider supplies an explicit refusal signal or a future approved
+  task defines a conservative detector.
+- incomplete or length-like behavior maps to
+  `incomplete_unresolved_or_provider_specific` only when the provider supplies
+  an explicit incomplete/length signal or a future approved task defines a
+  conservative detector.
+
+Security rules:
+
+- `raw_preview` must be null by default.
+- `raw_preview` may only be bounded and diagnostic.
+- full raw provider output must not be stored in this result shape.
+- Pydantic or validation exceptions must never be copied directly into
+  `sanitized_message`.
+- `sanitized_error_code` must be stable and non-secret-bearing.
+- `metadata` must not carry provider response ids, raw metadata blobs, prompts,
+  raw output, environment values, or assistant state.
+
+Implementation remains blocked until a separate task approves this shape,
+creates tests, and decides whether it belongs as a Pydantic model, internal
+adapter-local dataclass, or documentation-only fixture before contract approval.
