@@ -18,6 +18,25 @@ The script prints PASS or FAIL lines, trace ids, provider response ids, and
 bounded response previews. It does not store prompts, responses, traces, or
 logs. Do not pass secrets as prompt text, model names, or command-line values.
 
+## LM Studio Structured Output Spike
+
+The structured-output spike harness is manual and opt-in only. It observes LM
+Studio Responses provider-native structured-output behavior through the pinned
+OpenAI Python SDK dependency. It is not part of CI or `run_all_checks.py`.
+
+```powershell
+python scripts/spike_lmstudio_structured_output.py --model <local-model>
+```
+
+Optional flags:
+
+- `--base-url`, defaulting to `http://localhost:1234/v1`
+- `--timeout-seconds`
+- `--show-raw-preview`, which prints only a bounded 300-character preview
+
+The harness prints sanitized observation blocks only. It does not persist trace
+logs, prompts, full provider outputs, provider secrets, or environment values.
+
 ## Fake Provider
 
 The fake smoke target is local and deterministic. It does not require internet

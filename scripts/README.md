@@ -65,7 +65,13 @@ attempt to enforce actual agent tool usage.
 Manual smoke scripts:
 
 - `smoke_providers.py`
+- `spike_lmstudio_structured_output.py`
 
 `smoke_providers.py` is developer-only manual verification for provider paths.
 It is intentionally excluded from `run_all_checks.py` and must not become a CI
+dependency.
+
+`spike_lmstudio_structured_output.py` is developer-only manual observation for
+LM Studio Responses provider-native structured-output compatibility. It is
+intentionally excluded from `run_all_checks.py` and must not become a CI
 dependency.

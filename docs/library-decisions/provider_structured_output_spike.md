@@ -475,3 +475,26 @@ approved. The result should be a report that decides whether the next build
 slice can use provider-native structured outputs plus Pydantic validation, or
 whether Marvex needs a separate dependency decision for Promptify, Instructor,
 Outlines, Guidance, or another maintained structured-output helper.
+
+## 9. Task 079 Manual Spike Harness
+decision date: 2026-05-10
+Task 079 adds `scripts/spike_lmstudio_structured_output.py` as a manual,
+opt-in observation harness. It stays out of `run_all_checks.py`, persists no
+traces or outputs, and does not integrate provider-native structured outputs.
+Manual run:
+```powershell
+python scripts/spike_lmstudio_structured_output.py --model <local-model>
+```
+Optional flags: `--base-url`, `--timeout-seconds`, and `--show-raw-preview`;
+raw preview output is off by default and bounded to 300 characters when enabled.
+Copy sanitized fields into the final report: case, trace, request mode,
+status/finish, parsed-object yes/no, raw-fallback yes/no, refusal-like yes/no,
+incomplete/length-like yes/no, and sanitized error class/code/message. To unlock
+implementation, the report must show whether `openai==2.24.0` plus LM Studio
+Responses can produce usable structured output, malformed-pressure behavior,
+refusal/incomplete signals, and Pydantic consumption of parsed or safe fallback
+payloads.
+Still forbidden: Core, ProviderRuntime, AssistantTurnRuntime, CLI normal-turn,
+or service integration; handoff contract promotion; custom parser frameworks;
+retry policy; dependency additions; and hidden assistant state in provider
+metadata.

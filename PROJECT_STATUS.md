@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_native_structured_output_spike_spec
+current_phase: lmstudio_structured_output_manual_spike_harness
 
-implementation_status: provider_native_structured_output_spike_spec_ready
+implementation_status: manual_spike_harness_static_validation_ready
 
 accepted_docs: true
 
@@ -55,10 +55,11 @@ completed_governance_gates:
 - Task 061 Project Status Alignment completed
 - Task 077 Project Status Alignment After Provider Structured-Output Skeleton completed
 - Task 078 Provider-Native Structured Output Compatibility Spike Spec completed
+- Task 079 LM Studio Responses Structured Output Manual Spike Harness completed
 
 current_governance_gate:
 
-Task 078 Provider-Native Structured Output Compatibility Spike Spec
+Task 079 LM Studio Responses Structured Output Manual Spike Harness
 
 allowed_current_work:
 
@@ -72,6 +73,8 @@ allowed_current_work:
   status alignment
 - provider-native structured-output compatibility spike execution only after a
   separate approved task spec
+- manual LM Studio structured-output spike harness execution when explicitly
+  requested and local LM Studio/model are available
 
 forbidden_current_work:
 
@@ -282,15 +285,27 @@ not implement provider-native structured output, does not add dependencies, and
 does not change ProviderRuntime, provider adapters, Core, CLI,
 AssistantTurnRuntime, services, ports, or product/runtime behavior.
 
-next_allowed_work_after_task_078:
+Task 079 adds a manual, opt-in LM Studio Responses structured-output observation
+harness at `scripts/spike_lmstudio_structured_output.py`. The harness uses the
+pinned `openai==2.24.0` client surface, targets `http://localhost:1234/v1` by
+default, requires an explicit `--model`, generates a fresh `trace_id` per run,
+prints sanitized observation blocks only, and remains excluded from
+`scripts/run_all_checks.py`. Task 079 does not run the real spike by default,
+does not implement provider-native structured output, does not add dependencies,
+does not persist trace logs, and does not change ProviderRuntime, provider
+adapters, Core, CLI, AssistantTurnRuntime, services, ports, or product/runtime
+behavior.
+
+next_allowed_work_after_task_079:
 
 The next allowed direction is a provider-native structured-output compatibility
-spike execution task with an explicit task spec. That task may observe real
-provider-native behavior through the existing LM Studio Responses/OpenAI SDK
-path, but it must keep provider specifics behind adapter/provider-runtime
-ownership and must not silently expand Core, CLI, AssistantTurnRuntime, services,
-tools, memory, voice, UI, desktop agent behavior, proactive behavior,
-HTTP/IPC/service daemon behavior, or process runtime behavior.
+spike execution using the manual harness only when LM Studio is already running
+and a local model name is available. That spike may observe real provider-native
+behavior through the existing LM Studio Responses/OpenAI SDK path, but it must
+keep provider specifics behind adapter/provider-runtime ownership and must not
+silently expand Core, CLI, AssistantTurnRuntime, services, tools, memory, voice,
+UI, desktop agent behavior, proactive behavior, HTTP/IPC/service daemon
+behavior, or process runtime behavior.
 
 The compatibility spike must report whether provider-native structured outputs
 plus Pydantic validation are sufficient before adding a dependency such as
