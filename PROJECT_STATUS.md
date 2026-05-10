@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_fallback_decision_after_lmstudio_spike
+current_phase: structured_output_fallback_design_spec
 
-implementation_status: provider_native_structured_output_implementation_blocked_pending_evidence
+implementation_status: structured_output_fallback_design_spec_complete_implementation_blocked
 
 accepted_docs: true
 
@@ -58,10 +58,11 @@ completed_governance_gates:
 - Task 079 LM Studio Responses Structured Output Manual Spike Harness completed
 - Task 080 LM Studio Responses Structured Output Manual Spike Observed
 - Task 081 Structured Output Fallback Decision After LM Studio Spike completed
+- Task 082 Structured Output Fallback Design Spec completed
 
 current_governance_gate:
 
-Task 081 Structured Output Fallback Decision After LM Studio Spike
+Task 082 Structured Output Fallback Design Spec
 
 allowed_current_work:
 
@@ -81,6 +82,8 @@ allowed_current_work:
   observations
 - fallback design planning based on raw provider text, strict Pydantic
   validation, deterministic failure mapping, and sanitized error output
+- fallback implementation task only after separate approval with explicit
+  contracts, tests, validation commands, and boundary constraints
 
 forbidden_current_work:
 
@@ -97,6 +100,8 @@ forbidden_current_work:
   approved compatibility spike/spec
 - provider-native structured-output implementation before better provider
   evidence or an accepted fallback design
+- fallback behavior implementation before a separate approved implementation
+  task
 - ProviderRuntime structured-output behavior changes without a separate
   approved task spec
 - Core or CLI assistant-runtime provider integration without a separate approved
@@ -364,3 +369,34 @@ until stable parsed-object behavior is observed or an explicit fallback decision
 is accepted with deterministic invalid-output semantics, documented
 refusal/incomplete/error mapping, clear `trace_id` propagation behavior, and
 passing validation gates.
+
+Task 082 designs the fallback path without implementing it. The design defines
+fallback input as raw provider output text, an explicit schema or Marvex-owned
+Pydantic contract target, and explicit `trace_id` / `turn_id` context. It
+requires strict JSON handling only when the full output is already valid JSON or
+the provider explicitly returns a JSON field, Pydantic validation through
+Marvex-owned contracts, deterministic invalid-output mapping, sanitized errors,
+and preserved trace context. It defines conservative output states:
+`valid_structured_result`, `invalid_structured_output`, `provider_error`,
+`provider_timeout`, `refusal_unresolved_or_provider_specific`, and
+`incomplete_unresolved_or_provider_specific`. It explicitly forbids custom JSON
+repair, heuristic brace scraping, silent retries, hidden prompt mutation,
+handoff contract promotion, and raw provider output in telemetry/logs by
+default. Task 082 does not implement fallback behavior, add dependencies, create
+parser/retry behavior, promote a handoff contract, or change ProviderRuntime,
+provider adapters, Core, CLI, AssistantTurnRuntime, services, ports, or
+product/runtime behavior.
+
+Latest recorded validation after Task 082 passed with
+`python scripts/check_project_status.py` reporting PASS and
+`python scripts/run_all_checks.py` reporting all validation checks passed.
+
+next_allowed_work_after_task_082:
+
+Structured-output implementation remains blocked until this fallback design is
+accepted by a separate implementation task with explicit allowed files,
+contracts or typed result shape, tests, validation commands, and boundary
+constraints. Future work may either run another manual provider-native model
+spike or implement a small adapter-local fallback mapper outside Core,
+ProviderRuntime, AssistantTurnRuntime, CLI, services, and ports if separately
+approved.

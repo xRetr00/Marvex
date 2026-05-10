@@ -614,3 +614,91 @@ Evidence required before implementation may start:
   full pytest if implementation code changes, and `python scripts/run_all_checks.py`.
 
 Implementation remains blocked until one of those evidence paths is satisfied.
+
+## 12. Task 082 Structured Output Fallback Design
+
+decision date: 2026-05-10
+
+Purpose: define the safe fallback path after Task 080/081 showed the tested LM
+Studio Responses provider-native path is not implementation-ready. This is a
+design only; it does not approve runtime integration.
+
+Fallback input:
+
+- raw provider output text from an already-completed provider call.
+- explicit target schema or Marvex-owned Pydantic contract type.
+- `trace_id` and `turn_id` context supplied by the caller.
+- optional provider error/timeout classification from the provider adapter when
+  no output text is available.
+
+Fallback process:
+
+1. Do not trust raw provider output as structured data.
+2. Attempt strict JSON extraction only when the entire provider output is valid
+   JSON, or when the provider explicitly returns a JSON/structured field.
+3. Do not scrape braces, repair JSON, trim prose around JSON, or infer hidden
+   fields from text.
+4. Validate the candidate object through Marvex-owned Pydantic contracts.
+5. Map validation failure to deterministic structured failure without leaking
+   raw provider text.
+6. Sanitize every validation and provider error message before reporting.
+
+Fallback output states:
+
+- `valid_structured_result`: strict JSON/Pydantic validation succeeded.
+- `invalid_structured_output`: provider returned output, but no strict valid
+  structured object could be validated.
+- `provider_error`: provider or SDK returned a provider error before usable
+  output existed.
+- `provider_timeout`: timeout occurred before usable output existed.
+- `refusal_unresolved_or_provider_specific`: refusal-like behavior was present
+  or suspected, but not mapped to a stable Marvex contract.
+- `incomplete_unresolved_or_provider_specific`: incomplete/length-like behavior
+  was present or suspected, but not mapped to a stable Marvex contract.
+
+Explicitly forbidden:
+
+- custom JSON repair parser.
+- heuristic brace scraping.
+- silent retries.
+- hidden provider prompt mutation.
+- promotion to a formal handoff contract before implementation evidence.
+- raw provider output in telemetry or logs by default.
+- using provider metadata, provider response ids, or raw response blobs as
+  hidden assistant state.
+
+Security rules:
+
+- never log full provider output by default.
+- validation errors must be sanitized and must not include `input_value` or raw
+  provider snippets.
+- bounded previews are allowed only in manual diagnostic mode.
+- `trace_id` must be preserved through every fallback result or failure.
+- `turn_id` must remain explicit caller context, not recovered from metadata.
+
+Future implementation may:
+
+- create a small adapter-local fallback mapper behind provider/adapter ownership.
+- keep fallback mapping outside Core, ProviderRuntime, AssistantTurnRuntime, CLI,
+  services, and ports unless a later task explicitly approves integration.
+- return deterministic invalid-output semantics for malformed or non-JSON model
+  text.
+- keep refusal and incomplete semantics conservative until stronger provider
+  evidence exists.
+
+Future tasks still required before product behavior:
+
+- contract shape or typed result shape decision.
+- focused tests for valid JSON, invalid JSON, provider error, timeout, sanitized
+  validation errors, trace preservation, and conservative refusal/incomplete
+  states.
+- ProviderRuntime integration decision, if provider selection must expose the
+  fallback.
+- AssistantTurnRuntime handoff decision, if assistant-level stages consume the
+  fallback result.
+- optional second provider-native model spike, if better LM Studio model
+  evidence is desired before accepting fallback-first behavior.
+
+Implementation remains blocked until this fallback design is accepted by a
+separate implementation task with explicit allowed files, tests, validation
+commands, and boundary constraints.
