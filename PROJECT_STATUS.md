@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_structured_output_skeleton_complete
+current_phase: provider_native_structured_output_spike_spec
 
-implementation_status: provider_structured_output_skeleton_ready_for_compatibility_spike
+implementation_status: provider_native_structured_output_spike_spec_ready
 
 accepted_docs: true
 
@@ -54,10 +54,11 @@ completed_governance_gates:
 - Task 057 Assistant Envelope Contract Models accepted
 - Task 061 Project Status Alignment completed
 - Task 077 Project Status Alignment After Provider Structured-Output Skeleton completed
+- Task 078 Provider-Native Structured Output Compatibility Spike Spec completed
 
 current_governance_gate:
 
-Task 077 Project Status Alignment After Provider Structured-Output Skeleton
+Task 078 Provider-Native Structured Output Compatibility Spike Spec
 
 allowed_current_work:
 
@@ -69,6 +70,8 @@ allowed_current_work:
 - narrow assistant-runtime foundation slices with a separate approved task spec
 - provider-native structured-output compatibility spike/spec work after Task 077
   status alignment
+- provider-native structured-output compatibility spike execution only after a
+  separate approved task spec
 
 forbidden_current_work:
 
@@ -269,19 +272,29 @@ fake adapter-shaped pressure tests. Latest recorded validation passed with
 `python -m pytest -q` reporting 281 passed and 1 skipped, and
 `python scripts/run_all_checks.py` reporting all validation checks passed.
 
-next_allowed_work_after_task_077:
+Task 078 updates the provider structured-output spike decision so the next real
+compatibility spike is explicit before implementation. It selects the existing
+LM Studio Responses provider path through the pinned OpenAI Python SDK as the
+first provider-native structured-output compatibility target, defines the
+provider behaviors that must be observed, defines sanitized report outputs, and
+keeps the task planning/spec-only. Task 078 does not run the real spike, does
+not implement provider-native structured output, does not add dependencies, and
+does not change ProviderRuntime, provider adapters, Core, CLI,
+AssistantTurnRuntime, services, ports, or product/runtime behavior.
+
+next_allowed_work_after_task_078:
 
 The next allowed direction is a provider-native structured-output compatibility
-spike/spec, after this Task 077 status alignment. That next task may investigate
-real provider-native structured-output compatibility, but it must keep provider
-specifics behind adapter/provider-runtime ownership and must not silently expand
-Core, CLI, AssistantTurnRuntime, services, tools, memory, voice, UI, desktop
-agent behavior, proactive behavior, HTTP/IPC/service daemon behavior, or process
-runtime behavior.
+spike execution task with an explicit task spec. That task may observe real
+provider-native behavior through the existing LM Studio Responses/OpenAI SDK
+path, but it must keep provider specifics behind adapter/provider-runtime
+ownership and must not silently expand Core, CLI, AssistantTurnRuntime, services,
+tools, memory, voice, UI, desktop agent behavior, proactive behavior,
+HTTP/IPC/service daemon behavior, or process runtime behavior.
 
-Any provider-native compatibility spike must be a separate approved task spec
-with explicit allowed files, forbidden files, tests, validation commands,
-rollback plan, and a clear answer on whether provider-native structured outputs
+The compatibility spike must report whether provider-native structured outputs
 plus Pydantic validation are sufficient before adding a dependency such as
 Promptify, Instructor, Outlines, Guidance, Pydantic AI, LangGraph, or any other
-structured-output framework.
+structured-output framework. It must not promote the handoff fixture into a
+formal contract until refusal, incomplete, fallback, error, and trace handling
+are understood from observed provider behavior.

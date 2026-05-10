@@ -1,6 +1,6 @@
 # Provider Structured Output Spike Decision
 
-verified date: 2026-05-05
+verified date: 2026-05-10
 
 verified by: Codex
 
@@ -332,9 +332,10 @@ Task 070 should create a no-network provider structured-output adapter skeleton
 using existing Pydantic contracts and fake provider payloads. It should not call
 providers, render prompts, add dependencies, or change ProviderRuntime.
 
-After Task 070, if the adapter skeleton proves a real provider call is needed,
-run a narrow OpenAI Structured Outputs compatibility spike using the existing
-OpenAI SDK path before considering Promptify or Instructor.
+After Task 070 through Task 075, the no-network skeleton and fake
+adapter-shaped pressure tests have proven the local validation boundary. The
+next task must be a narrow provider-native structured-output compatibility spike
+spec before any real provider bridge implementation.
 
 ## 7. Task 073 Handoff Contract Gate
 
@@ -384,3 +385,93 @@ CLI, services, dependencies, or contracts.
 
 AssistantTurnRuntime must not change yet. ProviderRuntime and provider adapters
 must not change in this decision task. No dependencies should be added.
+
+## 8. Task 078 Provider-Native Compatibility Spike Spec
+
+decision date: 2026-05-10
+
+Decision: run the first real compatibility spike against the existing LM Studio
+Responses provider path using the pinned OpenAI Python SDK surface already
+approved for `packages/adapters/providers/lmstudio_responses/`.
+
+This is the first provider path because it is already approved, uses the
+existing `openai==2.24.0` dependency, can test provider-native schema transport
+closest to Marvex's local model path, and keeps provider-specific behavior in
+adapter/provider ownership instead of Core, AssistantTurnRuntime, CLI, or ports.
+
+The spike must use provider-native structured outputs before custom parsing
+because schema-constrained provider behavior, when supported, is less brittle
+than prompt-only JSON instructions plus a hand-written parser. Plain Pydantic
+validation remains mandatory after the provider call, but Pydantic alone cannot
+prove whether the provider can honor the schema, report refusal-like outcomes,
+or signal incomplete results in a way Marvex can model safely.
+
+Maintained surfaces to check first: the installed `openai==2.24.0` SDK surface,
+official OpenAI Responses structured-output behavior and JSON Schema subset as
+applicable to that SDK, LM Studio's OpenAI-compatible Responses behavior, and
+LiteLLM only as a secondary comparison if the LM Studio Responses path cannot
+exercise provider-native schema transport. Promptify, Instructor, Outlines,
+Guidance, Pydantic AI, and LangGraph remain deferred alternatives unless a
+separate library-decision update proves the provider-native path insufficient.
+
+Exact provider behavior the spike must observe:
+
+- valid structured success: a real provider call returns data that can be
+  converted into the target Marvex Pydantic contract without custom parsing.
+- invalid or malformed structured result: the provider either rejects the
+  request, returns a schema-invalid result, or exposes enough raw output for
+  Marvex to produce a deterministic validation failure.
+- refusal-like response if supported: the provider or SDK exposes a refusal,
+  safety refusal, blocked answer, or equivalent non-answer signal without
+  forcing Marvex to infer refusal from arbitrary text.
+- incomplete or length-like response if supported: the provider or SDK exposes
+  truncation, max-output, incomplete, length, or equivalent finish state
+  separately from a normal successful structured result.
+- provider error or timeout behavior if observable without unsafe overreach:
+  connection failure, unsupported schema parameter, model error, or timeout must
+  be recorded as provider behavior, not collapsed into a fake success.
+
+Outputs the spike must record in the spike report: sanitized request shape,
+sanitized response shape, parsed object behavior, raw fallback behavior,
+refusal/incomplete/error representation, and `trace_id` handling expectations.
+Sanitization must remove secrets, local paths, hostnames beyond localhost, and
+user-private content. Do not invent contract names for missing semantics, and do
+not depend on provider response ids or provider metadata as assistant state.
+
+Forbidden during the compatibility spike: no Core integration, ProviderRuntime
+structured-output changes, AssistantTurnRuntime provider integration, CLI
+behavior change, service or worker behavior change, formal handoff contract
+promotion, custom parser framework, retry policy implementation, or dependency
+addition without an updated library decision record and validation plan. No
+provider response id, provider metadata, or raw response blob may become hidden
+assistant state.
+
+Decision gates before implementation may start:
+
+1. Provider behavior has been observed from a real call or the spike records
+   clearly that the configured provider path cannot support provider-native
+   structured outputs.
+2. The Pydantic validation path is confirmed against the observed provider
+   payload or against the raw fallback payload.
+3. Refusal and incomplete semantics are understood enough to decide whether
+   existing contracts are sufficient or a contract task is required.
+4. Fallback behavior is documented: parsed object, JSON object, text, raw SDK
+   response, or provider error.
+5. The implementation boundary is selected without expanding Core,
+   AssistantTurnRuntime, CLI, services, ports, or ProviderRuntime beyond an
+   explicitly approved task.
+6. Validation commands pass before any implementation task is considered:
+   `python scripts/check_provider_structured_output_boundaries.py`,
+   `python -m pytest tests/provider_structured_output -q`,
+   `python -m pytest -q`, and `python scripts/run_all_checks.py`.
+
+Implementation recommendation after this spec:
+
+Run one provider-native compatibility spike as a manual, bounded,
+no-persistence provider observation task. The spike may use temporary local
+scripts or terminal-only commands if the task spec allows them, but it must not
+commit product/runtime/provider behavior unless a later implementation task is
+approved. The result should be a report that decides whether the next build
+slice can use provider-native structured outputs plus Pydantic validation, or
+whether Marvex needs a separate dependency decision for Promptify, Instructor,
+Outlines, Guidance, or another maintained structured-output helper.
