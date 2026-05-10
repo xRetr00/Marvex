@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: lmstudio_structured_output_manual_spike_harness
+current_phase: lmstudio_structured_output_manual_spike_observed
 
-implementation_status: manual_spike_harness_static_validation_ready
+implementation_status: lmstudio_structured_output_partial_unsupported_observed
 
 accepted_docs: true
 
@@ -56,10 +56,11 @@ completed_governance_gates:
 - Task 077 Project Status Alignment After Provider Structured-Output Skeleton completed
 - Task 078 Provider-Native Structured Output Compatibility Spike Spec completed
 - Task 079 LM Studio Responses Structured Output Manual Spike Harness completed
+- Task 080 LM Studio Responses Structured Output Manual Spike Observed
 
 current_governance_gate:
 
-Task 079 LM Studio Responses Structured Output Manual Spike Harness
+Task 080 LM Studio Responses Structured Output Manual Spike Observed
 
 allowed_current_work:
 
@@ -75,6 +76,8 @@ allowed_current_work:
   separate approved task spec
 - manual LM Studio structured-output spike harness execution when explicitly
   requested and local LM Studio/model are available
+- follow-up provider-native compatibility planning based on Task 080
+  observations
 
 forbidden_current_work:
 
@@ -296,16 +299,29 @@ does not persist trace logs, and does not change ProviderRuntime, provider
 adapters, Core, CLI, AssistantTurnRuntime, services, ports, or product/runtime
 behavior.
 
-next_allowed_work_after_task_079:
+Task 080 runs the manual LM Studio Responses structured-output observation
+harness against local model `qwen3.5-0.8b`. The sanitized observations show that
+`responses.parse` did not return a parsed structured object for valid,
+refusal-like, or incomplete/length-like pressure cases. The invalid-schema
+pressure case completed with raw fallback text rather than a provider schema
+rejection. This is partial/unsupported provider-native structured-output
+behavior for the tested model/path, not an implementation-ready bridge result.
+Task 080 does not implement provider-native structured output, does not add
+dependencies, does not promote a handoff contract, and does not change
+ProviderRuntime, provider adapters, Core, CLI, AssistantTurnRuntime, services,
+ports, or product/runtime behavior.
 
-The next allowed direction is a provider-native structured-output compatibility
-spike execution using the manual harness only when LM Studio is already running
-and a local model name is available. That spike may observe real provider-native
-behavior through the existing LM Studio Responses/OpenAI SDK path, but it must
-keep provider specifics behind adapter/provider-runtime ownership and must not
-silently expand Core, CLI, AssistantTurnRuntime, services, tools, memory, voice,
-UI, desktop agent behavior, proactive behavior, HTTP/IPC/service daemon
-behavior, or process runtime behavior.
+next_allowed_work_after_task_080:
+
+The next allowed direction is follow-up provider-native compatibility planning:
+either test a different loaded LM Studio model or narrower OpenAI-compatible
+request shape, or document a fallback plan that treats LM Studio structured
+output as raw provider text plus explicit Pydantic validation and deterministic
+error mapping. Any follow-up must keep provider specifics behind
+adapter/provider-runtime ownership and must not silently expand Core, CLI,
+AssistantTurnRuntime, services, tools, memory, voice, UI, desktop agent
+behavior, proactive behavior, HTTP/IPC/service daemon behavior, or process
+runtime behavior.
 
 The compatibility spike must report whether provider-native structured outputs
 plus Pydantic validation are sufficient before adding a dependency such as

@@ -11,6 +11,11 @@ implementation impact: research and adapter decision only. No dependency is
 approved by this document. No provider bridge, runtime behavior, Core behavior,
 CLI behavior, prompt rendering, or structured-output execution is implemented.
 
+file size justification: this decision record keeps the structured-output
+candidate comparison, skeleton decisions, manual harness instructions, and
+sanitized provider observations together so future implementation tasks do not
+separate observed provider behavior from the dependency and boundary decision.
+
 ## 1. Executive Decision
 
 Recommendation: use provider-native structured outputs first, backed by plain
@@ -498,3 +503,54 @@ Still forbidden: Core, ProviderRuntime, AssistantTurnRuntime, CLI normal-turn,
 or service integration; handoff contract promotion; custom parser frameworks;
 retry policy; dependency additions; and hidden assistant state in provider
 metadata.
+
+## 10. Task 080 Manual Spike Observations
+
+observed date: 2026-05-10
+
+model: `qwen3.5-0.8b`
+
+endpoint: `http://localhost:1234/v1`
+
+command:
+
+```powershell
+python scripts/spike_lmstudio_structured_output.py --model "qwen3.5-0.8b"
+```
+
+Sanitized observations:
+
+| case | request mode | status/finish | parsed object | raw fallback | refusal-like | incomplete/length-like | sanitized error |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| valid_structured_success | responses.parse | error / unavailable | no | no | no | no | ValidationError, json_invalid |
+| invalid_schema_request_pressure | responses.create.invalid_schema | completed / completed | no | yes | no | no | none |
+| refusal_like_pressure | responses.parse | error / unavailable | no | no | no | no | ValidationError, extra_forbidden and missing |
+| incomplete_length_pressure | responses.parse | error / unavailable | no | no | no | no | ValidationError, json_invalid |
+
+Interpretation:
+
+- LM Studio Responses with `qwen3.5-0.8b` through `openai==2.24.0` did not
+  produce SDK-parsed provider-native structured output in this run.
+- The valid structured success case failed client-side Pydantic parsing, which
+  means this model/path did not provide usable schema-constrained output for the
+  target contract shape.
+- The invalid-schema pressure case completed and exposed raw fallback text,
+  rather than surfacing a provider schema rejection. Treat this as evidence that
+  schema transport may be ignored or only partially honored on this path until a
+  narrower provider/API-shape check proves otherwise.
+- The refusal-like case did not expose a provider refusal field or signal. It
+  produced validation errors against a non-target shape instead.
+- The incomplete/length pressure case did not expose an incomplete or
+  length-like provider signal through the sanitized observation fields.
+
+Decision after Task 080:
+
+This observed LM Studio Responses path is not yet usable enough to unlock a
+runtime implementation of provider-native structured output. The next planning
+step should either test a different loaded LM Studio model or a narrower
+OpenAI-compatible request shape, or document a fallback path that treats LM
+Studio structured output as raw provider text plus explicit Pydantic validation
+and deterministic error mapping. Do not add a dependency, custom parser
+framework, retry policy, formal handoff contract, ProviderRuntime behavior, Core
+integration, CLI integration, or AssistantTurnRuntime provider integration from
+this observation alone.

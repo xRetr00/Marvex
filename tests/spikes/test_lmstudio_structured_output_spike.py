@@ -108,3 +108,22 @@ def test_observation_raw_preview_is_bounded_when_enabled() -> None:
 
     preview_line = next(line for line in lines if line.startswith("raw_preview: "))
     assert len(preview_line.removeprefix("raw_preview: ")) <= spike.RAW_PREVIEW_LIMIT
+
+
+def test_pydantic_validation_error_does_not_leak_raw_provider_text() -> None:
+    secret_provider_text = "secret raw provider text"
+    try:
+        spike.SpikeStructuredResult.model_validate_json(secret_provider_text)
+    except Exception as exc:
+        lines = spike.error_observation_lines(
+            case_name="case",
+            trace_id="trace-1",
+            request_mode="responses.parse",
+            error=exc,
+        )
+    else:
+        raise AssertionError("expected validation error")
+
+    output = "\n".join(lines)
+    assert secret_provider_text not in output
+    assert "validation failed" in output

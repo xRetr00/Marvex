@@ -6,7 +6,7 @@ from typing import Any, Literal
 from uuid import uuid4
 
 from openai import OpenAI
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 
 DEFAULT_BASE_URL = "http://localhost:1234/v1"
@@ -215,7 +215,7 @@ def error_observation_lines(
         "incomplete_length_signal_present: no",
         "error_class: " + type(error).__name__,
         "error_code: " + _safe_value(_error_code(error)),
-        "error_message: " + _sanitize_message(str(error)),
+        "error_message: " + _sanitized_error_message(error),
     ]
 
 
@@ -310,6 +310,19 @@ def _sanitize_message(message: str) -> str:
     if len(normalized) <= ERROR_MESSAGE_LIMIT:
         return normalized
     return normalized[:ERROR_MESSAGE_LIMIT] + "..."
+
+
+def _sanitized_error_message(error: Exception) -> str:
+    if isinstance(error, ValidationError):
+        error_types = sorted(
+            {
+                str(item.get("type", "unknown"))
+                for item in error.errors(include_input=False)
+            }
+        )
+        joined_types = ", ".join(error_types) if error_types else "unknown"
+        return f"validation failed: {len(error.errors())} issue(s); types: {joined_types}"
+    return _sanitize_message(str(error))
 
 
 def _preview(text: str) -> str:
