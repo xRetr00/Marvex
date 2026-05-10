@@ -554,3 +554,63 @@ and deterministic error mapping. Do not add a dependency, custom parser
 framework, retry policy, formal handoff contract, ProviderRuntime behavior, Core
 integration, CLI integration, or AssistantTurnRuntime provider integration from
 this observation alone.
+
+## 11. Task 081 Fallback Decision After LM Studio Spike
+
+decision date: 2026-05-10
+
+Tested path:
+
+- endpoint: LM Studio Responses at `http://localhost:1234/v1`
+- SDK/dependency: pinned `openai==2.24.0`
+- model: `qwen3.5-0.8b`
+- harness: `scripts/spike_lmstudio_structured_output.py`
+
+Outcome:
+
+- `responses.parse` was not usable enough on the tested path/model.
+- A parsed structured object was not reliably returned.
+- Raw fallback text appeared only in the invalid schema pressure case.
+- Refusal and incomplete semantics remain unresolved for this path.
+- The observed behavior does not justify provider-native structured-output
+  runtime integration.
+
+Security and safety note:
+
+Validation errors can leak raw provider output snippets if error strings are
+printed directly. Sanitized error reporting is mandatory for all future
+structured-output spike, fallback, and implementation work. Reports may include
+bounded sanitized previews only when explicitly requested; raw full provider
+outputs, prompts, secrets, environment values, and persistent trace logs remain
+forbidden.
+
+Decision:
+
+- Do not implement provider-native structured-output runtime integration from
+  Task 080 evidence.
+- Do not promote the current handoff fixture into a formal Marvex contract yet.
+- Do not add parser, retry, dependency, framework, ProviderRuntime, Core, CLI,
+  service, or AssistantTurnRuntime behavior yet.
+
+Next safe options, as alternatives only:
+
+1. Run a second manual spike with a stronger or different loaded LM Studio
+   model, using the same sanitized observation rules.
+2. Try a narrower OpenAI-compatible request shape if the installed client and
+   local server expose one without adding dependencies or changing runtime code.
+3. Design a fallback path around raw provider text, strict Pydantic validation,
+   deterministic validation failure mapping, sanitized error output, and no
+   custom JSON repair parser unless a separate decision justifies it.
+
+Evidence required before implementation may start:
+
+- stable parsed-object behavior from provider-native structured output, or an
+  explicit fallback decision accepted with deterministic invalid-output
+  semantics.
+- documented refusal, incomplete, provider error, and validation failure mapping.
+- clear `trace_id` propagation behavior that does not depend on provider
+  response ids or provider metadata as assistant state.
+- passing validation gates: targeted structured-output checks, relevant tests,
+  full pytest if implementation code changes, and `python scripts/run_all_checks.py`.
+
+Implementation remains blocked until one of those evidence paths is satisfied.

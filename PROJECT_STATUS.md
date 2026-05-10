@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: lmstudio_structured_output_manual_spike_observed
+current_phase: structured_output_fallback_decision_after_lmstudio_spike
 
-implementation_status: lmstudio_structured_output_partial_unsupported_observed
+implementation_status: provider_native_structured_output_implementation_blocked_pending_evidence
 
 accepted_docs: true
 
@@ -57,10 +57,11 @@ completed_governance_gates:
 - Task 078 Provider-Native Structured Output Compatibility Spike Spec completed
 - Task 079 LM Studio Responses Structured Output Manual Spike Harness completed
 - Task 080 LM Studio Responses Structured Output Manual Spike Observed
+- Task 081 Structured Output Fallback Decision After LM Studio Spike completed
 
 current_governance_gate:
 
-Task 080 LM Studio Responses Structured Output Manual Spike Observed
+Task 081 Structured Output Fallback Decision After LM Studio Spike
 
 allowed_current_work:
 
@@ -78,6 +79,8 @@ allowed_current_work:
   requested and local LM Studio/model are available
 - follow-up provider-native compatibility planning based on Task 080
   observations
+- fallback design planning based on raw provider text, strict Pydantic
+  validation, deterministic failure mapping, and sanitized error output
 
 forbidden_current_work:
 
@@ -92,6 +95,8 @@ forbidden_current_work:
 - provider bridge behavior without a separate approved task spec
 - real provider-native structured-output bridge behavior without a separate
   approved compatibility spike/spec
+- provider-native structured-output implementation before better provider
+  evidence or an accepted fallback design
 - ProviderRuntime structured-output behavior changes without a separate
   approved task spec
 - Core or CLI assistant-runtime provider integration without a separate approved
@@ -329,3 +334,33 @@ Promptify, Instructor, Outlines, Guidance, Pydantic AI, LangGraph, or any other
 structured-output framework. It must not promote the handoff fixture into a
 formal contract until refusal, incomplete, fallback, error, and trace handling
 are understood from observed provider behavior.
+
+Task 081 records the post-Task-080 decision. The tested path was LM Studio
+Responses at `http://localhost:1234/v1` through pinned `openai==2.24.0` using
+model `qwen3.5-0.8b`. `responses.parse` was not usable enough on that
+path/model, parsed structured objects were not reliably returned, raw fallback
+appeared only in the invalid-schema pressure case, and refusal/incomplete
+semantics remain unresolved. Task 081 keeps provider-native structured-output
+implementation blocked pending either better provider evidence or an accepted
+fallback design. It does not implement provider-native structured output, add
+dependencies, create parser/retry behavior, promote a handoff contract, or
+change ProviderRuntime, provider adapters, Core, CLI, AssistantTurnRuntime,
+services, ports, or product/runtime behavior.
+
+Latest recorded validation after Task 081 passed with `python -m pytest -q`
+reporting 287 passed and 1 skipped, `python scripts/check_project_status.py`
+reporting PASS, and `python scripts/run_all_checks.py` required as the final
+aggregate gate for completion.
+
+next_allowed_work_after_task_081:
+
+The next allowed directions are alternatives only: run a second manual spike
+with a stronger or different loaded LM Studio model, try a narrower
+OpenAI-compatible request shape if the installed client/server support one, or
+design a fallback path around raw provider text, strict Pydantic validation,
+deterministic validation failure mapping, sanitized error output, and no custom
+JSON repair parser unless separately justified. Implementation remains blocked
+until stable parsed-object behavior is observed or an explicit fallback decision
+is accepted with deterministic invalid-output semantics, documented
+refusal/incomplete/error mapping, clear `trace_id` propagation behavior, and
+passing validation gates.
