@@ -60,6 +60,16 @@ PROVIDER_RUNTIME_FORBIDDEN_IMPORTS = [
 PROVIDER_RUNTIME_AGGREGATE_IMPORT = re.compile(
     r"^\s*from\s+packages\.adapters\.providers\s+import\s+(.+)$"
 )
+PROVIDER_RUNTIME_FORBIDDEN_LAYER_IMPORTS = [
+    re.compile(
+        r"^\s*(from|import)\s+packages\.(core|assistant_runtime|contracts|provider_structured_output)\b"
+    ),
+    re.compile(r"^\s*(from|import)\s+apps\.cli\b"),
+    re.compile(r"^\s*(from|import)\s+services\b"),
+]
+PROVIDER_RUNTIME_ALLOWED_PORT_IMPORTS = {
+    "from packages.ports.provider import ProviderPort",
+}
 
 PROVIDER_RUNTIME_FORBIDDEN_TOKENS = [
     "fallback",
@@ -77,6 +87,17 @@ PROVIDER_RUNTIME_FORBIDDEN_TOKENS = [
     "model_routing",
     "model-route",
     "model route",
+]
+PROVIDER_RUNTIME_STRUCTURED_PATH_FORBIDDEN_TOKENS = [
+    "import json",
+    "json.loads",
+    "StructuredOutputFallbackResult",
+    "ProviderResponse",
+    "AssistantTurnResult",
+    "AssistantFinalResponse",
+    "parsed_payload",
+    "sanitized_message",
+    "model_validate",
 ]
 
 
@@ -158,7 +179,22 @@ def _scan_provider_runtime(failures: list[str]) -> None:
         text = _read_text(path)
         if text is None:
             continue
+        if path == PROVIDER_RUNTIME_FILE:
+            for token in PROVIDER_RUNTIME_STRUCTURED_PATH_FORBIDDEN_TOKENS:
+                if token in text:
+                    failures.append(
+                        f"{_rel(path)} must not own structured-output parsing or result conversion: {token}"
+                    )
         for line_number, line in enumerate(text.splitlines(), start=1):
+            if any(pattern.search(line) for pattern in PROVIDER_RUNTIME_FORBIDDEN_LAYER_IMPORTS):
+                failures.append(
+                    f"{_rel(path)}:{line_number} imports a forbidden runtime layer"
+                )
+            if "packages.ports." in line:
+                if line.strip() not in PROVIDER_RUNTIME_ALLOWED_PORT_IMPORTS:
+                    failures.append(
+                        f"{_rel(path)}:{line_number} provider runtime port import must stay limited to ProviderPort"
+                    )
             if any(pattern.search(line) for pattern in PROVIDER_RUNTIME_FORBIDDEN_IMPORTS):
                 failures.append(
                     f"{_rel(path)}:{line_number} imports unapproved provider adapter"

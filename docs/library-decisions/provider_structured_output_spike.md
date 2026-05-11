@@ -1257,3 +1257,47 @@ Boundary remains:
   telemetry storage, or product runtime integration is implemented.
 - Core/CLI/AssistantRuntime integration remains blocked pending a separate
   approved task naming the exact call path and behavior.
+
+## 23. Task 095 ProviderRuntime Boundary And Leak Regression Pack
+
+decision date: 2026-05-11
+
+Purpose: harden confidence in the Task 094 experimental ProviderRuntime
+structured-output adapter path without changing runtime behavior.
+
+Regression coverage now proves:
+
+- normal provider construction, normal provider `send()`, and `ProviderResponse`
+  shape remain unchanged.
+- FakeProvider, unknown providers, and eligible provider names whose constructed
+  adapter lacks `map_raw_output_to_structured_result(...)` are unsupported with
+  deterministic errors.
+- `schema_version`, `trace_id`, and `turn_id` are preserved through the
+  ProviderRuntime call path.
+- raw preview remains null by default and opt-in preview remains capped by the
+  delegated adapter/provider-structured-output path.
+- raw provider output, prompt-like fields, provider/session/thread identifiers,
+  auth/token/secret markers, and Pydantic validation details are not copied into
+  `sanitized_message`.
+- ProviderRuntime delegates once to the adapter-local hook and does not parse
+  JSON, repair JSON, scrape braces, parse markdown fences, retry, mutate
+  prompts, construct fallback results, or convert results to `ProviderResponse`
+  or `AssistantTurnResult`.
+
+Boundary checker hardening:
+
+- `scripts/check_provider_runtime_boundaries.py` now rejects ProviderRuntime
+  imports from Core, AssistantRuntime, contracts, provider_structured_output,
+  CLI, services, or unapproved port modules.
+- it also rejects local ProviderRuntime ownership of structured-output parsing
+  or result-conversion tokens such as JSON parsing, fallback-result classes,
+  `ProviderResponse`, `AssistantTurnResult`, parsed payloads, sanitized
+  messages, and model validation.
+
+Boundary remains:
+
+- the path is still experimental.
+- normal provider sends remain unchanged.
+- Core, CLI, AssistantTurnRuntime, service/API/WebSocket, port, contract,
+  telemetry storage, and product integration remain blocked pending a separate
+  approved task.
