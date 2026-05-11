@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_fallback_result_model
+current_phase: frontend_boundary_planning
 
-implementation_status: structured_output_fallback_result_model_complete_runtime_integration_blocked
+implementation_status: frontend_boundary_documented_real_ui_blocked
 
 accepted_docs: true
 
@@ -24,6 +24,7 @@ completed_foundation:
 - provider_structured_output no-network validation skeleton
 - fake adapter-shaped structured result pressure tests
 - provider_structured_output fallback result model and deterministic mapping helpers
+- frontend boundary planning document
 
 completed_process_readiness:
 
@@ -62,10 +63,11 @@ completed_governance_gates:
 - Task 082 Structured Output Fallback Design Spec completed
 - Task 083 Structured Output Fallback Result Shape Spec completed
 - Task 084 Structured Output Fallback Result Model completed
+- Task 085 Frontend Boundary And UI Contract Planning completed
 
 current_governance_gate:
 
-Task 084 Structured Output Fallback Result Model
+Task 085 Frontend Boundary And UI Contract Planning
 
 allowed_current_work:
 
@@ -91,6 +93,7 @@ allowed_current_work:
   the provider_structured_output boundary
 - provider_structured_output fallback result model maintenance inside its
   existing boundary only
+- frontend boundary documentation and related status references only
 
 forbidden_current_work:
 
@@ -119,6 +122,15 @@ forbidden_current_work:
 - service contract implementation without separate approval
 - validation script changes outside an approved validation task
 - UI implementation
+- real web UI implementation without a separate approved task spec
+- native orb or presence shell implementation without a separate approved task
+  spec
+- trace/event viewer, settings surface, or voice/face visualization
+  implementation without a separate approved task spec
+- UI/API/WebSocket server or runtime integration without approved contracts
+- UI ownership of backend/provider/runtime logic, provider selection, session
+  truth, `previous_response_id` behavior, retry policy, structured-output
+  parsing, tool execution, memory writes, desktop control, or policy decisions
 - tools
 - memory
 - voice
@@ -468,3 +480,21 @@ implementation step may design or implement adapter-local fallback use, but only
 with explicit allowed files, tests, integration boundaries, and no promotion to
 Core, ProviderRuntime API, AssistantTurnRuntime API, telemetry storage, or
 user-facing response contracts without separate approval.
+
+Task 085 documents the frontend/UI ownership boundary in
+`docs/FRONTEND_BOUNDARY.md`: Web UI is client/presentation only, Native
+Orb/Presence is future shell/presence only, and Backend/Core remains the source
+of truth. Mock fixtures are allowed before backend API contracts exist, but real
+integration requires approved HTTP/WebSocket contracts and a separate task spec.
+Task 085 does not implement UI, native orb, presence, API/WebSocket servers,
+ProviderRuntime, Core, AssistantTurnRuntime, services, or product behavior.
+
+Latest recorded validation after Task 085 passed with `python
+scripts/check_project_status.py` reporting PASS and `python
+scripts/run_all_checks.py` reporting all validation checks passed.
+
+next_allowed_work_after_task_085:
+
+Real UI implementation remains blocked. Future frontend work requires a
+separate approved static prototype, mock-only surface, or HTTP/WebSocket
+contract task and must keep backend/provider/runtime logic out of UI clients.

@@ -110,6 +110,18 @@ Tool ports must remain tiny:
 - `packages/core/` = orchestration using ports only
 - `apps/` = clients only
 
+## Frontend Boundary
+
+Future web UI, Native Orb/Presence, trace/event viewer, settings, and
+voice/face visualization surfaces are clients and presentation shells only.
+They must not own backend/provider/runtime logic, provider selection,
+`previous_response_id` behavior, retry policy, structured-output parsing, tool
+execution, memory writes, desktop control, session truth, or policy decisions.
+
+`docs/FRONTEND_BOUNDARY.md` is the authoritative planning document for frontend
+ownership until approved HTTP/WebSocket contracts and separate implementation
+task specs exist.
+
 ## Provider Architecture Path
 
 `Core -> ProviderPort -> ProviderRuntime/Factory -> LiteLLMAdapter / LMStudioResponsesAdapter / FakeProvider`

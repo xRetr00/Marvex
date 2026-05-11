@@ -12,6 +12,12 @@ dependency, or service mode.
 
 No HTTP implementation exists in Task 026.
 
+UI/API/WebSocket contracts for future web, native orb, presence, trace viewer,
+settings, or voice/face visualization surfaces are explicit future tasks. Task
+085 documents frontend ownership boundaries in `docs/FRONTEND_BOUNDARY.md`; it
+does not implement UI runtime, HTTP endpoints, WebSocket streams, backend API
+behavior, or product behavior.
+
 ## Localhost Security Defaults
 
 - Services must bind to `127.0.0.1` by default.

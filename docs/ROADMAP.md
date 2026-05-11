@@ -35,6 +35,11 @@ Only after contracts:
 - Vision
 - Proactive behavior
 
+Frontend surfaces remain future-only until `docs/FRONTEND_BOUNDARY.md` is paired
+with separate approved HTTP/WebSocket contracts and implementation task specs.
+The frontend boundary document is not permission to implement a web UI, native
+orb, presence shell, API server, or WebSocket server.
+
 ## Rule
 
 The roadmap is not permission to implement. Each phase requires `accepted_docs: true`, approved contracts, real task spec files, and validation.
