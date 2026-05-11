@@ -36,11 +36,29 @@ JSON, brace-scraped JSON, and Pydantic validation failures as
 `invalid_structured_output`. It does not repair, scrape, retry, mutate prompts,
 or integrate with runtime turn flow.
 
+`StructuredOutputFallbackResult` metadata is hardened against hidden state and
+raw provider leakage. Metadata must be JSON-compatible and may not contain
+forbidden keys, including normalized variants such as `raw-output`,
+`rawOutput`, `raw_provider_output`, prompt/session/conversation identifiers,
+provider response identifiers, auth fields, tokens, secrets, or passwords.
+Those checks apply recursively through nested objects and lists.
+
+`sanitized_message` and `sanitized_error_code` are stable diagnostic fields, not
+raw-error channels. They must not carry full JSON payloads, prompt-like text,
+secret-bearing text, direct validation/JSON exception strings, or
+secret-bearing error-code markers.
+
+`raw_preview` is null by default. When explicitly enabled for diagnostics, it
+is bounded to 300 characters and remains diagnostic-only; results carrying a
+raw preview are not safe for default telemetry or logging. The package never
+stores full raw provider output.
+
 `map_adapter_raw_output_to_structured_result(...)` is an adapter-local usage
 spike helper. It demonstrates how an adapter-shaped caller could pass raw output
-text into `validate_raw_structured_output(...)`, but it is not wired to a real
-provider adapter, ProviderRuntime API, Core contract, AssistantTurnRuntime
-handoff, CLI behavior, service/API/WebSocket behavior, or runtime turn flow.
+text into `validate_raw_structured_output(...)`. The LM Studio Responses adapter
+has an adapter-local hook for this helper, but that hook is not wired to
+ProviderRuntime, Core, AssistantTurnRuntime handoff, CLI behavior,
+service/API/WebSocket behavior, or runtime turn flow.
 
 Expected handoff shape:
 

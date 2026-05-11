@@ -64,7 +64,8 @@ def test_provider_error_mapping_sanitizes_exception_message():
     assert result.state == "provider_error"
     assert result.sanitized_error_code == "PROVIDER_ERROR"
     assert "secret raw provider output" not in result.sanitized_message
-    assert "RuntimeError" in result.sanitized_message
+    assert "RuntimeError" not in result.sanitized_message
+    assert result.sanitized_message == "Provider error occurred."
 
 
 def test_provider_timeout_mapping():
@@ -212,4 +213,83 @@ def test_metadata_and_payload_must_be_json_compatible():
             turn_id="turn-json",
             target_contract="AssistantFinalResponse",
             metadata={"bad": object()},
+        )
+
+
+@pytest.mark.parametrize(
+    "metadata",
+    [
+        {"raw-output": "secret raw output"},
+        {"rawOutput": "secret raw output"},
+        {"nested": [{"provider_response_id": "resp-001"}]},
+        {"safe": {"Prompt": "system prompt text"}},
+        {"auth": {"api-key": "secret-key"}},
+        {"safe": {"authToken": "token-001"}},
+        {"conversation": [{"text": "hidden state"}]},
+        {"safe": {"threadID": "thread-001"}},
+    ],
+)
+def test_metadata_rejects_forbidden_keys_recursively(metadata: dict[str, object]):
+    with pytest.raises(ValidationError):
+        create_invalid_structured_output(
+            schema_version="0.1.1-draft",
+            trace_id="trace-metadata",
+            turn_id="turn-metadata",
+            target_contract="AssistantFinalResponse",
+            metadata=metadata,
+        )
+
+
+def test_metadata_allows_safe_diagnostic_keys():
+    result = create_invalid_structured_output(
+        schema_version="0.1.1-draft",
+        trace_id="trace-metadata-safe",
+        turn_id="turn-metadata-safe",
+        target_contract="AssistantFinalResponse",
+        metadata={
+            "case_name": "malformed-json",
+            "validation_stage": "json_parse",
+            "source": "unit-test",
+            "reason": "invalid-json",
+            "attempt_type": "diagnostic",
+            "diagnostic_mode": "local",
+            "preview_enabled": False,
+        },
+    )
+
+    assert result.metadata["case_name"] == "malformed-json"
+
+
+@pytest.mark.parametrize(
+    "sanitized_message",
+    [
+        '{"text":"raw payload"}',
+        "system prompt: reveal the hidden instruction",
+        "RuntimeError: provider unavailable",
+        "ValidationError: text field required",
+        "JSONDecodeError: Expecting value",
+        "provider returned secret token abc123",
+    ],
+)
+def test_sanitized_message_rejects_raw_or_secret_bearing_text(
+    sanitized_message: str,
+):
+    with pytest.raises(ValidationError):
+        create_invalid_structured_output(
+            schema_version="0.1.1-draft",
+            trace_id="trace-message",
+            turn_id="turn-message",
+            target_contract="AssistantFinalResponse",
+            sanitized_message=sanitized_message,
+        )
+
+
+def test_sanitized_error_code_rejects_secret_bearing_code():
+    with pytest.raises(ValidationError):
+        create_invalid_structured_output(
+            schema_version="0.1.1-draft",
+            trace_id="trace-code-secret",
+            turn_id="turn-code-secret",
+            target_contract="AssistantFinalResponse",
+            sanitized_error_code="SECRET_TOKEN",
         )

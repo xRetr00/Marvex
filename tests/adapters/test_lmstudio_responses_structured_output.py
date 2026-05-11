@@ -1,5 +1,8 @@
 from types import SimpleNamespace
 
+import pytest
+from pydantic import ValidationError
+
 from packages.contracts import AssistantFinalResponse, ProviderRequest, ProviderResponse
 
 
@@ -83,6 +86,22 @@ def test_raw_output_and_pydantic_error_text_are_not_copied_to_sanitized_message(
     assert raw_output_text not in result.sanitized_message
     assert "text" not in result.sanitized_message
     assert result.raw_preview is None
+
+
+def test_lmstudio_hook_inherits_metadata_hardening():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+
+    result = LMStudioResponsesProvider().map_raw_output_to_structured_result(
+        request=make_request(),
+        raw_output_text=make_assistant_response_json(text="Mapped."),
+        target_contract="AssistantFinalResponse",
+        target_model=AssistantFinalResponse,
+    )
+
+    with pytest.raises(ValidationError):
+        type(result).model_validate(
+            result.model_dump() | {"metadata": {"rawResponse": "hidden raw data"}}
+        )
 
 
 class RecordingResponses:

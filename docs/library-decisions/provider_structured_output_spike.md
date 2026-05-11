@@ -967,3 +967,49 @@ Boundary:
 
 Runtime integration remains blocked pending a separate task that names the
 exact adapter target and call path.
+
+## 18. Task 090 Structured Output Fallback Hardening Pack
+
+decision date: 2026-05-11
+
+Purpose: harden the fallback result model, raw mapper behavior, adapter-local
+helper behavior, and LM Studio adapter-local hook before any runtime
+integration.
+
+Hardening added:
+
+- `StructuredOutputFallbackResult.metadata` remains JSON-compatible and now
+  rejects hidden-state or raw-provider-leak keys recursively through nested
+  objects and lists.
+- Forbidden metadata keys are normalized case-insensitively across common
+  separators and camel-case forms, including raw output/response fields,
+  prompt/message/conversation fields, provider/session/conversation/thread
+  identifiers, auth fields, tokens, secrets, and passwords.
+- Safe diagnostic metadata keys such as `case_name`, `validation_stage`,
+  `source`, `reason`, `attempt_type`, `diagnostic_mode`, and
+  `preview_enabled` remain allowed.
+- `sanitized_message` rejects full JSON payloads, prompt-like text,
+  secret-bearing text, and direct validation/JSON exception strings.
+- `sanitized_error_code` remains uppercase/snake-like and rejects
+  secret-bearing markers.
+- Provider-error fallback messages no longer include provider exception type or
+  message text.
+
+Existing fallback behavior remains:
+
+- raw fallback validation accepts whole-output JSON only.
+- empty output, whitespace output, malformed JSON, prose-wrapped JSON,
+  brace-scraping cases, and schema-invalid JSON map deterministically to
+  `invalid_structured_output`.
+- valid whole-output JSON plus target-model validation maps to
+  `valid_structured_result`.
+- `schema_version`, `trace_id`, and `turn_id` are preserved.
+- `raw_preview` is null by default.
+- opt-in `raw_preview` is bounded to 300 characters, diagnostic-only, and not
+  safe for default telemetry/logging.
+- full raw provider output is not stored.
+
+The LM Studio Responses hook remains adapter-local. Normal provider `send()`
+and `ProviderResponse` behavior are unchanged, no structured fields are added
+to `ProviderResponse`, and ProviderRuntime/Core/AssistantTurnRuntime/CLI/service
+integration remains blocked pending a separate approved task.

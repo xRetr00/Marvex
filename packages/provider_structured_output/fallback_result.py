@@ -10,6 +10,56 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 DEFAULT_SCHEMA_VERSION = "0.1.1-draft"
 MAX_RAW_PREVIEW_LENGTH = 300
 _ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+_FORBIDDEN_METADATA_KEYS = {
+    "rawoutput",
+    "rawprovideroutput",
+    "rawresponse",
+    "rawmetadata",
+    "providerraw",
+    "prompt",
+    "fullprompt",
+    "systemprompt",
+    "messages",
+    "conversation",
+    "transcript",
+    "providerresponseid",
+    "previousresponseid",
+    "responseid",
+    "sessionid",
+    "conversationid",
+    "threadid",
+    "auth",
+    "apikey",
+    "authorization",
+    "bearer",
+    "token",
+    "secret",
+    "password",
+}
+_FORBIDDEN_METADATA_KEY_PARTS = (
+    "apikey",
+    "authorization",
+    "bearer",
+    "password",
+    "secret",
+    "token",
+)
+_FORBIDDEN_ERROR_CODE_PARTS = {"SECRET", "PASSWORD", "TOKEN", "API_KEY", "BEARER"}
+_FORBIDDEN_MESSAGE_TERMS = (
+    "api_key",
+    "authorization",
+    "bearer",
+    "exception",
+    "full prompt",
+    "jsondecodeerror",
+    "password",
+    "runtimeerror",
+    "secret",
+    "system prompt",
+    "token",
+    "traceback",
+    "validationerror",
+)
 TargetModel = TypeVar("TargetModel", bound=BaseModel)
 
 FallbackState = Literal[
@@ -43,6 +93,18 @@ class StructuredOutputFallbackResult(BaseModel):
             return value
         if not value or _ERROR_CODE_PATTERN.fullmatch(value) is None:
             raise ValueError("sanitized_error_code must be stable uppercase snake case")
+        if any(part in value for part in _FORBIDDEN_ERROR_CODE_PARTS):
+            raise ValueError("sanitized_error_code must not carry secret markers")
+        return value
+
+    @field_validator("sanitized_message")
+    @classmethod
+    def _validate_sanitized_message(cls, value: str) -> str:
+        lowered = value.lower()
+        if _looks_like_full_json(value) or any(
+            term in lowered for term in _FORBIDDEN_MESSAGE_TERMS
+        ):
+            raise ValueError("sanitized_message must not carry raw or secret text")
         return value
 
     @field_validator("parsed_payload", "metadata")
@@ -54,6 +116,12 @@ class StructuredOutputFallbackResult(BaseModel):
             json.dumps(value)
         except (TypeError, ValueError) as exc:
             raise ValueError("value must be JSON-compatible") from exc
+        return value
+
+    @field_validator("metadata")
+    @classmethod
+    def _validate_metadata_keys(cls, value: dict[str, Any]) -> dict[str, Any]:
+        _reject_forbidden_metadata_keys(value)
         return value
 
     @model_validator(mode="after")
@@ -192,14 +260,13 @@ def create_provider_error(
     error: object | None = None,
     metadata: dict[str, Any] | None = None,
 ) -> StructuredOutputFallbackResult:
-    error_name = type(error).__name__ if error is not None else "provider error"
     return StructuredOutputFallbackResult(
         schema_version=schema_version,
         trace_id=trace_id,
         turn_id=turn_id,
         state="provider_error",
         target_contract=target_contract,
-        sanitized_message=f"Provider error occurred: {error_name}.",
+        sanitized_message="Provider error occurred.",
         sanitized_error_code="PROVIDER_ERROR",
         parsed_payload=None,
         raw_preview=None,
@@ -227,6 +294,34 @@ def create_provider_timeout(
         raw_preview=None,
         metadata=dict(metadata or {}),
     )
+
+
+def _looks_like_full_json(value: str) -> bool:
+    stripped = value.strip()
+    return (
+        (stripped.startswith("{") and stripped.endswith("}"))
+        or (stripped.startswith("[") and stripped.endswith("]"))
+    )
+
+
+def _normalized_key(value: object) -> str:
+    text = str(value)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1_\2", text)
+    return re.sub(r"[^a-z0-9]", "", text.lower())
+
+
+def _reject_forbidden_metadata_keys(value: object) -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            normalized = _normalized_key(key)
+            if normalized in _FORBIDDEN_METADATA_KEYS or any(
+                part in normalized for part in _FORBIDDEN_METADATA_KEY_PARTS
+            ):
+                raise ValueError("metadata contains a forbidden key")
+            _reject_forbidden_metadata_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            _reject_forbidden_metadata_keys(item)
 
 
 def create_refusal_unresolved(
