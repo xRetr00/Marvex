@@ -124,6 +124,12 @@ class StructuredOutputFallbackResult(BaseModel):
         _reject_forbidden_metadata_keys(value)
         return value
 
+    @field_validator("parsed_payload")
+    @classmethod
+    def _validate_parsed_payload_keys(cls, value: Any) -> Any:
+        _reject_forbidden_metadata_keys(value)
+        return value
+
     @model_validator(mode="after")
     def _validate_state_payload(self) -> "StructuredOutputFallbackResult":
         if self.state == "valid_structured_result" and self.parsed_payload is None:
@@ -236,13 +242,23 @@ def validate_raw_structured_output(
             raw_preview=raw_preview,
         )
 
-    return create_valid_structured_result(
-        schema_version=schema_version,
-        trace_id=trace_id,
-        turn_id=turn_id,
-        target_contract=target_contract,
-        parsed_payload=parsed.model_dump(),
-    )
+    try:
+        return create_valid_structured_result(
+            schema_version=schema_version,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            target_contract=target_contract,
+            parsed_payload=parsed.model_dump(),
+        )
+    except ValidationError as exc:
+        return create_invalid_structured_output(
+            schema_version=schema_version,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            target_contract=target_contract,
+            validation_error=exc,
+            raw_preview=raw_preview,
+        )
 
 
 def _bounded_raw_preview(raw_output_text: str, include_raw_preview: bool) -> str | None:

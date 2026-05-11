@@ -260,6 +260,20 @@ def test_metadata_allows_safe_diagnostic_keys():
     assert result.metadata["case_name"] == "malformed-json"
 
 
+def test_valid_result_rejects_hidden_keys_inside_parsed_payload():
+    with pytest.raises(ValidationError):
+        create_valid_structured_result(
+            schema_version="0.1.1-draft",
+            trace_id="trace-payload-hidden",
+            turn_id="turn-payload-hidden",
+            target_contract="AssistantFinalResponse",
+            parsed_payload={
+                "text": "Done.",
+                "metadata": {"provider_response_id": "resp-001"},
+            },
+        )
+
+
 @pytest.mark.parametrize(
     "sanitized_message",
     [

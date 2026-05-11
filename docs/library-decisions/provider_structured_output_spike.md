@@ -1013,3 +1013,45 @@ The LM Studio Responses hook remains adapter-local. Normal provider `send()`
 and `ProviderResponse` behavior are unchanged, no structured fields are added
 to `ProviderResponse`, and ProviderRuntime/Core/AssistantTurnRuntime/CLI/service
 integration remains blocked pending a separate approved task.
+
+## 19. Task 091 LM Studio Adapter-Local Pressure Matrix
+
+decision date: 2026-05-11
+
+Purpose: pressure-test the LM Studio Responses adapter-local structured-output
+hook against realistic mocked raw-output shapes before any runtime integration.
+
+Pressure matrix added:
+
+- valid whole-output JSON with the expected `AssistantFinalResponse` shape.
+- valid whole-output JSON with extra fields, following the current target model
+  behavior: `AssistantFinalResponse` rejects extras.
+- valid JSON with wrong field types.
+- valid JSON array when an object is expected.
+- empty and whitespace-only output.
+- malformed JSON, prose-wrapped JSON, and markdown-fenced JSON.
+- JSON carrying prompt-like fields or raw-output fields.
+- JSON carrying provider/session/thread identifiers or auth/token/secret-like
+  keys inside target payload metadata.
+- long raw output with preview disabled and with opt-in preview bounded to 300
+  characters.
+
+Observed limitation and hardening:
+
+- Before this pressure matrix, valid target payload metadata could carry hidden
+  provider/session/auth-like keys through `parsed_payload`.
+- The fallback result now applies the same forbidden-key scan to
+  `parsed_payload` as it applies to diagnostic metadata.
+- The raw mapper converts that failure to sanitized
+  `invalid_structured_output` with `VALIDATION_FAILED`.
+
+Boundary remains unchanged:
+
+- the LM Studio hook is adapter-local only.
+- normal provider `send()` and `ProviderResponse` behavior are unchanged.
+- no structured fields are added to `ProviderResponse`.
+- ProviderRuntime exposure still requires a separate approved task naming the
+  exact call path and behavior.
+- Core, AssistantTurnRuntime, CLI, services, API/WebSocket, ports, contracts,
+  retries, JSON repair, brace scraping, markdown parsing, prompt mutation, and
+  product runtime behavior remain blocked.
