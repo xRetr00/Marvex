@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_runtime_structured_output_exposure_decision
+current_phase: provider_runtime_experimental_structured_output_adapter_call_path
 
-implementation_status: provider_runtime_exposure_decision_complete_runtime_exposure_blocked
+implementation_status: provider_runtime_experimental_structured_output_path_complete_core_cli_runtime_blocked
 
 accepted_docs: true
 
@@ -29,6 +29,7 @@ completed_foundation:
 - provider_structured_output adapter-local fallback usage spike
 - LM Studio and LiteLLM adapter-local structured-output hooks
 - provider runtime structured-output exposure decision only
+- provider runtime experimental structured-output adapter call path
 
 completed_process_readiness:
 
@@ -76,10 +77,11 @@ completed_governance_gates:
 - Task 091 LM Studio Adapter-Local Pressure Matrix completed
 - Task 092 LiteLLM Adapter-Local Hook And Pressure Tests completed
 - Task 093 ProviderRuntime Structured Output Exposure Decision completed
+- Task 094 ProviderRuntime Experimental Structured Output Adapter Call Path completed
 
 current_governance_gate:
 
-Task 093 ProviderRuntime Structured Output Exposure Decision
+Task 094 ProviderRuntime Experimental Structured Output Adapter Call Path
 
 allowed_current_work:
 
@@ -114,6 +116,9 @@ allowed_current_work:
 - ProviderRuntime experimental structured-output call-path implementation only
   after separate explicit Task 094 approval and with no normal turn behavior
   change
+- ProviderRuntime experimental structured-output adapter call-path maintenance
+  only; Core, CLI, AssistantTurnRuntime, services, ports, contracts, and normal
+  provider turns remain blocked
 
 forbidden_current_work:
 
@@ -306,3 +311,16 @@ until then. Task 094 must not change Core, CLI normal turns,
 AssistantTurnRuntime, ports, contracts, normal ProviderRuntime `send()`,
 `ProviderResponse` shape, services, API/WebSocket behavior, telemetry storage,
 or product runtime behavior.
+
+Task 094 implements only the explicit ProviderRuntime experimental
+structured-output adapter call path. It selects eligible LM Studio Responses or
+LiteLLM adapters through the existing provider factory and delegates to their
+adapter-local structured-output hooks. It does not change normal provider
+`send()`, `ProviderResponse`, Core, CLI, AssistantTurnRuntime, services,
+ports, contracts, telemetry storage, or product runtime behavior.
+
+next_allowed_work_after_task_094:
+
+Core, CLI, AssistantTurnRuntime, service/API/WebSocket, contract, telemetry, and
+product integration remain blocked. Any next structured-output work requires a
+separate explicit task naming the exact call path and boundary changes.

@@ -1212,3 +1212,48 @@ Required Task 094 tests:
 
 Runtime exposure remains blocked until Task 094 is separately approved and
 implemented.
+
+## 22. Task 094 ProviderRuntime Experimental Adapter Call Path
+
+decision date: 2026-05-11
+
+Purpose: implement the narrow ProviderRuntime experimental structured-output
+adapter call path approved by Task 093.
+
+Implemented path:
+
+- `packages.provider_runtime.provider_runtime.map_provider_raw_output_to_structured_result(...)`
+- selects the provider through the existing `ProviderRuntimeConfig` and
+  `create_provider(...)` boundary.
+- allows only the LM Studio Responses and LiteLLM adapters for this
+  experimental path.
+- calls the adapter-local `map_raw_output_to_structured_result(...)` method
+  when the selected adapter exposes it.
+- passes `schema_version`, `trace_id`, `turn_id`, raw output text,
+  `target_contract`, target Pydantic model, and explicit raw-preview setting to
+  the adapter-owned hook.
+
+ProviderRuntime still does not own:
+
+- JSON parsing, repair, brace scraping, markdown-fence parsing, prompt
+  mutation, structured-output retries, or target-model validation.
+- fallback-result construction or sanitized error message construction.
+- raw provider output logging or telemetry.
+- conversion into `ProviderResponse`, `AssistantTurnResult`, or user-facing
+  responses.
+
+Unsupported behavior:
+
+- FakeProvider is unsupported for this experimental path.
+- unknown providers continue to use the existing unsupported-provider error.
+- providers without an explicit adapter-local structured-output hook remain
+  unsupported.
+
+Boundary remains:
+
+- normal provider `send()` behavior is unchanged.
+- `ProviderResponse` shape is unchanged.
+- no Core, AssistantTurnRuntime, CLI, service/API/WebSocket, port, contract,
+  telemetry storage, or product runtime integration is implemented.
+- Core/CLI/AssistantRuntime integration remains blocked pending a separate
+  approved task naming the exact call path and behavior.
