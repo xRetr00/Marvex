@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: adapter_local_structured_output_fallback_usage_spike
+current_phase: provider_runtime_structured_output_exposure_decision
 
-implementation_status: adapter_local_usage_spike_complete_runtime_integration_blocked
+implementation_status: provider_runtime_exposure_decision_complete_runtime_exposure_blocked
 
 accepted_docs: true
 
@@ -27,6 +27,8 @@ completed_foundation:
 - frontend boundary planning document
 - provider_structured_output fallback validation mapper
 - provider_structured_output adapter-local fallback usage spike
+- LM Studio and LiteLLM adapter-local structured-output hooks
+- provider runtime structured-output exposure decision only
 
 completed_process_readiness:
 
@@ -69,10 +71,15 @@ completed_governance_gates:
 - Task 086 Structured Output Fallback Validation Mapper completed
 - Task 087 Provider Structured Output Integration Gate completed
 - Task 088 Adapter-Local Structured Output Fallback Usage Spike completed
+- Task 089 LM Studio Adapter-Local Structured Output Hook completed
+- Task 090 Structured Output Fallback Hardening Pack completed
+- Task 091 LM Studio Adapter-Local Pressure Matrix completed
+- Task 092 LiteLLM Adapter-Local Hook And Pressure Tests completed
+- Task 093 ProviderRuntime Structured Output Exposure Decision completed
 
 current_governance_gate:
 
-Task 088 Adapter-Local Structured Output Fallback Usage Spike
+Task 093 ProviderRuntime Structured Output Exposure Decision
 
 allowed_current_work:
 
@@ -104,6 +111,9 @@ allowed_current_work:
 - provider_structured_output integration-gate documentation only
 - provider_structured_output adapter-local usage spike maintenance inside its
   existing boundary only
+- ProviderRuntime experimental structured-output call-path implementation only
+  after separate explicit Task 094 approval and with no normal turn behavior
+  change
 
 forbidden_current_work:
 
@@ -269,3 +279,30 @@ next_allowed_work_after_task_088:
 
 Runtime integration remains blocked pending a separate task that names the
 exact adapter target and call path.
+
+Tasks 089 through 092 added and pressure-tested adapter-local structured-output
+hooks for LM Studio Responses and LiteLLM, hardened fallback metadata and parsed
+payload leakage, and preserved normal provider `send()` / `ProviderResponse`
+behavior. These tasks do not expose structured output through ProviderRuntime,
+Core, AssistantTurnRuntime, CLI, services, ports, contracts, telemetry storage,
+or product runtime behavior.
+
+Task 093 approves a future ProviderRuntime experimental structured-output
+adapter call path only. The approved future shape is: ProviderRuntime selects an
+eligible adapter, calls the adapter-local
+`map_raw_output_to_structured_result(...)` method only when the adapter exposes
+it, and receives `StructuredOutputFallbackResult` only inside that explicit
+experimental path. LM Studio Responses and LiteLLM are initially eligible.
+FakeProvider and providers without explicit adapter-local hooks remain blocked.
+ProviderRuntime must not parse, repair, scrape, retry, mutate prompts, construct
+fallback results, convert fallback results to `ProviderResponse` or
+`AssistantTurnResult`, emit user-facing responses, or log raw provider output.
+
+next_allowed_work_after_task_093:
+
+Task 094 ProviderRuntime Experimental Structured Output Adapter Call Path may be
+implemented only as a separate explicit task. Runtime exposure remains blocked
+until then. Task 094 must not change Core, CLI normal turns,
+AssistantTurnRuntime, ports, contracts, normal ProviderRuntime `send()`,
+`ProviderResponse` shape, services, API/WebSocket behavior, telemetry storage,
+or product runtime behavior.

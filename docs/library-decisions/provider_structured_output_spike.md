@@ -1092,3 +1092,123 @@ Boundary remains unchanged:
 - Core, AssistantTurnRuntime, CLI, services, API/WebSocket, ports, contracts,
   runtime provider selection, retries, JSON repair, brace scraping, markdown
   parsing, prompt mutation, and product runtime behavior remain blocked.
+
+## 21. Task 093 ProviderRuntime Exposure Decision
+
+decision date: 2026-05-11
+
+Purpose: decide whether ProviderRuntime may expose adapter-local structured
+output fallback capability after both LM Studio Responses and LiteLLM proved
+adapter-local hooks under pressure tests.
+
+Decision: approve one narrow future implementation task. ProviderRuntime may
+expose structured-output fallback capability only through an explicit
+experimental structured-output call path. This decision does not implement that
+path.
+
+Narrowest allowed call path:
+
+1. ProviderRuntime selects or constructs an approved provider adapter using its
+   existing provider selection/factory boundary.
+2. A future explicit structured-output call may call the adapter-local
+   `map_raw_output_to_structured_result(...)` method only if the selected
+   adapter exposes that method.
+3. The adapter-local method delegates raw output text to
+   `provider_structured_output.map_adapter_raw_output_to_structured_result(...)`.
+4. `provider_structured_output` owns whole-output JSON parsing, Pydantic target
+   validation, fallback-result construction, metadata/parsed-payload hardening,
+   sanitized messages/error codes, and raw-preview policy.
+5. The future ProviderRuntime path returns `StructuredOutputFallbackResult`
+   only inside the explicit experimental path. It must not affect normal
+   provider turns.
+
+Initially eligible adapters:
+
+- LM Studio Responses adapter.
+- LiteLLM adapter.
+
+Blocked adapters:
+
+- Fake provider, unless a future task explicitly adds adapter-local parity.
+- Any provider without an explicit adapter-local structured-output hook.
+
+ProviderRuntime may own:
+
+- capability detection for the explicit structured-output path.
+- approved adapter selection/construction using existing provider configuration.
+- deterministic unsupported-capability handling for providers without the hook.
+- passing `schema_version`, `trace_id`, `turn_id`, raw output text,
+  `target_contract`, target Pydantic model, and explicit preview setting to the
+  adapter-local hook.
+
+ProviderRuntime must not own:
+
+- JSON parsing or validation.
+- JSON repair, brace scraping, markdown-fence parsing, prompt mutation, or
+  structured-output retries.
+- provider prompt rendering.
+- fallback-result construction or sanitized error message construction.
+- raw provider output telemetry/logging.
+- conversion into `ProviderResponse`, `AssistantTurnResult`, or user-facing
+  responses.
+- Core, AssistantTurnRuntime, CLI, service/API/WebSocket, port, or contract
+  integration.
+- normal provider `send()` behavior or `ProviderResponse` shape changes.
+
+Adapter-owned responsibilities:
+
+- expose an adapter-local `map_raw_output_to_structured_result(...)` method only
+  after adapter-specific tests prove the pressure matrix.
+- preserve caller `schema_version`, `trace_id`, and `turn_id`.
+- delegate to `provider_structured_output` rather than implementing parsing.
+- keep raw preview disabled by default.
+
+Core ownership later:
+
+- Core may later decide whether structured fallback results should influence an
+  assistant turn, but only through a separate AssistantTurnRuntime/Core task.
+- Core must not receive raw provider output and must not treat this result as a
+  user-facing response contract by default.
+
+Still blocked:
+
+- normal ProviderRuntime provider turns exposing structured output.
+- ProviderResponse shape changes.
+- ProviderPort or contract changes.
+- Core, AssistantTurnRuntime, CLI normal-turn, service/API/WebSocket, telemetry
+  storage, and user-facing response integration.
+- raw provider output logging or telemetry by default.
+- retry, repair, parser framework, prompt mutation, or handoff-contract
+  promotion.
+
+Future implementation task title:
+
+Task 094: ProviderRuntime Experimental Structured Output Adapter Call Path
+
+Required Task 094 constraints:
+
+- no Core changes.
+- no CLI normal-turn changes.
+- no AssistantTurnRuntime changes.
+- no port/contract changes unless separately approved.
+- no ProviderResponse shape change.
+- no existing `send()` behavior change.
+- no telemetry/logging of raw provider output.
+- preserve `schema_version`, `trace_id`, and `turn_id`.
+- return `StructuredOutputFallbackResult` only inside the explicit
+  ProviderRuntime experimental path.
+
+Required Task 094 tests:
+
+- ProviderRuntime exposes the path only for eligible adapters.
+- unsupported providers return deterministic unsupported-capability behavior or
+  are not exposed.
+- LM Studio and LiteLLM paths preserve trace/turn ids.
+- invalid raw output maps deterministically through the fallback result.
+- raw output is not logged or copied into sanitized messages.
+- normal ProviderRuntime provider creation/send behavior remains unchanged.
+- boundary checkers prevent Core, CLI, AssistantRuntime, services, ports, and
+  contract coupling.
+
+Runtime exposure remains blocked until Task 094 is separately approved and
+implemented.

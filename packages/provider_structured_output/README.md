@@ -55,10 +55,10 @@ stores full raw provider output.
 
 `map_adapter_raw_output_to_structured_result(...)` is an adapter-local usage
 spike helper. It demonstrates how an adapter-shaped caller could pass raw output
-text into `validate_raw_structured_output(...)`. The LM Studio Responses adapter
-has an adapter-local hook for this helper, but that hook is not wired to
-ProviderRuntime, Core, AssistantTurnRuntime handoff, CLI behavior,
-service/API/WebSocket behavior, or runtime turn flow.
+text into `validate_raw_structured_output(...)`. The LM Studio Responses and
+LiteLLM adapters have adapter-local hooks for this helper, but those hooks are
+not wired to normal ProviderRuntime turns, Core, AssistantTurnRuntime handoff,
+CLI behavior, service/API/WebSocket behavior, or runtime turn flow.
 
 Expected handoff shape:
 
@@ -84,22 +84,33 @@ The handoff object is intentionally minimal. It carries trace context and
 already-structured payload data only; response identifiers and runtime
 references are outside this package.
 
-## Future Integration Gate
+## Future ProviderRuntime Decision
 
 This package currently owns validation and mapping helpers only.
 `validate_raw_structured_output(...)` is not a Core contract, ProviderRuntime
 API, AssistantTurnRuntime handoff, telemetry format, or user-facing response
 contract.
 
-Before a future task may integrate fallback behavior into a provider adapter or
-ProviderRuntime, it must name the exact adapter target, exact call path, fallback
-validation entry point, deterministic invalid-output behavior, and tests for
-`trace_id` / `turn_id` preservation. Provider errors and timeouts must remain
-provider/runtime-owned, refusal and incomplete handling must stay conservative
-unless explicit provider signals exist, and raw provider output must not enter
-telemetry or logs by default.
+Task 093 approves only a future explicit ProviderRuntime experimental call path.
+That path is not implemented yet. The approved shape is:
 
-The next allowed implementation shape is adapter-local use only behind a narrow
-explicit task. No Core behavior, AssistantTurnRuntime handoff, CLI normal-turn
-behavior, service/API/WebSocket behavior, or formal handoff contract promotion
-is authorized by this package.
+- ProviderRuntime may select or construct an eligible adapter through its
+  existing provider boundary.
+- Only LM Studio Responses and LiteLLM are initially eligible because they have
+  adapter-local hooks and pressure tests.
+- ProviderRuntime may call an adapter-local
+  `map_raw_output_to_structured_result(...)` method only in the explicit
+  structured-output path.
+- The adapter-local method must delegate to
+  `provider_structured_output.map_adapter_raw_output_to_structured_result(...)`.
+- ProviderRuntime must not parse JSON, repair JSON, scrape braces, parse
+  markdown fences, mutate prompts, retry structured-output failures, construct
+  fallback results, convert results to `ProviderResponse` or
+  `AssistantTurnResult`, emit user-facing responses, or log raw provider output.
+- Normal provider `send()` behavior and `ProviderResponse` shape must remain
+  unchanged.
+
+Runtime exposure remains blocked until a separate implementation task lands this
+explicit path. Core, AssistantTurnRuntime, CLI normal-turn behavior,
+service/API/WebSocket behavior, port/contract changes, telemetry storage, and
+formal handoff contract promotion remain blocked.
