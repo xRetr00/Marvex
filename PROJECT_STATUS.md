@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_fallback_validation_mapper
+current_phase: provider_structured_output_integration_gate
 
-implementation_status: fallback_validation_mapper_boundary_local_runtime_integration_blocked
+implementation_status: integration_gate_documented_runtime_integration_blocked
 
 accepted_docs: true
 
@@ -66,10 +66,11 @@ completed_governance_gates:
 - Task 084 Structured Output Fallback Result Model completed
 - Task 085 Frontend Boundary And UI Contract Planning completed
 - Task 086 Structured Output Fallback Validation Mapper completed
+- Task 087 Provider Structured Output Integration Gate completed
 
 current_governance_gate:
 
-Task 086 Structured Output Fallback Validation Mapper
+Task 087 Provider Structured Output Integration Gate
 
 allowed_current_work:
 
@@ -98,6 +99,7 @@ allowed_current_work:
 - frontend boundary documentation and related status references only
 - provider_structured_output fallback validation mapper maintenance inside its
   existing boundary only
+- provider_structured_output integration-gate documentation only
 
 forbidden_current_work:
 
@@ -233,3 +235,18 @@ adapter-local for further pressure tests or separately approve integration
 boundaries, but it must not move backend/provider/runtime ownership into Core,
 ProviderRuntime API, AssistantTurnRuntime API, CLI, services, telemetry storage,
 provider adapters, or user-facing response contracts without explicit approval.
+
+Task 087 documents the future integration gate for provider structured-output
+fallback behavior. Before any future adapter or ProviderRuntime task, the task
+spec must name the exact adapter target, call path, fallback validation entry
+point, deterministic invalid-output behavior, trace/turn preservation tests, and
+boundary-check expectations. Provider errors/timeouts stay provider/runtime
+owned, refusal/incomplete handling stays conservative without explicit provider
+signals, raw provider output must not enter telemetry/logs by default, and no
+Core, AssistantTurnRuntime, CLI normal-turn, service/API/WebSocket, or formal
+handoff-contract promotion is authorized.
+
+next_allowed_work_after_task_087:
+
+Runtime integration remains blocked. The next implementation option is
+adapter-local use only, behind a separate narrow approved task.

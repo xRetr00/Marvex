@@ -59,3 +59,23 @@ Expected handoff shape:
 The handoff object is intentionally minimal. It carries trace context and
 already-structured payload data only; response identifiers and runtime
 references are outside this package.
+
+## Future Integration Gate
+
+This package currently owns validation and mapping helpers only.
+`validate_raw_structured_output(...)` is not a Core contract, ProviderRuntime
+API, AssistantTurnRuntime handoff, telemetry format, or user-facing response
+contract.
+
+Before a future task may integrate fallback behavior into a provider adapter or
+ProviderRuntime, it must name the exact adapter target, exact call path, fallback
+validation entry point, deterministic invalid-output behavior, and tests for
+`trace_id` / `turn_id` preservation. Provider errors and timeouts must remain
+provider/runtime-owned, refusal and incomplete handling must stay conservative
+unless explicit provider signals exist, and raw provider output must not enter
+telemetry or logs by default.
+
+The next allowed implementation shape is adapter-local use only behind a narrow
+explicit task. No Core behavior, AssistantTurnRuntime handoff, CLI normal-turn
+behavior, service/API/WebSocket behavior, or formal handoff contract promotion
+is authorized by this package.

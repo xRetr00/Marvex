@@ -886,3 +886,51 @@ Still forbidden:
   provider adapter, or runtime turn-flow integration.
 
 Runtime integration remains blocked pending a separate approved task.
+
+## 16. Task 087 Provider Structured Output Integration Gate
+
+decision date: 2026-05-11
+
+Purpose: define the exact gate for any future task that wants to integrate
+`provider_structured_output` fallback behavior into provider adapters or
+ProviderRuntime. This task does not implement integration.
+
+Current ownership:
+
+- `provider_structured_output` owns validation and mapping helpers only.
+- `validate_raw_structured_output(...)` accepts whole-output JSON only.
+- It does not repair JSON, scrape braces, retry, mutate prompts, detect refusal,
+  detect incomplete output, or call providers.
+- It is not a Core contract, ProviderRuntime API, AssistantTurnRuntime handoff,
+  telemetry format, or user-facing response contract.
+
+Before a future task may touch provider adapters or ProviderRuntime, the task
+spec must name:
+
+- exact adapter target.
+- exact call path.
+- fallback validation entry point.
+- deterministic invalid-output behavior.
+- tests proving `trace_id` and `turn_id` preservation.
+- tests or checks proving the boundary checker still prevents Core and
+  assistant-runtime coupling.
+
+The future task must preserve these decisions:
+
+- Provider errors and timeouts remain provider/runtime-owned.
+- Refusal and incomplete states remain conservative unless explicit provider
+  signals exist.
+- No raw provider output enters telemetry or logs by default.
+- Bounded raw previews remain opt-in diagnostic behavior only.
+- No formal handoff contract is promoted by integration alone.
+
+Next allowed implementation option:
+
+- adapter-local use only, behind a narrow explicit task.
+- no Core behavior changes.
+- no AssistantTurnRuntime handoff.
+- no CLI normal-turn changes.
+- no service, API, or WebSocket changes.
+- no formal handoff contract promotion.
+
+Runtime integration remains blocked until such a task is approved.
