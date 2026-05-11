@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_runtime_structured_output_boundary_leak_regression
+current_phase: structured_output_handoff_boundary_decision
 
-implementation_status: provider_runtime_structured_output_boundary_regression_complete_core_cli_runtime_blocked
+implementation_status: structured_output_handoff_decision_complete_integration_blocked
 
 accepted_docs: true
 
@@ -31,6 +31,7 @@ completed_foundation:
 - provider runtime structured-output exposure decision only
 - provider runtime experimental structured-output adapter call path
 - provider runtime structured-output boundary and leak regressions
+- structured-output handoff boundary decision only
 
 completed_process_readiness:
 
@@ -80,10 +81,11 @@ completed_governance_gates:
 - Task 093 ProviderRuntime Structured Output Exposure Decision completed
 - Task 094 ProviderRuntime Experimental Structured Output Adapter Call Path completed
 - Task 095 ProviderRuntime Structured Output Boundary And Leak Regression Pack completed
+- Task 096 Structured Output Handoff Boundary Decision completed
 
 current_governance_gate:
 
-Task 095 ProviderRuntime Structured Output Boundary And Leak Regression Pack
+Task 096 Structured Output Handoff Boundary Decision
 
 allowed_current_work:
 
@@ -123,6 +125,8 @@ allowed_current_work:
   provider turns remain blocked
 - ProviderRuntime structured-output boundary/leak regression maintenance only;
   product runtime integration remains blocked
+- structured-output handoff planning only; AssistantRuntime, Core, CLI,
+  services, ports, contracts, telemetry, and product integration remain blocked
 
 forbidden_current_work:
 
@@ -342,3 +346,19 @@ next_allowed_work_after_task_095:
 Core, CLI, AssistantTurnRuntime, service/API/WebSocket, contract, telemetry, and
 product integration remain blocked. Any next integration step requires a
 separate explicit task naming the exact call path and behavior changes.
+
+Task 096 decides the structured-output handoff boundary only. The
+`StructuredOutputFallbackResult` may cross ProviderRuntime only as the return
+value of the explicit experimental ProviderRuntime path. It is not a Core
+contract, port contract, AssistantTurnRuntime handoff, telemetry format,
+user-facing response contract, or `AssistantTurnResult` conversion. A future
+handoff task may be approved only as a separate explicit seam skeleton with
+named caller, callee, input shape, output shape, failure mapping, trace
+behavior, and tests.
+
+next_allowed_work_after_task_096:
+
+Task 097 Experimental Structured Output Handoff Seam Skeleton may be proposed
+as a separate explicit task. Core, CLI normal turns, AssistantTurnRuntime normal
+turns, services, API/WebSocket, port/contract changes, telemetry storage, and
+product runtime behavior remain blocked until separately approved.

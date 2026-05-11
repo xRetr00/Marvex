@@ -84,33 +84,39 @@ The handoff object is intentionally minimal. It carries trace context and
 already-structured payload data only; response identifiers and runtime
 references are outside this package.
 
-## Future ProviderRuntime Decision
+## ProviderRuntime And Handoff Boundary
 
 This package currently owns validation and mapping helpers only.
-`validate_raw_structured_output(...)` is not a Core contract, ProviderRuntime
-API, AssistantTurnRuntime handoff, telemetry format, or user-facing response
+`StructuredOutputFallbackResult` is not a Core contract, port contract,
+AssistantTurnRuntime handoff, telemetry format, or user-facing response
 contract.
 
-Task 093 approves only a future explicit ProviderRuntime experimental call path.
-That path is not implemented yet. The approved shape is:
+Task 094 implemented an explicit ProviderRuntime experimental call path. That
+path may select LM Studio Responses or LiteLLM through the existing provider
+factory and call the adapter-local `map_raw_output_to_structured_result(...)`
+hook. Task 095 hardened the path with boundary and leak regressions.
 
-- ProviderRuntime may select or construct an eligible adapter through its
-  existing provider boundary.
-- Only LM Studio Responses and LiteLLM are initially eligible because they have
-  adapter-local hooks and pressure tests.
-- ProviderRuntime may call an adapter-local
-  `map_raw_output_to_structured_result(...)` method only in the explicit
-  structured-output path.
-- The adapter-local method must delegate to
-  `provider_structured_output.map_adapter_raw_output_to_structured_result(...)`.
-- ProviderRuntime must not parse JSON, repair JSON, scrape braces, parse
-  markdown fences, mutate prompts, retry structured-output failures, construct
-  fallback results, convert results to `ProviderResponse` or
-  `AssistantTurnResult`, emit user-facing responses, or log raw provider output.
-- Normal provider `send()` behavior and `ProviderResponse` shape must remain
-  unchanged.
+The ProviderRuntime path remains experimental:
 
-Runtime exposure remains blocked until a separate implementation task lands this
-explicit path. Core, AssistantTurnRuntime, CLI normal-turn behavior,
-service/API/WebSocket behavior, port/contract changes, telemetry storage, and
-formal handoff contract promotion remain blocked.
+- it does not change normal provider `send()` behavior.
+- it does not change `ProviderResponse`.
+- it does not parse JSON, repair JSON, scrape braces, parse markdown fences,
+  mutate prompts, retry structured-output failures, construct fallback results,
+  convert results to `ProviderResponse` or `AssistantTurnResult`, emit
+  user-facing responses, or log raw provider output.
+
+Task 096 decides the handoff boundary:
+
+- `StructuredOutputFallbackResult` may cross the ProviderRuntime boundary only
+  as the return value of the explicit experimental ProviderRuntime path.
+- it may not enter AssistantRuntime directly in normal assistant turns.
+- it may not enter Core directly.
+- it is not promoted to a formal contract now.
+- it may not be converted to `AssistantTurnResult` now.
+
+Future AssistantRuntime/Core handoff work remains blocked until a separate
+explicit task names the exact caller, callee, input shape, output shape, failure
+mapping, trace behavior, and tests. Core, AssistantTurnRuntime normal-turn
+behavior, CLI normal-turn behavior, service/API/WebSocket behavior,
+port/contract changes, telemetry storage, product runtime behavior, and formal
+handoff contract promotion remain blocked.

@@ -1301,3 +1301,106 @@ Boundary remains:
 - Core, CLI, AssistantTurnRuntime, service/API/WebSocket, port, contract,
   telemetry storage, and product integration remain blocked pending a separate
   approved task.
+
+## 24. Task 096 Structured Output Handoff Boundary Decision
+
+decision date: 2026-05-12
+
+Purpose: decide whether the hardened ProviderRuntime experimental
+structured-output result may later cross toward AssistantRuntime or Core.
+
+Current implemented evidence:
+
+- `provider_structured_output` owns the fallback result model, raw fallback
+  mapper, adapter-local helper, metadata and parsed-payload leak hardening,
+  sanitized messages/error codes, and raw-preview policy.
+- LM Studio Responses and LiteLLM expose adapter-local
+  `map_raw_output_to_structured_result(...)` hooks.
+- ProviderRuntime exposes an experimental path that selects eligible adapters
+  through its existing factory and delegates to those adapter-local hooks.
+- normal provider `send()` behavior and `ProviderResponse` shape remain
+  unchanged.
+- Task 095 added ProviderRuntime boundary and leak regressions for the
+  experimental path.
+
+Decision:
+
+- `StructuredOutputFallbackResult` may cross the ProviderRuntime boundary only
+  as the return value of the explicit experimental ProviderRuntime
+  structured-output call path.
+- It may not enter AssistantRuntime directly in normal assistant turns.
+- It may not enter Core directly.
+- It is not promoted to a formal Core, port, contract, telemetry, or
+  user-facing response contract.
+- It may not be converted to `AssistantTurnResult` now.
+- `ProviderResponse` and normal provider turn behavior remain unchanged.
+- CLI normal turns, UI/API/WebSocket access, service behavior, product runtime
+  behavior, and telemetry/logging remain blocked.
+
+Allowed future handoff path:
+
+1. A future explicit handoff task may introduce a narrow experimental
+   AssistantRuntime/Core-facing seam that consumes the ProviderRuntime
+   experimental structured-output path.
+2. That task must name the exact caller, callee, input shape, output shape,
+   failure mapping, trace behavior, and tests before implementation.
+3. The seam must preserve `schema_version`, `trace_id`, and `turn_id`.
+4. The seam must not mix structured-output handoff with memory, tools, UI,
+   voice, desktop, proactive behavior, services, API/WebSocket, telemetry
+   storage, prompt mutation, retries, JSON repair, or provider routing.
+5. The seam must not pass raw provider output to Core, AssistantRuntime,
+   telemetry, logs, CLI, services, API/WebSocket, or UI clients.
+
+Required future state mapping:
+
+- `valid_structured_result`: may carry the validated parsed payload only inside
+  the approved experimental seam; it is not a final assistant response contract
+  by itself.
+- `invalid_structured_output`: must map deterministically to a non-user-facing
+  assistant-stage failure shape or remain blocked; raw output and validation
+  details must not leak.
+- `provider_error`: remains provider/runtime-owned and must not expose SDK
+  exception text or raw provider bodies.
+- `provider_timeout`: remains provider/runtime-owned and must not become retry
+  policy by accident.
+- `refusal_unresolved_or_provider_specific`: remains unresolved unless an
+  explicit provider signal exists and a future task defines conservative
+  behavior.
+- `incomplete_unresolved_or_provider_specific`: remains unresolved unless an
+  explicit provider signal exists and a future task defines conservative
+  behavior.
+
+Future tests required before any handoff implementation:
+
+- trace, turn, and schema identity preservation across the ProviderRuntime
+  caller boundary.
+- deterministic invalid structured-output mapping.
+- deterministic unsupported-provider behavior.
+- raw-output and validation-detail non-leakage.
+- normal provider turn behavior remains unchanged.
+- no Core provider-specific imports.
+- no AssistantRuntime provider-specific imports except through the approved
+  seam, if that task explicitly permits it.
+- boundary checker updates only when needed and kept narrow.
+
+Approved next task title:
+
+Task 097: Experimental Structured Output Handoff Seam Skeleton
+
+Task 097 constraints:
+
+- no formal contract promotion.
+- no `AssistantTurnResult` conversion.
+- no `ProviderResponse` changes.
+- no normal provider turn changes.
+- no CLI normal-turn behavior.
+- no UI/API/WebSocket/service/product runtime behavior.
+- no telemetry/logging of raw provider output.
+- no memory, tools, voice, desktop, proactive behavior, retries, JSON repair,
+  brace scraping, markdown-fence parsing, or prompt mutation.
+- preserve `schema_version`, `trace_id`, and `turn_id`.
+- define deterministic behavior for all current
+  `StructuredOutputFallbackResult` states before exposing any handoff result.
+
+Until Task 097 is separately approved and implemented, handoff integration
+remains blocked.
