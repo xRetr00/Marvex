@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import litellm
+from pydantic import BaseModel
 
 from packages.contracts import (
     ErrorCode,
@@ -12,6 +13,7 @@ from packages.contracts import (
     ProviderRequest,
     ProviderResponse,
 )
+from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
 
 
 @dataclass(frozen=True)
@@ -76,6 +78,25 @@ class LiteLLMProvider:
             usage=self._to_plain_mapping(self._read_attr(completion_response, "usage")),
             raw_metadata=raw_metadata,
             error=None,
+        )
+
+    def map_raw_output_to_structured_result(
+        self,
+        *,
+        request: ProviderRequest,
+        raw_output_text: str,
+        target_contract: str,
+        target_model: type[BaseModel],
+        include_raw_preview: bool = False,
+    ) -> object:
+        return map_adapter_raw_output_to_structured_result(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            target_contract=target_contract,
+            raw_output_text=raw_output_text,
+            target_model=target_model,
+            include_raw_preview=include_raw_preview,
         )
 
     def _build_messages(self, request: ProviderRequest) -> list[dict[str, str]]:

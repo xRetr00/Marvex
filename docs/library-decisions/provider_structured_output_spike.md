@@ -1055,3 +1055,40 @@ Boundary remains unchanged:
 - Core, AssistantTurnRuntime, CLI, services, API/WebSocket, ports, contracts,
   retries, JSON repair, brace scraping, markdown parsing, prompt mutation, and
   product runtime behavior remain blocked.
+
+## 20. Task 092 LiteLLM Adapter-Local Hook And Pressure Tests
+
+decision date: 2026-05-11
+
+Purpose: add the same adapter-local structured-output fallback hook to the
+LiteLLM provider adapter and pressure-test it before any runtime integration.
+
+Implemented hook:
+
+- `LiteLLMProvider.map_raw_output_to_structured_result(...)`
+- delegates to `map_adapter_raw_output_to_structured_result(...)`.
+- preserves caller `schema_version`, `trace_id`, and `turn_id`.
+- keeps `raw_preview` disabled by default.
+
+Pressure matrix:
+
+- valid whole-output JSON maps to `valid_structured_result`.
+- extra top-level fields follow the current target model behavior:
+  `AssistantFinalResponse` rejects extras.
+- wrong field types, JSON arrays, empty/whitespace output, malformed JSON,
+  prose-wrapped JSON, and markdown-fenced JSON map to sanitized invalid states.
+- prompt-like fields, raw-output fields, provider/session/thread metadata, and
+  auth/token/secret-like metadata are rejected through parsed-payload hardening.
+- long raw output keeps preview null by default; opt-in preview remains capped
+  at 300 characters.
+
+Boundary remains unchanged:
+
+- the LiteLLM hook is adapter-local only.
+- normal LiteLLM `send()` and `ProviderResponse` behavior are unchanged.
+- no structured fields are added to `ProviderResponse`.
+- ProviderRuntime exposure still requires a separate approved task naming the
+  exact call path and behavior.
+- Core, AssistantTurnRuntime, CLI, services, API/WebSocket, ports, contracts,
+  runtime provider selection, retries, JSON repair, brace scraping, markdown
+  parsing, prompt mutation, and product runtime behavior remain blocked.
