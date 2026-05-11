@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_structured_output_integration_gate
+current_phase: adapter_local_structured_output_fallback_usage_spike
 
-implementation_status: integration_gate_documented_runtime_integration_blocked
+implementation_status: adapter_local_usage_spike_complete_runtime_integration_blocked
 
 accepted_docs: true
 
@@ -26,6 +26,7 @@ completed_foundation:
 - provider_structured_output fallback result model and deterministic mapping helpers
 - frontend boundary planning document
 - provider_structured_output fallback validation mapper
+- provider_structured_output adapter-local fallback usage spike
 
 completed_process_readiness:
 
@@ -67,10 +68,11 @@ completed_governance_gates:
 - Task 085 Frontend Boundary And UI Contract Planning completed
 - Task 086 Structured Output Fallback Validation Mapper completed
 - Task 087 Provider Structured Output Integration Gate completed
+- Task 088 Adapter-Local Structured Output Fallback Usage Spike completed
 
 current_governance_gate:
 
-Task 087 Provider Structured Output Integration Gate
+Task 088 Adapter-Local Structured Output Fallback Usage Spike
 
 allowed_current_work:
 
@@ -100,6 +102,8 @@ allowed_current_work:
 - provider_structured_output fallback validation mapper maintenance inside its
   existing boundary only
 - provider_structured_output integration-gate documentation only
+- provider_structured_output adapter-local usage spike maintenance inside its
+  existing boundary only
 
 forbidden_current_work:
 
@@ -250,3 +254,18 @@ next_allowed_work_after_task_087:
 
 Runtime integration remains blocked. The next implementation option is
 adapter-local use only, behind a separate narrow approved task.
+
+Task 088 adds `map_adapter_raw_output_to_structured_result(...)` inside
+`provider_structured_output` only. It is an adapter-local usage spike that
+delegates to `validate_raw_structured_output(...)`, preserves caller
+`schema_version`, `trace_id`, and `turn_id`, accepts only whole-output JSON
+through the existing mapper, and does not repair, scrape, retry, mutate prompts,
+detect refusal/incomplete output, map provider errors/timeouts, call providers,
+create a runtime API, or promote a handoff contract. It is not wired to a real
+provider adapter, ProviderRuntime, Core, AssistantTurnRuntime, CLI, services,
+API/WebSocket, telemetry storage, or runtime turn flow.
+
+next_allowed_work_after_task_088:
+
+Runtime integration remains blocked pending a separate task that names the
+exact adapter target and call path.

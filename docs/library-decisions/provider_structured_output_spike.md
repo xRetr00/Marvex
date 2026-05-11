@@ -934,3 +934,36 @@ Next allowed implementation option:
 - no formal handoff contract promotion.
 
 Runtime integration remains blocked until such a task is approved.
+
+## 17. Task 088 Adapter-Local Fallback Usage Spike
+
+decision date: 2026-05-11
+
+Purpose: prove adapter-local use of `validate_raw_structured_output(...)`
+through a narrow helper/test path without changing product or runtime behavior.
+
+Implemented helper:
+
+- `map_adapter_raw_output_to_structured_result(...)`
+- location: `packages/provider_structured_output`
+- behavior: delegates raw output text and caller context directly to
+  `validate_raw_structured_output(...)`.
+
+The helper preserves `schema_version`, `trace_id`, and `turn_id`, accepts only
+whole-output JSON through the existing mapper, and inherits the mapper's
+deterministic invalid-output behavior. It does not repair JSON, scrape braces,
+retry, mutate prompts, detect refusal, detect incomplete output, call providers,
+map provider errors/timeouts, create a runtime API, or promote a handoff
+contract.
+
+Boundary:
+
+- not wired to a real provider adapter.
+- not a ProviderRuntime API.
+- not a Core contract.
+- not an AssistantTurnRuntime handoff.
+- not CLI, service, API, WebSocket, telemetry storage, or runtime turn-flow
+  behavior.
+
+Runtime integration remains blocked pending a separate task that names the
+exact adapter target and call path.

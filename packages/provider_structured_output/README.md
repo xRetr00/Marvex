@@ -36,6 +36,12 @@ JSON, brace-scraped JSON, and Pydantic validation failures as
 `invalid_structured_output`. It does not repair, scrape, retry, mutate prompts,
 or integrate with runtime turn flow.
 
+`map_adapter_raw_output_to_structured_result(...)` is an adapter-local usage
+spike helper. It demonstrates how an adapter-shaped caller could pass raw output
+text into `validate_raw_structured_output(...)`, but it is not wired to a real
+provider adapter, ProviderRuntime API, Core contract, AssistantTurnRuntime
+handoff, CLI behavior, service/API/WebSocket behavior, or runtime turn flow.
+
 Expected handoff shape:
 
 ```json
