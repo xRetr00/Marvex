@@ -6,6 +6,7 @@ from .fallback_result import (
     create_provider_timeout,
     create_refusal_unresolved,
     create_valid_structured_result,
+    validate_raw_structured_output,
 )
 from .adapter import (
     validate_fake_adapter_structured_result,
@@ -21,6 +22,7 @@ __all__ = [
     "create_provider_timeout",
     "create_refusal_unresolved",
     "create_valid_structured_result",
+    "validate_raw_structured_output",
     "validate_fake_adapter_structured_result",
     "validate_structured_payload",
     "validate_structured_result",

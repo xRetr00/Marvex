@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Literal
+from typing import Any, Literal, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
@@ -10,6 +10,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_valida
 DEFAULT_SCHEMA_VERSION = "0.1.1-draft"
 MAX_RAW_PREVIEW_LENGTH = 300
 _ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
+TargetModel = TypeVar("TargetModel", bound=BaseModel)
 
 FallbackState = Literal[
     "valid_structured_result",
@@ -117,6 +118,69 @@ def create_invalid_structured_output(
         raw_preview=raw_preview,
         metadata=dict(metadata or {}),
     )
+
+
+def validate_raw_structured_output(
+    *,
+    schema_version: str = DEFAULT_SCHEMA_VERSION,
+    trace_id: str,
+    turn_id: str,
+    target_contract: str,
+    raw_output_text: str,
+    target_model: type[TargetModel],
+    include_raw_preview: bool = False,
+) -> StructuredOutputFallbackResult:
+    raw_preview = _bounded_raw_preview(raw_output_text, include_raw_preview)
+
+    if not raw_output_text.strip():
+        return create_invalid_structured_output(
+            schema_version=schema_version,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            target_contract=target_contract,
+            sanitized_error_code="EMPTY_STRUCTURED_OUTPUT",
+            sanitized_message="Structured output was empty.",
+            raw_preview=raw_preview,
+        )
+
+    try:
+        payload = json.loads(raw_output_text)
+    except json.JSONDecodeError:
+        return create_invalid_structured_output(
+            schema_version=schema_version,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            target_contract=target_contract,
+            sanitized_error_code="INVALID_JSON",
+            sanitized_message="Structured output was not valid JSON.",
+            raw_preview=raw_preview,
+        )
+
+    try:
+        parsed = target_model.model_validate(payload)
+    except ValidationError as exc:
+        return create_invalid_structured_output(
+            schema_version=schema_version,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            target_contract=target_contract,
+            validation_error=exc,
+            raw_preview=raw_preview,
+        )
+
+    return create_valid_structured_result(
+        schema_version=schema_version,
+        trace_id=trace_id,
+        turn_id=turn_id,
+        target_contract=target_contract,
+        parsed_payload=parsed.model_dump(),
+    )
+
+
+def _bounded_raw_preview(raw_output_text: str, include_raw_preview: bool) -> str | None:
+    if not include_raw_preview:
+        return None
+    return raw_output_text[:MAX_RAW_PREVIEW_LENGTH]
 
 
 def create_provider_error(

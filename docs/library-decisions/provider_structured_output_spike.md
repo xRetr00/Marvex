@@ -841,3 +841,48 @@ Security and determinism rules now enforced by the boundary model/tests:
 Runtime integration remains blocked. A later task must separately approve any
 adapter-local fallback use, ProviderRuntime exposure, AssistantTurnRuntime
 handoff, Core/CLI behavior, telemetry storage, or user-facing response mapping.
+
+## 15. Task 086 Fallback Validation Mapper
+
+decision date: 2026-05-11
+
+Purpose: implement the adapter-local fallback validation mapper inside
+`provider_structured_output` only.
+
+Implemented mapper:
+
+- `validate_raw_structured_output(...)`
+- input: explicit `schema_version`, `trace_id`, `turn_id`, `target_contract`,
+  raw provider output text, and caller-supplied Pydantic target model.
+- output: `StructuredOutputFallbackResult`.
+
+Behavior:
+
+- validates whole-output JSON only.
+- maps empty output, whitespace-only output, malformed JSON, prose-wrapped JSON,
+  brace-scraping cases, and Pydantic validation failures to
+  `invalid_structured_output`.
+- maps successful JSON parsing plus target-model validation to
+  `valid_structured_result`.
+- preserves `schema_version`, `trace_id`, and `turn_id`.
+- uses stable sanitized error codes.
+- never copies raw provider output or direct Pydantic exception text into
+  `sanitized_message`.
+- keeps `raw_preview` null by default; opt-in previews are bounded to 300
+  characters.
+
+Still forbidden:
+
+- JSON repair.
+- prose extraction.
+- brace scraping.
+- retries.
+- prompt mutation.
+- refusal detection.
+- incomplete detection.
+- parser framework adoption.
+- handoff contract promotion.
+- Core, ProviderRuntime, AssistantTurnRuntime, CLI, services, telemetry storage,
+  provider adapter, or runtime turn-flow integration.
+
+Runtime integration remains blocked pending a separate approved task.

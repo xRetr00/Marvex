@@ -26,6 +26,16 @@ for fake adapter-shaped data. It extracts `trace_id` and
 `result.structured_payload`, builds the current handoff shape, and delegates to
 `validate_structured_result(...)`.
 
+`validate_raw_structured_output(...)` is an adapter-local fallback validation
+mapper. It accepts raw provider output text plus a caller-supplied Pydantic
+model, validates only when the entire output is valid JSON, and returns
+`StructuredOutputFallbackResult`.
+
+The raw fallback mapper rejects empty output, malformed JSON, prose-wrapped
+JSON, brace-scraped JSON, and Pydantic validation failures as
+`invalid_structured_output`. It does not repair, scrape, retry, mutate prompts,
+or integrate with runtime turn flow.
+
 Expected handoff shape:
 
 ```json
