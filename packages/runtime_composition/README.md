@@ -17,8 +17,14 @@ Current bridge proof:
   `packages.core.orchestration.assistant_provider_stage.run_assistant_provider_stage_turn(...)`.
 - Core then delegates to
   `packages.assistant_runtime.provider_stage.run_provider_stage_turn(...)`.
-- This is fake-provider-only proof coverage. It is not real provider-backed
-  AssistantRuntime product behavior.
+- The official CLI foundation mode calls this bridge; the compatibility alias
+  reaches the same path.
+- `provider_foundation_bridge.py` exposes `run_provider_foundation_turn(...)`
+  for the existing CLI provider-foundation turn path so CLI does not construct
+  providers directly. This preserves existing default CLI behavior and does not
+  promote AssistantRuntime real-provider behavior.
+- The AssistantRuntime bridge remains fake-provider-only proof coverage. It is
+  not real provider-backed AssistantRuntime product behavior.
 
 Forbidden responsibilities:
 
@@ -32,8 +38,10 @@ Forbidden responsibilities:
 Dependency direction:
 
 - May import approved contracts, telemetry sink contracts, ProviderRuntime
-  factory/config, and the Core assistant-provider-stage helper.
+  factory/config, the Core assistant-provider-stage helper, and the existing
+  Core provider-foundation orchestrator.
 - Must not import concrete provider adapters, AssistantRuntime directly, ports,
   CLI apps, or services.
-- Core, AssistantRuntime, ProviderRuntime, and CLI must not import this package
-  until a separate explicit task approves a caller.
+- Core, AssistantRuntime, and ProviderRuntime must not import this package.
+- CLI may import only the approved root functions
+  `run_fake_provider_assistant_bridge(...)` and `run_provider_foundation_turn(...)`.

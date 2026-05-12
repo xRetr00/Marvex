@@ -285,8 +285,11 @@ def test_bridge_telemetry_uses_assistant_runtime_safe_path():
     assert "fake provider response" not in str([event.model_dump() for event in sink.events])
 
 
-def test_default_cli_does_not_import_runtime_composition_bridge():
+def test_cli_imports_only_the_approved_runtime_composition_bridge():
     source = Path("apps/cli/main.py").read_text(encoding="utf-8")
 
-    assert "packages.runtime_composition" not in source
-    assert "run_fake_provider_assistant_bridge" not in source
+    assert "from packages.runtime_composition import (" in source
+    assert "run_fake_provider_assistant_bridge" in source
+    assert "run_provider_foundation_turn" in source
+    assert "packages.runtime_composition.assistant_provider_bridge" not in source
+    assert source.count("run_fake_provider_assistant_bridge") == 2

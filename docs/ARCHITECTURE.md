@@ -228,6 +228,13 @@ relies on Core to reach AssistantRuntime provider-stage behavior. It is not
 wired into default CLI behavior, services, APIs, real providers, sessions,
 history, routing, retry/fallback, tools, or memory.
 
+Task 112 implementation note: the official CLI
+`--assistant-runtime-fake-provider` mode now calls the RuntimeComposition fake
+bridge instead of constructing a local fake provider. CLI also delegates the
+existing provider-foundation turn composition to RuntimeComposition so CLI no
+longer imports ProviderRuntime directly. Default CLI output behavior remains
+unchanged.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

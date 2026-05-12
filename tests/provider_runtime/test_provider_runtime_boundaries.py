@@ -13,10 +13,15 @@ def python_sources(relative_path: str) -> list[Path]:
     return sorted(root.rglob("*.py"))
 
 
-def test_cli_source_uses_provider_runtime_and_not_concrete_adapters():
+def test_cli_source_uses_runtime_composition_and_not_provider_runtime_or_adapters():
     source = read_text("apps/cli/main.py")
 
-    assert "from packages.provider_runtime import ProviderRuntimeConfig, create_provider" in source
+    assert "from packages.runtime_composition import (" in source
+    assert "run_provider_foundation_turn" in source
+    assert "run_fake_provider_assistant_bridge" in source
+    assert "packages.provider_runtime" not in source
+    assert "ProviderRuntimeConfig" not in source
+    assert "create_provider" not in source
     assert "packages.adapters" not in source
     assert "FakeProvider" not in source
     assert "LiteLLMProvider" not in source

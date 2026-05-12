@@ -64,6 +64,8 @@ Provider-stage skeleton:
 - Task 111 proves that separate layer with a fake provider only. The proof
   reaches this helper through Core; AssistantRuntime still does not import the
   bridge, Core, ProviderRuntime, adapters, or ports.
+- Task 112 makes CLI call that separate fake-provider bridge for the official
+  foundation mode. AssistantRuntime remains unaware of CLI and RuntimeComposition.
 
 Structured-output consumer seam:
 

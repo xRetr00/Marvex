@@ -1,7 +1,7 @@
 import json
 from types import SimpleNamespace
 
-from packages.contracts import HealthCheck, ProviderRequest, VersionInfo
+from packages.contracts import FinalResponse, FinishReason, HealthCheck, ResponseType, TurnOutput, VersionInfo
 
 
 def test_fake_provider_path_returns_deterministic_response(capsys):
@@ -28,31 +28,29 @@ def test_fake_provider_path_returns_deterministic_response(capsys):
 def test_previous_response_id_reaches_orchestrator_path(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
-    seen_requests: list[ProviderRequest] = []
+    captured = {}
 
-    class RecordingProvider:
-        def send(self, request: ProviderRequest):
-            seen_requests.append(request)
-            from packages.contracts import FinishReason, ProviderResponse
-
-            return ProviderResponse(
-                schema_version=request.schema_version,
-                trace_id=request.trace_id,
-                turn_id=request.turn_id,
-                provider_name="recording",
-                response_id="recorded-response",
-                output_text="recorded output",
+    def fake_run_provider_foundation_turn(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        turn_input = args[0]
+        return TurnOutput(
+            schema_version=turn_input.schema_version,
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            final_response=FinalResponse(
+                text="recorded output",
+                response_type=ResponseType.TEXT,
                 finish_reason=FinishReason.STOP,
-                usage={},
-                raw_metadata={},
-                error=None,
-            )
+                safe_for_tts=True,
+                metadata={},
+            ),
+            provider_response_id="recorded-response",
+            events=[],
+            error=None,
+        )
 
-    monkeypatch.setattr(
-        cli_main,
-        "create_provider",
-        lambda config: RecordingProvider(),
-    )
+    monkeypatch.setattr(cli_main, "run_provider_foundation_turn", fake_run_provider_foundation_turn)
 
     exit_code = cli_main.main(
         [
@@ -69,7 +67,8 @@ def test_previous_response_id_reaches_orchestrator_path(monkeypatch, capsys):
 
     output = capsys.readouterr().out
     assert exit_code == 0
-    assert seen_requests[0].previous_response_id == "prev-123"
+    assert captured["args"][0].previous_response_id == "prev-123"
+    assert captured["kwargs"]["provider_name"] == "fake"
     assert "recorded output" in output
 
 
@@ -257,26 +256,28 @@ def test_cli_source_has_no_forbidden_modules_or_features():
     assert [token for token in forbidden if token in source] == []
 
 
-def test_cli_uses_provider_runtime_for_provider_selection():
+def test_cli_uses_runtime_composition_for_provider_selection():
     from pathlib import Path
 
     source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8")
 
-    assert "from packages.provider_runtime import ProviderRuntimeConfig, create_provider" in source
-    assert "create_provider(ProviderRuntimeConfig(provider_name=args.provider))" in source
+    assert "from packages.runtime_composition import (" in source
+    assert "run_provider_foundation_turn" in source
+    assert "packages.provider_runtime" not in source
+    assert "create_provider" not in source
     assert "_create_provider_for_cli_bootstrap" not in source
 
 
-def test_cli_imports_public_turn_orchestrator_only():
+def test_cli_imports_runtime_composition_instead_of_core_orchestrators():
     from pathlib import Path
 
     source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8")
 
-    assert "from packages.core.orchestration import TurnOrchestrator" in source
+    assert "from packages.core.orchestration import TurnOrchestrator" not in source
     assert (
         "from packages.core.orchestration.assistant_provider_stage "
         "import run_assistant_provider_stage_turn"
-    ) in source
+    ) not in source
     assert "packages.core.orchestration.turn_orchestrator" not in source
 
 

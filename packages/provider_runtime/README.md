@@ -18,6 +18,9 @@ Production bridge decision:
   `create_provider(ProviderRuntimeConfig(provider_name="fake"))` and then passes
   the resulting provider to Core. ProviderRuntime still does not import Core or
   AssistantRuntime.
+- Task 112 makes CLI call RuntimeComposition instead of importing
+  ProviderRuntime directly. ProviderRuntime remains the provider construction
+  boundary behind RuntimeComposition.
 
 Approved provider names:
 

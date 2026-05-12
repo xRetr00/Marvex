@@ -1,27 +1,32 @@
 # Project Status
 
-current_phase: runtime_composition_fake_provider_bridge_proof_pack
+current_phase: cli_runtime_composition_fake_bridge_integration_pack
 
-implementation_status: fake_provider_runtime_composition_bridge_proof_added_default_cli_unchanged
+implementation_status: cli_foundation_mode_uses_runtime_composition_default_cli_behavior_unchanged
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 111 Runtime Composition Fake Provider Bridge Proof Pack
+Task 112 CLI Runtime Composition Fake Bridge Integration Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 111:
+Latest full validation baseline from Task 112:
 
-- `python -m pytest tests\core tests\assistant_runtime tests\provider_runtime tests\integration tests\cli tests\telemetry -q` -> 297 passed
+- `python -m pytest tests\cli tests\api tests\integration tests\core tests\assistant_runtime tests\provider_runtime tests\telemetry -q` -> 317 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 622 passed, 1 skipped
+- `python -m pytest -q` -> 623 passed, 1 skipped
 
 Task 111 adds the first separate runtime composition/factory bridge proof using
 ProviderRuntime-created fake provider only. It does not change default CLI
 behavior or implement real provider, service, API, telemetry storage,
 session/history, routing, retry/fallback, tool, memory, or product behavior.
+
+Task 112 wires the official CLI fake-provider AssistantRuntime foundation mode
+to RuntimeComposition instead of local CLI provider composition. It also moves
+existing default CLI provider-foundation composition behind RuntimeComposition
+without changing default output behavior.
 
 ## Current Foundation Capabilities
 
@@ -55,6 +60,9 @@ Assistant-runtime foundation now present:
 - official explicit CLI fake-provider foundation mode via
   `--assistant-runtime-fake-provider`; the Task 107 flag
   `--assistant-runtime-provider-stage-fake` remains a compatibility alias
+- CLI now calls RuntimeComposition for both the official fake-provider
+  AssistantRuntime foundation mode and the existing provider-foundation turn
+  path; CLI no longer imports ProviderRuntime directly
 - ProviderRuntime production bridge ownership decision: future real-provider
   AssistantRuntime composition belongs in a separate runtime composition/factory
   layer, not in CLI, Core, AssistantRuntime, ProviderRuntime, ports, or adapters
@@ -85,7 +93,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-111 Compact Milestone Summary
+## Task 102-112 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -110,6 +118,9 @@ ownership governance, and library research governance remain accepted.
   Core/AssistantRuntime assistant-provider-stage path.
 - Task 111 adds that first separate layer as a fake-provider-only proof with a
   dedicated runtime composition boundary gate.
+- Task 112 wires the official CLI fake-provider foundation mode to the
+  RuntimeComposition fake bridge and removes CLI-owned provider construction
+  while preserving default CLI behavior.
 
 ## Architecture Health Notes
 
@@ -120,15 +131,18 @@ ownership governance, and library research governance remain accepted.
   ProviderRuntime, adapters, ports, CLI, or services.
 - Core has a narrow assistant-runtime provider-stage seam but the existing
   `TurnOrchestrator` provider path remains unchanged.
-- CLI has one explicit fake-provider AssistantRuntime foundation mode; the
-  default provider CLI path remains the provider-foundation path.
+- CLI has one explicit fake-provider AssistantRuntime foundation mode that now
+  calls RuntimeComposition; the default provider CLI path remains the
+  provider-foundation path but no longer constructs providers inside CLI.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
   bridge/factory layer that imports ProviderRuntime and the Core helper while
   importing no concrete adapters and owning no routing/session/history policy.
-- The first runtime composition bridge exists but is fake-provider-only and not
-  imported by CLI, Core, AssistantRuntime, or ProviderRuntime.
+- RuntimeComposition is now the approved CLI composition dependency for the
+  existing provider-foundation path and the fake-provider AssistantRuntime
+  foundation mode. Core, AssistantRuntime, and ProviderRuntime still do not
+  import RuntimeComposition.
 - `PROJECT_STATUS.md` is no longer a chronological task log; historical detail
   belongs in package READMEs, tests, task reports, and git history.
 
@@ -152,24 +166,28 @@ not implementation permission.
 
 ## Next Runtime Promotion Decision
 
-Candidate A: harden the runtime composition fake-provider bridge proof.
+Candidate A: harden CLI-to-RuntimeComposition regression coverage.
 
-- Foundation value: medium-high because Task 111 proves the selected ownership
-  model but has not yet exposed a product caller.
+- Foundation value: medium because Task 112 adds the approved caller path.
 - Speed value: high if limited to tests, docs, and boundary hardening.
-- Architecture risk: low while fake-provider-only and unwired from CLI.
+- Architecture risk: low while fake-provider-only and default behavior remains
+  unchanged.
 - Unlocks: stronger confidence before real-provider bridge design.
 - Must not touch: default CLI, services, APIs, real providers, sessions,
   history, routing, retry/fallback, tools, or memory.
 
-Candidate B: decide whether the official CLI foundation mode should call runtime composition.
+Candidate B: decide the next real-provider bridge preflight.
 
-- Foundation value: medium for aligning the dev surface with the new bridge.
-- Speed value: medium because default CLI behavior must remain unchanged.
-- Architecture risk: medium; CLI must not become the production bridge owner.
-- Unlocks: one explicit CLI path through the same composition layer.
-- Must not touch: real providers, ProviderRuntime bridge, services, APIs,
-  sessions, history, routing, retry/fallback, tools, or memory.
+- Foundation value: high for eventual real provider-backed AssistantRuntime
+  promotion.
+- Speed value: medium-low because real provider behavior needs a narrower
+  approval and test strategy.
+- Architecture risk: medium-high if it introduces routing, provider selection
+  policy, sessions, retries, or API-key handling too early.
+- Unlocks: a future bounded real-provider AssistantRuntime bridge task.
+- Must not touch: default CLI, services, APIs, sessions, history, routing,
+  retry/fallback, tools, memory, or provider SDK behavior outside existing
+  adapters.
 
 Candidate C: local health/version API readiness.
 
@@ -183,7 +201,6 @@ Candidate C: local health/version API readiness.
   tools, memory, UI, or product runtime behavior.
 
 Recommendation, not permission: Candidate A is the safest immediate follow-up
-if more confidence is needed. Candidate B is reasonable only as a separate
-explicit opt-in task and must keep the default CLI path unchanged. Real
-provider-backed AssistantRuntime promotion remains blocked until the fake bridge
-has a stronger caller and boundary story.
+if more confidence is needed. Candidate B is the next architecture-significant
+direction, but real provider-backed AssistantRuntime promotion remains blocked
+until a separate task defines preflight, failure handling, and boundary limits.

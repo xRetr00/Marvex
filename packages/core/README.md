@@ -27,6 +27,8 @@ Assistant-runtime provider-stage wiring skeleton:
 - Task 111 adds `packages.runtime_composition` as a fake-provider-only bridge
   proof that calls this helper from outside Core. Core still does not import the
   bridge, ProviderRuntime, adapters, or CLI.
+- Task 112 wires the CLI foundation mode to RuntimeComposition. Core remains a
+  callee only and still does not import RuntimeComposition.
 
 Forbidden responsibilities:
 

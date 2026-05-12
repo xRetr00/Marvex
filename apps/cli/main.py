@@ -11,22 +11,20 @@ from packages.contracts import (
     AssistantMode,
     AssistantTurnInput,
     AssistantTurnResult,
-    FinishReason,
     InputEvent,
     InputModality,
     PolicyContext,
     Privacy,
-    ProviderRequest,
-    ProviderResponse,
     Sensitivity,
     Source,
     TextPayload,
     TurnInput,
 )
-from packages.core.orchestration import TurnOrchestrator
-from packages.core.orchestration.assistant_provider_stage import run_assistant_provider_stage_turn
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
-from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+from packages.runtime_composition import (
+    run_fake_provider_assistant_bridge,
+    run_provider_foundation_turn,
+)
 
 
 SCHEMA_VERSION = "0.1.1-draft"
@@ -51,12 +49,6 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
-    try:
-        provider = create_provider(ProviderRuntimeConfig(provider_name=args.provider))
-    except ValueError as exc:
-        print(f"{parser.prog}: error: {exc}", file=sys.stderr)
-        return 2
-
     turn_input = TurnInput(
         schema_version=SCHEMA_VERSION,
         trace_id=f"trace-{uuid4()}",
@@ -66,11 +58,16 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         source=Source.CLI,
         metadata={},
     )
-    output = TurnOrchestrator(
-        provider,
-        model=args.model,
-        instructions=args.instructions,
-    ).run_turn(turn_input)
+    try:
+        output = run_provider_foundation_turn(
+            turn_input,
+            provider_name=args.provider,
+            model=args.model,
+            instructions=args.instructions,
+        )
+    except ValueError as exc:
+        print(f"{parser.prog}: error: {exc}", file=sys.stderr)
+        return 2
 
     print(output.final_response.text)
     if output.provider_response_id is not None:
@@ -86,9 +83,8 @@ def _run_assistant_runtime_fake_provider_foundation(args: argparse.Namespace) ->
         if args.assistant_runtime_provider_stage_trace
         else None
     )
-    result = run_assistant_provider_stage_turn(
+    result = run_fake_provider_assistant_bridge(
         turn_input,
-        provider=_build_assistant_runtime_foundation_provider(),
         model=args.model,
         instructions=args.instructions,
         previous_response_id=args.previous_response_id,
@@ -96,26 +92,6 @@ def _run_assistant_runtime_fake_provider_foundation(args: argparse.Namespace) ->
     )
     _print_assistant_runtime_provider_stage_result(result)
     return 0 if result.error is None else 1
-
-
-class _AssistantRuntimeFoundationProvider:
-    def send(self, request: ProviderRequest) -> ProviderResponse:
-        return ProviderResponse(
-            schema_version=request.schema_version,
-            trace_id=request.trace_id,
-            turn_id=request.turn_id,
-            provider_name="cli_dev_provider",
-            response_id="assistant-runtime-fake-response-001",
-            output_text="assistant runtime fake provider response",
-            finish_reason=FinishReason.STOP,
-            usage={},
-            raw_metadata={"previous_response_id": request.previous_response_id},
-            error=None,
-        )
-
-
-def _build_assistant_runtime_foundation_provider() -> _AssistantRuntimeFoundationProvider:
-    return _AssistantRuntimeFoundationProvider()
 
 
 def _build_assistant_runtime_cli_telemetry_sink() -> object | None:

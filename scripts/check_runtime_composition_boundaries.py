@@ -10,11 +10,13 @@ CORE_ROOT = ROOT / "packages" / "core"
 ASSISTANT_RUNTIME_ROOT = ROOT / "packages" / "assistant_runtime"
 PROVIDER_RUNTIME_ROOT = ROOT / "packages" / "provider_runtime"
 CLI_ROOT = ROOT / "apps" / "cli"
+CLI_MAIN = CLI_ROOT / "main.py"
 
 ALLOWED_BRIDGE_IMPORT_PREFIXES = (
     "__future__",
     "typing",
     "packages.contracts",
+    "packages.core.orchestration",
     "packages.core.orchestration.assistant_provider_stage",
     "packages.provider_runtime",
     "packages.telemetry",
@@ -132,6 +134,59 @@ def _scan_layer_mentions(
                 failures.append(f"{_rel(path)} {label}: {token}")
 
 
+def _scan_cli_bridge_import(failures: list[str]) -> None:
+    for path in _python_files(CLI_ROOT):
+        text = _read(path)
+        rel = _rel(path)
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            module = _module_from_import(node)
+            if module is None:
+                continue
+            if module == "packages.provider_runtime" or module.startswith(
+                "packages.provider_runtime."
+            ):
+                failures.append(f"{rel} must not import ProviderRuntime directly")
+            if module == "packages.adapters" or module.startswith("packages.adapters."):
+                failures.append(f"{rel} must not import provider adapters")
+
+        if "packages.runtime_composition" not in text and "run_fake_provider_assistant_bridge" not in text:
+            continue
+        if path != CLI_MAIN:
+            failures.append(f"{rel} must not import runtime composition bridge")
+            continue
+
+        allowed_import_seen = False
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            module = _module_from_import(node)
+            if module is None:
+                continue
+            if module == "packages.runtime_composition":
+                imported = {alias.name for alias in node.names}
+                if imported == {
+                    "run_fake_provider_assistant_bridge",
+                    "run_provider_foundation_turn",
+                }:
+                    allowed_import_seen = True
+                    continue
+                failures.append(
+                    f"{rel} runtime composition import must stay limited to approved CLI bridge functions"
+                )
+            elif module.startswith("packages.runtime_composition."):
+                failures.append(
+                    f"{rel} must import runtime composition only through the package root"
+                )
+
+        if "run_fake_provider_assistant_bridge" in text and not allowed_import_seen:
+            failures.append(
+                f"{rel} mentions runtime composition bridge without approved import"
+            )
+
+
 def main() -> int:
     failures: list[str] = []
 
@@ -154,12 +209,7 @@ def main() -> int:
         failures=failures,
         label="must not import Core or AssistantRuntime",
     )
-    _scan_layer_mentions(
-        root=CLI_ROOT,
-        tokens=("packages.runtime_composition", "run_fake_provider_assistant_bridge"),
-        failures=failures,
-        label="must not import runtime composition bridge",
-    )
+    _scan_cli_bridge_import(failures)
 
     if failures:
         for failure in failures:

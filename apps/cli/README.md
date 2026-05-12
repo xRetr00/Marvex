@@ -14,11 +14,12 @@ AssistantRuntime fake-provider foundation mode:
   for exercising the AssistantRuntime provider-stage path from CLI.
 - The Task 107 flag `--assistant-runtime-provider-stage-fake` remains supported
   as a compatibility alias.
-- The mode builds an assistant-turn input, injects a local deterministic
-  send-capable provider double, and calls the Core assistant-runtime
-  provider-stage skeleton.
-- It is not the default CLI path, does not use ProviderRuntime as a production
-  bridge, and does not introduce provider routing, sessions, history, services,
+- The mode builds an assistant-turn input and calls
+  `packages.runtime_composition.run_fake_provider_assistant_bridge(...)`.
+- RuntimeComposition owns fake-provider composition for this mode; CLI does not
+  create the fake provider or call ProviderRuntime directly.
+- It is not the default CLI path and does not introduce real provider-backed
+  AssistantRuntime behavior, provider routing, sessions, history, services,
   APIs, or product behavior.
 - `--assistant-runtime-provider-stage-trace` enables in-memory test/dev trace
   emission only; no telemetry storage or logging sink is added.
@@ -32,6 +33,7 @@ Forbidden responsibilities:
 - Provider logic.
 - Provider SDK calls.
 - Provider behavior, routing policy, fallback policy, retries, or provider runtime logic.
+- Provider factory/composition ownership.
 - Concrete provider adapter imports.
 - HTTP server behavior.
 - Service mode behavior.
@@ -44,12 +46,16 @@ Forbidden responsibilities:
 Dependency direction:
 
 - May depend on public Core orchestration.
-- May depend on ProviderRuntime for approved provider creation.
+- May depend on RuntimeComposition for approved CLI bridge calls.
 - May depend on ProcessRuntime only for approved local health/version commands.
 - May use approved assistant-turn contracts for explicit dev-only
   assistant-runtime provider-stage input construction.
-- Must not depend on provider SDKs, telemetry implementation, or services.
-- Any future provider selection expansion must stay inside the dedicated ProviderRuntime boundary.
+- Must not depend on ProviderRuntime, concrete provider adapters, provider SDKs,
+  telemetry implementation, or services.
+- Any future provider selection expansion must stay inside dedicated runtime
+  composition and ProviderRuntime boundaries.
 - Task 110 decides that future real ProviderRuntime-backed assistant-runtime
   composition should be delegated to a separate runtime composition/factory
   layer, not owned directly by CLI.
+- Task 112 wires the official fake-provider foundation mode to RuntimeComposition
+  while preserving the compatibility alias and default CLI output behavior.

@@ -9,39 +9,13 @@ from packages.contracts import (
     AssistantTurnResult,
     ErrorCode,
     ErrorEnvelope,
-    FinishReason,
     OutputChannelIntent,
-    ProviderRequest,
-    ProviderResponse,
     ProviderTurnRef,
     StageStatus,
     StageSummary,
     TraceEvent,
     TraceStage,
 )
-
-
-class RecordingProvider:
-    def __init__(self, response: ProviderResponse | None = None) -> None:
-        self.requests: list[ProviderRequest] = []
-        self.response = response
-
-    def send(self, request: ProviderRequest) -> ProviderResponse:
-        self.requests.append(request)
-        if self.response is not None:
-            return self.response
-        return ProviderResponse(
-            schema_version=request.schema_version,
-            trace_id=request.trace_id,
-            turn_id=request.turn_id,
-            provider_name="cli_dev_provider",
-            response_id="cli-dev-response-001",
-            output_text="CLI dev provider response.",
-            finish_reason=FinishReason.STOP,
-            usage={},
-            raw_metadata={},
-            error=None,
-        )
 
 
 class RecordingTelemetrySink:
@@ -98,17 +72,36 @@ def make_assistant_result() -> AssistantTurnResult:
     )
 
 
-def provider_error_response() -> ProviderResponse:
-    return ProviderResponse(
+def make_error_result() -> AssistantTurnResult:
+    return AssistantTurnResult(
         schema_version="0.1.1-draft",
         trace_id="trace-error",
         turn_id="turn-error",
-        provider_name="cli_dev_provider",
-        response_id="cli-dev-error-response",
-        output_text="",
-        finish_reason=FinishReason.ERROR,
-        usage={},
-        raw_metadata={},
+        assistant_final_response=None,
+        output_events=[],
+        stage_summaries=[
+            StageSummary(
+                stage_name="provider_stage",
+                status=StageStatus.FAILED,
+                started_at=None,
+                completed_at=None,
+                ref=None,
+                error_ref="cli-dev-error",
+            )
+        ],
+        provider_turn_refs=[
+            ProviderTurnRef(
+                ref_type="provider_turn",
+                ref_id="cli-dev-error-response",
+                stage_name="provider_stage",
+                provider_name="fake",
+                status=StageStatus.FAILED,
+                trace_id="trace-error",
+            )
+        ],
+        tool_result_refs=[],
+        memory_result_refs=[],
+        session_result_ref=None,
         error=ErrorEnvelope(
             schema_version="0.1.1-draft",
             trace_id="trace-error",
@@ -119,21 +112,51 @@ def provider_error_response() -> ProviderResponse:
             source="provider",
             details={},
         ),
+        metadata={},
     )
 
 
-def empty_provider_response() -> ProviderResponse:
-    return ProviderResponse(
+def make_empty_output_result() -> AssistantTurnResult:
+    return AssistantTurnResult(
         schema_version="0.1.1-draft",
         trace_id="trace-empty",
         turn_id="turn-empty",
-        provider_name="cli_dev_provider",
-        response_id="cli-dev-empty-response",
-        output_text="",
-        finish_reason=FinishReason.STOP,
-        usage={},
-        raw_metadata={},
-        error=None,
+        assistant_final_response=None,
+        output_events=[],
+        stage_summaries=[
+            StageSummary(
+                stage_name="provider_stage",
+                status=StageStatus.FAILED,
+                started_at=None,
+                completed_at=None,
+                ref=None,
+                error_ref="turn-empty:provider-stage",
+            )
+        ],
+        provider_turn_refs=[
+            ProviderTurnRef(
+                ref_type="provider_turn",
+                ref_id="cli-dev-empty-response",
+                stage_name="provider_stage",
+                provider_name="fake",
+                status=StageStatus.COMPLETED,
+                trace_id="trace-empty",
+            )
+        ],
+        tool_result_refs=[],
+        memory_result_refs=[],
+        session_result_ref=None,
+        error=ErrorEnvelope(
+            schema_version="0.1.1-draft",
+            trace_id="trace-empty",
+            error_id="turn-empty:provider-stage",
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Provider output was empty.",
+            recoverable=False,
+            source="assistant_runtime",
+            details={},
+        ),
+        metadata={},
     )
 
 
@@ -159,20 +182,20 @@ def test_default_cli_behavior_remains_unchanged(capsys):
     assert len(lines) == 3
 
 
-def test_foundation_mode_calls_core_helper(monkeypatch, capsys):
+def test_foundation_mode_calls_runtime_composition_bridge(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
     captured = {}
 
-    def fake_run_assistant_provider_stage_turn(*args, **kwargs):
+    def fake_run_fake_provider_assistant_bridge(*args, **kwargs):
         captured["args"] = args
         captured["kwargs"] = kwargs
         return make_assistant_result()
 
     monkeypatch.setattr(
         cli_main,
-        "run_assistant_provider_stage_turn",
-        fake_run_assistant_provider_stage_turn,
+        "run_fake_provider_assistant_bridge",
+        fake_run_fake_provider_assistant_bridge,
     )
 
     exit_code = cli_main.main(
@@ -197,7 +220,6 @@ def test_foundation_mode_calls_core_helper(monkeypatch, capsys):
     assert captured["kwargs"]["instructions"] == "Be concise."
     assert captured["kwargs"]["previous_response_id"] == "previous-cli-response"
     assert captured["kwargs"]["telemetry_sink"] is None
-    assert hasattr(captured["kwargs"]["provider"], "send")
     assert lines == [
         "sentinel assistant response",
         "provider_response_id: sentinel-provider-response",
@@ -221,8 +243,8 @@ def test_foundation_mode_success_preserves_ids_and_provider_ref(capsys):
 
     lines = capsys.readouterr().out.strip().splitlines()
     assert exit_code == 0
-    assert lines[0] == "assistant runtime fake provider response"
-    assert lines[1] == "provider_response_id: assistant-runtime-fake-response-001"
+    assert lines[0] == "fake provider response"
+    assert lines[1] == "provider_response_id: fake-response-001"
     assert lines[2].startswith("trace_id: trace-")
     assert lines[3].startswith("turn_id: turn-")
 
@@ -242,20 +264,26 @@ def test_task_107_flag_remains_supported_as_compatibility_alias(capsys):
 
     lines = capsys.readouterr().out.strip().splitlines()
     assert exit_code == 0
-    assert lines[0] == "assistant runtime fake provider response"
-    assert lines[1] == "provider_response_id: assistant-runtime-fake-response-001"
+    assert lines[0] == "fake provider response"
+    assert lines[1] == "provider_response_id: fake-response-001"
     assert lines[2].startswith("trace_id: trace-")
     assert lines[3].startswith("turn_id: turn-")
 
 
-def test_opt_in_previous_response_id_reaches_injected_provider(monkeypatch, capsys):
+def test_opt_in_previous_response_id_reaches_runtime_composition_bridge(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
-    provider = RecordingProvider()
+    captured = {}
+
+    def fake_run_fake_provider_assistant_bridge(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return make_assistant_result()
+
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_foundation_provider",
-        lambda: provider,
+        "run_fake_provider_assistant_bridge",
+        fake_run_fake_provider_assistant_bridge,
     )
 
     exit_code = cli_main.main(
@@ -271,9 +299,9 @@ def test_opt_in_previous_response_id_reaches_injected_provider(monkeypatch, caps
     )
 
     assert exit_code == 0
-    assert provider.requests[0].schema_version == "0.1.1-draft"
-    assert provider.requests[0].input_text == "Hello"
-    assert provider.requests[0].previous_response_id == "previous-cli-response"
+    assert captured["args"][0].schema_version == "0.1.1-draft"
+    assert captured["args"][0].user_visible_input == "Hello"
+    assert captured["kwargs"]["previous_response_id"] == "previous-cli-response"
     capsys.readouterr()
 
 
@@ -282,8 +310,8 @@ def test_opt_in_fake_provider_error_maps_to_safe_cli_output(monkeypatch, capsys)
 
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_foundation_provider",
-        lambda: RecordingProvider(provider_error_response()),
+        "run_fake_provider_assistant_bridge",
+        lambda *args, **kwargs: make_error_result(),
     )
 
     exit_code = cli_main.main(
@@ -312,8 +340,8 @@ def test_opt_in_empty_fake_provider_output_maps_to_safe_cli_output(monkeypatch, 
 
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_foundation_provider",
-        lambda: RecordingProvider(empty_provider_response()),
+        "run_fake_provider_assistant_bridge",
+        lambda *args, **kwargs: make_empty_output_result(),
     )
 
     exit_code = cli_main.main(
@@ -380,7 +408,7 @@ def test_foundation_mode_does_not_require_provider_argument(capsys):
     )
 
     assert exit_code == 0
-    assert "assistant runtime fake provider response" in capsys.readouterr().out
+    assert "fake provider response" in capsys.readouterr().out
 
 
 def test_opt_in_cli_path_still_requires_text_and_model():
@@ -408,7 +436,13 @@ def test_cli_source_has_no_concrete_provider_adapter_imports_for_opt_in_path():
     source = Path("apps/cli/main.py").read_text(encoding="utf-8")
 
     assert "packages.adapters" not in source
+    assert "packages.provider_runtime" not in source
+    assert "ProviderRuntimeConfig" not in source
+    assert "create_provider" not in source
     assert "FakeProvider" not in source
     assert "ProviderRuntime(" not in source
     assert "--assistant-runtime-fake-provider" in source
-    assert "run_assistant_provider_stage_turn" in source
+    assert "_AssistantRuntimeFoundationProvider" not in source
+    assert "_build_assistant_runtime_foundation_provider" not in source
+    assert "run_assistant_provider_stage_turn" not in source
+    assert "run_fake_provider_assistant_bridge" in source
