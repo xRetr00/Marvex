@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_seam_compatibility_and_assistant_entry_pack
+current_phase: telemetry_sanitizer_structured_output_trace_safety_pack
 
-implementation_status: compatibility_and_assistant_entry_complete_integration_blocked
+implementation_status: telemetry_sanitizer_safety_primitive_complete_integration_blocked
 
 accepted_docs: true
 
@@ -36,6 +36,7 @@ completed_foundation:
 - internal structured-output handoff seam pressure and boundary pack
 - isolated assistant-runtime structured-output consumer seam
 - structured-output seam compatibility proof and isolated assistant-runtime entry
+- telemetry sanitizer structured-output trace safety primitive
 
 completed_process_readiness:
 
@@ -90,10 +91,11 @@ completed_governance_gates:
 - Task 098 Structured Output Handoff Seam Pressure And Boundary Pack completed
 - Task 099 AssistantRuntime Structured Output Consumer Seam Pack completed
 - Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack completed
+- Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack completed
 
 current_governance_gate:
 
-Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack
+Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack
 
 allowed_current_work:
 
@@ -144,6 +146,9 @@ allowed_current_work:
   product integration remain blocked
 - structured-output seam compatibility and explicit AssistantRuntime entry
   maintenance only; runtime/product integration remains blocked
+- telemetry sanitizer safety primitive maintenance only; storage, logging sinks,
+  Core, ProviderRuntime, AssistantRuntime, CLI, services, and product
+  integration remain blocked
 
 forbidden_current_work:
 
@@ -444,3 +449,19 @@ consumer path into normal AssistantTurnRuntime, Core, ProviderRuntime, CLI,
 services, API/WebSocket, telemetry, UI, or contracts requires a separate
 explicit task naming exact caller/callee, input/output shape, failure mapping,
 trace behavior, product behavior, and boundary tests.
+
+Task 101 adds only a telemetry-owned sanitizer safety primitive for future
+structured-output trace data. `sanitize_trace_data(...)` recursively redacts
+unsafe keys and unsafe strings to `"[REDACTED]"`, rejects non-JSON-compatible
+trace data, preserves safe diagnostic summary fields, and does not mutate inputs
+in place. No telemetry storage, logging sink, Core, ProviderRuntime,
+AssistantRuntime, CLI, service/API, UI, contract, adapter, or product runtime
+integration exists.
+
+next_allowed_work_after_task_101:
+
+Runtime and product integration remain blocked. Future structured-output trace
+emission must first pass telemetry-bound data through the telemetry sanitizer,
+but wiring that into any runtime path requires a separate explicit task naming
+the exact caller, data shape, sink behavior, failure behavior, and boundary
+tests.

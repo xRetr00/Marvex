@@ -57,6 +57,21 @@ Future storage guidance:
 
 Telemetry must be useful for debugging without becoming a transcript or secrets store.
 
+Task 101 adds a telemetry-owned sanitizer primitive:
+
+- `packages.telemetry.sanitization.sanitize_trace_data(...)`
+- `packages.telemetry.sanitization.assert_trace_data_safe(...)`
+
+The sanitizer is a safety helper only. It is not wired into Core,
+ProviderRuntime, AssistantRuntime, CLI, services, API/WebSocket, UI, product
+runtime behavior, persistent storage, or a logging sink.
+
+Redaction convention:
+
+- unsafe fields are replaced with the stable marker `"[REDACTED]"`.
+- non-JSON-compatible trace data is rejected.
+- inputs are not mutated in place.
+
 Redact by default:
 
 - auth tokens and API keys
@@ -66,10 +81,17 @@ Redact by default:
 - personal data detected in metadata
 - stack traces containing local secrets or absolute private paths
 - provider raw payload fields not required for debugging
+- raw provider output
+- raw previews
+- parsed structured-output payloads
+- prompt, message-list, conversation, and transcript payloads
+- provider response ids, previous response ids, session ids, conversation ids,
+  and thread ids
+- bearer/auth/token/secret/password-bearing fields
 
 Allowed by default:
 
-- ids
+- trace, turn, and event ids
 - lifecycle stages
 - enum values
 - timings
@@ -77,8 +99,20 @@ Allowed by default:
 - error codes
 - redacted error messages
 - aggregate token or usage counts when provided by a provider
+- structured-output summaries such as state, handoff status, consumption
+  status, target contract, sanitized message, sanitized error code, and
+  diagnostic-only flags when they pass sanitizer checks
 
-Secrets and PII must never be logged by default. Diagnostic modes that capture sensitive text require an explicit task spec, visible warning, retention limit, and redaction review.
+Structured-output trace data must use sanitized summaries only. Raw provider
+output, raw previews, parsed payloads, prompts, transcripts, provider/session
+identifiers, auth tokens, and secrets must not be stored in default telemetry.
+
+Future structured-output runtime integration must pass any telemetry-bound data
+through the telemetry sanitizer before trace/log emission.
+
+Secrets and PII must never be logged by default. Diagnostic modes that capture
+sensitive text require an explicit task spec, visible warning, retention limit,
+and redaction review.
 
 ## Failure Behavior
 

@@ -1587,3 +1587,43 @@ Boundary:
 Future integration remains blocked until a separate approved task names the
 exact runtime caller, callee, input/output shape, failure mapping, trace
 behavior, product behavior, and boundary tests.
+
+## 29. Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack
+
+decision date: 2026-05-12
+
+Purpose: add a telemetry-owned sanitizer primitive so future structured-output
+runtime integration cannot accidentally emit raw provider output, prompts,
+provider/session identifiers, auth tokens, raw previews, parsed payloads, or
+unsafe metadata by default.
+
+Implemented telemetry primitive:
+
+- `packages/telemetry/sanitization.py`
+- `sanitize_trace_data(...)`
+- `assert_trace_data_safe(...)`
+
+Convention:
+
+- unsafe fields are redacted to `"[REDACTED]"`.
+- non-JSON-compatible trace data is rejected.
+- inputs are not mutated in place.
+
+Structured-output trace safety:
+
+- trace data may carry sanitized summaries such as state, handoff status,
+  consumption status, target contract, sanitized message, sanitized error code,
+  diagnostic flag, timings, and safe aggregate usage counts.
+- raw provider output, raw previews, parsed payloads, prompts, transcripts,
+  provider response ids, session/conversation/thread ids, auth tokens, secrets,
+  and unsafe metadata are redacted by default.
+- future structured-output runtime integration must pass telemetry-bound data
+  through the telemetry sanitizer before trace/log emission.
+
+Boundary:
+
+- no Core, ProviderRuntime, AssistantRuntime, adapter, CLI, service/API,
+  WebSocket, UI, telemetry storage, logging sink, port, contract, or product
+  runtime integration is added.
+- the sanitizer is a safety primitive only, not a structured-output runtime
+  emission path.
