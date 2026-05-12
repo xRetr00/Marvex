@@ -54,5 +54,9 @@ Structured-output consumer seam:
   so telemetry owns sanitization/redaction policy.
 - compatibility with the provider-side handoff draft is proven only through
   JSON-compatible dict tests; neither package imports the other in production.
+- the ProviderRuntime/provider_structured_output-to-AssistantRuntime bridge is
+  proven only by `tests/integration` test helpers that call the existing
+  ProviderRuntime experimental path, provider-side handoff draft builder, and
+  `consume_structured_output_as_turn_result(...)`.
 - these helpers are not exported from the package root and are not formal
   contracts, normal runtime orchestration, or product behavior.

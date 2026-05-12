@@ -151,6 +151,15 @@ objects. This package still does not import AssistantRuntime or telemetry, emit
 trace events, define a formal handoff contract, or wire normal runtime/product
 behavior.
 
+Task 104 proves the ProviderRuntime-to-AssistantRuntime path only in
+`tests/integration`. The test-only bridge maps ProviderRuntime experimental
+raw-output results to `StructuredOutputFallbackResult`, converts that result
+with `build_structured_output_handoff_draft(...)`, and passes the JSON-compatible
+dict to AssistantRuntime's `consume_structured_output_as_turn_result(...)`
+helper. No production bridge module is added because this package still must
+not import AssistantRuntime and AssistantRuntime still must not import this
+package.
+
 Future AssistantRuntime/Core handoff work remains blocked until a separate
 explicit task names the exact caller, callee, input shape, output shape, failure
 mapping, trace behavior, and tests. Core, AssistantTurnRuntime normal-turn

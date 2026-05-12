@@ -73,6 +73,11 @@ may emit structured-output consumption diagnostics through `make_trace_event(...
 The helper does not own redaction policy; unsafe trace data is still handled by
 the telemetry event construction path.
 
+Task 104 proves the ProviderRuntime/provider_structured_output-to-AssistantRuntime
+bridge only through integration tests. The proof reuses the existing
+AssistantRuntime helper and telemetry event construction path; it does not add
+a telemetry sink, storage behavior, or caller-owned redaction policy.
+
 This is trace event construction safety only. It does not implement telemetry
 storage, logging sinks, Core behavior, ProviderRuntime behavior,
 AssistantRuntime normal-turn behavior, CLI behavior, services, API/WebSocket,
