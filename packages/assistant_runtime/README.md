@@ -12,6 +12,8 @@ Current responsibilities:
 - build deterministic reference-only stage summaries for the no-provider path
 - run a minimal deterministic `AssistantTurnRuntime` skeleton over an existing
   `AssistantTurnInput`
+- run an explicit injected provider-stage skeleton that maps neutral provider
+  contract responses into `AssistantTurnResult`
 - validate an isolated experimental structured-output handoff-like input draft
   for future-stage consumption only, without creating final responses
 - expose an explicit experimental helper for future-stage structured-output
@@ -22,9 +24,9 @@ Current responsibilities:
 
 Non-responsibilities:
 
-- no provider-stage dispatcher
+- no implicit provider-stage dispatcher
 - no Core, CLI, ProviderRuntime, adapter, port, or service integration
-- no provider bridge or provider calls
+- no ProviderRuntime bridge or concrete provider calls
 - no direct import of provider structured-output implementation details in the
   structured-output consumer seam
 - no implicit or normal-turn structured-output conversion from
@@ -33,6 +35,22 @@ Non-responsibilities:
 - no memory, tools, voice, UI, desktop, proactive, HTTP, IPC, daemon, or process
   runtime behavior
 - no telemetry persistence, logging sink, or product trace storage
+
+Provider-stage skeleton:
+
+- `provider_stage.py` is experimental and AssistantRuntime-owned.
+- callers inject a send-capable object; the module does not import ProviderRuntime,
+  provider adapters, or provider ports.
+- it builds the neutral `ProviderRequest` contract, consumes `ProviderResponse`,
+  maps text output to `AssistantTurnResult`, and maps provider errors, provider
+  exceptions, and empty output to deterministic `ErrorEnvelope` results.
+- `previous_response_id` is explicit function input only; turn metadata is not a
+  hidden session/history channel.
+- provider `response_id` is represented through existing `provider_turn_refs`.
+- optional lifecycle diagnostics go through `make_trace_event(...)`; telemetry
+  owns trace safety and there is no storage or product sink.
+- it is not exported from the package root and is not wired into
+  `AssistantTurnRuntime.run(...)`, Core, CLI, services, APIs, or product flow.
 
 Structured-output consumer seam:
 

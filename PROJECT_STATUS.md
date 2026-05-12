@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: provider_runtime_assistant_runtime_structured_output_bridge_proof_pack
+current_phase: assistant_turn_provider_skeleton_pack
 
-implementation_status: structured_output_bridge_proof_test_only_product_integration_blocked
+implementation_status: assistant_runtime_provider_stage_skeleton_experimental_product_integration_blocked
 
 accepted_docs: true
 
@@ -40,6 +40,7 @@ completed_foundation:
 - structured-output-shaped telemetry event safety wiring
 - assistant-runtime structured-output result consumption helper
 - test-only ProviderRuntime to AssistantRuntime structured-output bridge proof
+- AssistantRuntime injected provider-stage skeleton
 
 completed_process_readiness:
 
@@ -98,10 +99,11 @@ completed_governance_gates:
 - Task 102 Trace-Safe Structured Output Telemetry Pack completed
 - Task 103 AssistantRuntime Structured Output Consumption Pack completed
 - Task 104 ProviderRuntime to AssistantRuntime Structured Output Bridge Proof Pack completed
+- Task 105 Assistant Turn Provider Skeleton Pack completed
 
 current_governance_gate:
 
-Task 104 ProviderRuntime to AssistantRuntime Structured Output Bridge Proof Pack
+Task 105 Assistant Turn Provider Skeleton Pack
 
 allowed_current_work:
 
@@ -163,6 +165,9 @@ allowed_current_work:
   ports, contracts, and product integration remain blocked
 - ProviderRuntime-to-AssistantRuntime structured-output bridge proof maintenance
   only inside tests/integration; production bridge boundaries remain blocked
+- AssistantRuntime provider-stage skeleton maintenance only; Core, CLI,
+  services, ProviderRuntime, adapters, ports, product flow, and history remain
+  blocked
 
 forbidden_current_work:
 
@@ -427,74 +432,32 @@ Runtime integration remains blocked. Any consumer of the internal handoff draft
 requires a separate explicit task naming the exact call path, caller, callee,
 state mapping, trace behavior, and boundary tests.
 
-Task 099 adds only an isolated AssistantRuntime-owned structured-output consumer
-seam. It accepts sanitized handoff-like draft data through local models, maps
-known handoff statuses to assistant-runtime consumption statuses, preserves
-schema/trace/turn identity, rejects unsafe metadata and parsed payload keys, and
-does not import or call ProviderRuntime, provider adapters, Core, CLI, services,
-ports, contracts, or provider_structured_output. It does not create
-`AssistantTurnResult`, final user responses, telemetry records, service/API
-behavior, UI behavior, or product runtime behavior.
+Tasks 099 and 100 add only isolated AssistantRuntime structured-output
+consumer/entry helpers. They preserve identity, reject unsafe fields, and do not
+import provider/runtime layers or change normal runtime/product behavior.
 
-next_allowed_work_after_task_099:
+Tasks 101 and 102 add telemetry-owned structured-output trace sanitization and
+wire it into `make_trace_event(...)` for structured-output-shaped trace data. No
+storage, logging sink, runtime/product behavior, or contract promotion exists.
 
-Runtime and product integration remain blocked. Any future consumer path into
-normal AssistantTurnRuntime, Core, ProviderRuntime, CLI, services,
-API/WebSocket, telemetry, UI, or contracts requires a separate explicit task
-naming the exact call path, input/output shape, failure mapping, trace behavior,
-and boundary tests.
+Tasks 103 and 104 keep structured-output consumption explicit and experimental:
+`consume_structured_output_as_turn_result(...)` returns deterministic
+AssistantRuntime results, while the ProviderRuntime-to-AssistantRuntime bridge is
+test-only through `tests/integration`. No production bridge or product behavior
+is added.
 
-Task 100 proves compatibility between the provider-side handoff draft shape and
-AssistantRuntime consumer seam through JSON-compatible dict tests only, then
-adds `consume_structured_output_for_future_stage(...)` as an isolated
-AssistantRuntime-owned experimental entry helper. It preserves identity, rejects
-unsafe fields/diagnostic accepted data, and does not import provider/runtime
-layers or change normal runtime/product behavior.
+Task 105 adds `run_provider_stage_turn(...)`, an explicit AssistantRuntime-owned
+provider-stage skeleton. It accepts `AssistantTurnInput`, an injected
+send-capable provider, explicit provider request options, and optional telemetry;
+builds neutral `ProviderRequest`; consumes `ProviderResponse`; maps text output
+to `AssistantTurnResult`; maps provider errors/exceptions/empty output to safe
+errors; preserves ids; passes explicit `previous_response_id`; stores provider
+`response_id` through `provider_turn_refs`; and is not wired into
+`AssistantTurnRuntime.run(...)`, Core, CLI, services, APIs, ProviderRuntime,
+adapters, product flow, sessions, or history.
 
-next_allowed_work_after_task_100:
-Runtime and product integration remain blocked. Any future structured-output
-consumer path into normal AssistantTurnRuntime, Core, ProviderRuntime, CLI,
-services, API/WebSocket, telemetry, UI, or contracts requires a separate
-explicit task naming exact caller/callee, input/output shape, failure mapping,
-trace behavior, product behavior, and boundary tests.
-
-Task 101 adds only the telemetry-owned sanitizer primitive for future
-structured-output trace data. It redacts unsafe keys/strings, rejects
-non-JSON-compatible trace data, preserves safe summaries, and does not mutate
-inputs. No storage, logging sink, runtime/product behavior, or contract
-promotion exists.
-
-next_allowed_work_after_task_101:
-Runtime/product integration remains blocked. Future trace emission must use the
-telemetry sanitizer and still requires an explicit caller/data/sink/failure
-boundary task.
-
-Task 102 wires structured-output-shaped trace data safety into
-`make_trace_event(...)`. It sanitizes structured-output diagnostics before
-`TraceEvent` creation, redacts raw/prompt/payload/id/auth fields, rejects
-non-JSON-compatible data, and does not mutate input or change normal provider
-trace data. No storage, logging sink, runtime/product behavior, or contract
-promotion exists.
-
-next_allowed_work_after_task_102:
-Runtime/product integration remains blocked. Future trace emission still needs
-an explicit caller/data/sink/failure boundary task. Storage, viewers,
-HTTP/WebSocket/API, normal-turn integration, Core integration, and formal
-contract promotion remain blocked.
-
-Task 103 adds `consume_structured_output_as_turn_result(...)`, an explicit
-AssistantRuntime-owned helper for the existing handoff-like dict. It preserves
-ids, validates `AssistantFinalResponse`, returns deterministic results, emits
-only through telemetry-owned safety, and is not wired into product behavior.
-
-Task 104 proves the ProviderRuntime-to-AssistantRuntime bridge only in
-`tests/integration`: ProviderRuntime experimental raw-output result to
-`StructuredOutputFallbackResult`, provider-side handoff draft dict, then
-`consume_structured_output_as_turn_result(...)`. It adds no production bridge or
-product behavior.
-
-next_allowed_work_after_task_104: Runtime/product integration remains blocked. A production bridge or normal-turn
-task must first define an approved neutral owner, caller/callee, shape, trace,
-failure, contract, and boundary checks. Core/CLI/service/API, storage,
-contracts, tools, memory, UI, voice, desktop, sessions, retry/fallback, history,
-and ProviderRuntime-to-AssistantRuntime imports remain blocked.
+next_allowed_work_after_task_105: Runtime/product integration remains blocked. Future normal-turn provider work must
+define caller/callee ownership, product path, trace/failure semantics, history
+rules, and boundary checks before touching Core, CLI, services, APIs,
+ProviderRuntime, adapters, ports, contracts, tools, memory, UI, voice, desktop,
+sessions, retry/fallback, or history.

@@ -78,6 +78,10 @@ bridge only through integration tests. The proof reuses the existing
 AssistantRuntime helper and telemetry event construction path; it does not add
 a telemetry sink, storage behavior, or caller-owned redaction policy.
 
+Task 105 adds an explicit AssistantRuntime provider-stage skeleton that may emit
+provider-stage lifecycle diagnostics through `make_trace_event(...)`. The path
+does not add telemetry storage or caller-owned redaction policy.
+
 This is trace event construction safety only. It does not implement telemetry
 storage, logging sinks, Core behavior, ProviderRuntime behavior,
 AssistantRuntime normal-turn behavior, CLI behavior, services, API/WebSocket,

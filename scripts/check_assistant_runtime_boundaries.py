@@ -47,6 +47,10 @@ FORBIDDEN_PROVIDER_BRIDGE_TERMS = (
     "model routing",
 )
 PROVIDER_BRIDGE_TERM_ALLOWLIST = {
+    "packages/assistant_runtime/provider_stage.py": {
+        "ProviderRequest",
+        "ProviderResponse",
+    },
     "packages/assistant_runtime/structured_output_consumer.py": {
         "provider_response_id",
     },
@@ -121,7 +125,10 @@ def _scan_imports(paths: list[Path], failures: list[str]) -> None:
             if _import_violates(module, forbidden_import_prefixes):
                 failures.append(f"{rel} imports forbidden boundary: {module}")
             for alias in node.names:
-                if alias.name in FORBIDDEN_PROVIDER_BRIDGE_TERMS:
+                if (
+                    alias.name in FORBIDDEN_PROVIDER_BRIDGE_TERMS
+                    and alias.name not in PROVIDER_BRIDGE_TERM_ALLOWLIST.get(rel, set())
+                ):
                     failures.append(
                         f"{rel} imports provider-bridge contract: {alias.name}"
                     )
