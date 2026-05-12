@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: official_cli_assistant_runtime_fake_provider_foundation_mode_pack
+current_phase: provider_runtime_production_bridge_ownership_decision_pack
 
-implementation_status: explicit_cli_fake_provider_foundation_mode_default_cli_unchanged
+implementation_status: production_bridge_owner_decided_runtime_behavior_unchanged
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 109 Official CLI AssistantRuntime Fake Provider Foundation Mode Pack
+Task 110 ProviderRuntime Production Bridge Ownership Decision Pack
 
 ## Validation Baseline
 
@@ -18,9 +18,10 @@ Latest full validation baseline from Task 109:
 - `python -m pytest -q` -> 613 passed, 1 skipped
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 
-Task 109 promotes the Task 107 CLI fake-provider path into an official explicit
-foundation mode only. It does not change default CLI behavior or implement real
-provider, service, API, telemetry storage, session/history, or product behavior.
+Task 110 is an architecture decision pack only. It decides the future production
+bridge owner for real ProviderRuntime-backed AssistantRuntime composition
+without changing runtime, CLI, provider, service, API, telemetry, contract,
+port, session/history, or product behavior.
 
 ## Current Foundation Capabilities
 
@@ -54,6 +55,9 @@ Assistant-runtime foundation now present:
 - official explicit CLI fake-provider foundation mode via
   `--assistant-runtime-fake-provider`; the Task 107 flag
   `--assistant-runtime-provider-stage-fake` remains a compatibility alias
+- ProviderRuntime production bridge ownership decision: future real-provider
+  AssistantRuntime composition belongs in a separate runtime composition/factory
+  layer, not in CLI, Core, AssistantRuntime, ProviderRuntime, ports, or adapters
 
 Provider structured-output foundation now present:
 
@@ -76,7 +80,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-109 Compact Milestone Summary
+## Task 102-110 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -96,6 +100,9 @@ ownership governance, and library research governance remain accepted.
 - Task 109 promoted the explicit fake-provider AssistantRuntime CLI path into
   the official foundation mode `--assistant-runtime-fake-provider` while keeping
   the Task 107 flag as a compatibility alias.
+- Task 110 decides that a future separate runtime composition/factory layer
+  should own production composition between ProviderRuntime and the
+  Core/AssistantRuntime assistant-provider-stage path.
 
 ## Architecture Health Notes
 
@@ -110,6 +117,9 @@ ownership governance, and library research governance remain accepted.
   default provider CLI path remains the provider-foundation path.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
+- Future real-provider assistant-runtime composition should be a separate
+  bridge/factory layer that imports ProviderRuntime and the Core helper while
+  importing no concrete adapters and owning no routing/session/history policy.
 - `PROJECT_STATUS.md` is no longer a chronological task log; historical detail
   belongs in package READMEs, tests, task reports, and git history.
 
@@ -133,27 +143,26 @@ not implementation permission.
 
 ## Next Runtime Promotion Decision
 
-Candidate A: maintain and harden the official CLI fake-provider foundation mode.
+Candidate A: implement the separate bridge/factory layer with fake provider only.
 
-- Foundation value: high for assistant-turn plumbing and result formatting.
-- Speed value: high because Tasks 105-109 already prove the fake-provider path.
-- Architecture risk: medium; the main risk is accidentally turning a dev-only
-  fake path into product/default behavior before provider ownership is settled.
-- Unlocks: a clearer assistant-runtime CLI foundation, stable bounded output,
-  and stronger Core/CLI assistant-turn regression coverage.
-- Must not touch: real providers, ProviderRuntime production bridge, services,
-  APIs, sessions, history, routing, retry/fallback, tools, or memory.
+- Foundation value: high because it proves the selected ownership model before
+  real providers.
+- Speed value: medium; it requires a new narrow package plus a boundary gate.
+- Architecture risk: medium-low if it stays fake-provider-only and imports no
+  adapters directly.
+- Unlocks: future real provider-backed assistant-runtime promotion.
+- Must not touch: default CLI, services, APIs, real providers, sessions,
+  history, routing, retry/fallback, tools, or memory.
 
-Candidate B: decide ProviderRuntime production bridge ownership.
+Candidate B: maintain and harden the official CLI fake-provider foundation mode.
 
-- Foundation value: high for eventual real provider-backed assistant turns.
-- Speed value: medium; it is mostly ownership and seam design before code.
-- Architecture risk: medium-high if rushed, because ProviderRuntime,
-  AssistantRuntime, Core, and provider adapters must not start importing each
-  other in the wrong direction.
-- Unlocks: a future bounded production provider bridge task.
-- Must not touch: default CLI behavior, real provider execution behavior, ports,
-  contracts, services, or product flow until the owner and call path are explicit.
+- Foundation value: medium-high for assistant-turn CLI UX.
+- Speed value: high.
+- Architecture risk: low while fake-provider-only, higher if it starts owning
+  ProviderRuntime production composition.
+- Unlocks: stronger CLI regression coverage.
+- Must not touch: real providers, ProviderRuntime bridge, services, APIs,
+  sessions, history, routing, retry/fallback, tools, or memory.
 
 Candidate C: local health/version API readiness.
 
@@ -166,7 +175,7 @@ Candidate C: local health/version API readiness.
 - Must not touch: assistant turn orchestration, providers, CLI provider paths,
   tools, memory, UI, or product runtime behavior.
 
-Recommendation, not permission: Candidate B should be decided before any real
-provider-backed AssistantRuntime promotion. Candidate A remains the safest
-implementation lane for further fake-provider-only CLI foundation hardening.
-Candidate C is valid but orthogonal to the assistant-turn runtime chain.
+Recommendation, not permission: Candidate A is the exact next implementation
+task unlocked by Task 110. It should prove the separate bridge/factory layer with
+ProviderRuntime-created fake provider only before any real provider-backed
+AssistantRuntime promotion.

@@ -126,6 +126,101 @@ task specs exist.
 
 `Core -> ProviderPort -> ProviderRuntime/Factory -> LiteLLMAdapter / LMStudioResponsesAdapter / FakeProvider`
 
+## ProviderRuntime Production Bridge Ownership Decision
+
+Decision title: ProviderRuntime Production Bridge Ownership After Task 109.
+
+Current context: Tasks 105 through 109 prove an assistant-runtime provider-stage
+path with a fake provider only. AssistantRuntime owns
+`run_provider_stage_turn(...)`; Core owns the narrow
+`run_assistant_provider_stage_turn(...)` helper; CLI exposes the explicit
+`--assistant-runtime-fake-provider` foundation mode. No real ProviderRuntime
+provider is wired into that assistant-runtime path.
+
+Options considered:
+
+- CLI-owned composition: fastest for a command, but wrong for service/API or
+  desktop shell reuse. It would make CLI choose providers, build provider
+  runtime objects, call Core, and format output, which risks a god client.
+- Core-owned composition: rejected. Core owns turn orchestration, not provider
+  selection or provider construction. Core must not import ProviderRuntime or
+  adapters.
+- AssistantRuntime-owned composition: rejected. AssistantRuntime owns
+  assistant-stage behavior and must stay provider-runtime agnostic. It should
+  accept an injected send-capable provider, not build one.
+- ProviderRuntime-owned composition: rejected. ProviderRuntime owns provider
+  construction/provider-facing behavior and must not import Core or
+  AssistantRuntime.
+- Separate runtime composition/factory layer: recommended. A future narrow
+  production bridge layer should compose ProviderRuntime-created providers into
+  the Core assistant-provider-stage helper without moving ownership into CLI,
+  Core, AssistantRuntime, ProviderRuntime, ports, or adapters.
+
+Recommended owner: a future separate runtime composition/factory layer. It may
+be introduced only by a separate implementation task. Its responsibility should
+be limited to production composition: accept approved assistant-turn input and
+provider runtime config, ask ProviderRuntime for a send-capable provider, inject
+that provider into Core's assistant-provider-stage helper, and return the
+approved assistant result shape.
+
+Dependency direction:
+
+```text
+CLI or future service/app surface
+  -> future runtime composition/factory layer
+    -> Core assistant-provider-stage helper
+      -> AssistantRuntime provider-stage function
+    -> ProviderRuntime provider factory
+      -> Provider adapters
+```
+
+Allowed imports for the future bridge layer:
+
+- approved contracts
+- telemetry sink contract/event construction as needed
+- `packages.provider_runtime` factory/config
+- `packages.core.orchestration.assistant_provider_stage`
+
+Forbidden imports for the future bridge layer:
+
+- concrete provider adapters
+- provider SDKs
+- CLI apps
+- services as implementation dependencies
+- tools, memory, UI, voice, desktop, vision, proactive behavior
+- session/history stores, retry/fallback routers, model routers, or API-key
+  loaders unless separately approved
+
+Explicit forbidden directions:
+
+- Core must not import ProviderRuntime or adapters.
+- AssistantRuntime must not import ProviderRuntime, Core, adapters, or ports.
+- ProviderRuntime must not import Core or AssistantRuntime.
+- CLI must not import concrete provider adapters or own production provider
+  bridge policy.
+- Ports must not become factories, registries, routers, or managers.
+
+What this unlocks next: a bounded implementation task can add the separate
+bridge/factory layer plus tests proving a ProviderRuntime-created fake provider
+can be injected into the Core/AssistantRuntime assistant-provider-stage path
+without changing default CLI behavior or real provider product behavior.
+
+What remains blocked: real provider-backed AssistantRuntime product turns,
+default CLI promotion, service/API behavior, telemetry persistence, sessions,
+history, routing, retry/fallback, tools, memory, UI, voice, desktop, vision,
+and structured-output public contract promotion.
+
+Validation/gate implications: existing gates already block the most dangerous
+directions for Core, AssistantRuntime, ProviderRuntime, ports, and CLI adapter
+imports. A future bridge implementation must add a dedicated boundary gate for
+the new bridge package so it can import only the approved composition targets
+and cannot import adapters or own runtime policy.
+
+Rollback path: if the separate bridge layer becomes too broad, delete or
+deprecate that layer and return to explicit test-only composition. Core,
+AssistantRuntime, ProviderRuntime, provider adapters, ports, and CLI default
+behavior should remain unchanged by such a rollback.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

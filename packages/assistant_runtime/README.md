@@ -58,6 +58,9 @@ Provider-stage skeleton:
 - Tasks 107 and 109 expose this helper through an explicit CLI fake-provider
   foundation mode only. The normal `AssistantTurnRuntime.run(...)` path and real
   provider integration remain unchanged.
+- Task 110 decides that real ProviderRuntime-backed provider composition belongs
+  in a future separate runtime composition/factory layer, not in
+  AssistantRuntime.
 
 Structured-output consumer seam:
 

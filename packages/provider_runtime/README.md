@@ -6,6 +6,15 @@ Ownership: Provider creation wiring for approved provider adapters.
 
 Responsibility: Create an approved provider adapter from explicit runtime config.
 
+Production bridge decision:
+
+- Task 110 decides that ProviderRuntime must not own the production
+  AssistantRuntime/Core bridge.
+- A future separate runtime composition/factory layer may call ProviderRuntime
+  to create an approved send-capable provider and inject that provider into the
+  Core assistant-provider-stage helper.
+- ProviderRuntime remains provider construction/provider-facing behavior only.
+
 Approved provider names:
 
 - `fake`
@@ -27,3 +36,4 @@ Dependency direction:
 
 - May depend on provider ports and approved provider adapters.
 - Must not depend on Core, CLI, telemetry implementation, services, or future workers.
+- Must not depend on AssistantRuntime or own assistant-turn result conversion.

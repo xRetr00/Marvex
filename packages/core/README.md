@@ -22,6 +22,8 @@ Assistant-runtime provider-stage wiring skeleton:
   adapters, or product flow.
 - Tasks 107 and 109 add only an explicit CLI fake-provider foundation caller for
   this seam; the normal Core `TurnOrchestrator` path remains unchanged.
+- Task 110 decides that real ProviderRuntime-backed provider composition must
+  live in a future separate runtime composition/factory layer, not in Core.
 
 Forbidden responsibilities:
 
@@ -36,3 +38,5 @@ Dependency direction:
 
 - May depend on approved contracts, ports, and telemetry sink contracts.
 - Must not depend on adapters, CLI, services, or future workers.
+- Must not depend on ProviderRuntime for the assistant-runtime provider-stage
+  production bridge.

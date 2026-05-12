@@ -50,3 +50,6 @@ Dependency direction:
   assistant-runtime provider-stage input construction.
 - Must not depend on provider SDKs, telemetry implementation, or services.
 - Any future provider selection expansion must stay inside the dedicated ProviderRuntime boundary.
+- Task 110 decides that future real ProviderRuntime-backed assistant-runtime
+  composition should be delegated to a separate runtime composition/factory
+  layer, not owned directly by CLI.
