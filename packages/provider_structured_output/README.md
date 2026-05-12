@@ -125,6 +125,11 @@ design/testing only. It preserves `schema_version`, `trace_id`, `turn_id`,
 keeps parsed payload only for `valid_structured_result`; keeps preview-bearing
 drafts diagnostic-only; and is not exported as a product API.
 
+Task 098 pressure-tests and hardens the seam. The draft fails closed for
+unsupported future states, rechecks valid parsed payloads for JSON-compatible
+data and forbidden hidden-state/raw-provider keys, rechecks sanitized messages
+and error codes, and remains unexported from the package root.
+
 Future AssistantRuntime/Core handoff work remains blocked until a separate
 explicit task names the exact caller, callee, input shape, output shape, failure
 mapping, trace behavior, and tests. Core, AssistantTurnRuntime normal-turn

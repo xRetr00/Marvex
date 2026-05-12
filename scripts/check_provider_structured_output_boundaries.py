@@ -16,6 +16,7 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "apps.cli",
     "services",
 )
+HANDOFF_FORBIDDEN_IMPORT_PREFIXES = FORBIDDEN_IMPORT_PREFIXES + ("packages.contracts",)
 
 FORBIDDEN_TEXT = (
     "LM Studio",
@@ -68,9 +69,14 @@ def main() -> int:
             module = _module_from_import(node)
             if module is None:
                 continue
+            forbidden_prefixes = (
+                HANDOFF_FORBIDDEN_IMPORT_PREFIXES
+                if path.name == "handoff.py"
+                else FORBIDDEN_IMPORT_PREFIXES
+            )
             if any(
                 module == prefix or module.startswith(f"{prefix}.")
-                for prefix in FORBIDDEN_IMPORT_PREFIXES
+                for prefix in forbidden_prefixes
             ):
                 failures.append(f"{_rel(path)} imports forbidden boundary: {module}")
 

@@ -1450,3 +1450,45 @@ Boundary:
 Future integration remains blocked until a separate approved task names the
 exact caller, callee, input shape, output shape, failure mapping, trace
 behavior, and tests.
+
+## 26. Task 098 Structured Output Handoff Seam Pressure And Boundary Pack
+
+decision date: 2026-05-12
+
+Purpose: pressure-test and harden the Task 097 internal handoff seam before any
+AssistantRuntime, Core, ProviderRuntime, CLI, service/API/WebSocket, telemetry,
+UI, or product runtime consumer integration.
+
+Hardening added:
+
+- `build_structured_output_handoff_draft(...)` now fails closed with a
+  deterministic `ValueError` if a future or validation-bypassed fallback state
+  appears.
+- `StructuredOutputHandoffDraft` rechecks parsed payloads for JSON
+  compatibility and forbidden hidden-state/raw-provider keys.
+- the draft rechecks sanitized messages and sanitized error codes so direct
+  construction cannot carry raw output, prompt-like text, provider/session/thread
+  identifiers, auth/token/secret markers, or validation/JSON exception detail.
+- raw-preview-bearing drafts remain diagnostic-only and are never marked safe
+  for user-facing final response.
+- the package root remains without `StructuredOutputHandoffDraft` or
+  `build_structured_output_handoff_draft(...)` exports.
+
+Boundary checker update:
+
+- `scripts/check_provider_structured_output_boundaries.py` now applies a narrow
+  extra import restriction to `handoff.py`, forbidding imports from contracts in
+  addition to Core, AssistantRuntime, ProviderRuntime, adapters, ports, CLI, and
+  services. Existing approved package-local contract usage outside the handoff
+  seam remains unchanged.
+
+Boundary remains:
+
+- the handoff draft is internal only.
+- it is not a formal contract.
+- it is not exported as product API.
+- it is not a Core, AssistantRuntime, ProviderRuntime, contract, telemetry, or
+  user-facing shape.
+- it is not connected to ProviderRuntime, AssistantRuntime, Core, CLI, services,
+  API/WebSocket, telemetry storage, UI, or product runtime behavior.
+- future consumer integration still requires a separate approved task.

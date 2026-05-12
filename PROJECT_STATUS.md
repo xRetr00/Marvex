@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: experimental_structured_output_handoff_seam_skeleton
+current_phase: structured_output_handoff_seam_pressure_pack
 
-implementation_status: internal_handoff_seam_skeleton_complete_integration_blocked
+implementation_status: internal_handoff_seam_pressure_complete_integration_blocked
 
 accepted_docs: true
 
@@ -33,6 +33,7 @@ completed_foundation:
 - provider runtime structured-output boundary and leak regressions
 - structured-output handoff boundary decision only
 - internal structured-output handoff seam skeleton
+- internal structured-output handoff seam pressure and boundary pack
 
 completed_process_readiness:
 
@@ -84,10 +85,11 @@ completed_governance_gates:
 - Task 095 ProviderRuntime Structured Output Boundary And Leak Regression Pack completed
 - Task 096 Structured Output Handoff Boundary Decision completed
 - Task 097 Experimental Structured Output Handoff Seam Skeleton completed
+- Task 098 Structured Output Handoff Seam Pressure And Boundary Pack completed
 
 current_governance_gate:
 
-Task 097 Experimental Structured Output Handoff Seam Skeleton
+Task 098 Structured Output Handoff Seam Pressure And Boundary Pack
 
 allowed_current_work:
 
@@ -130,6 +132,8 @@ allowed_current_work:
 - structured-output handoff planning only; AssistantRuntime, Core, CLI,
   services, ports, contracts, telemetry, and product integration remain blocked
 - internal provider_structured_output handoff seam skeleton maintenance only;
+  runtime/product integration remains blocked
+- internal provider_structured_output handoff seam pressure/hardening only;
   runtime/product integration remains blocked
 
 forbidden_current_work:
@@ -380,3 +384,17 @@ next_allowed_work_after_task_097:
 Runtime integration remains blocked. Any next step toward AssistantRuntime,
 Core, CLI, service/API/WebSocket, telemetry, contracts, or product behavior
 requires a separate explicit task naming the exact call path and behavior.
+
+Task 098 pressure-tests and hardens the internal
+`provider_structured_output` handoff seam. It keeps the draft internal and
+non-contract, fails closed for future fallback states, rechecks parsed payload
+and sanitized fields, preserves diagnostic-only raw preview handling, and keeps
+the package root without handoff exports. No Core, AssistantRuntime,
+ProviderRuntime, CLI, service/API/WebSocket, telemetry, UI, contract, or product
+integration exists.
+
+next_allowed_work_after_task_098:
+
+Runtime integration remains blocked. Any consumer of the internal handoff draft
+requires a separate explicit task naming the exact call path, caller, callee,
+state mapping, trace behavior, and boundary tests.

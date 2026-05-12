@@ -107,6 +107,89 @@ def test_parsed_payload_appears_only_for_valid_structured_result():
     assert invalid_draft.parsed_payload is None
 
 
+def test_unknown_future_state_fails_closed_if_validation_is_bypassed():
+    result = StructuredOutputFallbackResult.model_construct(
+        schema_version="0.1.1-draft",
+        trace_id="trace-future",
+        turn_id="turn-future",
+        state="future_state",
+        target_contract="AssistantFinalResponse",
+        sanitized_message="Structured output was invalid.",
+        sanitized_error_code="INVALID_STRUCTURED_OUTPUT",
+        parsed_payload=None,
+        raw_preview=None,
+        metadata={},
+    )
+
+    with pytest.raises(ValueError, match="unsupported structured output state"):
+        build_structured_output_handoff_draft(result)
+
+
+def test_handoff_rechecks_valid_payload_json_compatibility_and_forbidden_keys():
+    non_json_result = StructuredOutputFallbackResult.model_construct(
+        schema_version="0.1.1-draft",
+        trace_id="trace-non-json",
+        turn_id="turn-non-json",
+        state="valid_structured_result",
+        target_contract="AssistantFinalResponse",
+        sanitized_message="Structured output validated.",
+        sanitized_error_code=None,
+        parsed_payload={"bad": object()},
+        raw_preview=None,
+        metadata={},
+    )
+    forbidden_key_result = StructuredOutputFallbackResult.model_construct(
+        schema_version="0.1.1-draft",
+        trace_id="trace-forbidden-key",
+        turn_id="turn-forbidden-key",
+        state="valid_structured_result",
+        target_contract="AssistantFinalResponse",
+        sanitized_message="Structured output validated.",
+        sanitized_error_code=None,
+        parsed_payload={"metadata": {"authToken": "token-001"}},
+        raw_preview=None,
+        metadata={},
+    )
+
+    with pytest.raises(ValidationError):
+        build_structured_output_handoff_draft(non_json_result)
+    with pytest.raises(ValidationError):
+        build_structured_output_handoff_draft(forbidden_key_result)
+
+
+def test_handoff_rechecks_sanitized_message_and_error_code():
+    with pytest.raises(ValidationError):
+        StructuredOutputHandoffDraft(
+            schema_version="0.1.1-draft",
+            trace_id="trace-message",
+            turn_id="turn-message",
+            state="invalid_structured_output",
+            target_contract="AssistantFinalResponse",
+            handoff_status="invalid_structured_payload",
+            sanitized_message="system prompt: leak this",
+            sanitized_error_code="INVALID_STRUCTURED_OUTPUT",
+            parsed_payload=None,
+            raw_preview=None,
+            diagnostic_only=False,
+            safe_for_user_facing_final_response=False,
+        )
+    with pytest.raises(ValidationError):
+        StructuredOutputHandoffDraft(
+            schema_version="0.1.1-draft",
+            trace_id="trace-code",
+            turn_id="turn-code",
+            state="invalid_structured_output",
+            target_contract="AssistantFinalResponse",
+            handoff_status="invalid_structured_payload",
+            sanitized_message="Structured output was invalid.",
+            sanitized_error_code="SECRET_TOKEN",
+            parsed_payload=None,
+            raw_preview=None,
+            diagnostic_only=False,
+            safe_for_user_facing_final_response=False,
+        )
+
+
 def test_raw_preview_is_null_by_default_and_preview_drafts_are_diagnostic_only():
     default_draft = build_structured_output_handoff_draft(
         create_invalid_structured_output(
@@ -197,6 +280,13 @@ def test_unknown_handoff_fields_are_rejected():
             safe_for_user_facing_final_response=False,
             raw_provider_output="secret",
         )
+
+
+def test_package_root_does_not_export_handoff_draft():
+    import packages.provider_structured_output as package_root
+
+    assert not hasattr(package_root, "StructuredOutputHandoffDraft")
+    assert not hasattr(package_root, "build_structured_output_handoff_draft")
 
 
 def test_handoff_module_imports_no_forbidden_runtime_boundaries():
