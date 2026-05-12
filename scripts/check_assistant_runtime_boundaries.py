@@ -46,6 +46,11 @@ FORBIDDEN_PROVIDER_BRIDGE_TERMS = (
     "provider fallback",
     "model routing",
 )
+PROVIDER_BRIDGE_TERM_ALLOWLIST = {
+    "packages/assistant_runtime/structured_output_consumer.py": {
+        "provider_response_id",
+    },
+}
 FORBIDDEN_SUBSYSTEM_BEHAVIOR_TERMS = (
     "memory runtime",
     "tool runtime",
@@ -112,16 +117,20 @@ def _scan_text(paths: list[Path], failures: list[str]) -> None:
     for path in paths:
         text = path.read_text(encoding="utf-8")
         lowered = text.lower()
+        rel = _rel(path)
+        allowed_terms = PROVIDER_BRIDGE_TERM_ALLOWLIST.get(rel, set())
         for name in FORBIDDEN_PROVIDER_NAMES:
             if name.lower() in lowered:
-                failures.append(f"{_rel(path)} mentions concrete provider: {name}")
+                failures.append(f"{rel} mentions concrete provider: {name}")
         for term in FORBIDDEN_SUBSYSTEM_BEHAVIOR_TERMS:
             if term in lowered:
-                failures.append(f"{_rel(path)} mentions future subsystem behavior: {term}")
+                failures.append(f"{rel} mentions future subsystem behavior: {term}")
         for term in FORBIDDEN_PROVIDER_BRIDGE_TERMS:
+            if term in allowed_terms:
+                continue
             pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(term)}(?![A-Za-z0-9_])")
             if pattern.search(text):
-                failures.append(f"{_rel(path)} mentions provider-bridge term: {term}")
+                failures.append(f"{rel} mentions provider-bridge term: {term}")
 
 
 def main() -> int:

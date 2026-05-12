@@ -1492,3 +1492,51 @@ Boundary remains:
 - it is not connected to ProviderRuntime, AssistantRuntime, Core, CLI, services,
   API/WebSocket, telemetry storage, UI, or product runtime behavior.
 - future consumer integration still requires a separate approved task.
+
+## 27. Task 099 AssistantRuntime Structured Output Consumer Seam Pack
+
+decision date: 2026-05-12
+
+Purpose: add an isolated AssistantRuntime-owned consumer seam for sanitized
+structured-output handoff-like data without connecting it to normal assistant
+turns, Core, ProviderRuntime, adapters, CLI, services, API/WebSocket,
+telemetry, UI, or product runtime behavior.
+
+Implemented seam:
+
+- `packages/assistant_runtime/structured_output_consumer.py`
+- `AssistantStructuredOutputInputDraft`
+- `AssistantStructuredOutputConsumptionDraft`
+- `consume_structured_output_handoff_draft(...)`
+
+Status mapping:
+
+- `usable_structured_payload` -> `accepted_for_future_stage`
+- `invalid_structured_payload` -> `rejected_invalid_structured_payload`
+- `provider_error` -> `rejected_provider_error`
+- `provider_timeout` -> `rejected_provider_timeout`
+- `refusal_unresolved` -> `rejected_refusal_unresolved`
+- `incomplete_unresolved` -> `rejected_incomplete_unresolved`
+
+Boundary:
+
+- the seam uses assistant-runtime-owned local draft models and does not import
+  `provider_structured_output`, ProviderRuntime, provider adapters, Core, ports,
+  contracts, CLI, or services.
+- it preserves `schema_version`, `trace_id`, and `turn_id`.
+- it rejects unknown fields, blank identity fields, unsafe metadata and parsed
+  payload keys, raw-preview payloads, prompt-like leakage,
+  provider/session/thread identifiers, auth/token/secret markers, and direct
+  validation/JSON exception detail.
+- it retains parsed payload only for `accepted_for_future_stage`.
+- diagnostic-only input cannot become accepted usable data.
+- it does not parse JSON, repair JSON, scrape braces, retry, mutate prompts, call
+  ProviderRuntime, create `AssistantTurnResult`, or create a final user-facing
+  response.
+- it is not exported from the package root and is not a formal contract.
+
+Product/runtime integration remains blocked. Any future Core,
+AssistantTurnRuntime normal-turn, ProviderRuntime consumer, CLI,
+service/API/WebSocket, telemetry, UI, or product use requires a separate
+approved task naming the exact caller, callee, input shape, output shape,
+failure mapping, trace behavior, and boundary tests.

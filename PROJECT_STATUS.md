@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_handoff_seam_pressure_pack
+current_phase: assistant_runtime_structured_output_consumer_seam_pack
 
-implementation_status: internal_handoff_seam_pressure_complete_integration_blocked
+implementation_status: assistant_runtime_consumer_seam_complete_integration_blocked
 
 accepted_docs: true
 
@@ -34,6 +34,7 @@ completed_foundation:
 - structured-output handoff boundary decision only
 - internal structured-output handoff seam skeleton
 - internal structured-output handoff seam pressure and boundary pack
+- isolated assistant-runtime structured-output consumer seam
 
 completed_process_readiness:
 
@@ -86,10 +87,11 @@ completed_governance_gates:
 - Task 096 Structured Output Handoff Boundary Decision completed
 - Task 097 Experimental Structured Output Handoff Seam Skeleton completed
 - Task 098 Structured Output Handoff Seam Pressure And Boundary Pack completed
+- Task 099 AssistantRuntime Structured Output Consumer Seam Pack completed
 
 current_governance_gate:
 
-Task 098 Structured Output Handoff Seam Pressure And Boundary Pack
+Task 099 AssistantRuntime Structured Output Consumer Seam Pack
 
 allowed_current_work:
 
@@ -135,6 +137,9 @@ allowed_current_work:
   runtime/product integration remains blocked
 - internal provider_structured_output handoff seam pressure/hardening only;
   runtime/product integration remains blocked
+- isolated AssistantRuntime structured-output consumer seam maintenance only;
+  Core, ProviderRuntime, adapters, CLI, services, telemetry, contracts, and
+  product integration remain blocked
 
 forbidden_current_work:
 
@@ -398,3 +403,20 @@ next_allowed_work_after_task_098:
 Runtime integration remains blocked. Any consumer of the internal handoff draft
 requires a separate explicit task naming the exact call path, caller, callee,
 state mapping, trace behavior, and boundary tests.
+
+Task 099 adds only an isolated AssistantRuntime-owned structured-output consumer
+seam. It accepts sanitized handoff-like draft data through local models, maps
+known handoff statuses to assistant-runtime consumption statuses, preserves
+schema/trace/turn identity, rejects unsafe metadata and parsed payload keys, and
+does not import or call ProviderRuntime, provider adapters, Core, CLI, services,
+ports, contracts, or provider_structured_output. It does not create
+`AssistantTurnResult`, final user responses, telemetry records, service/API
+behavior, UI behavior, or product runtime behavior.
+
+next_allowed_work_after_task_099:
+
+Runtime and product integration remain blocked. Any future consumer path into
+normal AssistantTurnRuntime, Core, ProviderRuntime, CLI, services,
+API/WebSocket, telemetry, UI, or contracts requires a separate explicit task
+naming the exact call path, input/output shape, failure mapping, trace behavior,
+and boundary tests.
