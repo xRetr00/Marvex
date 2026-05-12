@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: structured_output_handoff_boundary_decision
+current_phase: experimental_structured_output_handoff_seam_skeleton
 
-implementation_status: structured_output_handoff_decision_complete_integration_blocked
+implementation_status: internal_handoff_seam_skeleton_complete_integration_blocked
 
 accepted_docs: true
 
@@ -32,6 +32,7 @@ completed_foundation:
 - provider runtime experimental structured-output adapter call path
 - provider runtime structured-output boundary and leak regressions
 - structured-output handoff boundary decision only
+- internal structured-output handoff seam skeleton
 
 completed_process_readiness:
 
@@ -82,10 +83,11 @@ completed_governance_gates:
 - Task 094 ProviderRuntime Experimental Structured Output Adapter Call Path completed
 - Task 095 ProviderRuntime Structured Output Boundary And Leak Regression Pack completed
 - Task 096 Structured Output Handoff Boundary Decision completed
+- Task 097 Experimental Structured Output Handoff Seam Skeleton completed
 
 current_governance_gate:
 
-Task 096 Structured Output Handoff Boundary Decision
+Task 097 Experimental Structured Output Handoff Seam Skeleton
 
 allowed_current_work:
 
@@ -127,6 +129,8 @@ allowed_current_work:
   product runtime integration remains blocked
 - structured-output handoff planning only; AssistantRuntime, Core, CLI,
   services, ports, contracts, telemetry, and product integration remain blocked
+- internal provider_structured_output handoff seam skeleton maintenance only;
+  runtime/product integration remains blocked
 
 forbidden_current_work:
 
@@ -362,3 +366,17 @@ Task 097 Experimental Structured Output Handoff Seam Skeleton may be proposed
 as a separate explicit task. Core, CLI normal turns, AssistantTurnRuntime normal
 turns, services, API/WebSocket, port/contract changes, telemetry storage, and
 product runtime behavior remain blocked until separately approved.
+
+Task 097 implements only an internal `provider_structured_output` handoff seam
+skeleton. `StructuredOutputHandoffDraft` and
+`build_structured_output_handoff_draft(...)` map
+`StructuredOutputFallbackResult` states deterministically for future
+design/testing. The seam is not a formal contract, ProviderRuntime API,
+AssistantTurnRuntime API, Core integration, CLI behavior, telemetry format,
+service/API/WebSocket behavior, UI behavior, or product runtime behavior.
+
+next_allowed_work_after_task_097:
+
+Runtime integration remains blocked. Any next step toward AssistantRuntime,
+Core, CLI, service/API/WebSocket, telemetry, contracts, or product behavior
+requires a separate explicit task naming the exact call path and behavior.

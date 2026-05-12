@@ -1404,3 +1404,49 @@ Task 097 constraints:
 
 Until Task 097 is separately approved and implemented, handoff integration
 remains blocked.
+
+## 25. Task 097 Experimental Structured Output Handoff Seam Skeleton
+
+decision date: 2026-05-12
+
+Purpose: implement the Task 096-approved handoff seam as an internal skeleton
+inside `provider_structured_output` only.
+
+Implemented seam:
+
+- `packages/provider_structured_output/handoff.py`
+- `StructuredOutputHandoffDraft`
+- `build_structured_output_handoff_draft(...)`
+
+The seam accepts a `StructuredOutputFallbackResult` and builds an internal
+draft object for future design/testing. It preserves `schema_version`,
+`trace_id`, `turn_id`, `state`, and `target_contract`; carries only sanitized
+message and stable error code; carries parsed payload only for
+`valid_structured_result`; keeps raw preview null by default; marks
+preview-bearing drafts diagnostic-only; and always marks the draft as not safe
+for a user-facing final response.
+
+State mapping:
+
+- `valid_structured_result` -> `usable_structured_payload`
+- `invalid_structured_output` -> `invalid_structured_payload`
+- `provider_error` -> `provider_error`
+- `provider_timeout` -> `provider_timeout`
+- `refusal_unresolved_or_provider_specific` -> `refusal_unresolved`
+- `incomplete_unresolved_or_provider_specific` -> `incomplete_unresolved`
+
+Boundary:
+
+- the seam is not a formal contract.
+- it is not exported as a product API.
+- it is not connected to ProviderRuntime, AssistantRuntime, Core, CLI,
+  services, API/WebSocket, telemetry storage, UI, or product runtime behavior.
+- it does not call ProviderRuntime or adapters.
+- it does not parse JSON, repair JSON, scrape braces, retry, mutate prompts, or
+  add refusal/incomplete semantics beyond conservative unresolved state
+  mapping.
+- it does not convert to `AssistantTurnResult` or `ProviderResponse`.
+
+Future integration remains blocked until a separate approved task names the
+exact caller, callee, input shape, output shape, failure mapping, trace
+behavior, and tests.

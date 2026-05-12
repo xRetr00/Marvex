@@ -114,6 +114,17 @@ Task 096 decides the handoff boundary:
 - it is not promoted to a formal contract now.
 - it may not be converted to `AssistantTurnResult` now.
 
+`handoff.py` contains an experimental internal seam skeleton:
+
+- `StructuredOutputHandoffDraft`
+- `build_structured_output_handoff_draft(...)`
+
+The draft maps current fallback states deterministically for future
+design/testing only. It preserves `schema_version`, `trace_id`, `turn_id`,
+`state`, and `target_contract`; carries sanitized message and stable error code;
+keeps parsed payload only for `valid_structured_result`; keeps preview-bearing
+drafts diagnostic-only; and is not exported as a product API.
+
 Future AssistantRuntime/Core handoff work remains blocked until a separate
 explicit task names the exact caller, callee, input shape, output shape, failure
 mapping, trace behavior, and tests. Core, AssistantTurnRuntime normal-turn
