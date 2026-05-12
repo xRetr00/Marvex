@@ -22,6 +22,7 @@ Scripts:
 - `check_file_size_policy.py`
 - `check_port_boundaries.py`
 - `check_provider_runtime_boundaries.py`
+- `check_runtime_composition_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -30,6 +31,12 @@ Scripts:
 `check_provider_runtime_boundaries.py` enforces the Core, CLI, ProviderPort,
 and ProviderRuntime dependency boundary so provider selection stays inside
 ProviderRuntime.
+
+`check_runtime_composition_boundaries.py` enforces the RuntimeComposition bridge
+boundary so the bridge can compose ProviderRuntime and the Core
+assistant-provider-stage helper without importing adapters, AssistantRuntime,
+ports, CLI apps, services, or owning routing/session/history/retry/model/API-key
+policy.
 
 `check_assistant_runtime_boundaries.py` enforces the AssistantRuntime dependency
 boundary so the no-provider assistant-runtime skeleton stays isolated from Core,

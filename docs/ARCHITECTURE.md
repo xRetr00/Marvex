@@ -221,6 +221,13 @@ deprecate that layer and return to explicit test-only composition. Core,
 AssistantRuntime, ProviderRuntime, provider adapters, ports, and CLI default
 behavior should remain unchanged by such a rollback.
 
+Task 111 implementation note: `packages/runtime_composition` now contains the
+first fake-provider-only proof of this ownership model. It creates the approved
+`fake` provider through ProviderRuntime, injects it into the Core helper, and
+relies on Core to reach AssistantRuntime provider-stage behavior. It is not
+wired into default CLI behavior, services, APIs, real providers, sessions,
+history, routing, retry/fallback, tools, or memory.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

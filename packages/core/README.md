@@ -24,6 +24,9 @@ Assistant-runtime provider-stage wiring skeleton:
   this seam; the normal Core `TurnOrchestrator` path remains unchanged.
 - Task 110 decides that real ProviderRuntime-backed provider composition must
   live in a future separate runtime composition/factory layer, not in Core.
+- Task 111 adds `packages.runtime_composition` as a fake-provider-only bridge
+  proof that calls this helper from outside Core. Core still does not import the
+  bridge, ProviderRuntime, adapters, or CLI.
 
 Forbidden responsibilities:
 

@@ -61,6 +61,9 @@ Provider-stage skeleton:
 - Task 110 decides that real ProviderRuntime-backed provider composition belongs
   in a future separate runtime composition/factory layer, not in
   AssistantRuntime.
+- Task 111 proves that separate layer with a fake provider only. The proof
+  reaches this helper through Core; AssistantRuntime still does not import the
+  bridge, Core, ProviderRuntime, adapters, or ports.
 
 Structured-output consumer seam:
 

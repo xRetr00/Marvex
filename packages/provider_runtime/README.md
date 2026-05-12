@@ -14,6 +14,10 @@ Production bridge decision:
   to create an approved send-capable provider and inject that provider into the
   Core assistant-provider-stage helper.
 - ProviderRuntime remains provider construction/provider-facing behavior only.
+- Task 111 adds the first separate bridge proof. That proof calls
+  `create_provider(ProviderRuntimeConfig(provider_name="fake"))` and then passes
+  the resulting provider to Core. ProviderRuntime still does not import Core or
+  AssistantRuntime.
 
 Approved provider names:
 

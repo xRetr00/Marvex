@@ -51,6 +51,25 @@ ProviderRuntime is the only boundary allowed to import approved concrete provide
 - ProviderRuntime must not contain routing, fallback, retry, session, history, plugin, daemon, server, health routing, or model routing logic.
 - Strict runtime scans target Python source files only, not README files.
 
+### Runtime Composition Boundary Gate
+
+RuntimeComposition owns narrow bridge/factory composition only.
+
+- `packages/runtime_composition` may import approved contracts, telemetry sink
+  contracts, ProviderRuntime factory/config, and the Core
+  assistant-provider-stage helper.
+- `packages/runtime_composition` must not import concrete provider adapters,
+  AssistantRuntime directly, provider ports, CLI apps, or services.
+- `packages/runtime_composition` must not contain provider routing,
+  retry/fallback policy, session/history behavior, API-key policy, model
+  selection, tool runtime, or memory runtime behavior.
+- Core and AssistantRuntime must not import or mention the runtime composition
+  bridge.
+- ProviderRuntime must not import Core or AssistantRuntime.
+- CLI must not import the runtime composition bridge until a separate explicit
+  opt-in task approves a caller.
+- Strict runtime scans target Python source files only, not README files.
+
 ### ProcessRuntime Boundary Gate
 
 ProcessRuntime is limited to local HealthCheck and VersionInfo object

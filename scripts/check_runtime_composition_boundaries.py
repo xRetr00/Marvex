@@ -1,0 +1,174 @@
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+
+ROOT = Path(__file__).resolve().parents[1]
+RUNTIME_COMPOSITION_ROOT = ROOT / "packages" / "runtime_composition"
+CORE_ROOT = ROOT / "packages" / "core"
+ASSISTANT_RUNTIME_ROOT = ROOT / "packages" / "assistant_runtime"
+PROVIDER_RUNTIME_ROOT = ROOT / "packages" / "provider_runtime"
+CLI_ROOT = ROOT / "apps" / "cli"
+
+ALLOWED_BRIDGE_IMPORT_PREFIXES = (
+    "__future__",
+    "typing",
+    "packages.contracts",
+    "packages.core.orchestration.assistant_provider_stage",
+    "packages.provider_runtime",
+    "packages.telemetry",
+)
+BRIDGE_FORBIDDEN_IMPORT_PREFIXES = (
+    "packages.adapters",
+    "packages.assistant_runtime",
+    "packages.ports",
+    "apps.cli",
+    "services",
+)
+BRIDGE_FORBIDDEN_TOKENS = (
+    "packages.adapters",
+    "litellm",
+    "lmstudio",
+    "openai",
+    "openrouter",
+    "anthropic",
+    "gemini",
+    "routing",
+    "fallback",
+    "retry",
+    "session store",
+    "session_store",
+    "history",
+    "api key",
+    "api_key",
+    "apikey",
+    "model selection",
+    "model_selection",
+    "model router",
+    "model_router",
+    "tool runtime",
+    "memory runtime",
+)
+BRIDGE_MAX_LINES = 250
+BRIDGE_SIZE_JUSTIFICATION = "runtime composition size justification"
+
+
+def _python_files(root: Path) -> list[Path]:
+    if not root.exists():
+        return []
+    return sorted(path for path in root.rglob("*.py") if path.is_file())
+
+
+def _rel(path: Path) -> str:
+    return path.relative_to(ROOT).as_posix()
+
+
+def _read(path: Path) -> str:
+    return path.read_text(encoding="utf-8")
+
+
+def _module_from_import(node: ast.AST) -> str | None:
+    if isinstance(node, ast.ImportFrom):
+        if node.level:
+            return None
+        return node.module
+    if isinstance(node, ast.Import):
+        return node.names[0].name if node.names else None
+    return None
+
+
+def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
+    return any(module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes)
+
+
+def _scan_bridge_layer(failures: list[str]) -> None:
+    paths = _python_files(RUNTIME_COMPOSITION_ROOT)
+    if not paths:
+        failures.append("packages/runtime_composition is missing")
+        return
+
+    for path in paths:
+        rel = _rel(path)
+        text = _read(path)
+        lowered = text.lower()
+        line_count = len(text.splitlines())
+        if (
+            line_count > BRIDGE_MAX_LINES
+            and BRIDGE_SIZE_JUSTIFICATION not in lowered
+        ):
+            failures.append(
+                f"{rel} has {line_count} lines and exceeds runtime composition max {BRIDGE_MAX_LINES}"
+            )
+        for token in BRIDGE_FORBIDDEN_TOKENS:
+            if token in lowered:
+                failures.append(f"{rel} contains forbidden bridge behavior token: {token}")
+
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            module = _module_from_import(node)
+            if module is None:
+                continue
+            if _matches_prefix(module, BRIDGE_FORBIDDEN_IMPORT_PREFIXES):
+                failures.append(f"{rel} imports forbidden dependency: {module}")
+            if not _matches_prefix(module, ALLOWED_BRIDGE_IMPORT_PREFIXES):
+                failures.append(f"{rel} imports non-approved dependency: {module}")
+
+
+def _scan_layer_mentions(
+    *,
+    root: Path,
+    tokens: tuple[str, ...],
+    failures: list[str],
+    label: str,
+) -> None:
+    for path in _python_files(root):
+        text = _read(path)
+        lowered = text.lower()
+        for token in tokens:
+            if token.lower() in lowered:
+                failures.append(f"{_rel(path)} {label}: {token}")
+
+
+def main() -> int:
+    failures: list[str] = []
+
+    _scan_bridge_layer(failures)
+    _scan_layer_mentions(
+        root=CORE_ROOT,
+        tokens=("packages.runtime_composition", "runtime_composition"),
+        failures=failures,
+        label="must not import or mention runtime composition bridge",
+    )
+    _scan_layer_mentions(
+        root=ASSISTANT_RUNTIME_ROOT,
+        tokens=("packages.runtime_composition", "runtime_composition"),
+        failures=failures,
+        label="must not import or mention runtime composition bridge",
+    )
+    _scan_layer_mentions(
+        root=PROVIDER_RUNTIME_ROOT,
+        tokens=("packages.core", "packages.assistant_runtime"),
+        failures=failures,
+        label="must not import Core or AssistantRuntime",
+    )
+    _scan_layer_mentions(
+        root=CLI_ROOT,
+        tokens=("packages.runtime_composition", "run_fake_provider_assistant_bridge"),
+        failures=failures,
+        label="must not import runtime composition bridge",
+    )
+
+    if failures:
+        for failure in failures:
+            print(f"FAIL {failure}")
+        return 1
+
+    print("PASS runtime composition boundaries")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
