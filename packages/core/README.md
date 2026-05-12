@@ -32,6 +32,9 @@ Assistant-runtime provider-stage wiring skeleton:
 - Task 113 adds a RuntimeComposition real-provider proof. Core remains a callee
   through `run_assistant_provider_stage_turn(...)` and does not import
   ProviderRuntime or RuntimeComposition.
+- Task 114 exposes that proof through an explicit non-default CLI mode. Core
+  remains a callee only and still does not import ProviderRuntime,
+  RuntimeComposition, adapters, or CLI.
 
 Forbidden responsibilities:
 

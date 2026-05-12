@@ -88,7 +88,8 @@ A roadmap entry, task id, or placeholder README is not permission to implement.
 No HTTP endpoint exists yet. No service daemon exists yet. No subprocess runtime
 or service mode exists yet.
 
-Current AssistantRuntime CLI foundation mode is explicit and fake-provider only:
-`--assistant-runtime-fake-provider`. Future real provider promotion still
-requires a separate ProviderRuntime bridge ownership task before service/API or
+Current AssistantRuntime CLI foundation modes are explicit and non-default:
+`--assistant-runtime-fake-provider` for the deterministic fake path and
+`--assistant-runtime-lmstudio-responses` for the LM Studio Responses proof path.
+The real-provider proof remains opt-in only and does not approve service/API or
 product behavior changes.

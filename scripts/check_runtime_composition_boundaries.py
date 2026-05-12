@@ -11,6 +11,11 @@ ASSISTANT_RUNTIME_ROOT = ROOT / "packages" / "assistant_runtime"
 PROVIDER_RUNTIME_ROOT = ROOT / "packages" / "provider_runtime"
 CLI_ROOT = ROOT / "apps" / "cli"
 CLI_MAIN = CLI_ROOT / "main.py"
+CLI_APPROVED_RUNTIME_COMPOSITION_IMPORTS = {
+    "run_fake_provider_assistant_bridge",
+    "run_lmstudio_responses_assistant_bridge",
+    "run_provider_foundation_turn",
+}
 
 ALLOWED_BRIDGE_IMPORT_PREFIXES = (
     "__future__",
@@ -157,7 +162,10 @@ def _scan_cli_bridge_import(failures: list[str]) -> None:
             if module == "packages.adapters" or module.startswith("packages.adapters."):
                 failures.append(f"{rel} must not import provider adapters")
 
-        if "packages.runtime_composition" not in text and "run_fake_provider_assistant_bridge" not in text:
+        mentions_approved_bridge = any(
+            name in text for name in CLI_APPROVED_RUNTIME_COMPOSITION_IMPORTS
+        )
+        if "packages.runtime_composition" not in text and not mentions_approved_bridge:
             continue
         if path != CLI_MAIN:
             failures.append(f"{rel} must not import runtime composition bridge")
@@ -172,10 +180,7 @@ def _scan_cli_bridge_import(failures: list[str]) -> None:
                 continue
             if module == "packages.runtime_composition":
                 imported = {alias.name for alias in node.names}
-                if imported == {
-                    "run_fake_provider_assistant_bridge",
-                    "run_provider_foundation_turn",
-                }:
+                if imported == CLI_APPROVED_RUNTIME_COMPOSITION_IMPORTS:
                     allowed_import_seen = True
                     continue
                 failures.append(
@@ -186,7 +191,7 @@ def _scan_cli_bridge_import(failures: list[str]) -> None:
                     f"{rel} must import runtime composition only through the package root"
                 )
 
-        if "run_fake_provider_assistant_bridge" in text and not allowed_import_seen:
+        if mentions_approved_bridge and not allowed_import_seen:
             failures.append(
                 f"{rel} mentions runtime composition bridge without approved import"
             )

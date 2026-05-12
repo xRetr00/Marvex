@@ -1,6 +1,6 @@
 # Runtime Composition Package
 
-Status: narrow fake-provider bridge proof.
+Status: narrow runtime composition bridge proof layer.
 
 Ownership: runtime composition/factory bridge.
 
@@ -26,12 +26,14 @@ Current bridge proof:
   `lmstudio_responses` provider through ProviderRuntime and uses the same Core
   helper / AssistantRuntime provider-stage path. Automated tests stub
   ProviderRuntime creation, so no live LM Studio server is required for CI.
+- The explicit CLI proof mode `--assistant-runtime-lmstudio-responses` calls
+  this bridge. It is non-default, manual-provider-backed proof behavior only.
 - `provider_foundation_bridge.py` exposes `run_provider_foundation_turn(...)`
   for the existing CLI provider-foundation turn path so CLI does not construct
   providers directly. This preserves existing default CLI behavior and does not
   promote AssistantRuntime real-provider behavior.
-- The AssistantRuntime bridge remains fake-provider-only proof coverage. It is
-  not default CLI behavior or product behavior.
+- The AssistantRuntime bridge remains proof coverage. It is not default CLI
+  behavior, service/API behavior, or product behavior.
 
 Forbidden responsibilities:
 
@@ -51,4 +53,6 @@ Dependency direction:
   CLI apps, or services.
 - Core, AssistantRuntime, and ProviderRuntime must not import this package.
 - CLI may import only the approved root functions
-  `run_fake_provider_assistant_bridge(...)` and `run_provider_foundation_turn(...)`.
+  `run_fake_provider_assistant_bridge(...)`,
+  `run_lmstudio_responses_assistant_bridge(...)`, and
+  `run_provider_foundation_turn(...)`.

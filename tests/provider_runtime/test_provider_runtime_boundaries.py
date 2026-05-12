@@ -15,10 +15,20 @@ def python_sources(relative_path: str) -> list[Path]:
 
 def test_cli_source_uses_runtime_composition_and_not_provider_runtime_or_adapters():
     source = read_text("apps/cli/main.py")
+    source_without_approved_lmstudio_bridge = source.replace(
+        "run_lmstudio_responses_assistant_bridge", ""
+    ).replace(
+        "_run_assistant_runtime_lmstudio_responses_proof", ""
+    ).replace(
+        "assistant_runtime_lmstudio_responses", ""
+    ).replace(
+        "--assistant-runtime-lmstudio-responses", ""
+    )
 
     assert "from packages.runtime_composition import (" in source
     assert "run_provider_foundation_turn" in source
     assert "run_fake_provider_assistant_bridge" in source
+    assert "run_lmstudio_responses_assistant_bridge" in source
     assert "packages.provider_runtime" not in source
     assert "ProviderRuntimeConfig" not in source
     assert "create_provider" not in source
@@ -26,7 +36,7 @@ def test_cli_source_uses_runtime_composition_and_not_provider_runtime_or_adapter
     assert "FakeProvider" not in source
     assert "LiteLLMProvider" not in source
     assert "LMStudioResponsesProvider" not in source
-    assert "lmstudio_responses" not in source
+    assert "lmstudio_responses" not in source_without_approved_lmstudio_bridge
     assert "_create_provider_for_cli_bootstrap" not in source
 
 

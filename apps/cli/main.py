@@ -23,6 +23,7 @@ from packages.contracts import (
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.runtime_composition import (
     run_fake_provider_assistant_bridge,
+    run_lmstudio_responses_assistant_bridge,
     run_provider_foundation_turn,
 )
 
@@ -45,6 +46,8 @@ def main(argv: list[str] | None = None) -> int:
     _require_turn_args(parser, args)
     if args.assistant_runtime_fake_provider:
         return _run_assistant_runtime_fake_provider_foundation(args)
+    if args.assistant_runtime_lmstudio_responses:
+        return _run_assistant_runtime_lmstudio_responses_proof(args)
     return _run_turn(args, parser)
 
 
@@ -84,6 +87,24 @@ def _run_assistant_runtime_fake_provider_foundation(args: argparse.Namespace) ->
         else None
     )
     result = run_fake_provider_assistant_bridge(
+        turn_input,
+        model=args.model,
+        instructions=args.instructions,
+        previous_response_id=args.previous_response_id,
+        telemetry_sink=telemetry_sink,
+    )
+    _print_assistant_runtime_provider_stage_result(result)
+    return 0 if result.error is None else 1
+
+
+def _run_assistant_runtime_lmstudio_responses_proof(args: argparse.Namespace) -> int:
+    turn_input = _build_assistant_runtime_turn_input(args)
+    telemetry_sink = (
+        _build_assistant_runtime_cli_telemetry_sink()
+        if args.assistant_runtime_provider_stage_trace
+        else None
+    )
+    result = run_lmstudio_responses_assistant_bridge(
         turn_input,
         model=args.model,
         instructions=args.instructions,
@@ -198,7 +219,10 @@ def _require_turn_args(
 ) -> None:
     missing = []
     required = [("--text", "text"), ("--model", "model")]
-    if not args.assistant_runtime_fake_provider:
+    if (
+        not args.assistant_runtime_fake_provider
+        and not args.assistant_runtime_lmstudio_responses
+    ):
         required.append(("--provider", "provider"))
     for option, name in required:
         if getattr(args, name) is None:
@@ -222,11 +246,17 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--instructions")
     parser.add_argument("--previous-response-id")
-    parser.add_argument(
+    assistant_runtime_modes = parser.add_mutually_exclusive_group()
+    assistant_runtime_modes.add_argument(
         "--assistant-runtime-fake-provider",
         "--assistant-runtime-provider-stage-fake",
         action="store_true",
         dest="assistant_runtime_fake_provider",
+    )
+    assistant_runtime_modes.add_argument(
+        "--assistant-runtime-lmstudio-responses",
+        action="store_true",
+        dest="assistant_runtime_lmstudio_responses",
     )
     parser.add_argument("--assistant-runtime-provider-stage-trace", action="store_true")
     return parser

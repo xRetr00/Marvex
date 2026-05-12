@@ -220,6 +220,15 @@ def test_cli_source_has_no_forbidden_modules_or_features():
     from pathlib import Path
 
     source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8").lower()
+    source_without_approved_lmstudio_bridge = source.replace(
+        "run_lmstudio_responses_assistant_bridge", ""
+    ).replace(
+        "_run_assistant_runtime_lmstudio_responses_proof", ""
+    ).replace(
+        "assistant_runtime_lmstudio_responses", ""
+    ).replace(
+        "--assistant-runtime-lmstudio-responses", ""
+    )
     forbidden = [
         "packages.ports",
         "lmstudio",
@@ -253,7 +262,9 @@ def test_cli_source_has_no_forbidden_modules_or_features():
         "provider probe",
     ]
 
-    assert [token for token in forbidden if token in source] == []
+    assert [
+        token for token in forbidden if token in source_without_approved_lmstudio_bridge
+    ] == []
 
 
 def test_cli_uses_runtime_composition_for_provider_selection():

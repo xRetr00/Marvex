@@ -24,6 +24,9 @@ Production bridge decision:
 - Task 113 adds a RuntimeComposition proof that requests the existing
   `lmstudio_responses` provider through `create_provider(...)`. ProviderRuntime
   still does not import RuntimeComposition, Core, or AssistantRuntime.
+- Task 114 exposes that proof through an explicit non-default CLI mode.
+  ProviderRuntime remains behind RuntimeComposition and still does not import
+  CLI, RuntimeComposition, Core, or AssistantRuntime.
 
 Approved provider names:
 

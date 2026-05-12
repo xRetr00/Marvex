@@ -69,8 +69,9 @@ RuntimeComposition owns narrow bridge/factory composition only.
   bridge.
 - ProviderRuntime must not import Core or AssistantRuntime.
 - CLI may import only the approved runtime composition root functions for the
-  existing provider-foundation turn path and the explicit
-  AssistantRuntime fake-provider foundation mode.
+  existing provider-foundation turn path, the explicit AssistantRuntime
+  fake-provider foundation mode, and the explicit LM Studio Responses
+  AssistantRuntime proof mode.
 - CLI must not import RuntimeComposition internals, ProviderRuntime, concrete
   provider adapters, or provider SDKs.
 - Strict runtime scans target Python source files only, not README files.

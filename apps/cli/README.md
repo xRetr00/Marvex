@@ -24,6 +24,21 @@ AssistantRuntime fake-provider foundation mode:
 - `--assistant-runtime-provider-stage-trace` enables in-memory test/dev trace
   emission only; no telemetry storage or logging sink is added.
 
+AssistantRuntime LM Studio Responses proof mode:
+
+- `--assistant-runtime-lmstudio-responses` is an explicit non-default proof mode
+  for exercising the RuntimeComposition LM Studio Responses AssistantRuntime
+  bridge from CLI.
+- The mode builds an assistant-turn input and calls
+  `packages.runtime_composition.run_lmstudio_responses_assistant_bridge(...)`.
+- RuntimeComposition owns ProviderRuntime composition for this mode; CLI does
+  not create providers, import ProviderRuntime, import provider adapters, route
+  providers, retry/fallback, manage sessions/history, read API keys, or select
+  models beyond passing the explicit `--model` value.
+- Automated tests mock the bridge; live LM Studio execution is manual smoke only
+  and is not part of `run_all_checks.py`.
+- It is not default CLI behavior, service/API behavior, or product behavior.
+
 Decision diagnostics are not a CLI surface. The CLI must not import decision
 runtime or decision adapter modules.
 
@@ -59,3 +74,5 @@ Dependency direction:
   layer, not owned directly by CLI.
 - Task 112 wires the official fake-provider foundation mode to RuntimeComposition
   while preserving the compatibility alias and default CLI output behavior.
+- Task 114 adds the explicit LM Studio Responses AssistantRuntime proof mode
+  through RuntimeComposition while keeping default CLI behavior unchanged.

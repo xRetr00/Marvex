@@ -69,6 +69,8 @@ Provider-stage skeleton:
 - Task 113 adds a RuntimeComposition real-provider proof for LM Studio Responses.
   AssistantRuntime still sees only the injected provider-stage contract shape and
   does not import RuntimeComposition, ProviderRuntime, Core, adapters, or ports.
+- Task 114 exposes that RuntimeComposition proof through an explicit non-default
+  CLI mode. AssistantRuntime remains unaware of CLI and RuntimeComposition.
 
 Structured-output consumer seam:
 

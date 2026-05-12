@@ -238,9 +238,15 @@ unchanged.
 Task 113 implementation note: RuntimeComposition now has one explicit
 real-provider-backed AssistantRuntime proof function for `lmstudio_responses`.
 It obtains that provider through ProviderRuntime and injects it into the same
-Core helper / AssistantRuntime provider-stage path. It is not wired into CLI,
+Core helper / AssistantRuntime provider-stage path. It is not wired into
 services, APIs, default behavior, routing, sessions, retry/fallback, model
 selection, API-key policy, tools, or memory.
+
+Task 114 implementation note: CLI now has an explicit non-default
+`--assistant-runtime-lmstudio-responses` proof mode that calls the
+RuntimeComposition LM Studio Responses bridge. CLI still does not import
+ProviderRuntime or adapters and does not own provider routing, retry/fallback,
+session/history, model-selection, API-key, service/API, or product behavior.
 
 ## Decision Runtime Boundary
 
