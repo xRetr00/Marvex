@@ -308,7 +308,7 @@ def test_core_provider_stage_helper_is_not_wired_into_existing_product_paths():
     ).read_text(encoding="utf-8")
     cli_source = Path("apps/cli/main.py").read_text(encoding="utf-8")
     default_turn_path = cli_source.split("def _run_turn", 1)[1].split(
-        "def _run_assistant_runtime_provider_stage_fake", 1
+        "def _run_assistant_runtime_fake_provider_foundation", 1
     )[0]
 
     assert "run_assistant_provider_stage_turn" not in orchestrator_source

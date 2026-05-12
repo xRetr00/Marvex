@@ -20,8 +20,8 @@ Assistant-runtime provider-stage wiring skeleton:
 - It is not exported from `packages.core.orchestration`, not used by
   `TurnOrchestrator`, and not wired into CLI, services, APIs, ProviderRuntime,
   adapters, or product flow.
-- Task 107 adds only an explicit CLI/dev fake-provider caller for this seam; the
-  normal Core `TurnOrchestrator` path remains unchanged.
+- Tasks 107 and 109 add only an explicit CLI fake-provider foundation caller for
+  this seam; the normal Core `TurnOrchestrator` path remains unchanged.
 
 Forbidden responsibilities:
 

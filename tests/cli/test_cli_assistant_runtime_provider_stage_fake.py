@@ -159,7 +159,7 @@ def test_default_cli_behavior_remains_unchanged(capsys):
     assert len(lines) == 3
 
 
-def test_opt_in_cli_path_calls_core_helper(monkeypatch, capsys):
+def test_foundation_mode_calls_core_helper(monkeypatch, capsys):
     from apps.cli import main as cli_main
 
     captured = {}
@@ -177,7 +177,7 @@ def test_opt_in_cli_path_calls_core_helper(monkeypatch, capsys):
 
     exit_code = cli_main.main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--text",
             "Hello",
             "--model",
@@ -206,7 +206,28 @@ def test_opt_in_cli_path_calls_core_helper(monkeypatch, capsys):
     ]
 
 
-def test_opt_in_success_preserves_ids_and_provider_ref(capsys):
+def test_foundation_mode_success_preserves_ids_and_provider_ref(capsys):
+    from apps.cli.main import main
+
+    exit_code = main(
+        [
+            "--assistant-runtime-fake-provider",
+            "--text",
+            "Hello",
+            "--model",
+            "fake-model",
+        ]
+    )
+
+    lines = capsys.readouterr().out.strip().splitlines()
+    assert exit_code == 0
+    assert lines[0] == "assistant runtime fake provider response"
+    assert lines[1] == "provider_response_id: assistant-runtime-fake-response-001"
+    assert lines[2].startswith("trace_id: trace-")
+    assert lines[3].startswith("turn_id: turn-")
+
+
+def test_task_107_flag_remains_supported_as_compatibility_alias(capsys):
     from apps.cli.main import main
 
     exit_code = main(
@@ -233,13 +254,13 @@ def test_opt_in_previous_response_id_reaches_injected_provider(monkeypatch, caps
     provider = RecordingProvider()
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_provider_stage_dev_provider",
+        "_build_assistant_runtime_foundation_provider",
         lambda: provider,
     )
 
     exit_code = cli_main.main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--text",
             "Hello",
             "--model",
@@ -261,13 +282,13 @@ def test_opt_in_fake_provider_error_maps_to_safe_cli_output(monkeypatch, capsys)
 
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_provider_stage_dev_provider",
+        "_build_assistant_runtime_foundation_provider",
         lambda: RecordingProvider(provider_error_response()),
     )
 
     exit_code = cli_main.main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--text",
             "Hello",
             "--model",
@@ -291,13 +312,13 @@ def test_opt_in_empty_fake_provider_output_maps_to_safe_cli_output(monkeypatch, 
 
     monkeypatch.setattr(
         cli_main,
-        "_build_assistant_runtime_provider_stage_dev_provider",
+        "_build_assistant_runtime_foundation_provider",
         lambda: RecordingProvider(empty_provider_response()),
     )
 
     exit_code = cli_main.main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--text",
             "Hello",
             "--model",
@@ -324,7 +345,7 @@ def test_opt_in_trace_diagnostics_use_telemetry_owned_event_construction(monkeyp
 
     exit_code = cli_main.main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--assistant-runtime-provider-stage-trace",
             "--text",
             "Hello",
@@ -345,12 +366,12 @@ def test_opt_in_trace_diagnostics_use_telemetry_owned_event_construction(monkeyp
     assert sink.events[0].data == {"stage": "provider_stage"}
 
 
-def test_opt_in_cli_path_does_not_require_provider_argument(capsys):
+def test_foundation_mode_does_not_require_provider_argument(capsys):
     from apps.cli.main import main
 
     exit_code = main(
         [
-            "--assistant-runtime-provider-stage-fake",
+            "--assistant-runtime-fake-provider",
             "--text",
             "Hello",
             "--model",
@@ -366,9 +387,21 @@ def test_opt_in_cli_path_still_requires_text_and_model():
     from apps.cli.main import main
 
     with pytest.raises(SystemExit) as exc:
-        main(["--assistant-runtime-provider-stage-fake", "--text", "Hello"])
+        main(["--assistant-runtime-fake-provider", "--text", "Hello"])
 
     assert exc.value.code == 2
+
+
+def test_foundation_mode_help_lists_primary_and_compatibility_flags(capsys):
+    from apps.cli.main import main
+
+    with pytest.raises(SystemExit) as exc:
+        main(["--help"])
+
+    output = capsys.readouterr().out
+    assert exc.value.code == 0
+    assert "--assistant-runtime-fake-provider" in output
+    assert "--assistant-runtime-provider-stage-fake" in output
 
 
 def test_cli_source_has_no_concrete_provider_adapter_imports_for_opt_in_path():
@@ -377,4 +410,5 @@ def test_cli_source_has_no_concrete_provider_adapter_imports_for_opt_in_path():
     assert "packages.adapters" not in source
     assert "FakeProvider" not in source
     assert "ProviderRuntime(" not in source
+    assert "--assistant-runtime-fake-provider" in source
     assert "run_assistant_provider_stage_turn" in source

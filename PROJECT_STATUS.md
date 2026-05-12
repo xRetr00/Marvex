@@ -1,26 +1,26 @@
 # Project Status
 
-current_phase: project_status_compaction_runtime_promotion_decision_pack
+current_phase: official_cli_assistant_runtime_fake_provider_foundation_mode_pack
 
-implementation_status: governance_status_compaction_only_runtime_behavior_unchanged
+implementation_status: explicit_cli_fake_provider_foundation_mode_default_cli_unchanged
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 108 Project Status Compaction and Next Runtime Promotion Decision Pack
+Task 109 Official CLI AssistantRuntime Fake Provider Foundation Mode Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 107:
+Latest full validation baseline from Task 109:
 
-- `python -m pytest tests\cli tests\core tests\assistant_runtime tests\provider_structured_output tests\telemetry tests\provider_runtime tests\integration -q` -> 383 passed
-- `python -m pytest -q` -> 611 passed, 1 skipped
+- `python -m pytest tests\cli tests\api tests\core tests\assistant_runtime tests\provider_structured_output tests\telemetry tests\provider_runtime tests\integration -q` -> 404 passed
+- `python -m pytest -q` -> 613 passed, 1 skipped
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 
-Task 108 is documentation/governance only. It does not implement or promote
-runtime, CLI, provider, service, API, telemetry, contract, port, or product
-behavior.
+Task 109 promotes the Task 107 CLI fake-provider path into an official explicit
+foundation mode only. It does not change default CLI behavior or implement real
+provider, service, API, telemetry storage, session/history, or product behavior.
 
 ## Current Foundation Capabilities
 
@@ -51,8 +51,9 @@ Assistant-runtime foundation now present:
 - assistant-runtime input normalization, result assembly, no-provider runtime
   skeleton, structured-output consumption helpers, and provider-stage skeleton
 - Core internal assistant-runtime provider-stage wiring skeleton
-- CLI opt-in fake-provider vertical slice via
-  `--assistant-runtime-provider-stage-fake`
+- official explicit CLI fake-provider foundation mode via
+  `--assistant-runtime-fake-provider`; the Task 107 flag
+  `--assistant-runtime-provider-stage-fake` remains a compatibility alias
 
 Provider structured-output foundation now present:
 
@@ -75,7 +76,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-107 Compact Milestone Summary
+## Task 102-109 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -90,6 +91,11 @@ ownership governance, and library research governance remain accepted.
 - Task 107 added the opt-in CLI/dev fake-provider vertical slice with
   `--assistant-runtime-provider-stage-fake`, leaving default CLI behavior
   unchanged.
+- Task 108 compacted this status file and recorded the next runtime promotion
+  decision.
+- Task 109 promoted the explicit fake-provider AssistantRuntime CLI path into
+  the official foundation mode `--assistant-runtime-fake-provider` while keeping
+  the Task 107 flag as a compatibility alias.
 
 ## Architecture Health Notes
 
@@ -100,7 +106,7 @@ ownership governance, and library research governance remain accepted.
   ProviderRuntime, adapters, ports, CLI, or services.
 - Core has a narrow assistant-runtime provider-stage seam but the existing
   `TurnOrchestrator` provider path remains unchanged.
-- CLI has one explicit dev-only assistant-runtime fake-provider path; the
+- CLI has one explicit fake-provider AssistantRuntime foundation mode; the
   default provider CLI path remains the provider-foundation path.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
@@ -127,10 +133,10 @@ not implementation permission.
 
 ## Next Runtime Promotion Decision
 
-Candidate A: promote the opt-in CLI fake path toward normal CLI foundation.
+Candidate A: maintain and harden the official CLI fake-provider foundation mode.
 
 - Foundation value: high for assistant-turn plumbing and result formatting.
-- Speed value: high because Tasks 105-107 already prove the fake-provider path.
+- Speed value: high because Tasks 105-109 already prove the fake-provider path.
 - Architecture risk: medium; the main risk is accidentally turning a dev-only
   fake path into product/default behavior before provider ownership is settled.
 - Unlocks: a clearer assistant-runtime CLI foundation, stable bounded output,
@@ -160,9 +166,7 @@ Candidate C: local health/version API readiness.
 - Must not touch: assistant turn orchestration, providers, CLI provider paths,
   tools, memory, UI, or product runtime behavior.
 
-Recommendation, not permission: Candidate A is the safest next implementation
-direction if the goal is runtime promotion, because it extends the already
-proven fake-provider assistant-runtime path without real provider or service
-ownership risk. Candidate B should precede any real provider-backed
-AssistantRuntime promotion. Candidate C is valid but orthogonal to the
-assistant-turn runtime chain.
+Recommendation, not permission: Candidate B should be decided before any real
+provider-backed AssistantRuntime promotion. Candidate A remains the safest
+implementation lane for further fake-provider-only CLI foundation hardening.
+Candidate C is valid but orthogonal to the assistant-turn runtime chain.

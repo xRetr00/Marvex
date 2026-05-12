@@ -8,11 +8,15 @@ Responsibility: Terminal request submission to Core for a single text turn, plus
 local process readiness health/version reporting from explicit in-memory
 runtime config.
 
-Dev-only assistant-runtime slice:
+AssistantRuntime fake-provider foundation mode:
 
-- `--assistant-runtime-provider-stage-fake` is an explicit opt-in path only.
-- It builds an assistant-turn input, injects a local fake send-capable provider
-  double, and calls the Core assistant-runtime provider-stage skeleton.
+- `--assistant-runtime-fake-provider` is the official explicit foundation mode
+  for exercising the AssistantRuntime provider-stage path from CLI.
+- The Task 107 flag `--assistant-runtime-provider-stage-fake` remains supported
+  as a compatibility alias.
+- The mode builds an assistant-turn input, injects a local deterministic
+  send-capable provider double, and calls the Core assistant-runtime
+  provider-stage skeleton.
 - It is not the default CLI path, does not use ProviderRuntime as a production
   bridge, and does not introduce provider routing, sessions, history, services,
   APIs, or product behavior.

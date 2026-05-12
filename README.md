@@ -88,7 +88,7 @@ A roadmap entry, task id, or placeholder README is not permission to implement.
 No HTTP endpoint exists yet. No service daemon exists yet. No subprocess runtime
 or service mode exists yet.
 
-Next likely work after Task 108 is recorded in `PROJECT_STATUS.md`. Current
-status favors a separate approved assistant-runtime fake-provider CLI foundation
-promotion before any real ProviderRuntime production bridge, service/API work,
-or product behavior change.
+Current AssistantRuntime CLI foundation mode is explicit and fake-provider only:
+`--assistant-runtime-fake-provider`. Future real provider promotion still
+requires a separate ProviderRuntime bridge ownership task before service/API or
+product behavior changes.

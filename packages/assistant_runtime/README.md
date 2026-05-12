@@ -55,6 +55,9 @@ Provider-stage skeleton:
   Core-owned skeleton with an injected neutral provider. That skeleton does not
   change normal Core orchestration, CLI behavior, ProviderRuntime behavior, or
   product flow.
+- Tasks 107 and 109 expose this helper through an explicit CLI fake-provider
+  foundation mode only. The normal `AssistantTurnRuntime.run(...)` path and real
+  provider integration remain unchanged.
 
 Structured-output consumer seam:
 

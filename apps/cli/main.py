@@ -45,8 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_version(json_output=args.json_output)
 
     _require_turn_args(parser, args)
-    if args.assistant_runtime_provider_stage_fake:
-        return _run_assistant_runtime_provider_stage_fake(args)
+    if args.assistant_runtime_fake_provider:
+        return _run_assistant_runtime_fake_provider_foundation(args)
     return _run_turn(args, parser)
 
 
@@ -79,7 +79,7 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
     return 0
 
 
-def _run_assistant_runtime_provider_stage_fake(args: argparse.Namespace) -> int:
+def _run_assistant_runtime_fake_provider_foundation(args: argparse.Namespace) -> int:
     turn_input = _build_assistant_runtime_turn_input(args)
     telemetry_sink = (
         _build_assistant_runtime_cli_telemetry_sink()
@@ -88,7 +88,7 @@ def _run_assistant_runtime_provider_stage_fake(args: argparse.Namespace) -> int:
     )
     result = run_assistant_provider_stage_turn(
         turn_input,
-        provider=_build_assistant_runtime_provider_stage_dev_provider(),
+        provider=_build_assistant_runtime_foundation_provider(),
         model=args.model,
         instructions=args.instructions,
         previous_response_id=args.previous_response_id,
@@ -98,7 +98,7 @@ def _run_assistant_runtime_provider_stage_fake(args: argparse.Namespace) -> int:
     return 0 if result.error is None else 1
 
 
-class _AssistantRuntimeStageDevProvider:
+class _AssistantRuntimeFoundationProvider:
     def send(self, request: ProviderRequest) -> ProviderResponse:
         return ProviderResponse(
             schema_version=request.schema_version,
@@ -114,8 +114,8 @@ class _AssistantRuntimeStageDevProvider:
         )
 
 
-def _build_assistant_runtime_provider_stage_dev_provider() -> _AssistantRuntimeStageDevProvider:
-    return _AssistantRuntimeStageDevProvider()
+def _build_assistant_runtime_foundation_provider() -> _AssistantRuntimeFoundationProvider:
+    return _AssistantRuntimeFoundationProvider()
 
 
 def _build_assistant_runtime_cli_telemetry_sink() -> object | None:
@@ -222,7 +222,7 @@ def _require_turn_args(
 ) -> None:
     missing = []
     required = [("--text", "text"), ("--model", "model")]
-    if not args.assistant_runtime_provider_stage_fake:
+    if not args.assistant_runtime_fake_provider:
         required.append(("--provider", "provider"))
     for option, name in required:
         if getattr(args, name) is None:
@@ -246,7 +246,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--instructions")
     parser.add_argument("--previous-response-id")
-    parser.add_argument("--assistant-runtime-provider-stage-fake", action="store_true")
+    parser.add_argument(
+        "--assistant-runtime-fake-provider",
+        "--assistant-runtime-provider-stage-fake",
+        action="store_true",
+        dest="assistant_runtime_fake_provider",
+    )
     parser.add_argument("--assistant-runtime-provider-stage-trace", action="store_true")
     return parser
 
