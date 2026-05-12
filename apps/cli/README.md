@@ -8,6 +8,17 @@ Responsibility: Terminal request submission to Core for a single text turn, plus
 local process readiness health/version reporting from explicit in-memory
 runtime config.
 
+Dev-only assistant-runtime slice:
+
+- `--assistant-runtime-provider-stage-fake` is an explicit opt-in path only.
+- It builds an assistant-turn input, injects a local fake send-capable provider
+  double, and calls the Core assistant-runtime provider-stage skeleton.
+- It is not the default CLI path, does not use ProviderRuntime as a production
+  bridge, and does not introduce provider routing, sessions, history, services,
+  APIs, or product behavior.
+- `--assistant-runtime-provider-stage-trace` enables in-memory test/dev trace
+  emission only; no telemetry storage or logging sink is added.
+
 Decision diagnostics are not a CLI surface. The CLI must not import decision
 runtime or decision adapter modules.
 
@@ -31,5 +42,7 @@ Dependency direction:
 - May depend on public Core orchestration.
 - May depend on ProviderRuntime for approved provider creation.
 - May depend on ProcessRuntime only for approved local health/version commands.
+- May use approved assistant-turn contracts for explicit dev-only
+  assistant-runtime provider-stage input construction.
 - Must not depend on provider SDKs, telemetry implementation, or services.
 - Any future provider selection expansion must stay inside the dedicated ProviderRuntime boundary.

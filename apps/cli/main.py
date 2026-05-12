@@ -6,8 +6,25 @@ import sys
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from packages.contracts import Source, TurnInput
+from packages.contracts import (
+    AssistantInputSource,
+    AssistantMode,
+    AssistantTurnInput,
+    AssistantTurnResult,
+    FinishReason,
+    InputEvent,
+    InputModality,
+    PolicyContext,
+    Privacy,
+    ProviderRequest,
+    ProviderResponse,
+    Sensitivity,
+    Source,
+    TextPayload,
+    TurnInput,
+)
 from packages.core.orchestration import TurnOrchestrator
+from packages.core.orchestration.assistant_provider_stage import run_assistant_provider_stage_turn
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -28,6 +45,8 @@ def main(argv: list[str] | None = None) -> int:
         return _run_version(json_output=args.json_output)
 
     _require_turn_args(parser, args)
+    if args.assistant_runtime_provider_stage_fake:
+        return _run_assistant_runtime_provider_stage_fake(args)
     return _run_turn(args, parser)
 
 
@@ -58,6 +77,101 @@ def _run_turn(args: argparse.Namespace, parser: argparse.ArgumentParser) -> int:
         print(f"provider_response_id: {output.provider_response_id}")
     print(f"trace_id: {output.trace_id}")
     return 0
+
+
+def _run_assistant_runtime_provider_stage_fake(args: argparse.Namespace) -> int:
+    turn_input = _build_assistant_runtime_turn_input(args)
+    telemetry_sink = (
+        _build_assistant_runtime_cli_telemetry_sink()
+        if args.assistant_runtime_provider_stage_trace
+        else None
+    )
+    result = run_assistant_provider_stage_turn(
+        turn_input,
+        provider=_build_assistant_runtime_provider_stage_dev_provider(),
+        model=args.model,
+        instructions=args.instructions,
+        previous_response_id=args.previous_response_id,
+        telemetry_sink=telemetry_sink,
+    )
+    _print_assistant_runtime_provider_stage_result(result)
+    return 0 if result.error is None else 1
+
+
+class _AssistantRuntimeStageDevProvider:
+    def send(self, request: ProviderRequest) -> ProviderResponse:
+        return ProviderResponse(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            provider_name="cli_dev_provider",
+            response_id="assistant-runtime-fake-response-001",
+            output_text="assistant runtime fake provider response",
+            finish_reason=FinishReason.STOP,
+            usage={},
+            raw_metadata={"previous_response_id": request.previous_response_id},
+            error=None,
+        )
+
+
+def _build_assistant_runtime_provider_stage_dev_provider() -> _AssistantRuntimeStageDevProvider:
+    return _AssistantRuntimeStageDevProvider()
+
+
+def _build_assistant_runtime_cli_telemetry_sink() -> object | None:
+    return None
+
+
+def _build_assistant_runtime_turn_input(
+    args: argparse.Namespace,
+) -> AssistantTurnInput:
+    trace_id = f"trace-{uuid4()}"
+    event_id = f"event-{uuid4()}"
+    input_event = InputEvent(
+        schema_version=SCHEMA_VERSION,
+        trace_id=trace_id,
+        event_id=event_id,
+        source=AssistantInputSource.CLI,
+        input_modality=InputModality.TEXT,
+        payload=TextPayload(kind="text", text=args.text),
+        payload_ref=None,
+        session_ref=None,
+        privacy=Privacy(
+            sensitivity=Sensitivity.NORMAL,
+            redaction_needed=False,
+        ),
+        timestamp=datetime.now(UTC),
+        metadata={},
+    )
+    return AssistantTurnInput(
+        schema_version=SCHEMA_VERSION,
+        trace_id=trace_id,
+        turn_id=f"turn-{uuid4()}",
+        input_event_id=input_event.event_id,
+        session_ref=input_event.session_ref,
+        identity_ref=None,
+        user_visible_input=input_event.payload.text if input_event.payload else None,
+        assistant_mode=AssistantMode.DEFAULT,
+        policy_context=PolicyContext(
+            requested_capabilities=[],
+            sensitivity=input_event.privacy.sensitivity,
+        ),
+        metadata={},
+    )
+
+
+def _print_assistant_runtime_provider_stage_result(
+    result: AssistantTurnResult,
+) -> None:
+    if result.assistant_final_response is not None:
+        print(result.assistant_final_response.text)
+    elif result.error is not None:
+        print(result.error.message)
+        print(f"error_code: {result.error.code.value}")
+    if result.provider_turn_refs:
+        print(f"provider_response_id: {result.provider_turn_refs[0].ref_id}")
+    print(f"trace_id: {result.trace_id}")
+    print(f"turn_id: {result.turn_id}")
 
 
 def _run_health(*, json_output: bool) -> int:
@@ -107,11 +221,10 @@ def _require_turn_args(
     parser: argparse.ArgumentParser, args: argparse.Namespace
 ) -> None:
     missing = []
-    for option, name in [
-        ("--text", "text"),
-        ("--provider", "provider"),
-        ("--model", "model"),
-    ]:
+    required = [("--text", "text"), ("--model", "model")]
+    if not args.assistant_runtime_provider_stage_fake:
+        required.append(("--provider", "provider"))
+    for option, name in required:
         if getattr(args, name) is None:
             missing.append(option)
     if missing:
@@ -133,6 +246,8 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--model")
     parser.add_argument("--instructions")
     parser.add_argument("--previous-response-id")
+    parser.add_argument("--assistant-runtime-provider-stage-fake", action="store_true")
+    parser.add_argument("--assistant-runtime-provider-stage-trace", action="store_true")
     return parser
 
 

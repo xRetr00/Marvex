@@ -87,10 +87,15 @@ AssistantRuntime provider-stage helper. Trace lifecycle diagnostics still flow
 through the AssistantRuntime helper and `make_trace_event(...)`; Core does not
 own telemetry redaction policy, storage, or a new product sink.
 
+Task 107 adds an opt-in CLI/dev fake-provider path that may pass an in-memory
+test/dev sink into the same Core-to-AssistantRuntime provider-stage path. Trace
+events still go through `make_trace_event(...)`; no telemetry storage or
+caller-owned redaction policy is added.
+
 This is trace event construction safety only. It does not implement telemetry
-storage, logging sinks, Core behavior, ProviderRuntime behavior,
-AssistantRuntime normal-turn behavior, CLI behavior, services, API/WebSocket,
-UI, or product runtime behavior.
+storage, logging sinks, ProviderRuntime behavior, AssistantRuntime normal-turn
+behavior, default CLI behavior, services, API/WebSocket, UI, or product runtime
+behavior.
 
 Redaction convention:
 

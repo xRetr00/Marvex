@@ -303,16 +303,18 @@ def test_input_objects_are_not_mutated():
 
 
 def test_core_provider_stage_helper_is_not_wired_into_existing_product_paths():
-    scanned_paths = [
-        Path("packages/core/orchestration/turn_orchestrator.py"),
-        *Path("apps/cli").rglob("*.py"),
-    ]
+    orchestrator_source = Path(
+        "packages/core/orchestration/turn_orchestrator.py"
+    ).read_text(encoding="utf-8")
+    cli_source = Path("apps/cli/main.py").read_text(encoding="utf-8")
+    default_turn_path = cli_source.split("def _run_turn", 1)[1].split(
+        "def _run_assistant_runtime_provider_stage_fake", 1
+    )[0]
 
-    for path in scanned_paths:
-        source = path.read_text(encoding="utf-8")
-        assert "run_assistant_provider_stage_turn" not in source
-        assert "packages.core.orchestration.assistant_provider_stage" not in source
-        assert "packages.assistant_runtime.provider_stage" not in source
+    assert "run_assistant_provider_stage_turn" not in orchestrator_source
+    assert "packages.core.orchestration.assistant_provider_stage" not in orchestrator_source
+    assert "packages.assistant_runtime.provider_stage" not in orchestrator_source
+    assert "run_assistant_provider_stage_turn" not in default_turn_path
 
 
 def test_core_helper_source_has_no_provider_runtime_or_concrete_provider_imports():

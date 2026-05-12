@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: core_assistant_runtime_provider_stage_wiring_skeleton_pack
+current_phase: cli_opt_in_assistant_runtime_fake_provider_vertical_slice_pack
 
-implementation_status: core_internal_assistant_runtime_provider_stage_wiring_experimental_product_integration_blocked
+implementation_status: cli_dev_only_assistant_runtime_fake_provider_slice_default_cli_unchanged
 
 accepted_docs: true
 
@@ -42,6 +42,7 @@ completed_foundation:
 - test-only ProviderRuntime to AssistantRuntime structured-output bridge proof
 - AssistantRuntime injected provider-stage skeleton
 - Core internal AssistantRuntime provider-stage wiring skeleton
+- CLI opt-in AssistantRuntime fake-provider vertical slice
 
 completed_process_readiness:
 
@@ -102,10 +103,11 @@ completed_governance_gates:
 - Task 104 ProviderRuntime to AssistantRuntime Structured Output Bridge Proof Pack completed
 - Task 105 Assistant Turn Provider Skeleton Pack completed
 - Task 106 Core to AssistantRuntime Provider Stage Wiring Skeleton Pack completed
+- Task 107 CLI Opt-In AssistantRuntime Fake Provider Vertical Slice Pack completed
 
 current_governance_gate:
 
-Task 106 Core to AssistantRuntime Provider Stage Wiring Skeleton Pack
+Task 107 CLI Opt-In AssistantRuntime Fake Provider Vertical Slice Pack
 
 allowed_current_work:
 
@@ -173,6 +175,9 @@ allowed_current_work:
 - Core internal assistant-runtime provider-stage wiring skeleton maintenance
   only; normal Core orchestration, CLI, services, ProviderRuntime, adapters,
   ports, product flow, and history remain blocked
+- CLI opt-in assistant-runtime fake-provider dev slice maintenance only; default
+  CLI, services, ProviderRuntime production bridge, adapters, product flow, and
+  history remain blocked
 
 forbidden_current_work:
 
@@ -482,3 +487,14 @@ Future promotion must first define whether this internal skeleton becomes a
 normal Core orchestration path, how CLI/service/API callers opt in, and how
 provider selection, session/history, retry/fallback, and trace ownership remain
 bounded.
+
+Task 107 adds `--assistant-runtime-provider-stage-fake`, an explicit CLI/dev
+vertical slice that builds an assistant-turn input, injects a local fake
+send-capable provider double, calls `run_assistant_provider_stage_turn(...)`,
+and prints bounded final/error, provider ref, trace, and turn fields. The
+default CLI provider path, services, APIs, ProviderRuntime production bridge,
+provider adapters, product flow, sessions, and history remain unchanged.
+
+next_allowed_work_after_task_107: Runtime/product integration remains blocked.
+Future promotion requires a separate task for normal Core/CLI path ownership,
+provider selection, session/history state, and service/API behavior.

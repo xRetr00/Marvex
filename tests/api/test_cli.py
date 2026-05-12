@@ -223,7 +223,6 @@ def test_cli_source_has_no_forbidden_modules_or_features():
     source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8").lower()
     forbidden = [
         "packages.ports",
-        "packages.telemetry",
         "lmstudio",
         "http.server",
         "fastapi",
@@ -240,7 +239,6 @@ def test_cli_source_has_no_forbidden_modules_or_features():
         "intent",
         "voice",
         "desktop",
-        "session",
         "history",
         "retry",
         "fallback",
@@ -275,6 +273,10 @@ def test_cli_imports_public_turn_orchestrator_only():
     source = (Path("apps") / "cli" / "main.py").read_text(encoding="utf-8")
 
     assert "from packages.core.orchestration import TurnOrchestrator" in source
+    assert (
+        "from packages.core.orchestration.assistant_provider_stage "
+        "import run_assistant_provider_stage_turn"
+    ) in source
     assert "packages.core.orchestration.turn_orchestrator" not in source
 
 
