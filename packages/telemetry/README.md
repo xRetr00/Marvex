@@ -5,8 +5,8 @@ Status: minimal Provider Foundation lifecycle implementation.
 Ownership: Trace and diagnostics boundary.
 
 Responsibility: Provide `TelemetrySink`, `NoopTelemetrySink`, trace event
-construction for the v1 turn lifecycle, and sanitizer primitives for future
-safe trace data handling.
+construction for the v1 turn lifecycle, sanitizer primitives, and
+structured-output-shaped trace data safety inside telemetry event construction.
 
 Forbidden responsibilities:
 
@@ -28,8 +28,11 @@ Sanitization:
 
 - `sanitization.py` owns `sanitize_trace_data(...)` and
   `assert_trace_data_safe(...)`.
+- `sinks.py` applies sanitizer safety inside `make_trace_event(...)` when trace
+  data is shaped like structured-output diagnostics.
 - unsafe trace fields are redacted to `"[REDACTED]"`.
 - raw provider output, raw previews, parsed payloads, prompts, transcripts,
   provider/session/thread identifiers, auth tokens, and secrets are not safe for
   default telemetry.
-- the sanitizer is not wired into runtime behavior or persistent storage.
+- this wiring does not add runtime product behavior, logging sinks, or
+  persistent storage.

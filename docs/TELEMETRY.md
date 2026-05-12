@@ -62,9 +62,16 @@ Task 101 adds a telemetry-owned sanitizer primitive:
 - `packages.telemetry.sanitization.sanitize_trace_data(...)`
 - `packages.telemetry.sanitization.assert_trace_data_safe(...)`
 
-The sanitizer is a safety helper only. It is not wired into Core,
-ProviderRuntime, AssistantRuntime, CLI, services, API/WebSocket, UI, product
-runtime behavior, persistent storage, or a logging sink.
+Task 102 wires the sanitizer into `packages.telemetry.sinks.make_trace_event(...)`
+for structured-output-shaped trace data. The path is telemetry-owned: callers
+do not own redaction policy, ProviderRuntime and provider adapters do not import
+telemetry sanitization, and normal provider-turn trace data keeps its existing
+shape unless it is structured-output trace data.
+
+This is trace event construction safety only. It does not implement telemetry
+storage, logging sinks, Core behavior, ProviderRuntime behavior,
+AssistantRuntime behavior, CLI behavior, services, API/WebSocket, UI, or product
+runtime behavior.
 
 Redaction convention:
 
@@ -103,12 +110,15 @@ Allowed by default:
   status, target contract, sanitized message, sanitized error code, and
   diagnostic-only flags when they pass sanitizer checks
 
-Structured-output trace data must use sanitized summaries only. Raw provider
+Structured-output trace data must use sanitized summaries only. When
+structured-output-shaped data is passed to `make_trace_event(...)`, raw provider
 output, raw previews, parsed payloads, prompts, transcripts, provider/session
-identifiers, auth tokens, and secrets must not be stored in default telemetry.
+identifiers, auth tokens, and secrets are redacted before the `TraceEvent` is
+created. Non-JSON-compatible structured-output trace data is rejected.
 
-Future structured-output runtime integration must pass any telemetry-bound data
-through the telemetry sanitizer before trace/log emission.
+Future structured-output runtime integration must still name the exact caller,
+data shape, sink behavior, failure behavior, and boundary tests before emitting
+new trace events.
 
 Secrets and PII must never be logged by default. Diagnostic modes that capture
 sensitive text require an explicit task spec, visible warning, retention limit,

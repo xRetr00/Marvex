@@ -53,6 +53,12 @@ is bounded to 300 characters and remains diagnostic-only; results carrying a
 raw preview are not safe for default telemetry or logging. The package never
 stores full raw provider output.
 
+Telemetry owns trace safety. If structured-output-shaped diagnostic summaries
+are emitted through `packages.telemetry.sinks.make_trace_event(...)`, telemetry
+sanitizes unsafe fields before creating the `TraceEvent`. This package still
+does not import telemetry, emit trace events, implement storage, or define a
+telemetry format.
+
 `map_adapter_raw_output_to_structured_result(...)` is an adapter-local usage
 spike helper. It demonstrates how an adapter-shaped caller could pass raw output
 text into `validate_raw_structured_output(...)`. The LM Studio Responses and

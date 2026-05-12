@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: telemetry_sanitizer_structured_output_trace_safety_pack
+current_phase: trace_safe_structured_output_telemetry_pack
 
-implementation_status: telemetry_sanitizer_safety_primitive_complete_integration_blocked
+implementation_status: structured_output_trace_event_safety_wired_product_integration_blocked
 
 accepted_docs: true
 
@@ -37,6 +37,7 @@ completed_foundation:
 - isolated assistant-runtime structured-output consumer seam
 - structured-output seam compatibility proof and isolated assistant-runtime entry
 - telemetry sanitizer structured-output trace safety primitive
+- structured-output-shaped telemetry event safety wiring
 
 completed_process_readiness:
 
@@ -92,10 +93,11 @@ completed_governance_gates:
 - Task 099 AssistantRuntime Structured Output Consumer Seam Pack completed
 - Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack completed
 - Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack completed
+- Task 102 Trace-Safe Structured Output Telemetry Pack completed
 
 current_governance_gate:
 
-Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack
+Task 102 Trace-Safe Structured Output Telemetry Pack
 
 allowed_current_work:
 
@@ -148,6 +150,9 @@ allowed_current_work:
   maintenance only; runtime/product integration remains blocked
 - telemetry sanitizer safety primitive maintenance only; storage, logging sinks,
   Core, ProviderRuntime, AssistantRuntime, CLI, services, and product
+  integration remain blocked
+- structured-output telemetry safety wiring maintenance only; storage, logging
+  sinks, Core, ProviderRuntime, AssistantRuntime, CLI, services, and product
   integration remain blocked
 
 forbidden_current_work:
@@ -465,3 +470,24 @@ emission must first pass telemetry-bound data through the telemetry sanitizer,
 but wiring that into any runtime path requires a separate explicit task naming
 the exact caller, data shape, sink behavior, failure behavior, and boundary
 tests.
+
+Task 102 wires structured-output-shaped trace data safety into the existing
+telemetry event construction path. `make_trace_event(...)` now detects
+structured-output diagnostic fields, passes that data through the telemetry
+sanitizer before creating a `TraceEvent`, redacts raw provider output, raw
+previews, parsed payloads, prompts/messages/transcripts, provider/session/thread
+identifiers, auth/token/API-key-like fields, and rejects non-JSON-compatible
+structured-output trace data. The wiring does not mutate caller input and does
+not change normal provider-turn trace data except for the structured-output
+safety path. No telemetry storage, logging sink, Core, ProviderRuntime,
+AssistantRuntime, CLI, service/API, UI, contract, adapter, or product runtime
+integration exists.
+
+next_allowed_work_after_task_102:
+
+Runtime and product integration remain blocked. Future structured-output trace
+emission still requires a separate explicit task naming the exact caller,
+structured-output data shape, sink behavior, failure behavior, and boundary
+tests. Persistent telemetry storage, trace/event viewers, HTTP/WebSocket/API
+surfaces, AssistantTurnRuntime normal-turn integration, Core integration, and
+formal structured-output contract promotion remain blocked.
