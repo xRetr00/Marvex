@@ -68,10 +68,15 @@ do not own redaction policy, ProviderRuntime and provider adapters do not import
 telemetry sanitization, and normal provider-turn trace data keeps its existing
 shape unless it is structured-output trace data.
 
+Task 103 adds an explicit AssistantRuntime structured-output result helper that
+may emit structured-output consumption diagnostics through `make_trace_event(...)`.
+The helper does not own redaction policy; unsafe trace data is still handled by
+the telemetry event construction path.
+
 This is trace event construction safety only. It does not implement telemetry
 storage, logging sinks, Core behavior, ProviderRuntime behavior,
-AssistantRuntime behavior, CLI behavior, services, API/WebSocket, UI, or product
-runtime behavior.
+AssistantRuntime normal-turn behavior, CLI behavior, services, API/WebSocket,
+UI, or product runtime behavior.
 
 Redaction convention:
 

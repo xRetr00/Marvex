@@ -115,10 +115,12 @@ Task 096 decides the handoff boundary:
 
 - `StructuredOutputFallbackResult` may cross the ProviderRuntime boundary only
   as the return value of the explicit experimental ProviderRuntime path.
-- it may not enter AssistantRuntime directly in normal assistant turns.
+- it may enter AssistantRuntime only through a separately approved explicit
+  experimental helper, not through normal assistant turns.
 - it may not enter Core directly.
 - it is not promoted to a formal contract now.
-- it may not be converted to `AssistantTurnResult` now.
+- it may be converted to `AssistantTurnResult` only inside an approved
+  AssistantRuntime-owned experimental path.
 
 `handoff.py` contains an experimental internal seam skeleton:
 
@@ -141,6 +143,13 @@ through JSON-compatible dict tests. `provider_structured_output` does not import
 AssistantRuntime, and AssistantRuntime does not import this package in
 production code. The compatibility proof is not a formal contract and does not
 wire the handoff draft into runtime/product behavior.
+
+Task 103 adds an AssistantRuntime-owned experimental result helper that consumes
+the same sanitized handoff-like dict shape, validates accepted payloads as
+`AssistantFinalResponse`, and returns deterministic `AssistantTurnResult`
+objects. This package still does not import AssistantRuntime or telemetry, emit
+trace events, define a formal handoff contract, or wire normal runtime/product
+behavior.
 
 Future AssistantRuntime/Core handoff work remains blocked until a separate
 explicit task names the exact caller, callee, input shape, output shape, failure

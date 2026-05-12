@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: trace_safe_structured_output_telemetry_pack
+current_phase: assistant_runtime_structured_output_consumption_pack
 
-implementation_status: structured_output_trace_event_safety_wired_product_integration_blocked
+implementation_status: assistant_runtime_structured_output_consumption_experimental_product_integration_blocked
 
 accepted_docs: true
 
@@ -38,6 +38,7 @@ completed_foundation:
 - structured-output seam compatibility proof and isolated assistant-runtime entry
 - telemetry sanitizer structured-output trace safety primitive
 - structured-output-shaped telemetry event safety wiring
+- assistant-runtime structured-output result consumption helper
 
 completed_process_readiness:
 
@@ -94,10 +95,11 @@ completed_governance_gates:
 - Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack completed
 - Task 101 Telemetry Sanitizer And Structured Output Trace Safety Pack completed
 - Task 102 Trace-Safe Structured Output Telemetry Pack completed
+- Task 103 AssistantRuntime Structured Output Consumption Pack completed
 
 current_governance_gate:
 
-Task 102 Trace-Safe Structured Output Telemetry Pack
+Task 103 AssistantRuntime Structured Output Consumption Pack
 
 allowed_current_work:
 
@@ -154,6 +156,9 @@ allowed_current_work:
 - structured-output telemetry safety wiring maintenance only; storage, logging
   sinks, Core, ProviderRuntime, AssistantRuntime, CLI, services, and product
   integration remain blocked
+- AssistantRuntime structured-output result helper maintenance only; normal
+  AssistantTurnRuntime runs, Core, ProviderRuntime, adapters, CLI, services,
+  ports, contracts, and product integration remain blocked
 
 forbidden_current_work:
 
@@ -448,46 +453,46 @@ telemetry, service/API behavior, UI behavior, CLI behavior, and product runtime
 behavior remain unchanged.
 
 next_allowed_work_after_task_100:
-
 Runtime and product integration remain blocked. Any future structured-output
 consumer path into normal AssistantTurnRuntime, Core, ProviderRuntime, CLI,
 services, API/WebSocket, telemetry, UI, or contracts requires a separate
 explicit task naming exact caller/callee, input/output shape, failure mapping,
 trace behavior, product behavior, and boundary tests.
 
-Task 101 adds only a telemetry-owned sanitizer safety primitive for future
-structured-output trace data. `sanitize_trace_data(...)` recursively redacts
-unsafe keys and unsafe strings to `"[REDACTED]"`, rejects non-JSON-compatible
-trace data, preserves safe diagnostic summary fields, and does not mutate inputs
-in place. No telemetry storage, logging sink, Core, ProviderRuntime,
-AssistantRuntime, CLI, service/API, UI, contract, adapter, or product runtime
-integration exists.
+Task 101 adds only the telemetry-owned sanitizer primitive for future
+structured-output trace data. It redacts unsafe keys/strings, rejects
+non-JSON-compatible trace data, preserves safe summaries, and does not mutate
+inputs. No storage, logging sink, runtime/product behavior, or contract
+promotion exists.
 
 next_allowed_work_after_task_101:
+Runtime/product integration remains blocked. Future trace emission must use the
+telemetry sanitizer and still requires an explicit caller/data/sink/failure
+boundary task.
 
-Runtime and product integration remain blocked. Future structured-output trace
-emission must first pass telemetry-bound data through the telemetry sanitizer,
-but wiring that into any runtime path requires a separate explicit task naming
-the exact caller, data shape, sink behavior, failure behavior, and boundary
-tests.
-
-Task 102 wires structured-output-shaped trace data safety into the existing
-telemetry event construction path. `make_trace_event(...)` now detects
-structured-output diagnostic fields, passes that data through the telemetry
-sanitizer before creating a `TraceEvent`, redacts raw provider output, raw
-previews, parsed payloads, prompts/messages/transcripts, provider/session/thread
-identifiers, auth/token/API-key-like fields, and rejects non-JSON-compatible
-structured-output trace data. The wiring does not mutate caller input and does
-not change normal provider-turn trace data except for the structured-output
-safety path. No telemetry storage, logging sink, Core, ProviderRuntime,
-AssistantRuntime, CLI, service/API, UI, contract, adapter, or product runtime
-integration exists.
+Task 102 wires structured-output-shaped trace data safety into
+`make_trace_event(...)`. It sanitizes structured-output diagnostics before
+`TraceEvent` creation, redacts raw/prompt/payload/id/auth fields, rejects
+non-JSON-compatible data, and does not mutate input or change normal provider
+trace data. No storage, logging sink, runtime/product behavior, or contract
+promotion exists.
 
 next_allowed_work_after_task_102:
+Runtime/product integration remains blocked. Future trace emission still needs
+an explicit caller/data/sink/failure boundary task. Storage, viewers,
+HTTP/WebSocket/API, normal-turn integration, Core integration, and formal
+contract promotion remain blocked.
 
-Runtime and product integration remain blocked. Future structured-output trace
-emission still requires a separate explicit task naming the exact caller,
-structured-output data shape, sink behavior, failure behavior, and boundary
-tests. Persistent telemetry storage, trace/event viewers, HTTP/WebSocket/API
-surfaces, AssistantTurnRuntime normal-turn integration, Core integration, and
-formal structured-output contract promotion remain blocked.
+Task 103 adds `consume_structured_output_as_turn_result(...)`, an explicit
+AssistantRuntime-owned helper for the existing handoff-like dict. It preserves
+ids, validates `AssistantFinalResponse`, returns deterministic
+`AssistantTurnResult`/`ErrorEnvelope` results, may emit diagnostics through
+`make_trace_event(...)`, keeps telemetry sanitization telemetry-owned, and is
+not exported or wired into runtime/product behavior.
+
+next_allowed_work_after_task_103:
+Runtime/product integration remains blocked. A bridge or normal-turn task must
+name caller/callee, shape, trace, failure, contract, and boundary checks.
+Core/CLI/service/API, storage, ProviderRuntime imports of AssistantRuntime,
+formal contracts, tools, memory, UI, voice, desktop, sessions, retry/fallback,
+and history remain blocked.
