@@ -61,6 +61,15 @@ Single-turn smoke:
 python scripts/smoke_providers.py --provider lmstudio_responses --model <local-model>
 ```
 
+RuntimeComposition real-provider AssistantRuntime proof:
+
+- Task 113 adds a RuntimeComposition proof path for `lmstudio_responses`.
+- Automated validation uses stubbed ProviderRuntime behavior and does not require
+  a live LM Studio server.
+- There is no CLI or CI live AssistantRuntime bridge smoke in Task 113.
+- Use the existing provider smoke command above to verify the underlying live
+  LM Studio Responses adapter before any future explicit live bridge smoke task.
+
 Continuity smoke:
 
 ```powershell

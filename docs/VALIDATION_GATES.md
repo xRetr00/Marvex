@@ -63,6 +63,8 @@ RuntimeComposition owns narrow bridge/factory composition only.
 - `packages/runtime_composition` must not contain provider routing,
   retry/fallback policy, session/history behavior, API-key policy, model
   selection, tool runtime, or memory runtime behavior.
+- RuntimeComposition may mention the approved `lmstudio_responses` provider
+  identifier only for the explicit real-provider AssistantRuntime proof path.
 - Core and AssistantRuntime must not import or mention the runtime composition
   bridge.
 - ProviderRuntime must not import Core or AssistantRuntime.

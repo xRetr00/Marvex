@@ -19,12 +19,19 @@ Current bridge proof:
   `packages.assistant_runtime.provider_stage.run_provider_stage_turn(...)`.
 - The official CLI foundation mode calls this bridge; the compatibility alias
   reaches the same path.
+- `assistant_provider_bridge.py` also exposes
+  `run_lmstudio_responses_assistant_bridge(...)` as the first explicit
+  real-provider-backed AssistantRuntime proof path.
+- The LM Studio Responses proof creates only the approved
+  `lmstudio_responses` provider through ProviderRuntime and uses the same Core
+  helper / AssistantRuntime provider-stage path. Automated tests stub
+  ProviderRuntime creation, so no live LM Studio server is required for CI.
 - `provider_foundation_bridge.py` exposes `run_provider_foundation_turn(...)`
   for the existing CLI provider-foundation turn path so CLI does not construct
   providers directly. This preserves existing default CLI behavior and does not
   promote AssistantRuntime real-provider behavior.
 - The AssistantRuntime bridge remains fake-provider-only proof coverage. It is
-  not real provider-backed AssistantRuntime product behavior.
+  not default CLI behavior or product behavior.
 
 Forbidden responsibilities:
 

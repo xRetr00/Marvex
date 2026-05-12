@@ -66,6 +66,9 @@ Provider-stage skeleton:
   bridge, Core, ProviderRuntime, adapters, or ports.
 - Task 112 makes CLI call that separate fake-provider bridge for the official
   foundation mode. AssistantRuntime remains unaware of CLI and RuntimeComposition.
+- Task 113 adds a RuntimeComposition real-provider proof for LM Studio Responses.
+  AssistantRuntime still sees only the injected provider-stage contract shape and
+  does not import RuntimeComposition, ProviderRuntime, Core, adapters, or ports.
 
 Structured-output consumer seam:
 

@@ -52,6 +52,7 @@ BRIDGE_FORBIDDEN_TOKENS = (
     "tool runtime",
     "memory runtime",
 )
+APPROVED_REAL_PROVIDER_TOKENS = ("lmstudio_responses",)
 BRIDGE_MAX_LINES = 250
 BRIDGE_SIZE_JUSTIFICATION = "runtime composition size justification"
 
@@ -103,7 +104,11 @@ def _scan_bridge_layer(failures: list[str]) -> None:
                 f"{rel} has {line_count} lines and exceeds runtime composition max {BRIDGE_MAX_LINES}"
             )
         for token in BRIDGE_FORBIDDEN_TOKENS:
-            if token in lowered:
+            scanned = lowered
+            if token == "lmstudio":
+                for allowed in APPROVED_REAL_PROVIDER_TOKENS:
+                    scanned = scanned.replace(allowed, "")
+            if token in scanned:
                 failures.append(f"{rel} contains forbidden bridge behavior token: {token}")
 
         tree = ast.parse(text, filename=str(path))

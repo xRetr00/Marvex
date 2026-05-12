@@ -29,6 +29,9 @@ Assistant-runtime provider-stage wiring skeleton:
   bridge, ProviderRuntime, adapters, or CLI.
 - Task 112 wires the CLI foundation mode to RuntimeComposition. Core remains a
   callee only and still does not import RuntimeComposition.
+- Task 113 adds a RuntimeComposition real-provider proof. Core remains a callee
+  through `run_assistant_provider_stage_turn(...)` and does not import
+  ProviderRuntime or RuntimeComposition.
 
 Forbidden responsibilities:
 

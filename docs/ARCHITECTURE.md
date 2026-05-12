@@ -235,6 +235,13 @@ existing provider-foundation turn composition to RuntimeComposition so CLI no
 longer imports ProviderRuntime directly. Default CLI output behavior remains
 unchanged.
 
+Task 113 implementation note: RuntimeComposition now has one explicit
+real-provider-backed AssistantRuntime proof function for `lmstudio_responses`.
+It obtains that provider through ProviderRuntime and injects it into the same
+Core helper / AssistantRuntime provider-stage path. It is not wired into CLI,
+services, APIs, default behavior, routing, sessions, retry/fallback, model
+selection, API-key policy, tools, or memory.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

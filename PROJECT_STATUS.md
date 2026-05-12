@@ -1,22 +1,22 @@
 # Project Status
 
-current_phase: cli_runtime_composition_fake_bridge_integration_pack
+current_phase: runtime_composition_real_provider_opt_in_proof_pack
 
-implementation_status: cli_foundation_mode_uses_runtime_composition_default_cli_behavior_unchanged
+implementation_status: runtime_composition_lmstudio_responses_proof_added_cli_deferred
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 112 CLI Runtime Composition Fake Bridge Integration Pack
+Task 113 Runtime Composition Real Provider Opt-In Proof Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 112:
+Latest full validation baseline from Task 113:
 
-- `python -m pytest tests\cli tests\api tests\integration tests\core tests\assistant_runtime tests\provider_runtime tests\telemetry -q` -> 317 passed
+- `python -m pytest tests\integration tests\provider_runtime tests\core tests\assistant_runtime tests\cli tests\telemetry -q` -> 305 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 623 passed, 1 skipped
+- `python -m pytest -q` -> 630 passed, 1 skipped
 
 Task 111 adds the first separate runtime composition/factory bridge proof using
 ProviderRuntime-created fake provider only. It does not change default CLI
@@ -27,6 +27,12 @@ Task 112 wires the official CLI fake-provider AssistantRuntime foundation mode
 to RuntimeComposition instead of local CLI provider composition. It also moves
 existing default CLI provider-foundation composition behind RuntimeComposition
 without changing default output behavior.
+
+Task 113 adds a RuntimeComposition-only real-provider-backed AssistantRuntime
+proof for `lmstudio_responses`. Automated tests stub ProviderRuntime behavior;
+no live provider, CLI flag, service/API, session/history, routing,
+retry/fallback, model-selection, API-key policy, tool, memory, or product
+behavior is added.
 
 ## Current Foundation Capabilities
 
@@ -70,6 +76,9 @@ Assistant-runtime foundation now present:
   that separate layer with ProviderRuntime-created fake provider only; it calls
   Core's assistant-provider-stage helper and reaches AssistantRuntime provider
   stage behavior without changing default CLI behavior
+- `packages.runtime_composition.run_lmstudio_responses_assistant_bridge(...)`
+  is the first explicit real-provider-backed AssistantRuntime proof path; it is
+  RuntimeComposition-only and not wired into CLI or product flow
 
 Provider structured-output foundation now present:
 
@@ -93,7 +102,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-112 Compact Milestone Summary
+## Task 102-113 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -121,6 +130,9 @@ ownership governance, and library research governance remain accepted.
 - Task 112 wires the official CLI fake-provider foundation mode to the
   RuntimeComposition fake bridge and removes CLI-owned provider construction
   while preserving default CLI behavior.
+- Task 113 adds the first RuntimeComposition real-provider proof for
+  `lmstudio_responses`, with live execution left to manual provider smoke
+  guidance only.
 
 ## Architecture Health Notes
 
@@ -143,6 +155,9 @@ ownership governance, and library research governance remain accepted.
   existing provider-foundation path and the fake-provider AssistantRuntime
   foundation mode. Core, AssistantRuntime, and ProviderRuntime still do not
   import RuntimeComposition.
+- RuntimeComposition also owns one real-provider AssistantRuntime proof function
+  for `lmstudio_responses`; it is not a router, session manager, retry/fallback
+  owner, model-selection owner, API-key policy owner, or product orchestrator.
 - `PROJECT_STATUS.md` is no longer a chronological task log; historical detail
   belongs in package READMEs, tests, task reports, and git history.
 
@@ -180,11 +195,11 @@ Candidate B: decide the next real-provider bridge preflight.
 
 - Foundation value: high for eventual real provider-backed AssistantRuntime
   promotion.
-- Speed value: medium-low because real provider behavior needs a narrower
-  approval and test strategy.
+- Speed value: medium because Task 113 proves the narrow RuntimeComposition
+  bridge with stubbed ProviderRuntime behavior.
 - Architecture risk: medium-high if it introduces routing, provider selection
   policy, sessions, retries, or API-key handling too early.
-- Unlocks: a future bounded real-provider AssistantRuntime bridge task.
+- Unlocks: a future explicit CLI/manual-smoke real-provider proof task.
 - Must not touch: default CLI, services, APIs, sessions, history, routing,
   retry/fallback, tools, memory, or provider SDK behavior outside existing
   adapters.
@@ -203,4 +218,5 @@ Candidate C: local health/version API readiness.
 Recommendation, not permission: Candidate A is the safest immediate follow-up
 if more confidence is needed. Candidate B is the next architecture-significant
 direction, but real provider-backed AssistantRuntime promotion remains blocked
-until a separate task defines preflight, failure handling, and boundary limits.
+until a separate task defines live opt-in behavior, preflight, failure handling,
+and boundary limits.
