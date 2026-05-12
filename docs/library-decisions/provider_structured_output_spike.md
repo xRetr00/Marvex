@@ -1540,3 +1540,50 @@ AssistantTurnRuntime normal-turn, ProviderRuntime consumer, CLI,
 service/API/WebSocket, telemetry, UI, or product use requires a separate
 approved task naming the exact caller, callee, input shape, output shape,
 failure mapping, trace behavior, and boundary tests.
+
+## 28. Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack
+
+decision date: 2026-05-12
+
+Purpose: prove compatibility between the internal provider-side handoff draft
+shape and the AssistantRuntime consumer seam through plain JSON-compatible dict
+tests, then add an isolated AssistantRuntime-owned experimental entry helper.
+
+Implemented AssistantRuntime entry:
+
+- `packages/assistant_runtime/structured_output_runtime_entry.py`
+- `consume_structured_output_for_future_stage(...)`
+
+Compatibility proof:
+
+- provider-side `StructuredOutputHandoffDraft` objects are serialized to plain
+  dicts with null/default provider-only fields excluded for the compatibility
+  path.
+- the AssistantRuntime entry normalizes a dict `state` field into local
+  `source_state`, validates the data with `AssistantStructuredOutputInputDraft`,
+  and delegates to `consume_structured_output_handoff_draft(...)`.
+- valid payloads map to `accepted_for_future_stage`.
+- invalid structured output, provider error, provider timeout, refusal
+  unresolved, and incomplete unresolved map to the assistant-runtime rejection
+  statuses defined in Task 099.
+- schema, trace, and turn identity are preserved.
+- parsed payload is retained only for accepted future-stage data.
+- diagnostic-only data, raw preview fields, unknown fields, unsafe metadata, and
+  unsafe parsed payloads are rejected.
+
+Boundary:
+
+- AssistantRuntime production code does not import `provider_structured_output`.
+- `provider_structured_output` production code does not import AssistantRuntime.
+- no Core, ProviderRuntime, adapter, CLI, service/API/WebSocket, telemetry, UI,
+  port, contract, or product runtime behavior is added.
+- normal `AssistantTurnRuntime.run(...)` remains unchanged and does not call the
+  structured-output entry helper.
+- no `AssistantTurnResult` or final user response is created from structured
+  output consumption.
+- this remains an internal compatibility proof and explicit experimental entry,
+  not a formal contract.
+
+Future integration remains blocked until a separate approved task names the
+exact runtime caller, callee, input/output shape, failure mapping, trace
+behavior, product behavior, and boundary tests.

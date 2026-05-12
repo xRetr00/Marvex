@@ -130,6 +130,12 @@ unsupported future states, rechecks valid parsed payloads for JSON-compatible
 data and forbidden hidden-state/raw-provider keys, rechecks sanitized messages
 and error codes, and remains unexported from the package root.
 
+Task 100 proves compatibility with the AssistantRuntime consumer seam only
+through JSON-compatible dict tests. `provider_structured_output` does not import
+AssistantRuntime, and AssistantRuntime does not import this package in
+production code. The compatibility proof is not a formal contract and does not
+wire the handoff draft into runtime/product behavior.
+
 Future AssistantRuntime/Core handoff work remains blocked until a separate
 explicit task names the exact caller, callee, input shape, output shape, failure
 mapping, trace behavior, and tests. Core, AssistantTurnRuntime normal-turn

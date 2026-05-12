@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: assistant_runtime_structured_output_consumer_seam_pack
+current_phase: structured_output_seam_compatibility_and_assistant_entry_pack
 
-implementation_status: assistant_runtime_consumer_seam_complete_integration_blocked
+implementation_status: compatibility_and_assistant_entry_complete_integration_blocked
 
 accepted_docs: true
 
@@ -35,6 +35,7 @@ completed_foundation:
 - internal structured-output handoff seam skeleton
 - internal structured-output handoff seam pressure and boundary pack
 - isolated assistant-runtime structured-output consumer seam
+- structured-output seam compatibility proof and isolated assistant-runtime entry
 
 completed_process_readiness:
 
@@ -88,10 +89,11 @@ completed_governance_gates:
 - Task 097 Experimental Structured Output Handoff Seam Skeleton completed
 - Task 098 Structured Output Handoff Seam Pressure And Boundary Pack completed
 - Task 099 AssistantRuntime Structured Output Consumer Seam Pack completed
+- Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack completed
 
 current_governance_gate:
 
-Task 099 AssistantRuntime Structured Output Consumer Seam Pack
+Task 100 Structured Output Seam Compatibility And AssistantRuntime Entry Pack
 
 allowed_current_work:
 
@@ -140,6 +142,8 @@ allowed_current_work:
 - isolated AssistantRuntime structured-output consumer seam maintenance only;
   Core, ProviderRuntime, adapters, CLI, services, telemetry, contracts, and
   product integration remain blocked
+- structured-output seam compatibility and explicit AssistantRuntime entry
+  maintenance only; runtime/product integration remains blocked
 
 forbidden_current_work:
 
@@ -420,3 +424,23 @@ normal AssistantTurnRuntime, Core, ProviderRuntime, CLI, services,
 API/WebSocket, telemetry, UI, or contracts requires a separate explicit task
 naming the exact call path, input/output shape, failure mapping, trace behavior,
 and boundary tests.
+
+Task 100 proves compatibility between the internal provider-side handoff draft
+shape and the AssistantRuntime consumer seam through JSON-compatible dict tests
+only, then adds `consume_structured_output_for_future_stage(...)` as an
+isolated AssistantRuntime-owned experimental entry helper. The entry validates
+plain dicts into local AssistantRuntime draft models, delegates to the Task 099
+consumer seam, preserves schema/trace/turn identity, rejects unsafe fields and
+diagnostic-only accepted data, and does not import `provider_structured_output`,
+ProviderRuntime, adapters, Core, ports, contracts, CLI, or services. Normal
+`AssistantTurnRuntime.run(...)`, `AssistantTurnResult`, final responses,
+telemetry, service/API behavior, UI behavior, CLI behavior, and product runtime
+behavior remain unchanged.
+
+next_allowed_work_after_task_100:
+
+Runtime and product integration remain blocked. Any future structured-output
+consumer path into normal AssistantTurnRuntime, Core, ProviderRuntime, CLI,
+services, API/WebSocket, telemetry, UI, or contracts requires a separate
+explicit task naming exact caller/callee, input/output shape, failure mapping,
+trace behavior, product behavior, and boundary tests.

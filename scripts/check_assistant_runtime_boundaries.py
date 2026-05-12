@@ -51,6 +51,14 @@ PROVIDER_BRIDGE_TERM_ALLOWLIST = {
         "provider_response_id",
     },
 }
+STRUCTURED_OUTPUT_SEAM_FILES = {
+    "packages/assistant_runtime/structured_output_consumer.py",
+    "packages/assistant_runtime/structured_output_runtime_entry.py",
+}
+STRUCTURED_OUTPUT_SEAM_FORBIDDEN_IMPORT_PREFIXES = FORBIDDEN_IMPORT_PREFIXES + (
+    "packages.provider_structured_output",
+    "packages.contracts",
+)
 FORBIDDEN_SUBSYSTEM_BEHAVIOR_TERMS = (
     "memory runtime",
     "tool runtime",
@@ -88,28 +96,34 @@ def _module_from_import(node: ast.AST) -> str | None:
     return None
 
 
-def _import_violates(module: str | None) -> bool:
+def _import_violates(module: str | None, prefixes: tuple[str, ...]) -> bool:
     if module is None:
         return False
     lowered_parts = {part.lower() for part in module.split(".")}
     return any(
         module == prefix or module.startswith(f"{prefix}.")
-        for prefix in FORBIDDEN_IMPORT_PREFIXES
+        for prefix in prefixes
     ) or bool(lowered_parts.intersection(FORBIDDEN_IMPORT_PARTS))
 
 
 def _scan_imports(paths: list[Path], failures: list[str]) -> None:
     for path in paths:
+        rel = _rel(path)
+        forbidden_import_prefixes = (
+            STRUCTURED_OUTPUT_SEAM_FORBIDDEN_IMPORT_PREFIXES
+            if rel in STRUCTURED_OUTPUT_SEAM_FILES
+            else FORBIDDEN_IMPORT_PREFIXES
+        )
         for node in ast.walk(_read_tree(path)):
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
             module = _module_from_import(node)
-            if _import_violates(module):
-                failures.append(f"{_rel(path)} imports forbidden boundary: {module}")
+            if _import_violates(module, forbidden_import_prefixes):
+                failures.append(f"{rel} imports forbidden boundary: {module}")
             for alias in node.names:
                 if alias.name in FORBIDDEN_PROVIDER_BRIDGE_TERMS:
                     failures.append(
-                        f"{_rel(path)} imports provider-bridge contract: {alias.name}"
+                        f"{rel} imports provider-bridge contract: {alias.name}"
                     )
 
 
