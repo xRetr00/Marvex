@@ -51,6 +51,10 @@ Provider-stage skeleton:
   owns trace safety and there is no storage or product sink.
 - it is not exported from the package root and is not wired into
   `AssistantTurnRuntime.run(...)`, Core, CLI, services, APIs, or product flow.
+- Task 106 allows Core to call this helper only through a narrow internal
+  Core-owned skeleton with an injected neutral provider. That skeleton does not
+  change normal Core orchestration, CLI behavior, ProviderRuntime behavior, or
+  product flow.
 
 Structured-output consumer seam:
 

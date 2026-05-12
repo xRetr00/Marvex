@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: assistant_turn_provider_skeleton_pack
+current_phase: core_assistant_runtime_provider_stage_wiring_skeleton_pack
 
-implementation_status: assistant_runtime_provider_stage_skeleton_experimental_product_integration_blocked
+implementation_status: core_internal_assistant_runtime_provider_stage_wiring_experimental_product_integration_blocked
 
 accepted_docs: true
 
@@ -41,6 +41,7 @@ completed_foundation:
 - assistant-runtime structured-output result consumption helper
 - test-only ProviderRuntime to AssistantRuntime structured-output bridge proof
 - AssistantRuntime injected provider-stage skeleton
+- Core internal AssistantRuntime provider-stage wiring skeleton
 
 completed_process_readiness:
 
@@ -100,10 +101,11 @@ completed_governance_gates:
 - Task 103 AssistantRuntime Structured Output Consumption Pack completed
 - Task 104 ProviderRuntime to AssistantRuntime Structured Output Bridge Proof Pack completed
 - Task 105 Assistant Turn Provider Skeleton Pack completed
+- Task 106 Core to AssistantRuntime Provider Stage Wiring Skeleton Pack completed
 
 current_governance_gate:
 
-Task 105 Assistant Turn Provider Skeleton Pack
+Task 106 Core to AssistantRuntime Provider Stage Wiring Skeleton Pack
 
 allowed_current_work:
 
@@ -168,6 +170,9 @@ allowed_current_work:
 - AssistantRuntime provider-stage skeleton maintenance only; Core, CLI,
   services, ProviderRuntime, adapters, ports, product flow, and history remain
   blocked
+- Core internal assistant-runtime provider-stage wiring skeleton maintenance
+  only; normal Core orchestration, CLI, services, ProviderRuntime, adapters,
+  ports, product flow, and history remain blocked
 
 forbidden_current_work:
 
@@ -461,3 +466,19 @@ define caller/callee ownership, product path, trace/failure semantics, history
 rules, and boundary checks before touching Core, CLI, services, APIs,
 ProviderRuntime, adapters, ports, contracts, tools, memory, UI, voice, desktop,
 sessions, retry/fallback, or history.
+
+Task 106 adds `run_assistant_provider_stage_turn(...)`, a Core-owned internal
+wiring skeleton that accepts `AssistantTurnInput`, an injected neutral provider,
+explicit provider-stage options, and optional telemetry, then delegates to
+`run_provider_stage_turn(...)`. It preserves assistant-turn ids, explicit
+`previous_response_id`, provider `response_id` through existing
+`provider_turn_refs`, safe provider-stage errors, and telemetry-safe lifecycle
+diagnostics. It is not exported from Core orchestration and is not wired into
+`TurnOrchestrator`, CLI, services, APIs, ProviderRuntime, adapters, product
+flow, sessions, or history.
+
+next_allowed_work_after_task_106: Runtime/product integration remains blocked.
+Future promotion must first define whether this internal skeleton becomes a
+normal Core orchestration path, how CLI/service/API callers opt in, and how
+provider selection, session/history, retry/fallback, and trace ownership remain
+bounded.

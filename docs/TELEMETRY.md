@@ -82,6 +82,11 @@ Task 105 adds an explicit AssistantRuntime provider-stage skeleton that may emit
 provider-stage lifecycle diagnostics through `make_trace_event(...)`. The path
 does not add telemetry storage or caller-owned redaction policy.
 
+Task 106 adds a Core-owned internal wiring skeleton that delegates to the
+AssistantRuntime provider-stage helper. Trace lifecycle diagnostics still flow
+through the AssistantRuntime helper and `make_trace_event(...)`; Core does not
+own telemetry redaction policy, storage, or a new product sink.
+
 This is trace event construction safety only. It does not implement telemetry
 storage, logging sinks, Core behavior, ProviderRuntime behavior,
 AssistantRuntime normal-turn behavior, CLI behavior, services, API/WebSocket,

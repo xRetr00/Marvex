@@ -9,6 +9,18 @@ ports. Current behavior is limited to constructing provider requests, invoking
 an injected `ProviderPort`, emitting telemetry lifecycle events, and returning
 contract-compatible turn output.
 
+Assistant-runtime provider-stage wiring skeleton:
+
+- `orchestration/assistant_provider_stage.py` is an internal foundation seam.
+- It accepts an approved `AssistantTurnInput`, a caller-injected neutral
+  send-capable provider, explicit provider options, and an optional telemetry
+  sink.
+- It delegates provider-stage work to
+  `packages.assistant_runtime.provider_stage.run_provider_stage_turn(...)`.
+- It is not exported from `packages.core.orchestration`, not used by
+  `TurnOrchestrator`, and not wired into CLI, services, APIs, ProviderRuntime,
+  adapters, or product flow.
+
 Forbidden responsibilities:
 
 - Provider-specific logic.
