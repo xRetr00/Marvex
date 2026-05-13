@@ -42,6 +42,13 @@ Current bridge proof:
   promote AssistantRuntime real-provider behavior.
 - The AssistantRuntime bridge remains proof coverage. It is not default CLI
   behavior, service/API behavior, or product behavior.
+- Task 120 decides that future protected local API `POST /v1/turns` execution
+  must still keep RuntimeComposition as the provider/Core/AssistantRuntime
+  composition owner. `packages.local_api` must not import this package directly;
+  a future endpoint implementation should receive an injected turn handler at
+  the HTTP boundary. The first approved target behind that handler is
+  fake-provider only. LM Studio Responses over the local API remains blocked
+  until a separate service/API promotion task.
 
 Forbidden responsibilities:
 

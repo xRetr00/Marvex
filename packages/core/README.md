@@ -38,12 +38,18 @@ Assistant-runtime provider-stage wiring skeleton:
 - Task 115 documents live-smoke and failure expectations for that CLI proof
   mode. Core behavior is unchanged; failure handling remains the existing
   deterministic provider-stage mapping.
+- Task 120 decides the future local API `/v1/turns` contract should use the
+  approved assistant-envelope result shape, but the API must not call Core
+  directly. Core remains a callee behind RuntimeComposition-owned composition
+  and an injected local API turn handler.
 
 Forbidden responsibilities:
 
 - Provider-specific logic.
 - Provider payload construction outside approved provider contracts.
 - HTTP calls to providers.
+- HTTP request parsing, local bearer auth enforcement, or local API endpoint
+  ownership.
 - Tool execution.
 - Memory, intent, voice, UI, desktop context, or proactive behavior.
 - Hidden global state.

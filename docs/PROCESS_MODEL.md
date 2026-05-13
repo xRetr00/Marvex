@@ -56,6 +56,16 @@ trace, and event endpoints must require `Authorization: Bearer <local-token>`.
 Token creation, discovery, rotation, persistence, and service lifecycle wiring
 remain future service-runtime work.
 
+Task 120 decides the future protected `POST /v1/turns` contract before endpoint
+implementation. The first implementation target is fake-provider only through
+an injected turn handler. The local API package remains the HTTP/auth/JSON
+adapter and must not call RuntimeComposition, Core, AssistantRuntime,
+ProviderRuntime, provider adapters, or provider SDKs directly. LM Studio
+Responses API mode, trace retrieval, event streaming, service daemon lifecycle,
+sessions/history, routing, retry/fallback, model selection, API-key policy,
+tools, memory, UI, voice, desktop, vision, and proactive behavior remain future
+explicit tasks.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -84,4 +94,6 @@ ProcessRuntime remains local-only object construction from explicit in-memory
 config. Health/version local API readiness now includes an app object and a
 manual loopback runner only. Auth-token policy exists for future protected
 endpoints, but `/v1/turns`, trace APIs, WebSocket, service lifecycle, and
-subprocess supervision remain future explicit service-runtime work.
+subprocess supervision remain future explicit service-runtime work. Task 120
+narrows the next `/v1/turns` implementation target to protected fake-provider
+only with an injected handler; it still does not implement the endpoint.

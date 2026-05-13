@@ -270,6 +270,19 @@ endpoints. Future turn, trace, and event endpoints must use
 `Authorization: Bearer <local-token>` and return safe `AUTH_REQUIRED`
 `ErrorEnvelope` failures without logging or echoing token values.
 
+Task 120 decision note: future `POST /v1/turns` is a protected local API
+adapter endpoint, not a Core or RuntimeComposition-owned HTTP surface. The first
+implementation target is fake-provider only, using a request envelope that
+carries approved `AssistantTurnInput` and returns `AssistantTurnResult` when the
+injected handler completes. `packages.local_api` owns only auth, JSON
+validation, and serialization; RuntimeComposition owns provider/Core/
+AssistantRuntime composition behind the injected handler. The API package must
+not import RuntimeComposition, Core, AssistantRuntime, ProviderRuntime, adapters,
+CLI apps, services, or provider SDKs. LM Studio Responses over `/v1/turns`,
+trace APIs, event streams, service daemon behavior, sessions/history,
+routing/retry/fallback, model-selection policy, API-key policy, tools, memory,
+UI, voice, desktop, vision, and proactive behavior remain blocked.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

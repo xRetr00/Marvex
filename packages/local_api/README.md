@@ -23,6 +23,29 @@ Endpoint classes:
 - Protected future endpoints: assistant turn submission, trace access, and
   event streams.
 
+Task 120 `/v1/turns` decision:
+
+- Future `POST /v1/turns` is protected and must use the local bearer-token auth
+  policy before body validation or handler invocation.
+- The first implementation target is fake-provider only through an injected turn
+  handler. The local API package owns HTTP parsing, auth, validation, and
+  serialization only.
+- The request body is a local HTTP adapter envelope carrying an approved
+  `AssistantTurnInput`, plus explicit `execution_mode:
+  "assistant_runtime_fake_provider"`, `model`, nullable `instructions`,
+  nullable `previous_response_id`, and empty `provider_options`.
+- The response body is `AssistantTurnResult` when the handler completes.
+  Request/auth/transport failures return top-level `ErrorEnvelope`.
+- `trace_id` and `turn_id` are surfaced through `AssistantTurnResult`.
+  Provider identity is exposed only through `provider_turn_refs`; there is no
+  top-level `provider_response_id`.
+- `previous_response_id` is explicit request-envelope input only. It must not be
+  read from metadata, stored as session/history state, or made implicit.
+- RuntimeComposition remains the owner of future provider/Core/AssistantRuntime
+  composition behind the injected handler. This package must not import
+  RuntimeComposition, Core, AssistantRuntime, ProviderRuntime, adapters,
+  telemetry implementation modules, CLI apps, services, or provider SDKs.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

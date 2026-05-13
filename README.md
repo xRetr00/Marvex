@@ -65,6 +65,10 @@ Process Readiness has started:
 - Local API auth policy is defined for future protected endpoints:
   health/version stay public on loopback, while future turn/trace/event
   endpoints must use `Authorization: Bearer <local-token>`.
+- The future `POST /v1/turns` contract is decided but not implemented:
+  protected fake-provider only for the first implementation, local API as
+  HTTP/auth/JSON adapter only, and RuntimeComposition remaining the execution
+  composition owner behind an injected handler.
 
 Git workflow governance exists:
 

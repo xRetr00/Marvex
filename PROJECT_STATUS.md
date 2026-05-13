@@ -1,20 +1,19 @@
 # Project Status
 
-current_phase: local_api_auth_token_decision_boundary_pack
+current_phase: local_api_turns_contract_decision_pack
 
-implementation_status: local_api_auth_boundary_defined
+implementation_status: local_api_turns_contract_decided
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 119 Local API Auth Token Decision and Boundary Pack
+Task 120 Local API /v1/turns Contract and Ownership Decision Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 119:
+Latest full validation baseline from Task 120:
 
-- `python -m pytest tests\local_api -q` -> 15 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 655 passed, 1 skipped
 
@@ -85,6 +84,17 @@ a reusable safe bearer-token validator that returns `AUTH_REQUIRED`
 `ErrorEnvelope` failures without echoing token values. It is not wired to
 `/health`, `/version`, or any protected endpoint.
 
+Task 120 decides the future protected `POST /v1/turns` contract and ownership
+boundary without implementing the endpoint. The first implementation target is
+fake-provider only through an injected turn handler. `packages.local_api` owns
+HTTP/auth/JSON validation and serialization only; RuntimeComposition remains the
+future provider/Core/AssistantRuntime composition owner behind that handler.
+The request envelope carries approved `AssistantTurnInput`, explicit
+`execution_mode: "assistant_runtime_fake_provider"`, model, nullable
+instructions, nullable `previous_response_id`, and empty provider options. A
+completed handler returns `AssistantTurnResult`; request/auth/transport failures
+return top-level `ErrorEnvelope`.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -110,6 +120,8 @@ Process Readiness has started:
 - manual local health/version runner exists for developer smoke on
   `127.0.0.1:8765`
 - local bearer-token auth helper exists for future protected endpoints only
+- future `/v1/turns` contract is decided as protected fake-provider only through
+  an injected handler, but no endpoint exists yet
 - no turn endpoint, service daemon, subprocess runtime, or service mode exists
 
 Assistant-runtime foundation now present:
@@ -215,6 +227,9 @@ ownership governance, and library research governance remain accepted.
   future turn/trace/event endpoints as protected. It adds a reusable local
   bearer-token validator for future protected endpoints without wiring auth to
   current health/version behavior or implementing protected endpoints.
+- Task 120 decides the protected `/v1/turns` contract, owner split, auth
+  enforcement, fake-provider-only first target, response/error behavior, and
+  rollback path without implementing the endpoint or adding API execution.
 
 ## Architecture Health Notes
 
@@ -238,6 +253,10 @@ ownership governance, and library research governance remain accepted.
   `/v1/turns`.
 - Local API auth policy now exists for future protected endpoints only.
   Health/version behavior remains unchanged.
+- The future `/v1/turns` contract is now decided: protected fake-provider only
+  for the first implementation, request body as a local API envelope carrying
+  `AssistantTurnInput`, response body as `AssistantTurnResult`, and
+  RuntimeComposition-owned execution behind an injected handler.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
@@ -263,6 +282,8 @@ Blocked without a separate approved task spec:
 - real provider promotion for assistant-runtime turns
 - Core normal orchestration replacement
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
+- protected `/v1/turns` endpoint implementation until the next bounded task
+- LM Studio or other real-provider local API mode
 - telemetry persistence/storage/logging sinks
 - contract or port promotion
 - tools, memory, UI, voice, desktop, vision, proactive behavior
@@ -272,44 +293,15 @@ Blocked without a separate approved task spec:
 A roadmap item, package README note, status recommendation, or task number is
 not implementation permission.
 
-## Next Runtime Promotion Decision
+## Next Implementation Task
 
-Candidate A: harden CLI-to-RuntimeComposition regression coverage.
-
-- Foundation value: medium because Tasks 112 and 114 add approved caller paths.
-- Speed value: high if limited to tests, docs, and boundary hardening.
-- Architecture risk: low while fake-provider-only and default behavior remains
-  unchanged.
-- Unlocks: stronger confidence before real-provider bridge design.
-- Must not touch: default CLI, services, APIs, real providers, sessions,
-  history, routing, retry/fallback, tools, or memory.
-
-Candidate B: decide the next real-provider bridge preflight.
-
-- Foundation value: high for eventual real provider-backed AssistantRuntime
-  promotion.
-- Speed value: medium because Task 113 proves the narrow RuntimeComposition
-  bridge and Task 114 exposes it through explicit CLI proof mode.
-- Architecture risk: medium-high if it introduces routing, provider selection
-  policy, sessions, retries, or API-key handling too early.
-- Unlocks: manual smoke hardening and eventual real-provider promotion criteria.
-- Must not touch: default CLI, services, APIs, sessions, history, routing,
-  retry/fallback, tools, memory, or provider SDK behavior outside existing
-  adapters.
-
-Candidate C: local health/version API readiness.
-
-- Foundation value: high for process/service readiness, but lower for the
-  assistant-turn runtime chain.
-- Speed value: medium because health/version contracts and local objects exist.
-- Architecture risk: low-medium if kept contract-only or local-only; higher if
-  it starts a server too early.
-- Unlocks: future service boundary work.
-- Must not touch: assistant turn orchestration, providers, CLI provider paths,
-  tools, memory, UI, or product runtime behavior.
-
-Recommendation, not permission: Candidate A is the safest immediate follow-up
-if more confidence is needed. Candidate B is the next architecture-significant
-direction, but real provider-backed AssistantRuntime promotion remains blocked
-until a separate task defines live smoke expectations, preflight boundaries,
-failure handling, and promotion criteria.
+Implement protected fake-provider-only `POST /v1/turns` with an injected turn
+handler. Keep `packages.local_api` limited to bearer auth, JSON validation, and
+serialization. Do not import RuntimeComposition, Core, AssistantRuntime,
+ProviderRuntime, adapters, CLI apps, services, telemetry implementation modules,
+or provider SDKs from `packages.local_api`. Add local API tests for
+auth-before-body, request validation, safe `ErrorEnvelope` failures, successful
+stubbed handler serialization to `AssistantTurnResult`, and unchanged public
+`/health` and `/version`. Update the local API boundary gate only as needed to
+allow the endpoint contract while still blocking direct execution imports and
+blocked behavior.

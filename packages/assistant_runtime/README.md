@@ -74,6 +74,10 @@ Provider-stage skeleton:
 - Task 115 documents live-smoke and failure expectations for that CLI proof
   mode. AssistantRuntime behavior is unchanged; provider-stage errors still map
   through the existing deterministic `ErrorEnvelope` result path.
+- Task 120 decides the future local API `/v1/turns` endpoint should return
+  `AssistantTurnResult` for completed handler calls, but the API must not import
+  or call AssistantRuntime directly. AssistantRuntime remains reachable only
+  through Core/RuntimeComposition-owned provider-stage composition.
 
 Structured-output consumer seam:
 
