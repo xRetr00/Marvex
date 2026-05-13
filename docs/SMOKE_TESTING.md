@@ -78,6 +78,56 @@ CLI AssistantRuntime bridge smoke:
 python apps\cli\main.py --assistant-runtime-lmstudio-responses --text "Hello" --model <local-model>
 ```
 
+Live smoke checklist:
+
+- LM Studio local server must be running.
+- Confirm the server exposes the OpenAI-compatible API at
+  `http://localhost:1234/v1`.
+- A model must be loaded in LM Studio before invoking the command.
+- Pass the loaded model name explicitly with `--model <local-model>`.
+- Run the underlying provider smoke first if adapter reachability is unclear:
+  `python scripts/smoke_providers.py --provider lmstudio_responses --model <local-model>`.
+- This is manual smoke only and is not part of CI or `run_all_checks.py`.
+
+Expected success output:
+
+- first line: bounded assistant response text from the loaded model
+- `provider_response_id: ...` when the backend returns a provider response id
+- `trace_id: trace-...`
+- `turn_id: turn-...`
+- process exit code `0`
+
+Expected failure output:
+
+- first line: safe failure message from the existing Core/AssistantRuntime
+  provider-stage error mapping
+- `error_code: ...`
+- `provider_response_id: ...` when a provider reference exists
+- `trace_id: trace-...`
+- `turn_id: turn-...`
+- process exit code `1` for mapped provider-stage failures
+
+Failure policy for the explicit CLI proof mode:
+
+- provider unavailable / connection refused: report `Provider unavailable.`
+  with `PROVIDER_UNAVAILABLE` when the existing provider-stage mapping receives
+  a connection-like failure.
+- model missing or rejected by backend: report the existing sanitized provider
+  error message and `PROVIDER_ERROR`; do not add model probing or model
+  selection policy in CLI.
+- timeout-like failure: report `Provider request timed out.` with
+  `PROVIDER_TIMEOUT` when the existing provider-stage mapping receives a
+  timeout-like failure.
+- provider error response: report the sanitized provider error message and
+  `PROVIDER_ERROR`.
+- empty output: report `Provider output was empty.` with `VALIDATION_ERROR`.
+- malformed provider response: report a safe validation/provider-stage error
+  message without raw provider payloads or exception details.
+
+This proof mode does not add automatic preflight probing, retry/fallback,
+routing, sessions/history, model-selection policy, API-key policy, telemetry
+storage, service/API behavior, or product default behavior.
+
 Continuity smoke:
 
 ```powershell

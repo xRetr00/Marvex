@@ -92,4 +92,5 @@ Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-fake-provider` for the deterministic fake path and
 `--assistant-runtime-lmstudio-responses` for the LM Studio Responses proof path.
 The real-provider proof remains opt-in only and does not approve service/API or
-product behavior changes.
+product behavior changes. Live LM Studio use is manual smoke only and is not
+required by pytest or `scripts/run_all_checks.py`.

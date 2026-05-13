@@ -208,6 +208,8 @@ def test_lmstudio_responses_provider_error_prints_safe_output(monkeypatch, capsy
         "error_code: PROVIDER_ERROR",
         "provider_response_id: lmstudio-error-response",
     ]
+    assert lines[3] == "trace_id: trace-lmstudio-cli"
+    assert lines[4] == "turn_id: turn-lmstudio-cli"
 
 
 def test_lmstudio_responses_unavailable_and_timeout_errors_are_safe(
@@ -243,9 +245,13 @@ def test_lmstudio_responses_unavailable_and_timeout_errors_are_safe(
 
         lines = capsys.readouterr().out.strip().splitlines()
         assert exit_code == 1
-        assert lines[0] == message
-        assert lines[1] == f"error_code: {code.value}"
-        assert lines[2].endswith(f"{code.value.lower()}-response")
+        assert lines == [
+            message,
+            f"error_code: {code.value}",
+            f"provider_response_id: {code.value.lower()}-response",
+            "trace_id: trace-lmstudio-cli",
+            "turn_id: turn-lmstudio-cli",
+        ]
 
 
 def test_lmstudio_responses_empty_output_prints_safe_output(monkeypatch, capsys):
@@ -279,6 +285,64 @@ def test_lmstudio_responses_empty_output_prints_safe_output(monkeypatch, capsys)
         "error_code: VALIDATION_ERROR",
         "provider_response_id: lmstudio-empty-response",
     ]
+    assert lines[3] == "trace_id: trace-lmstudio-cli"
+    assert lines[4] == "turn_id: turn-lmstudio-cli"
+
+
+def test_lmstudio_responses_malformed_provider_response_prints_safe_output(
+    monkeypatch, capsys
+):
+    from apps.cli import main as cli_main
+
+    monkeypatch.setattr(
+        cli_main,
+        "run_lmstudio_responses_assistant_bridge",
+        lambda *args, **kwargs: make_assistant_result(
+            text=None,
+            response_id="lmstudio-malformed-response",
+            error_code=ErrorCode.VALIDATION_ERROR,
+            error_message="Malformed provider response.",
+        ),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--assistant-runtime-lmstudio-responses",
+            "--text",
+            "Hello",
+            "--model",
+            "local-model",
+        ]
+    )
+
+    assert exit_code == 1
+    assert capsys.readouterr().out.strip().splitlines() == [
+        "Malformed provider response.",
+        "error_code: VALIDATION_ERROR",
+        "provider_response_id: lmstudio-malformed-response",
+        "trace_id: trace-lmstudio-cli",
+        "turn_id: turn-lmstudio-cli",
+    ]
+
+
+def test_lmstudio_responses_manual_smoke_docs_define_failure_policy():
+    smoke_docs = Path("docs/SMOKE_TESTING.md").read_text(encoding="utf-8")
+
+    required_phrases = [
+        "LM Studio local server must be running",
+        "A model must be loaded",
+        "Expected success output",
+        "Expected failure output",
+        "provider unavailable / connection refused",
+        "model missing or rejected by backend",
+        "timeout-like failure",
+        "provider error response",
+        "empty output",
+        "malformed provider response",
+        "not part of CI or `run_all_checks.py`",
+    ]
+
+    assert [phrase for phrase in required_phrases if phrase not in smoke_docs] == []
 
 
 def test_cli_source_uses_only_runtime_composition_for_lmstudio_responses_mode():

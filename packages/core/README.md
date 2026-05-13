@@ -35,6 +35,9 @@ Assistant-runtime provider-stage wiring skeleton:
 - Task 114 exposes that proof through an explicit non-default CLI mode. Core
   remains a callee only and still does not import ProviderRuntime,
   RuntimeComposition, adapters, or CLI.
+- Task 115 documents live-smoke and failure expectations for that CLI proof
+  mode. Core behavior is unchanged; failure handling remains the existing
+  deterministic provider-stage mapping.
 
 Forbidden responsibilities:
 

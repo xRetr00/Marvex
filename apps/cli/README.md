@@ -38,6 +38,11 @@ AssistantRuntime LM Studio Responses proof mode:
 - Automated tests mock the bridge; live LM Studio execution is manual smoke only
   and is not part of `run_all_checks.py`.
 - It is not default CLI behavior, service/API behavior, or product behavior.
+- Failure output is bounded to safe message, error code, provider response ref
+  when present, trace id, and turn id. LM Studio unavailable/model rejected,
+  timeout-like, provider error, empty output, and malformed response cases use
+  existing Core/AssistantRuntime error mapping; CLI does not add preflight,
+  retry, fallback, routing, session/history, model-selection, or API-key policy.
 
 Decision diagnostics are not a CLI surface. The CLI must not import decision
 runtime or decision adapter modules.
@@ -76,3 +81,5 @@ Dependency direction:
   while preserving the compatibility alias and default CLI output behavior.
 - Task 114 adds the explicit LM Studio Responses AssistantRuntime proof mode
   through RuntimeComposition while keeping default CLI behavior unchanged.
+- Task 115 documents the manual live-smoke checklist and failure policy for
+  that proof mode without changing default CLI behavior.

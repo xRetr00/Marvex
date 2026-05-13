@@ -27,6 +27,10 @@ Production bridge decision:
 - Task 114 exposes that proof through an explicit non-default CLI mode.
   ProviderRuntime remains behind RuntimeComposition and still does not import
   CLI, RuntimeComposition, Core, or AssistantRuntime.
+- Task 115 documents manual live-smoke expectations and failure policy for the
+  CLI proof mode. ProviderRuntime still only creates approved providers and does
+  not own CLI output, preflight probing, routing, retry/fallback, session/history,
+  model-selection, or AssistantRuntime result conversion.
 
 Approved provider names:
 

@@ -71,6 +71,9 @@ Provider-stage skeleton:
   does not import RuntimeComposition, ProviderRuntime, Core, adapters, or ports.
 - Task 114 exposes that RuntimeComposition proof through an explicit non-default
   CLI mode. AssistantRuntime remains unaware of CLI and RuntimeComposition.
+- Task 115 documents live-smoke and failure expectations for that CLI proof
+  mode. AssistantRuntime behavior is unchanged; provider-stage errors still map
+  through the existing deterministic `ErrorEnvelope` result path.
 
 Structured-output consumer seam:
 

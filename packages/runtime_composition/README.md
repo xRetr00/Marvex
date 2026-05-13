@@ -28,6 +28,11 @@ Current bridge proof:
   ProviderRuntime creation, so no live LM Studio server is required for CI.
 - The explicit CLI proof mode `--assistant-runtime-lmstudio-responses` calls
   this bridge. It is non-default, manual-provider-backed proof behavior only.
+- Task 115 documents live-smoke expectations and failure policy for the CLI
+  proof mode. RuntimeComposition still only composes the approved provider and
+  Core helper; it does not probe provider health, route providers, retry/fallback,
+  manage sessions/history, select models, own API-key policy, or format CLI
+  output.
 - `provider_foundation_bridge.py` exposes `run_provider_foundation_turn(...)`
   for the existing CLI provider-foundation turn path so CLI does not construct
   providers directly. This preserves existing default CLI behavior and does not

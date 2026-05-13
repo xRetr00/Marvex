@@ -1,22 +1,22 @@
 # Project Status
 
-current_phase: cli_lmstudio_responses_assistant_runtime_opt_in_proof_pack
+current_phase: lmstudio_assistant_runtime_live_smoke_failure_policy_pack
 
-implementation_status: cli_lmstudio_responses_assistant_runtime_opt_in_added
+implementation_status: lmstudio_cli_proof_smoke_failure_policy_documented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 114 CLI LM Studio Responses AssistantRuntime Opt-In Proof Pack
+Task 115 LM Studio AssistantRuntime Live Smoke and Failure Policy Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 114:
+Latest full validation baseline from Task 115:
 
-- `python -m pytest tests\cli tests\api tests\integration tests\provider_runtime tests\core tests\assistant_runtime tests\telemetry -q` -> 331 passed
+- `python -m pytest tests\cli tests\api tests\integration tests\provider_runtime tests\core tests\assistant_runtime tests\telemetry -q` -> 333 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 637 passed, 1 skipped
+- `python -m pytest -q` -> 639 passed, 1 skipped
 
 Task 111 adds the first separate runtime composition/factory bridge proof using
 ProviderRuntime-created fake provider only. It does not change default CLI
@@ -40,6 +40,11 @@ it does not import ProviderRuntime or adapters, create providers, own routing,
 retry/fallback, sessions/history, model-selection, API-key policy, service/API,
 or product behavior. Automated tests mock the bridge; live LM Studio remains
 manual smoke only.
+
+Task 115 documents the live-smoke checklist and failure policy for that explicit
+CLI proof mode. It does not add automatic preflight probing, retry/fallback,
+routing, sessions/history, model-selection policy, service/API behavior, or
+default product behavior.
 
 ## Current Foundation Capabilities
 
@@ -88,6 +93,9 @@ Assistant-runtime foundation now present:
 - explicit non-default CLI proof mode via
   `--assistant-runtime-lmstudio-responses`; it calls RuntimeComposition and is
   not default, service/API, or product flow
+- documented manual live-smoke checklist and bounded failure policy for LM
+  Studio unavailable/model rejected, timeout-like, provider error, empty output,
+  and malformed response cases
 
 Provider structured-output foundation now present:
 
@@ -111,7 +119,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-114 Compact Milestone Summary
+## Task 102-115 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -145,6 +153,9 @@ ownership governance, and library research governance remain accepted.
 - Task 114 adds the explicit non-default CLI proof flag
   `--assistant-runtime-lmstudio-responses` for that bridge while preserving
   default CLI behavior and the fake-provider foundation mode.
+- Task 115 documents manual live-smoke expectations and failure policy for that
+  proof mode without adding preflight, routing, retry/fallback, sessions/history,
+  model-selection, service/API, or default product behavior.
 
 ## Architecture Health Notes
 
@@ -159,6 +170,8 @@ ownership governance, and library research governance remain accepted.
   explicit LM Studio Responses AssistantRuntime proof mode. Both call
   RuntimeComposition; the default provider CLI path remains the
   provider-foundation path and still does not construct providers inside CLI.
+- The LM Studio Responses CLI proof has documented manual-smoke success/failure
+  expectations; automated validation still does not require live LM Studio.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
