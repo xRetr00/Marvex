@@ -37,8 +37,15 @@ behavior, or product behavior.
 - Binding to `0.0.0.0`, LAN addresses, or remote interfaces is forbidden unless a future remote mode is explicitly approved.
 - Future remote mode must be explicit opt-in, documented by RFC, and covered by authentication, authorization, transport security, and threat-model review.
 - The future server must require a random local auth token generated at startup or a clearly marked dev token for local development.
-- Auth token requirements in this document are contract-level only; generation,
-  storage, rotation, and validation mechanics are future implementation details.
+- Local health/version readiness endpoints are public on the loopback interface
+  so shell/client code can check readiness before protected API setup.
+- Future turn submission, trace access, and event endpoints are protected.
+- Protected endpoints must use `Authorization: Bearer <local-token>`.
+- The local token source is future service startup configuration or a generated
+  startup token. Token generation, discovery, rotation, and storage remain
+  future service-runtime work.
+- Clearly fake dev tokens may be used only by explicit local development
+  commands/tests and must not become defaults.
 - The auth token must not be logged by default.
 - Missing or invalid auth must return an `ErrorEnvelope` with `code:
   "AUTH_REQUIRED"`.
@@ -58,6 +65,10 @@ endpoint implementation exists in Task 020 or Task 026.
 These endpoint contracts are localhost-only by default. Task 117 implements only
 the health/version WSGI app object without selecting a Python HTTP framework.
 Task 118 adds a standard-library manual runner for health/version smoke only.
+Task 119 keeps `/health` and `/version` public on loopback and defines auth for
+future protected endpoints only. It adds a reusable local bearer-token helper
+but does not wire protected endpoint behavior because no protected endpoint is
+implemented yet.
 
 HTTP status mapping:
 
@@ -69,15 +80,13 @@ All error response bodies must use `ErrorEnvelope`.
 
 ### GET /health
 
-Future localhost-only endpoint.
+Localhost-only public readiness endpoint.
 
 Request body: none.
 
 Success: `200` with `HealthCheck`.
 
 Error: `4xx` or `5xx` with `ErrorEnvelope`.
-
-Missing or invalid auth maps to `AUTH_REQUIRED` inside `ErrorEnvelope`.
 
 `HealthCheck` currently has no timestamp field. `uptime_seconds` is future
 runtime uptime in non-negative seconds. `dependencies` is a JSON object only;
@@ -87,7 +96,7 @@ approved.
 
 ### GET /version
 
-Future localhost-only endpoint.
+Localhost-only public readiness endpoint.
 
 Request body: none.
 
@@ -95,12 +104,12 @@ Success: `200` with `VersionInfo`.
 
 Error: `4xx` or `5xx` with `ErrorEnvelope`.
 
-Missing or invalid auth maps to `AUTH_REQUIRED` inside `ErrorEnvelope`.
-
 `VersionInfo` currently has no timestamp field. `contract_versions` and `build`
 are JSON objects; detailed build metadata shape is future contract work.
 
 ### POST /v1/turns
+
+Future protected endpoint. Requires `Authorization: Bearer <local-token>`.
 
 Accepts `TurnInput`.
 
@@ -108,11 +117,16 @@ Returns `TurnOutput`.
 
 ### GET /v1/traces/{trace_id}
 
+Future protected endpoint. Requires `Authorization: Bearer <local-token>`.
+
 Returns trace events for one turn.
 
 Requires local auth. Must return only the requested trace for the current local session unless a future approved session store changes that rule.
 
 ### WS /v1/events
+
+Future protected endpoint. Requires `Authorization: Bearer <local-token>`
+before event delivery.
 
 Streams `TraceEvent` records and later service lifecycle events.
 

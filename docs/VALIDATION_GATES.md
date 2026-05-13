@@ -97,6 +97,8 @@ Local API readiness is limited to approved health/version contracts.
 - `packages/local_api` may import approved contracts and ProcessRuntime only.
 - `packages/local_api` may use the Python standard-library WSGI runner only for
   manual health/version smoke.
+- `packages/local_api` may contain a local bearer-token helper for future
+  protected endpoints, but it must not be wired to unimplemented endpoints.
 - `packages/local_api` must default to `127.0.0.1` local host configuration.
 - `packages/local_api` must not import Core, AssistantRuntime, ProviderRuntime,
   RuntimeComposition, adapters, telemetry implementation, CLI apps, or services.
@@ -105,6 +107,8 @@ Local API readiness is limited to approved health/version contracts.
   stage calls, RuntimeComposition bridges, sessions/history, routing,
   retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
   desktop, vision, proactive behavior, or remote binding defaults.
+- `packages/local_api` must not hard-code local token/secret values or print
+  token material.
 - Service placeholder folders remain README-only.
 - `scripts/run_all_checks.py` runs the local API boundary gate.
 

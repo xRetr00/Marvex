@@ -1,22 +1,22 @@
 # Project Status
 
-current_phase: local_api_health_version_manual_runner_smoke_pack
+current_phase: local_api_auth_token_decision_boundary_pack
 
-implementation_status: local_health_version_manual_runner_added
+implementation_status: local_api_auth_boundary_defined
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 118 Local API Health/Version Manual Runner and Smoke Pack
+Task 119 Local API Auth Token Decision and Boundary Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 118:
+Latest full validation baseline from Task 119:
 
-- `python -m pytest tests\local_api -q` -> 10 passed
+- `python -m pytest tests\local_api -q` -> 15 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 650 passed, 1 skipped
+- `python -m pytest -q` -> 655 passed, 1 skipped
 
 Task 118 manual smoke: `python -m packages.local_api.runner` responded on
 `http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
@@ -77,6 +77,14 @@ execution, AssistantRuntime provider-stage execution, WebSocket, trace API,
 daemon management, subprocess supervision, sessions/history, routing,
 retry/fallback, model-selection, tools, memory, or product behavior.
 
+Task 119 defines the local API authentication boundary for future protected
+endpoints. Health/version remain public loopback readiness endpoints.
+Future turn, trace, and event endpoints must use
+`Authorization: Bearer <local-token>`. `packages.local_api.auth_policy` provides
+a reusable safe bearer-token validator that returns `AUTH_REQUIRED`
+`ErrorEnvelope` failures without echoing token values. It is not wired to
+`/health`, `/version`, or any protected endpoint.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -101,6 +109,7 @@ Process Readiness has started:
   `GET /version` only
 - manual local health/version runner exists for developer smoke on
   `127.0.0.1:8765`
+- local bearer-token auth helper exists for future protected endpoints only
 - no turn endpoint, service daemon, subprocess runtime, or service mode exists
 
 Assistant-runtime foundation now present:
@@ -156,7 +165,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-118 Compact Milestone Summary
+## Task 102-119 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -202,6 +211,10 @@ ownership governance, and library research governance remain accepted.
   app object and smoke documentation, while keeping live server execution out of
   CI and avoiding `/v1/turns`, provider execution, service daemon behavior, or
   product runtime behavior.
+- Task 119 classifies health/version as public loopback readiness endpoints and
+  future turn/trace/event endpoints as protected. It adds a reusable local
+  bearer-token validator for future protected endpoints without wiring auth to
+  current health/version behavior or implementing protected endpoints.
 
 ## Architecture Health Notes
 
@@ -223,6 +236,8 @@ ownership governance, and library research governance remain accepted.
 - Local service readiness now has a health/version API app object and a manual
   loopback runner only. It is not a service daemon and does not implement
   `/v1/turns`.
+- Local API auth policy now exists for future protected endpoints only.
+  Health/version behavior remains unchanged.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate

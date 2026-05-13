@@ -263,6 +263,13 @@ developer smoke only, defaults to `127.0.0.1:8765`, and still does not implement
 AssistantRuntime turn execution, service daemon management, WebSocket, trace
 API, sessions/history, tools, memory, or product behavior.
 
+Task 119 implementation note: `packages.local_api.auth_policy` defines the
+future protected local API auth-token helper without wiring it to health/version
+or adding protected endpoints. Health/version remain public loopback readiness
+endpoints. Future turn, trace, and event endpoints must use
+`Authorization: Bearer <local-token>` and return safe `AUTH_REQUIRED`
+`ErrorEnvelope` failures without logging or echoing token values.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

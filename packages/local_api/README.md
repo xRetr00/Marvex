@@ -13,6 +13,26 @@ Current behavior:
 - `GET /version` returns the existing `VersionInfo` contract shape.
 - Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
 - `LocalApiConfig` defaults to `host="127.0.0.1"` and `port=8765`.
+- `validate_local_bearer_token(...)` provides a reusable local auth-token
+  check for future protected endpoints. It is not wired to `/health` or
+  `/version`.
+
+Endpoint classes:
+
+- Public local readiness endpoints: `GET /health` and `GET /version`.
+- Protected future endpoints: assistant turn submission, trace access, and
+  event streams.
+
+Auth decision:
+
+- Protected future endpoints must use `Authorization: Bearer <local-token>`.
+- Token source is future local service configuration or startup generation.
+  Automatic generation and discovery are deferred.
+- Explicit development tokens are allowed only when clearly fake and opt-in.
+- Missing, malformed, unconfigured, or wrong tokens map to a safe
+  `ErrorEnvelope` with `AUTH_REQUIRED`.
+- Token values must not be logged, echoed, persisted, or included in error
+  details.
 
 Non-behavior:
 

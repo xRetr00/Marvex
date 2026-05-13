@@ -13,6 +13,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "collections.abc",
     "dataclasses",
     "datetime",
+    "hmac",
     "packages.contracts",
     "packages.process_runtime",
     "typing",
@@ -57,6 +58,12 @@ FORBIDDEN_TOKENS = (
     "proactive",
     "0.0.0.0",
 )
+FORBIDDEN_AUTH_LOG_SNIPPETS = (
+    "print(authorization_header",
+    "print(expected_token",
+    "print(provided_token",
+    "print(token",
+)
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -87,6 +94,40 @@ def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
     return any(module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes)
 
 
+def _assignment_target_names(node: ast.Assign | ast.AnnAssign) -> list[str]:
+    targets: list[ast.expr]
+    if isinstance(node, ast.Assign):
+        targets = list(node.targets)
+    else:
+        targets = [node.target]
+
+    names: list[str] = []
+    for target in targets:
+        if isinstance(target, ast.Name):
+            names.append(target.id)
+        if isinstance(target, ast.Tuple):
+            names.extend(elt.id for elt in target.elts if isinstance(elt, ast.Name))
+    return names
+
+
+def _scan_hard_coded_auth_values(
+    rel: str,
+    tree: ast.AST,
+    failures: list[str],
+) -> None:
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Assign | ast.AnnAssign):
+            continue
+        target_names = _assignment_target_names(node)
+        value = node.value
+        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+            continue
+        for name in target_names:
+            lowered_name = name.lower()
+            if ("token" in lowered_name or "secret" in lowered_name) and value.value:
+                failures.append(f"{rel} hard-codes an auth token/secret string")
+
+
 def _scan_local_api(failures: list[str]) -> None:
     paths = _python_files(LOCAL_API_ROOT)
     if not paths:
@@ -104,8 +145,12 @@ def _scan_local_api(failures: list[str]) -> None:
         for token in FORBIDDEN_TOKENS:
             if token in lowered:
                 failures.append(f"{rel} contains forbidden local API behavior token: {token}")
+        for snippet in FORBIDDEN_AUTH_LOG_SNIPPETS:
+            if snippet in lowered.replace(" ", ""):
+                failures.append(f"{rel} may print local auth token material")
 
         tree = ast.parse(text, filename=str(path))
+        _scan_hard_coded_auth_values(rel, tree, failures)
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue

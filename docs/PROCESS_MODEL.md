@@ -50,6 +50,12 @@ Task 118 adds a manual developer-only runner for that app object. It binds to
 not a daemon, subprocess supervisor, auto-restart loop, product service mode,
 assistant-turn endpoint, provider execution path, or service lifecycle system.
 
+Task 119 defines the local API auth boundary before protected endpoint work.
+Health/version readiness endpoints remain public on loopback. Future turn,
+trace, and event endpoints must require `Authorization: Bearer <local-token>`.
+Token creation, discovery, rotation, persistence, and service lifecycle wiring
+remain future service-runtime work.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -76,5 +82,6 @@ Future:
 Current Provider Foundation runtime is still in-process/CLI driven. Current
 ProcessRuntime remains local-only object construction from explicit in-memory
 config. Health/version local API readiness now includes an app object and a
-manual loopback runner only; auth enforcement, `/v1/turns`, service lifecycle,
-and subprocess supervision remain future explicit service-runtime work.
+manual loopback runner only. Auth-token policy exists for future protected
+endpoints, but `/v1/turns`, trace APIs, WebSocket, service lifecycle, and
+subprocess supervision remain future explicit service-runtime work.

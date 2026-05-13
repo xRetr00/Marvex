@@ -173,7 +173,8 @@ python scripts/smoke_providers.py --provider litellm --model <configured-model>
 Task 118 adds a manual developer-only runner for the local health/version API
 app object. It is not a service daemon, subprocess supervisor, product runtime,
 or CI requirement. It exposes only `GET /health` and `GET /version` and defaults
-to `127.0.0.1:8765`.
+to `127.0.0.1:8765`. These health/version endpoints are public loopback
+readiness endpoints and do not require the future local auth token.
 
 Start the runner from the repository root:
 

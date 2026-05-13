@@ -62,6 +62,9 @@ Process Readiness has started:
   `127.0.0.1:8765` for smoke verification. No service daemon, `/v1/turns`,
   provider execution, WebSocket, session/history, or product service behavior
   exists.
+- Local API auth policy is defined for future protected endpoints:
+  health/version stay public on loopback, while future turn/trace/event
+  endpoints must use `Authorization: Bearer <local-token>`.
 
 Git workflow governance exists:
 
