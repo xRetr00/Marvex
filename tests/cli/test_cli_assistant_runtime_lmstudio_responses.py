@@ -1,4 +1,5 @@
 from pathlib import Path
+import sys
 
 from packages.contracts import (
     AssistantFinalResponse,
@@ -12,6 +13,21 @@ from packages.contracts import (
     StageStatus,
     StageSummary,
 )
+
+
+class Cp1252OnlyStdout:
+    encoding = "cp1252"
+
+    def __init__(self) -> None:
+        self.output = ""
+
+    def write(self, text: str) -> int:
+        text.encode(self.encoding)
+        self.output += text
+        return len(text)
+
+    def flush(self) -> None:
+        return None
 
 
 def make_assistant_result(
@@ -323,6 +339,37 @@ def test_lmstudio_responses_malformed_provider_response_prints_safe_output(
         "trace_id: trace-lmstudio-cli",
         "turn_id: turn-lmstudio-cli",
     ]
+
+
+def test_lmstudio_responses_unicode_output_is_safely_bounded_for_legacy_stdout(
+    monkeypatch,
+):
+    from apps.cli import main as cli_main
+
+    stream = Cp1252OnlyStdout()
+    monkeypatch.setattr(sys, "stdout", stream)
+    monkeypatch.setattr(
+        cli_main,
+        "run_lmstudio_responses_assistant_bridge",
+        lambda *args, **kwargs: make_assistant_result(
+            text="Hello from LM Studio \U0001f60a",
+        ),
+    )
+
+    exit_code = cli_main.main(
+        [
+            "--assistant-runtime-lmstudio-responses",
+            "--text",
+            "Hello",
+            "--model",
+            "local-model",
+        ]
+    )
+
+    assert exit_code == 0
+    assert "Hello from LM Studio ?" in stream.output
+    assert "trace_id: trace-lmstudio-cli" in stream.output
+    assert "turn_id: turn-lmstudio-cli" in stream.output
 
 
 def test_lmstudio_responses_manual_smoke_docs_define_failure_policy():

@@ -1,22 +1,21 @@
 # Project Status
 
-current_phase: lmstudio_assistant_runtime_live_smoke_failure_policy_pack
+current_phase: manual_lmstudio_assistant_runtime_smoke_execution_record_pack
 
-implementation_status: lmstudio_cli_proof_smoke_failure_policy_documented
+implementation_status: lmstudio_cli_proof_live_smoke_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 115 LM Studio AssistantRuntime Live Smoke and Failure Policy Pack
+Task 116 Manual LM Studio AssistantRuntime Smoke Execution Record Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 115:
+Latest full validation baseline from Task 116:
 
-- `python -m pytest tests\cli tests\api tests\integration tests\provider_runtime tests\core tests\assistant_runtime tests\telemetry -q` -> 333 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 639 passed, 1 skipped
+- `python -m pytest -q` -> 640 passed, 1 skipped
 
 Task 111 adds the first separate runtime composition/factory bridge proof using
 ProviderRuntime-created fake provider only. It does not change default CLI
@@ -45,6 +44,15 @@ Task 115 documents the live-smoke checklist and failure policy for that explicit
 CLI proof mode. It does not add automatic preflight probing, retry/fallback,
 routing, sessions/history, model-selection policy, service/API behavior, or
 default product behavior.
+
+Task 116 executes and records a manual live smoke for
+`--assistant-runtime-lmstudio-responses` against LM Studio with `qwen3.5-0.8b`.
+The smoke succeeded with assistant response text, provider response id, trace id,
+and turn id present. A Windows legacy-console Unicode print failure observed on
+the first run was fixed narrowly in the CLI proof-mode result printer by
+replacing unencodable characters. No default CLI behavior, preflight,
+retry/fallback, routing, session/history, model-selection, service/API, or
+product behavior was added.
 
 ## Current Foundation Capabilities
 
@@ -96,6 +104,8 @@ Assistant-runtime foundation now present:
 - documented manual live-smoke checklist and bounded failure policy for LM
   Studio unavailable/model rejected, timeout-like, provider error, empty output,
   and malformed response cases
+- recorded successful manual live smoke for `qwen3.5-0.8b`, with bounded output
+  details and no CI/live-provider validation requirement
 
 Provider structured-output foundation now present:
 
@@ -119,7 +129,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-115 Compact Milestone Summary
+## Task 102-116 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -156,6 +166,8 @@ ownership governance, and library research governance remain accepted.
 - Task 115 documents manual live-smoke expectations and failure policy for that
   proof mode without adding preflight, routing, retry/fallback, sessions/history,
   model-selection, service/API, or default product behavior.
+- Task 116 records a successful manual LM Studio AssistantRuntime CLI proof
+  smoke and adds narrow Unicode-safe result printing for that proof-mode output.
 
 ## Architecture Health Notes
 
@@ -172,6 +184,8 @@ ownership governance, and library research governance remain accepted.
   provider-foundation path and still does not construct providers inside CLI.
 - The LM Studio Responses CLI proof has documented manual-smoke success/failure
   expectations; automated validation still does not require live LM Studio.
+- The latest manual smoke for that proof path succeeded, but it remains a
+  manual developer check and is not part of `run_all_checks.py`.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate

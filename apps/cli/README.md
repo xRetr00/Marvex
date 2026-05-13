@@ -43,6 +43,8 @@ AssistantRuntime LM Studio Responses proof mode:
   timeout-like, provider error, empty output, and malformed response cases use
   existing Core/AssistantRuntime error mapping; CLI does not add preflight,
   retry, fallback, routing, session/history, model-selection, or API-key policy.
+- Result printing for this proof mode is bounded for Windows legacy console
+  encodings: unencodable characters are replaced instead of crashing.
 
 Decision diagnostics are not a CLI surface. The CLI must not import decision
 runtime or decision adapter modules.
@@ -83,3 +85,5 @@ Dependency direction:
   through RuntimeComposition while keeping default CLI behavior unchanged.
 - Task 115 documents the manual live-smoke checklist and failure policy for
   that proof mode without changing default CLI behavior.
+- Task 116 records a successful manual live smoke against LM Studio with
+  `qwen3.5-0.8b` and adds the narrow proof-mode Unicode print hardening.

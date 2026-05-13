@@ -128,6 +128,26 @@ This proof mode does not add automatic preflight probing, retry/fallback,
 routing, sessions/history, model-selection policy, API-key policy, telemetry
 storage, service/API behavior, or product default behavior.
 
+Latest manual execution record:
+
+- Date: 2026-05-13.
+- Command shape:
+  `python apps\cli\main.py --assistant-runtime-lmstudio-responses --text "Hello" --model <local-model>`.
+- Model used: `qwen3.5-0.8b`.
+- Environment: LM Studio local server responded at `http://localhost:1234/v1`;
+  the model list included `qwen3.5-0.8b`.
+- Result: success, exit code `0`.
+- Observed assistant response text: yes; bounded excerpt:
+  `Hello! How can I help you today? ?`
+- Observed `provider_response_id`: yes.
+- Observed `trace_id`: yes.
+- Observed `turn_id`: yes.
+- Note: the first run exposed a Windows legacy-console Unicode print failure
+  when the provider returned an emoji. The CLI proof-mode result printer now
+  replaces unencodable characters instead of crashing. No provider/runtime
+  behavior, retry/fallback, routing, preflight, session/history, service/API, or
+  default CLI behavior was added.
+
 Continuity smoke:
 
 ```powershell

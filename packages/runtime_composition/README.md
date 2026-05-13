@@ -33,6 +33,9 @@ Current bridge proof:
   Core helper; it does not probe provider health, route providers, retry/fallback,
   manage sessions/history, select models, own API-key policy, or format CLI
   output.
+- Task 116 records a successful manual CLI smoke against LM Studio. The bridge
+  remains composition-only; the CLI-owned print hardening does not change
+  RuntimeComposition behavior.
 - `provider_foundation_bridge.py` exposes `run_provider_foundation_turn(...)`
   for the existing CLI provider-foundation turn path so CLI does not construct
   providers directly. This preserves existing default CLI behavior and does not

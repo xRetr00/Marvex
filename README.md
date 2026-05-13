@@ -93,4 +93,5 @@ Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-lmstudio-responses` for the LM Studio Responses proof path.
 The real-provider proof remains opt-in only and does not approve service/API or
 product behavior changes. Live LM Studio use is manual smoke only and is not
-required by pytest or `scripts/run_all_checks.py`.
+required by pytest or `scripts/run_all_checks.py`; the latest recorded manual
+smoke for the proof path succeeded against a local LM Studio model.

@@ -161,14 +161,27 @@ def _print_assistant_runtime_provider_stage_result(
     result: AssistantTurnResult,
 ) -> None:
     if result.assistant_final_response is not None:
-        print(result.assistant_final_response.text)
+        _print_cli_line(result.assistant_final_response.text)
     elif result.error is not None:
-        print(result.error.message)
-        print(f"error_code: {result.error.code.value}")
+        _print_cli_line(result.error.message)
+        _print_cli_line(f"error_code: {result.error.code.value}")
     if result.provider_turn_refs:
-        print(f"provider_response_id: {result.provider_turn_refs[0].ref_id}")
-    print(f"trace_id: {result.trace_id}")
-    print(f"turn_id: {result.turn_id}")
+        _print_cli_line(f"provider_response_id: {result.provider_turn_refs[0].ref_id}")
+    _print_cli_line(f"trace_id: {result.trace_id}")
+    _print_cli_line(f"turn_id: {result.turn_id}")
+
+
+def _print_cli_line(value: object) -> None:
+    text = str(value)
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        encoding = getattr(sys.stdout, "encoding", None) or "utf-8"
+        safe_text = text.encode(encoding, errors="replace").decode(
+            encoding,
+            errors="replace",
+        )
+        print(safe_text)
 
 
 def _run_health(*, json_output: bool) -> int:
