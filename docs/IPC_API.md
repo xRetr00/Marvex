@@ -19,6 +19,12 @@ open WebSockets, expose traces, call providers, call RuntimeComposition, or run
 Core/AssistantRuntime turn behavior. Future listener/auth/service lifecycle work
 still requires a separate approved task.
 
+Task 118 adds a manual developer-only local runner for that health/version app
+object. The runner binds to `127.0.0.1:8765` by default and remains manual
+smoke only. It does not implement `/v1/turns`, auth, WebSocket, trace API,
+provider execution, assistant turn execution, service daemon management, or
+product behavior.
+
 UI/API/WebSocket contracts for future web, native orb, presence, trace viewer,
 settings, or voice/face visualization surfaces are explicit future tasks. Task
 085 documents frontend ownership boundaries in `docs/FRONTEND_BOUNDARY.md`; it
@@ -50,8 +56,8 @@ exist now and can be built locally from explicit in-memory config, but no
 endpoint implementation exists in Task 020 or Task 026.
 
 These endpoint contracts are localhost-only by default. Task 117 implements only
-the health/version WSGI app object without selecting a Python HTTP framework or
-adding a service runner.
+the health/version WSGI app object without selecting a Python HTTP framework.
+Task 118 adds a standard-library manual runner for health/version smoke only.
 
 HTTP status mapping:
 

@@ -45,6 +45,11 @@ not start a service, bind a socket, supervise subprocesses, call providers, run
 assistant turns, implement `/v1/turns`, or add WebSocket/session/history
 behavior.
 
+Task 118 adds a manual developer-only runner for that app object. It binds to
+`127.0.0.1:8765` by default and is used only for local smoke verification. It is
+not a daemon, subprocess supervisor, auto-restart loop, product service mode,
+assistant-turn endpoint, provider execution path, or service lifecycle system.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -70,6 +75,6 @@ Future:
 
 Current Provider Foundation runtime is still in-process/CLI driven. Current
 ProcessRuntime remains local-only object construction from explicit in-memory
-config. Health/version local API readiness now exists as an app object only;
-actual service running, auth enforcement, socket binding, and lifecycle
-supervision remain future explicit service-runtime work.
+config. Health/version local API readiness now includes an app object and a
+manual loopback runner only; auth enforcement, `/v1/turns`, service lifecycle,
+and subprocess supervision remain future explicit service-runtime work.

@@ -256,6 +256,13 @@ listener, and does not implement `/v1/turns`, provider execution,
 RuntimeComposition assistant bridges, sessions/history, WebSocket, trace API,
 tools, memory, or product behavior.
 
+Task 118 implementation note: `packages.local_api.runner` adds a manual
+standard-library loopback runner for the health/version app object. It is
+developer smoke only, defaults to `127.0.0.1:8765`, and still does not implement
+`/v1/turns`, provider execution, RuntimeComposition assistant bridges, Core or
+AssistantRuntime turn execution, service daemon management, WebSocket, trace
+API, sessions/history, tools, memory, or product behavior.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

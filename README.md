@@ -57,8 +57,11 @@ Process Readiness has started:
 - The CLI can expose local health/version contract objects without starting a
   service.
 - A dependency-free local health/version API app object exists for `GET /health`
-  and `GET /version` only. No service listener, `/v1/turns`, provider execution,
-  WebSocket, session/history, or product service behavior exists.
+  and `GET /version` only.
+- A manual developer-only local runner can host that app object on
+  `127.0.0.1:8765` for smoke verification. No service daemon, `/v1/turns`,
+  provider execution, WebSocket, session/history, or product service behavior
+  exists.
 
 Git workflow governance exists:
 
@@ -89,8 +92,8 @@ Forbidden now:
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
 No turn endpoint exists yet. No service daemon exists yet. No subprocess runtime
-or service mode exists yet. The local health/version API remains an app object,
-not a running server.
+or service mode exists yet. The local health/version API runner is manual smoke
+only, not product service behavior.
 
 Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-fake-provider` for the deterministic fake path and

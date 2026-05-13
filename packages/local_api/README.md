@@ -7,6 +7,8 @@ Ownership: local API adapter boundary for approved process-readiness contracts.
 Current behavior:
 
 - `create_health_version_api_app(...)` creates a dependency-free WSGI app object.
+- `python -m packages.local_api.runner` starts a manual developer-only runner
+  for that app object.
 - `GET /health` returns the existing `HealthCheck` contract shape.
 - `GET /version` returns the existing `VersionInfo` contract shape.
 - Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
@@ -14,8 +16,9 @@ Current behavior:
 
 Non-behavior:
 
-- No server listener, daemon, subprocess supervisor, WebSocket, trace API, or
-  service lifecycle runner is added.
+- No daemon, subprocess supervisor, WebSocket, trace API, or service lifecycle
+  runner is added.
+- The manual runner is developer smoke only and is not CI or product behavior.
 - No `/v1/turns` endpoint is implemented.
 - No provider, RuntimeComposition, Core assistant turn, or AssistantRuntime
   provider-stage execution is invoked.

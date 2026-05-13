@@ -170,8 +170,54 @@ python scripts/smoke_providers.py --provider litellm --model <configured-model>
 
 ## Local Health/Version API
 
-Task 117 adds a local health/version API app object, not a running service.
-There is no manual server smoke command yet. Future listener or daemon smoke
-requires a separate approved service-runtime task. The app object exposes only
-`GET /health` and `GET /version` when hosted by a future local runner and must
-default to `127.0.0.1`.
+Task 118 adds a manual developer-only runner for the local health/version API
+app object. It is not a service daemon, subprocess supervisor, product runtime,
+or CI requirement. It exposes only `GET /health` and `GET /version` and defaults
+to `127.0.0.1:8765`.
+
+Start the runner from the repository root:
+
+```powershell
+python -m packages.local_api.runner
+```
+
+Check health:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/health
+```
+
+Check version:
+
+```powershell
+Invoke-RestMethod http://127.0.0.1:8765/version
+```
+
+Stop the runner from its terminal with `Ctrl+C`.
+
+Expected success signs:
+
+- `/health` returns a `HealthCheck` JSON object with service
+  `marvex-local-api`, status `ok`, schema version `0.1.1-draft`, and
+  non-negative uptime.
+- `/version` returns a `VersionInfo` JSON object with service
+  `marvex-local-api`, service version `0.1.0`, and the active health/version
+  contract versions.
+
+Expected failure signs:
+
+- Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
+- If the port is already in use, stop the other local process or choose a later
+  approved runner enhancement; do not add automatic daemon management here.
+
+Latest manual local health/version runner smoke:
+
+- Date: 2026-05-13.
+- Command shape: `python -m packages.local_api.runner`.
+- Result: success; `/health` and `/version` both responded on
+  `http://127.0.0.1:8765`.
+- Observed `/health`: service `marvex-local-api`, status `ok`, schema version
+  `0.1.1-draft`.
+- Observed `/version`: service `marvex-local-api`, service version `0.1.0`,
+  schema version `0.1.1-draft`.
+- This remains manual smoke only and is not part of CI or `run_all_checks.py`.

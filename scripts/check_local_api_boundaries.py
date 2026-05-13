@@ -12,9 +12,11 @@ ALLOWED_IMPORT_PREFIXES = (
     "__future__",
     "collections.abc",
     "dataclasses",
+    "datetime",
     "packages.contracts",
     "packages.process_runtime",
     "typing",
+    "wsgiref.simple_server",
 )
 FORBIDDEN_IMPORT_PREFIXES = (
     "apps",
