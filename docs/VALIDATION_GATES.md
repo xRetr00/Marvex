@@ -90,6 +90,22 @@ construction until an explicit future integration task.
 - `packages/process_runtime/process_runtime.py` over 250 lines requires the explicit phrase `process runtime size justification`.
 - Strict runtime scans target Python source files only, not README or documentation files.
 
+### Local API Boundary Gate
+
+Local API readiness is limited to approved health/version contracts.
+
+- `packages/local_api` may import approved contracts and ProcessRuntime only.
+- `packages/local_api` must default to `127.0.0.1` local host configuration.
+- `packages/local_api` must not import Core, AssistantRuntime, ProviderRuntime,
+  RuntimeComposition, adapters, telemetry implementation, CLI apps, or services.
+- `packages/local_api` must not implement `/v1/turns`, WebSocket, provider
+  request/response execution, Core assistant turns, AssistantRuntime provider
+  stage calls, RuntimeComposition bridges, sessions/history, routing,
+  retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
+  desktop, vision, proactive behavior, or remote binding defaults.
+- Service placeholder folders remain README-only.
+- `scripts/run_all_checks.py` runs the local API boundary gate.
+
 ### Vaxil Boundary Gate
 
 Vaxil may be mentioned only as a cautionary research source. Code reuse language and imports are forbidden.

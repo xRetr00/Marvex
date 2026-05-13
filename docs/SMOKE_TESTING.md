@@ -167,3 +167,11 @@ script. The script does not print secrets or environment values.
 ```powershell
 python scripts/smoke_providers.py --provider litellm --model <configured-model>
 ```
+
+## Local Health/Version API
+
+Task 117 adds a local health/version API app object, not a running service.
+There is no manual server smoke command yet. Future listener or daemon smoke
+requires a separate approved service-runtime task. The app object exposes only
+`GET /health` and `GET /version` when hosted by a future local runner and must
+default to `127.0.0.1`.

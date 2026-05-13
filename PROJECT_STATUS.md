@@ -1,21 +1,22 @@
 # Project Status
 
-current_phase: manual_lmstudio_assistant_runtime_smoke_execution_record_pack
+current_phase: local_service_health_version_api_readiness_pack
 
-implementation_status: lmstudio_cli_proof_live_smoke_recorded
+implementation_status: local_health_version_api_app_object_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 116 Manual LM Studio AssistantRuntime Smoke Execution Record Pack
+Task 117 Local Service Health and Version API Readiness Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 116:
+Latest full validation baseline from Task 117:
 
+- `python -m pytest tests -q` -> 646 passed, 1 skipped
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 640 passed, 1 skipped
+- `python -m pytest -q` -> 646 passed, 1 skipped
 
 Task 111 adds the first separate runtime composition/factory bridge proof using
 ProviderRuntime-created fake provider only. It does not change default CLI
@@ -54,6 +55,15 @@ replacing unencodable characters. No default CLI behavior, preflight,
 retry/fallback, routing, session/history, model-selection, service/API, or
 product behavior was added.
 
+Task 117 adds `packages.local_api`, a dependency-free local WSGI app object for
+`GET /health` and `GET /version` only. It uses the approved `HealthCheck` and
+`VersionInfo` contracts through `HealthVersionProvider`, defaults local API
+configuration to `127.0.0.1`, and adds a local API boundary gate. It does not
+add a service listener, `/v1/turns`, provider execution, RuntimeComposition
+assistant bridges, Core assistant execution, WebSocket, trace API,
+sessions/history, routing, retry/fallback, model-selection, tools, memory, or
+product behavior.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -74,7 +84,10 @@ Process Readiness has started:
 - local `ProcessRuntime` health/version object construction exists
 - ProcessRuntime boundary gate completed
 - CLI health/version commands exist
-- no HTTP endpoint, service daemon, subprocess runtime, or service mode exists
+- local health/version API app object exists for `GET /health` and
+  `GET /version` only
+- no service listener, turn endpoint, service daemon, subprocess runtime, or
+  service mode exists
 
 Assistant-runtime foundation now present:
 
@@ -122,14 +135,14 @@ Validation gates now present:
 - project status, file-size, schema-version, library-decision, and library
   research gates
 - port, ProviderRuntime, ProcessRuntime, AssistantRuntime, provider structured
-  output, runtime composition, runtime ownership, Vaxil boundary, and
-  assistant-turn contract gates
+  output, runtime composition, local API, runtime ownership, Vaxil boundary,
+  and assistant-turn contract gates
 
 Historical governance retained compactly: Task 024 Status and README Drift Cleanup,
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-116 Compact Milestone Summary
+## Task 102-117 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -168,6 +181,9 @@ ownership governance, and library research governance remain accepted.
   model-selection, service/API, or default product behavior.
 - Task 116 records a successful manual LM Studio AssistantRuntime CLI proof
   smoke and adds narrow Unicode-safe result printing for that proof-mode output.
+- Task 117 adds local health/version API readiness as a dependency-free WSGI app
+  object for `GET /health` and `GET /version` only, with a dedicated boundary
+  gate and no service listener or turn/provider execution.
 
 ## Architecture Health Notes
 
@@ -186,6 +202,8 @@ ownership governance, and library research governance remain accepted.
   expectations; automated validation still does not require live LM Studio.
 - The latest manual smoke for that proof path succeeded, but it remains a
   manual developer check and is not part of `run_all_checks.py`.
+- Local service readiness now has a health/version API app object only. It is
+  not a running service and does not implement `/v1/turns`.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate

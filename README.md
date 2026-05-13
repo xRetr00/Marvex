@@ -56,6 +56,9 @@ Process Readiness has started:
   construction isolated until an approved integration task.
 - The CLI can expose local health/version contract objects without starting a
   service.
+- A dependency-free local health/version API app object exists for `GET /health`
+  and `GET /version` only. No service listener, `/v1/turns`, provider execution,
+  WebSocket, session/history, or product service behavior exists.
 
 Git workflow governance exists:
 
@@ -85,8 +88,9 @@ Forbidden now:
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
-No HTTP endpoint exists yet. No service daemon exists yet. No subprocess runtime
-or service mode exists yet.
+No turn endpoint exists yet. No service daemon exists yet. No subprocess runtime
+or service mode exists yet. The local health/version API remains an app object,
+not a running server.
 
 Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-fake-provider` for the deterministic fake path and

@@ -29,6 +29,7 @@ CHECKS = [
     "check_decision_runtime_boundaries.py",
     "check_provider_runtime_boundaries.py",
     "check_runtime_composition_boundaries.py",
+    "check_local_api_boundaries.py",
     "check_process_runtime_boundaries.py",
     "check_vaxil_boundary.py",
 ]

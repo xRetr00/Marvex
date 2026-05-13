@@ -248,6 +248,14 @@ RuntimeComposition LM Studio Responses bridge. CLI still does not import
 ProviderRuntime or adapters and does not own provider routing, retry/fallback,
 session/history, model-selection, API-key, service/API, or product behavior.
 
+Task 117 implementation note: `packages/local_api` adds a dependency-free
+local WSGI app object for `GET /health` and `GET /version` only, backed by the
+approved `HealthCheck` and `VersionInfo` contracts. It defaults local API config
+to `127.0.0.1`, adds no HTTP framework dependency, does not start a service
+listener, and does not implement `/v1/turns`, provider execution,
+RuntimeComposition assistant bridges, sessions/history, WebSocket, trace API,
+tools, memory, or product behavior.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

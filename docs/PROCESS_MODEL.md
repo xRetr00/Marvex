@@ -39,6 +39,12 @@ Task 026 plans future HTTP endpoint contracts for those objects. Neither task
 adds a subprocess runtime, process supervisor, daemon, HTTP server, service
 runtime, socket listener, or network behavior.
 
+Task 117 adds a local health/version WSGI app object for `GET /health` and
+`GET /version` only. The default local API config host is `127.0.0.1`. It does
+not start a service, bind a socket, supervise subprocesses, call providers, run
+assistant turns, implement `/v1/turns`, or add WebSocket/session/history
+behavior.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -64,5 +70,6 @@ Future:
 
 Current Provider Foundation runtime is still in-process/CLI driven. Current
 ProcessRuntime remains local-only object construction from explicit in-memory
-config. HTTP exposure remains future explicit service-runtime work and must not
-be inferred from the presence of health/version contracts or endpoint planning.
+config. Health/version local API readiness now exists as an app object only;
+actual service running, auth enforcement, socket binding, and lifecycle
+supervision remain future explicit service-runtime work.

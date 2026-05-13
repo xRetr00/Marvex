@@ -104,9 +104,15 @@ def main() -> int:
     )
     _require_phrase(
         text=readme_lowered,
-        phrase="no http endpoint exists yet",
+        phrase="local health/version api app object",
         failures=failures,
-        message="README.md must state no HTTP endpoint exists yet",
+        message="README.md must mention the local health/version API app object",
+    )
+    _require_phrase(
+        text=readme_lowered,
+        phrase="no turn endpoint exists yet",
+        failures=failures,
+        message="README.md must state no turn endpoint exists yet",
     )
     _require_phrase(
         text=readme_lowered,

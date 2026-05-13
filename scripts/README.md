@@ -23,6 +23,7 @@ Scripts:
 - `check_port_boundaries.py`
 - `check_provider_runtime_boundaries.py`
 - `check_runtime_composition_boundaries.py`
+- `check_local_api_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -58,6 +59,13 @@ boundary so local health/version object construction stays isolated until an
 explicit future integration task. Strict forbidden behavior token scans apply
 only to Python source files under `packages/process_runtime/`, not README or
 documentation files.
+
+`check_local_api_boundaries.py` enforces the local health/version API boundary
+so `packages/local_api` stays limited to approved `HealthCheck` and
+`VersionInfo` response exposure through the local app object. It blocks provider,
+RuntimeComposition, Core assistant execution, WebSocket, session/history,
+routing, retry/fallback, model/API-key policy, remote-bind defaults, and service
+placeholder implementation drift.
 
 `check_library_decisions.py` enforces required decision fields and confirms each
 runtime dependency in `[project].dependencies` has a matching decision record.

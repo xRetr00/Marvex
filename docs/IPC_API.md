@@ -12,6 +12,13 @@ dependency, or service mode.
 
 No HTTP implementation exists in Task 026.
 
+Task 117 adds a dependency-free local WSGI app object for `GET /health` and
+`GET /version` only. It is a service/API readiness foundation, not a service
+daemon. It does not start a listener, implement `/v1/turns`, enforce local auth,
+open WebSockets, expose traces, call providers, call RuntimeComposition, or run
+Core/AssistantRuntime turn behavior. Future listener/auth/service lifecycle work
+still requires a separate approved task.
+
 UI/API/WebSocket contracts for future web, native orb, presence, trace viewer,
 settings, or voice/face visualization surfaces are explicit future tasks. Task
 085 documents frontend ownership boundaries in `docs/FRONTEND_BOUNDARY.md`; it
@@ -42,9 +49,9 @@ The following endpoints are future explicit tasks. Their response contracts
 exist now and can be built locally from explicit in-memory config, but no
 endpoint implementation exists in Task 020 or Task 026.
 
-These endpoint contracts are localhost-only by default. They define wire
-behavior for a future service-runtime task without selecting a Python HTTP
-framework or authorizing runtime implementation.
+These endpoint contracts are localhost-only by default. Task 117 implements only
+the health/version WSGI app object without selecting a Python HTTP framework or
+adding a service runner.
 
 HTTP status mapping:
 
