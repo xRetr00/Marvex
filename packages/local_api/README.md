@@ -67,6 +67,18 @@ Task 121 `/v1/turns` implementation:
   AssistantRuntime, ProviderRuntime, adapter, or provider SDK execution is
   wired into the API.
 
+Task 122 fake handler composition:
+
+- RuntimeComposition now provides `create_local_api_fake_turn_handler(...)` as a
+  fake-provider-only handler factory outside this package.
+- The local API app can receive that handler through the existing
+  `turn_handler` injection argument.
+- This package still does not import RuntimeComposition, Core,
+  AssistantRuntime, ProviderRuntime, adapters, telemetry implementation modules,
+  CLI apps, services, or provider SDKs.
+- The manual runner remains health/version-only and does not set a development
+  bearer token or inject the fake handler by default.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.
@@ -85,7 +97,7 @@ Non-behavior:
 - The manual runner is developer smoke only and is not CI or product behavior.
 - No real execution composition is implemented behind `/v1/turns`.
 - No provider, RuntimeComposition, Core assistant turn, or AssistantRuntime
-  provider-stage execution is invoked.
+  provider-stage execution is invoked by this package.
 - No sessions, history, routing, retry/fallback, model selection, API-key
   policy, tools, memory, UI, voice, desktop, vision, or proactive behavior.
 - No new runtime dependency or HTTP framework is added.

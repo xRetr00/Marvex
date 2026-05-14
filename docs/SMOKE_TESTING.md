@@ -181,6 +181,11 @@ runner does not provide a fake development token or stub turn handler. Manual
 `/v1/turns` smoke remains deferred so this runner stays health/version-only and
 does not grow execution composition.
 
+Task 122 adds a RuntimeComposition-owned fake handler factory for `/v1/turns`,
+but the manual runner still does not inject it or publish a development bearer
+token. Manual fake `/v1/turns` smoke remains deferred to a separate task that
+can explicitly document the token, request shape, and expected output.
+
 Start the runner from the repository root:
 
 ```powershell

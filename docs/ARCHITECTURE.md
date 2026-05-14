@@ -289,6 +289,12 @@ protected `/v1/turns` HTTP/auth/JSON adapter with an injected
 not import or call RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
 adapters, services, CLI apps, or provider SDKs.
 
+Task 122 implementation note: RuntimeComposition now owns
+`create_local_api_fake_turn_handler(...)`, the first fake-provider-only handler
+factory for local API turn execution. The handler adapts the Task 121 envelope
+to `run_fake_provider_assistant_bridge(...)`; local API receives it only by
+injection and still does not import RuntimeComposition.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

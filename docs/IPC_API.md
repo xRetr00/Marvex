@@ -371,14 +371,21 @@ import or call RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
 provider adapters, CLI apps, services, telemetry implementation modules, or
 provider SDKs.
 
+Task 122 adds the first composition-owned fake handler factory:
+`packages.runtime_composition.create_local_api_fake_turn_handler(...)`. That
+factory returns a handler for the Task 121 envelope and calls
+`run_fake_provider_assistant_bridge(...)`. The local API package still receives
+the handler only by injection.
+
 Next task unlocked:
 
-Decide whether and how a separate composition owner may provide the injected
-handler for local fake-provider smoke. That future task must not add real
-provider API mode, LM Studio API mode, trace API, WebSocket, service daemon
-behavior, sessions/history, routing, retry/fallback, model-selection, API-key
-policy, tools, memory, UI, voice, desktop, vision, or default CLI changes
-unless explicitly approved.
+Decide whether to add an explicit developer-only manual runner mode for local
+fake `/v1/turns` smoke, including a clearly fake token and documented
+PowerShell request. That future task must not add real provider API mode, LM
+Studio API mode, trace API, WebSocket, service daemon behavior,
+sessions/history, routing, retry/fallback, model-selection, API-key policy,
+tools, memory, UI, voice, desktop, vision, or default CLI changes unless
+explicitly approved.
 
 Rollback path:
 

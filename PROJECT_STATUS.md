@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: protected_local_api_fake_turns_endpoint_pack
+current_phase: local_api_fake_turns_handler_composition_pack
 
-implementation_status: local_api_fake_turns_endpoint_adapter_added
+implementation_status: local_api_fake_handler_composition_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 121 Protected Local API Fake Turns Endpoint Pack
+Task 122 Local API Fake Turns Handler Composition Pack
 
 ## Validation Baseline
 
@@ -103,6 +103,12 @@ handlers only. The API still does not import or call RuntimeComposition, Core,
 AssistantRuntime, ProviderRuntime, adapters, services, CLI apps, telemetry
 implementation modules, or provider SDKs.
 
+Task 122 adds `packages.runtime_composition.create_local_api_fake_turn_handler(...)`
+as the first fake-provider-only execution handler factory for the protected
+local API turns endpoint. The handler adapts `LocalTurnRequestEnvelope` to
+`run_fake_provider_assistant_bridge(...)`. Local API still receives the handler
+only by injection and does not import RuntimeComposition.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -129,8 +135,10 @@ Process Readiness has started:
   `127.0.0.1:8765`
 - local bearer-token auth helper protects `/v1/turns`
 - protected `/v1/turns` adapter exists with an injected handler boundary only
-- no real turn execution composition, service daemon, subprocess runtime, or
-  service mode exists
+- RuntimeComposition provides a fake-provider-only handler factory for the
+  injected local API handler boundary
+- no real-provider turn execution composition, service daemon, subprocess
+  runtime, or service mode exists
 
 Assistant-runtime foundation now present:
 
@@ -241,6 +249,9 @@ ownership governance, and library research governance remain accepted.
 - Task 121 implements the protected fake-provider-only `/v1/turns` adapter with
   auth-before-body validation and stubbed-handler tests only, without adding
   real execution composition.
+- Task 122 adds RuntimeComposition-owned fake handler composition for local API
+  turns, without making local API import RuntimeComposition or adding LM Studio
+  or real-provider API execution.
 
 ## Architecture Health Notes
 
@@ -266,6 +277,8 @@ ownership governance, and library research governance remain accepted.
 - The `/v1/turns` adapter is protected fake-provider-only by request envelope:
   it accepts a local envelope carrying `AssistantTurnInput`, returns
   `AssistantTurnResult`, and delegates only to an injected handler.
+- RuntimeComposition now owns the fake injected handler factory for local API
+  turns and routes it through the existing fake-provider bridge path.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
@@ -291,7 +304,7 @@ Blocked without a separate approved task spec:
 - real provider promotion for assistant-runtime turns
 - Core normal orchestration replacement
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
-- real execution composition behind `/v1/turns`
+- real-provider execution composition behind `/v1/turns`
 - LM Studio or other real-provider local API mode
 - telemetry persistence/storage/logging sinks
 - contract or port promotion
@@ -304,10 +317,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Decide whether a separate composition owner may provide the injected local API
-fake-turn handler for manual smoke. Keep RuntimeComposition/Core/
-AssistantRuntime/ProviderRuntime imports out of `packages.local_api`, preserve
-auth-before-body behavior, and do not add LM Studio API mode, trace API,
-WebSocket, service daemon behavior, sessions/history, routing, retry/fallback,
-model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, or
-default CLI changes.
+Decide whether to add an explicit developer-only manual runner mode for local
+fake `/v1/turns` smoke. Keep RuntimeComposition/Core/AssistantRuntime/
+ProviderRuntime imports out of `packages.local_api`, require a clearly fake
+token, preserve auth-before-body behavior, and do not add LM Studio API mode,
+trace API, WebSocket, service daemon behavior, sessions/history, routing,
+retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
+desktop, vision, or default CLI changes.

@@ -49,6 +49,12 @@ Current bridge proof:
   the HTTP boundary. The first approved target behind that handler is
   fake-provider only. LM Studio Responses over the local API remains blocked
   until a separate service/API promotion task.
+- Task 122 adds `create_local_api_fake_turn_handler(...)` as the first
+  composition-owned handler factory for the protected local API fake-turn path.
+  The returned callable accepts the Task 121 request shape structurally and
+  calls `run_fake_provider_assistant_bridge(...)`. `packages.local_api` still
+  does not import RuntimeComposition, and the manual runner remains
+  health/version-only.
 
 Forbidden responsibilities:
 
@@ -58,6 +64,8 @@ Forbidden responsibilities:
 - Session storage, conversation history, hidden global state, service lifecycle,
   CLI behavior, tools, memory, UI, voice, desktop, vision, or proactive behavior.
 - Telemetry persistence or sanitizer policy ownership.
+- Local API HTTP parsing, bearer auth enforcement, JSON validation, or response
+  serialization.
 
 Dependency direction:
 
@@ -71,3 +79,5 @@ Dependency direction:
   `run_fake_provider_assistant_bridge(...)`,
   `run_lmstudio_responses_assistant_bridge(...)`, and
   `run_provider_foundation_turn(...)`.
+- Local API callers must receive RuntimeComposition behavior only as an injected
+  handler; `packages.local_api` must not import this package.

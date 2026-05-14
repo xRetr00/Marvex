@@ -68,7 +68,9 @@ Process Readiness has started:
 - `POST /v1/turns` now exists only as a protected HTTP/auth/JSON adapter:
   fake-provider request envelope, injected handler boundary, and
   `AssistantTurnResult` serialization. RuntimeComposition remains the future
-  execution composition owner and is not called by the API.
+  execution composition owner and is not imported by the API.
+- RuntimeComposition now provides a fake-provider-only local API turn handler
+  factory that can be injected into the app for controlled fake execution.
 
 Git workflow governance exists:
 
@@ -98,7 +100,7 @@ Forbidden now:
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
-No turn endpoint exists yet with real execution composition behind it.
+No turn endpoint exists yet with real-provider execution composition behind it.
 No service daemon exists yet.
 No subprocess runtime or service mode exists yet.
 The local health/version API runner is manual smoke only, not product service behavior.
