@@ -295,6 +295,12 @@ factory for local API turn execution. The handler adapts the Task 121 envelope
 to `run_fake_provider_assistant_bridge(...)`; local API receives it only by
 injection and still does not import RuntimeComposition.
 
+Task 123 implementation note: developer-only fake `/v1/turns` manual smoke is
+owned by `packages.runtime_composition.local_api_fake_turns_runner`. That module
+injects the RuntimeComposition fake handler into the local API runner with a
+caller-provided fake/dev token. `packages.local_api` still does not import
+RuntimeComposition.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

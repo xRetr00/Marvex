@@ -65,6 +65,11 @@ RuntimeComposition owns narrow bridge/factory composition only.
   selection, tool runtime, or memory runtime behavior.
 - RuntimeComposition may mention the approved `lmstudio_responses` provider
   identifier only for the explicit real-provider AssistantRuntime proof path.
+- `packages/runtime_composition/local_api_fake_turns_runner.py` may import the
+  local API runner/config only as a developer-only fake `/v1/turns` smoke
+  composition entrypoint; this exception does not allow RuntimeComposition to
+  own HTTP parsing, auth validation, routing, sessions/history, retry/fallback,
+  model-selection, or API-key policy.
 - Core and AssistantRuntime must not import or mention the runtime composition
   bridge.
 - ProviderRuntime must not import Core or AssistantRuntime.

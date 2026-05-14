@@ -55,6 +55,11 @@ Current bridge proof:
   calls `run_fake_provider_assistant_bridge(...)`. `packages.local_api` still
   does not import RuntimeComposition, and the manual runner remains
   health/version-only.
+- Task 123 adds `packages.runtime_composition.local_api_fake_turns_runner` as a
+  developer-only manual smoke entrypoint. It injects
+  `create_local_api_fake_turn_handler(...)` into the local API runner with a
+  caller-provided fake/dev bearer token. It does not add LM Studio or
+  real-provider API execution.
 
 Forbidden responsibilities:
 
@@ -66,6 +71,7 @@ Forbidden responsibilities:
 - Telemetry persistence or sanitizer policy ownership.
 - Local API HTTP parsing, bearer auth enforcement, JSON validation, or response
   serialization.
+- Production token lifecycle or service daemon ownership for local API.
 
 Dependency direction:
 
@@ -81,3 +87,5 @@ Dependency direction:
   `run_provider_foundation_turn(...)`.
 - Local API callers must receive RuntimeComposition behavior only as an injected
   handler; `packages.local_api` must not import this package.
+- The fake-turns smoke runner may import the local API runner/config only to
+  compose developer manual smoke.

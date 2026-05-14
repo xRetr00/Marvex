@@ -186,6 +186,12 @@ but the manual runner still does not inject it or publish a development bearer
 token. Manual fake `/v1/turns` smoke remains deferred to a separate task that
 can explicitly document the token, request shape, and expected output.
 
+Task 123 adds a developer-only RuntimeComposition smoke runner for fake
+`/v1/turns` execution. It composes the local API runner with the
+RuntimeComposition fake handler outside `packages.local_api`. It still defaults
+to `127.0.0.1:8765`, uses only a caller-provided fake/dev bearer token, and is
+not part of CI or `run_all_checks.py`.
+
 Start the runner from the repository root:
 
 ```powershell
@@ -205,6 +211,84 @@ Invoke-RestMethod http://127.0.0.1:8765/version
 ```
 
 Stop the runner from its terminal with `Ctrl+C`.
+
+### Local Fake `/v1/turns` API Smoke
+
+Start the fake-turns smoke runner from the repository root. The token below is
+an example fake/dev-only value; do not reuse it as a production secret.
+
+```powershell
+python -m packages.runtime_composition.local_api_fake_turns_runner --dev-token local-dev-token
+```
+
+Send a valid fake turn request:
+
+```powershell
+$body = @'
+{
+  "schema_version": "0.1.1-draft",
+  "execution_mode": "assistant_runtime_fake_provider",
+  "assistant_turn_input": {
+    "schema_version": "0.1.1-draft",
+    "trace_id": "trace-local-api-smoke",
+    "turn_id": "turn-local-api-smoke",
+    "input_event_id": "event-local-api-smoke",
+    "session_ref": null,
+    "identity_ref": null,
+    "user_visible_input": "Hello through local API fake turns",
+    "assistant_mode": "default",
+    "policy_context": {
+      "requested_capabilities": [],
+      "sensitivity": "normal"
+    },
+    "metadata": {}
+  },
+  "model": "fake-model",
+  "instructions": null,
+  "previous_response_id": null,
+  "provider_options": {}
+}
+'@
+
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8765/v1/turns `
+  -Headers @{ Authorization = "Bearer local-dev-token" } `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Expected success signs:
+
+- response validates as `AssistantTurnResult`
+- `trace_id` and `turn_id` match the request
+- `assistant_final_response.text` is the deterministic fake provider response
+- `provider_turn_refs[0].provider_name` is `fake`
+
+Missing or wrong auth returns a safe `AUTH_REQUIRED` `ErrorEnvelope` and does
+not parse the body:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8765/v1/turns `
+  -ContentType "application/json" `
+  -Body $body
+
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8765/v1/turns `
+  -Headers @{ Authorization = "Bearer wrong-dev-token" } `
+  -ContentType "application/json" `
+  -Body $body
+```
+
+Invalid JSON with valid auth returns a safe validation `ErrorEnvelope`:
+
+```powershell
+Invoke-RestMethod -Method Post `
+  -Uri http://127.0.0.1:8765/v1/turns `
+  -Headers @{ Authorization = "Bearer local-dev-token" } `
+  -ContentType "application/json" `
+  -Body '{not-json'
+```
 
 Expected success signs:
 

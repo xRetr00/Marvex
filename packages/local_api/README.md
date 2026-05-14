@@ -79,6 +79,14 @@ Task 122 fake handler composition:
 - The manual runner remains health/version-only and does not set a development
   bearer token or inject the fake handler by default.
 
+Task 123 manual smoke support:
+
+- `run_local_health_version_api(...)` accepts an injected `turn_handler` and
+  `local_auth_token` for manual composition by another package.
+- The RuntimeComposition-owned fake-turns smoke runner uses that injection path.
+- This package still does not import RuntimeComposition or decide execution
+  policy.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

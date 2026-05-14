@@ -1,22 +1,22 @@
 # Project Status
 
-current_phase: local_api_fake_turns_handler_composition_pack
+current_phase: local_api_fake_turns_manual_smoke_pack
 
-implementation_status: local_api_fake_handler_composition_added
+implementation_status: local_api_fake_turns_manual_smoke_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 122 Local API Fake Turns Handler Composition Pack
+Task 123 Local API Fake Turns Manual Smoke Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 121:
+Latest full validation baseline from Task 123:
 
-- `python -m pytest tests\local_api -q` -> 26 passed
+- `python -m pytest tests\local_api tests\integration -q` -> 66 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 666 passed, 1 skipped
+- `python -m pytest -q` -> 673 passed, 1 skipped
 
 Task 118 manual smoke: `python -m packages.local_api.runner` responded on
 `http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
@@ -109,6 +109,13 @@ local API turns endpoint. The handler adapts `LocalTurnRequestEnvelope` to
 `run_fake_provider_assistant_bridge(...)`. Local API still receives the handler
 only by injection and does not import RuntimeComposition.
 
+Task 123 adds `packages.runtime_composition.local_api_fake_turns_runner` as a
+developer-only manual smoke entrypoint for fake `/v1/turns` execution. It
+injects the RuntimeComposition fake handler into the local API runner with a
+caller-provided fake/dev bearer token. The default `packages.local_api.runner`
+entry remains health/version-only, and `packages.local_api` still does not
+import RuntimeComposition.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -137,6 +144,8 @@ Process Readiness has started:
 - protected `/v1/turns` adapter exists with an injected handler boundary only
 - RuntimeComposition provides a fake-provider-only handler factory for the
   injected local API handler boundary
+- RuntimeComposition provides a developer-only fake `/v1/turns` manual smoke
+  runner that composes that handler with the local API runner
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
 
@@ -193,7 +202,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-121 Compact Milestone Summary
+## Task 102-123 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -252,6 +261,9 @@ ownership governance, and library research governance remain accepted.
 - Task 122 adds RuntimeComposition-owned fake handler composition for local API
   turns, without making local API import RuntimeComposition or adding LM Studio
   or real-provider API execution.
+- Task 123 adds a RuntimeComposition-owned developer-only manual fake
+  `/v1/turns` smoke runner with a caller-provided fake/dev token, while keeping
+  local API free of RuntimeComposition imports.
 
 ## Architecture Health Notes
 
@@ -279,6 +291,9 @@ ownership governance, and library research governance remain accepted.
   `AssistantTurnResult`, and delegates only to an injected handler.
 - RuntimeComposition now owns the fake injected handler factory for local API
   turns and routes it through the existing fake-provider bridge path.
+- RuntimeComposition also owns the developer-only fake-turns smoke runner that
+  injects that handler into the local API runner. It is not a service daemon or
+  production token lifecycle.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
@@ -317,10 +332,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Decide whether to add an explicit developer-only manual runner mode for local
-fake `/v1/turns` smoke. Keep RuntimeComposition/Core/AssistantRuntime/
-ProviderRuntime imports out of `packages.local_api`, require a clearly fake
-token, preserve auth-before-body behavior, and do not add LM Studio API mode,
-trace API, WebSocket, service daemon behavior, sessions/history, routing,
-retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
-desktop, vision, or default CLI changes.
+Optionally run and record the documented developer-only manual fake `/v1/turns`
+smoke. Keep RuntimeComposition/Core/AssistantRuntime/ProviderRuntime imports
+out of `packages.local_api`, use only a clearly fake/dev token, preserve
+auth-before-body behavior, and do not add LM Studio API mode, trace API,
+WebSocket, service daemon behavior, sessions/history, routing, retry/fallback,
+model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, or
+default CLI changes.

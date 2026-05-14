@@ -71,6 +71,8 @@ Process Readiness has started:
   execution composition owner and is not imported by the API.
 - RuntimeComposition now provides a fake-provider-only local API turn handler
   factory that can be injected into the app for controlled fake execution.
+- A developer-only RuntimeComposition smoke runner can start local API fake
+  `/v1/turns` execution with a caller-provided fake/dev bearer token.
 
 Git workflow governance exists:
 
@@ -104,6 +106,7 @@ No turn endpoint exists yet with real-provider execution composition behind it.
 No service daemon exists yet.
 No subprocess runtime or service mode exists yet.
 The local health/version API runner is manual smoke only, not product service behavior.
+The local fake-turns API runner is also manual smoke only and fake-provider only.
 
 Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-fake-provider` for the deterministic fake path and

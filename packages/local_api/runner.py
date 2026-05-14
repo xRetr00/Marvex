@@ -7,7 +7,12 @@ from wsgiref.simple_server import make_server
 
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 
-from .health_version_api import LocalApiConfig, WsgiApp, create_health_version_api_app
+from .health_version_api import (
+    LocalApiConfig,
+    TurnHandler,
+    WsgiApp,
+    create_health_version_api_app,
+)
 
 
 SERVICE_NAME = "marvex-local-api"
@@ -48,11 +53,21 @@ def run_local_health_version_api(
     config: LocalApiConfig = LocalApiConfig(),
     provider: HealthVersionProvider | None = None,
     server_factory: ServerFactory = make_server,
+    turn_handler: TurnHandler | None = None,
+    local_auth_token: str | None = None,
+    startup_message: str | None = None,
 ) -> int:
     effective_provider = provider or create_default_health_version_provider()
-    app = create_health_version_api_app(effective_provider)
+    app = create_health_version_api_app(
+        effective_provider,
+        turn_handler=turn_handler,
+        local_auth_token=local_auth_token,
+    )
     httpd = server_factory(config.host, config.port, app)
-    print(f"Local health/version API listening on http://{config.host}:{config.port}")
+    print(
+        startup_message
+        or f"Local health/version API listening on http://{config.host}:{config.port}"
+    )
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:

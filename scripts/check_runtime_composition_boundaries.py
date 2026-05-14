@@ -11,6 +11,9 @@ ASSISTANT_RUNTIME_ROOT = ROOT / "packages" / "assistant_runtime"
 PROVIDER_RUNTIME_ROOT = ROOT / "packages" / "provider_runtime"
 CLI_ROOT = ROOT / "apps" / "cli"
 CLI_MAIN = CLI_ROOT / "main.py"
+MANUAL_LOCAL_API_FAKE_TURNS_RUNNER = (
+    "packages/runtime_composition/local_api_fake_turns_runner.py"
+)
 CLI_APPROVED_RUNTIME_COMPOSITION_IMPORTS = {
     "run_fake_provider_assistant_bridge",
     "run_lmstudio_responses_assistant_bridge",
@@ -25,6 +28,13 @@ ALLOWED_BRIDGE_IMPORT_PREFIXES = (
     "packages.core.orchestration.assistant_provider_stage",
     "packages.provider_runtime",
     "packages.telemetry",
+)
+MANUAL_LOCAL_API_FAKE_TURNS_RUNNER_IMPORT_PREFIXES = (
+    "__future__",
+    "argparse",
+    "collections.abc",
+    "packages.local_api.health_version_api",
+    "packages.local_api.runner",
 )
 BRIDGE_FORBIDDEN_IMPORT_PREFIXES = (
     "packages.adapters",
@@ -100,6 +110,12 @@ def _scan_bridge_layer(failures: list[str]) -> None:
         rel = _rel(path)
         text = _read(path)
         lowered = text.lower()
+        allowed_import_prefixes = ALLOWED_BRIDGE_IMPORT_PREFIXES
+        if rel == MANUAL_LOCAL_API_FAKE_TURNS_RUNNER:
+            allowed_import_prefixes = (
+                ALLOWED_BRIDGE_IMPORT_PREFIXES
+                + MANUAL_LOCAL_API_FAKE_TURNS_RUNNER_IMPORT_PREFIXES
+            )
         line_count = len(text.splitlines())
         if (
             line_count > BRIDGE_MAX_LINES
@@ -125,7 +141,7 @@ def _scan_bridge_layer(failures: list[str]) -> None:
                 continue
             if _matches_prefix(module, BRIDGE_FORBIDDEN_IMPORT_PREFIXES):
                 failures.append(f"{rel} imports forbidden dependency: {module}")
-            if not _matches_prefix(module, ALLOWED_BRIDGE_IMPORT_PREFIXES):
+            if not _matches_prefix(module, allowed_import_prefixes):
                 failures.append(f"{rel} imports non-approved dependency: {module}")
 
 

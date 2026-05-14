@@ -41,7 +41,12 @@ policy. It also limits CLI to the approved RuntimeComposition package-root
 bridge functions, including the explicit LM Studio Responses AssistantRuntime
 proof mode, and blocks direct CLI ProviderRuntime or adapter imports. The only
 approved real-provider identifier in RuntimeComposition source is
-`lmstudio_responses`.
+`lmstudio_responses`. It has one narrow manual-smoke exception:
+`packages/runtime_composition/local_api_fake_turns_runner.py` may import the
+local API runner/config to inject the fake-turn handler for developer-only local
+API smoke. That exception does not permit RuntimeComposition to own HTTP
+parsing, auth validation, routing, sessions/history, retry/fallback,
+model-selection, or API-key policy.
 
 `check_assistant_runtime_boundaries.py` enforces the AssistantRuntime dependency
 boundary so the no-provider assistant-runtime skeleton stays isolated from Core,

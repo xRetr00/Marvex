@@ -377,12 +377,17 @@ factory returns a handler for the Task 121 envelope and calls
 `run_fake_provider_assistant_bridge(...)`. The local API package still receives
 the handler only by injection.
 
+Task 123 adds the developer-only fake-turns smoke runner:
+`python -m packages.runtime_composition.local_api_fake_turns_runner --dev-token <fake-dev-token>`.
+The runner composes the local API runner with
+`create_local_api_fake_turn_handler(...)` outside `packages.local_api`. The
+token is caller-provided, fake/dev-only, and not printed by the runner.
+
 Next task unlocked:
 
-Decide whether to add an explicit developer-only manual runner mode for local
-fake `/v1/turns` smoke, including a clearly fake token and documented
-PowerShell request. That future task must not add real provider API mode, LM
-Studio API mode, trace API, WebSocket, service daemon behavior,
+Record an optional manual fake `/v1/turns` smoke execution after running the
+documented PowerShell commands. That future task must not add real provider API
+mode, LM Studio API mode, trace API, WebSocket, service daemon behavior,
 sessions/history, routing, retry/fallback, model-selection, API-key policy,
 tools, memory, UI, voice, desktop, vision, or default CLI changes unless
 explicitly approved.

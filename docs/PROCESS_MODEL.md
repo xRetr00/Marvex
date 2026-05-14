@@ -76,6 +76,11 @@ RuntimeComposition. The handler can be injected into the local API app and uses
 the existing fake-provider bridge path. The local API package still owns only
 HTTP/auth/JSON behavior, and the manual runner remains health/version-only.
 
+Task 123 adds a developer-only fake-turns smoke runner in RuntimeComposition.
+It injects the fake handler into the local API runner with a caller-provided
+fake/dev bearer token. The local API package remains a generic runner and app
+adapter; it still does not import RuntimeComposition.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -106,5 +111,7 @@ manual loopback runner only. Auth-token policy exists for future protected
 endpoints and protects the `/v1/turns` adapter. Task 120 narrows `/v1/turns` to
 protected fake-provider only with an injected handler. Task 121 implements only
 that protected adapter. Task 122 adds fake-provider handler composition outside
-local API; trace APIs, WebSocket, service lifecycle, subprocess supervision,
-and real-provider execution remain future explicit service-runtime work.
+local API. Task 123 adds manual fake-turns smoke composition in
+RuntimeComposition; trace APIs, WebSocket, service lifecycle, subprocess
+supervision, and real-provider execution remain future explicit service-runtime
+work.
