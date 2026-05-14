@@ -283,6 +283,12 @@ trace APIs, event streams, service daemon behavior, sessions/history,
 routing/retry/fallback, model-selection policy, API-key policy, tools, memory,
 UI, voice, desktop, vision, and proactive behavior remain blocked.
 
+Task 121 implementation note: `packages.local_api` now implements only the
+protected `/v1/turns` HTTP/auth/JSON adapter with an injected
+`LocalTurnRequestEnvelope -> AssistantTurnResult` handler. The API still does
+not import or call RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
+adapters, services, CLI apps, or provider SDKs.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

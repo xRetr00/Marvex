@@ -66,6 +66,11 @@ sessions/history, routing, retry/fallback, model selection, API-key policy,
 tools, memory, UI, voice, desktop, vision, and proactive behavior remain future
 explicit tasks.
 
+Task 121 implements that protected `/v1/turns` HTTP/auth/JSON adapter with an
+injected handler. The endpoint validates the Task 120 local request envelope and
+serializes `AssistantTurnResult`, but it still does not provide the execution
+composition behind the handler.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -93,7 +98,8 @@ Current Provider Foundation runtime is still in-process/CLI driven. Current
 ProcessRuntime remains local-only object construction from explicit in-memory
 config. Health/version local API readiness now includes an app object and a
 manual loopback runner only. Auth-token policy exists for future protected
-endpoints, but `/v1/turns`, trace APIs, WebSocket, service lifecycle, and
-subprocess supervision remain future explicit service-runtime work. Task 120
-narrows the next `/v1/turns` implementation target to protected fake-provider
-only with an injected handler; it still does not implement the endpoint.
+endpoints and protects the `/v1/turns` adapter. Task 120 narrows `/v1/turns` to
+protected fake-provider only with an injected handler. Task 121 implements only
+that protected adapter; trace APIs, WebSocket, service lifecycle, subprocess
+supervision, and real execution composition remain future explicit
+service-runtime work.

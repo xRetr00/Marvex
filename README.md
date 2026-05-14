@@ -59,16 +59,16 @@ Process Readiness has started:
 - A dependency-free local health/version API app object exists for `GET /health`
   and `GET /version` only.
 - A manual developer-only local runner can host that app object on
-  `127.0.0.1:8765` for smoke verification. No service daemon, `/v1/turns`,
+  `127.0.0.1:8765` for health/version smoke verification. No service daemon,
   provider execution, WebSocket, session/history, or product service behavior
   exists.
 - Local API auth policy is defined for future protected endpoints:
   health/version stay public on loopback, while future turn/trace/event
   endpoints must use `Authorization: Bearer <local-token>`.
-- The future `POST /v1/turns` contract is decided but not implemented:
-  protected fake-provider only for the first implementation, local API as
-  HTTP/auth/JSON adapter only, and RuntimeComposition remaining the execution
-  composition owner behind an injected handler.
+- `POST /v1/turns` now exists only as a protected HTTP/auth/JSON adapter:
+  fake-provider request envelope, injected handler boundary, and
+  `AssistantTurnResult` serialization. RuntimeComposition remains the future
+  execution composition owner and is not called by the API.
 
 Git workflow governance exists:
 
@@ -98,9 +98,10 @@ Forbidden now:
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
-No turn endpoint exists yet. No service daemon exists yet. No subprocess runtime
-or service mode exists yet. The local health/version API runner is manual smoke
-only, not product service behavior.
+No turn endpoint exists yet with real execution composition behind it.
+No service daemon exists yet.
+No subprocess runtime or service mode exists yet.
+The local health/version API runner is manual smoke only, not product service behavior.
 
 Current AssistantRuntime CLI foundation modes are explicit and non-default:
 `--assistant-runtime-fake-provider` for the deterministic fake path and

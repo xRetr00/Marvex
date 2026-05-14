@@ -14,6 +14,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "dataclasses",
     "datetime",
     "hmac",
+    "json",
     "packages.contracts",
     "packages.process_runtime",
     "typing",
@@ -30,7 +31,6 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "services",
 )
 FORBIDDEN_TOKENS = (
-    "/v1/turns",
     "websocket",
     "providerrequest",
     "providerresponse",

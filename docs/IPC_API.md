@@ -66,9 +66,9 @@ These endpoint contracts are localhost-only by default. Task 117 implements only
 the health/version WSGI app object without selecting a Python HTTP framework.
 Task 118 adds a standard-library manual runner for health/version smoke only.
 Task 119 keeps `/health` and `/version` public on loopback and defines auth for
-future protected endpoints only. It adds a reusable local bearer-token helper
-but does not wire protected endpoint behavior because no protected endpoint is
-implemented yet.
+future protected endpoints only. Task 121 wires that auth boundary only to the
+protected fake-provider `/v1/turns` HTTP/auth/JSON adapter with an injected
+handler. Trace access and event endpoints remain future protected endpoints.
 
 HTTP status mapping:
 
@@ -120,7 +120,7 @@ The local API package still does not execute providers, call RuntimeComposition,
 call Core assistant helpers, call AssistantRuntime provider-stage behavior,
 store traces, or manage sessions.
 
-Endpoint class: future protected endpoint. Requires
+Endpoint class: protected endpoint. Requires
 `Authorization: Bearer <local-token>`.
 
 Options considered:
@@ -144,7 +144,7 @@ Options considered:
   LM Studio is real-provider proof behavior and must remain explicit CLI/manual
   smoke only until a later service/API promotion task.
 
-Recommended first implementation shape:
+Implemented first shape:
 
 - `packages.local_api` owns the HTTP route, bearer auth enforcement, JSON body
   parsing, request validation, and response serialization.
@@ -154,8 +154,8 @@ Recommended first implementation shape:
 - RuntimeComposition remains the owner of future provider/Core/AssistantRuntime
   composition behind that handler. `packages.local_api` must not import
   RuntimeComposition.
-- The first concrete provider mode is fake-provider only. It is an
-  assistant-runtime foundation path, not product behavior.
+- The first concrete provider mode is fake-provider only by request-envelope
+  mode. The API does not execute the provider; tests use stubbed handlers only.
 - LM Studio Responses over `/v1/turns` remains blocked until a later task
   approves service/API promotion criteria, live-smoke expectations, failure
   policy, and explicit opt-in configuration.
@@ -352,7 +352,6 @@ Trace/provider reference exposure:
 
 What remains blocked:
 
-- implementing `/v1/turns` in this task
 - real-provider `/v1/turns` execution
 - LM Studio API endpoint mode
 - trace retrieval or event streaming
@@ -362,20 +361,24 @@ What remains blocked:
 - routing, retry/fallback, model-selection, API-key policy, tools, memory, UI,
   voice, desktop, vision, proactive behavior, and product runtime behavior
 
-Exact next implementation task unlocked:
+Current implementation note:
 
-Implement the protected fake-provider-only `/v1/turns` endpoint with an injected
-turn handler. Keep `packages.local_api` limited to auth, JSON validation, and
-serialization. Do not import RuntimeComposition/Core/AssistantRuntime/
-ProviderRuntime/adapters from `packages.local_api`. Update the local API boundary
-gate only as needed to allow the endpoint contract while still blocking direct
-execution imports and blocked behavior. Add local API tests for auth-before-body,
-request validation, safe `ErrorEnvelope` failures, successful stubbed handler
-serialization to `AssistantTurnResult`, and proof that `/health` and `/version`
-remain public and unchanged. Do not wire LM Studio, trace API, WebSocket,
-service daemon behavior, sessions/history, routing, retry/fallback,
-model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, or
-default CLI changes.
+Task 121 implements the protected fake-provider-only `/v1/turns` adapter with
+an injected handler shape:
+`Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`. Auth is enforced
+before body parsing or handler invocation. The local API package still does not
+import or call RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
+provider adapters, CLI apps, services, telemetry implementation modules, or
+provider SDKs.
+
+Next task unlocked:
+
+Decide whether and how a separate composition owner may provide the injected
+handler for local fake-provider smoke. That future task must not add real
+provider API mode, LM Studio API mode, trace API, WebSocket, service daemon
+behavior, sessions/history, routing, retry/fallback, model-selection, API-key
+policy, tools, memory, UI, voice, desktop, vision, or default CLI changes
+unless explicitly approved.
 
 Rollback path:
 

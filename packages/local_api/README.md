@@ -1,8 +1,9 @@
 # Local API Package
 
-Status: local health/version API readiness foundation.
+Status: local health/version API readiness plus protected fake-turn adapter.
 
-Ownership: local API adapter boundary for approved process-readiness contracts.
+Ownership: local API adapter boundary for approved process-readiness and
+assistant-envelope contracts.
 
 Current behavior:
 
@@ -11,11 +12,12 @@ Current behavior:
   for that app object.
 - `GET /health` returns the existing `HealthCheck` contract shape.
 - `GET /version` returns the existing `VersionInfo` contract shape.
+- `POST /v1/turns` is protected by local bearer auth and accepts only the
+  Task 120 fake-provider request envelope through an injected handler.
 - Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
 - `LocalApiConfig` defaults to `host="127.0.0.1"` and `port=8765`.
-- `validate_local_bearer_token(...)` provides a reusable local auth-token
-  check for future protected endpoints. It is not wired to `/health` or
-  `/version`.
+- `validate_local_bearer_token(...)` enforces auth for `/v1/turns`. It is not
+  wired to `/health` or `/version`.
 
 Endpoint classes:
 
@@ -46,6 +48,25 @@ Task 120 `/v1/turns` decision:
   RuntimeComposition, Core, AssistantRuntime, ProviderRuntime, adapters,
   telemetry implementation modules, CLI apps, services, or provider SDKs.
 
+Task 121 `/v1/turns` implementation:
+
+- `create_health_version_api_app(...)` accepts optional `turn_handler` and
+  `local_auth_token` arguments.
+- `turn_handler` has shape
+  `Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`.
+- `LocalTurnRequestEnvelope` contains `schema_version`, `execution_mode`,
+  `assistant_turn_input`, `model`, nullable `instructions`, nullable
+  `previous_response_id`, and empty `provider_options`.
+- Auth is enforced before reading or validating the request body and before
+  invoking the handler.
+- Successful handler results serialize as `AssistantTurnResult` JSON.
+- Missing/invalid auth, invalid JSON, invalid request shape, unavailable
+  handler, and handler exceptions return safe `ErrorEnvelope` JSON without token
+  values or raw exception details.
+- Tests use stubbed handlers only. No RuntimeComposition, Core,
+  AssistantRuntime, ProviderRuntime, adapter, or provider SDK execution is
+  wired into the API.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.
@@ -62,7 +83,7 @@ Non-behavior:
 - No daemon, subprocess supervisor, WebSocket, trace API, or service lifecycle
   runner is added.
 - The manual runner is developer smoke only and is not CI or product behavior.
-- No `/v1/turns` endpoint is implemented.
+- No real execution composition is implemented behind `/v1/turns`.
 - No provider, RuntimeComposition, Core assistant turn, or AssistantRuntime
   provider-stage execution is invoked.
 - No sessions, history, routing, retry/fallback, model selection, API-key

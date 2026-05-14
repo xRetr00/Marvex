@@ -92,21 +92,26 @@ construction until an explicit future integration task.
 
 ### Local API Boundary Gate
 
-Local API readiness is limited to approved health/version contracts.
+Local API is limited to approved health/version readiness plus the protected
+fake-provider `/v1/turns` HTTP/auth/JSON adapter.
 
-- `packages/local_api` may import approved contracts and ProcessRuntime only.
+- `packages/local_api` may import approved contracts, ProcessRuntime, and
+  standard-library JSON parsing only.
 - `packages/local_api` may use the Python standard-library WSGI runner only for
   manual health/version smoke.
-- `packages/local_api` may contain a local bearer-token helper for future
-  protected endpoints, but it must not be wired to unimplemented endpoints.
+- `packages/local_api` may contain and use the local bearer-token helper for the
+  protected `/v1/turns` endpoint.
 - `packages/local_api` must default to `127.0.0.1` local host configuration.
 - `packages/local_api` must not import Core, AssistantRuntime, ProviderRuntime,
   RuntimeComposition, adapters, telemetry implementation, CLI apps, or services.
-- `packages/local_api` must not implement `/v1/turns`, WebSocket, provider
-  request/response execution, Core assistant turns, AssistantRuntime provider
-  stage calls, RuntimeComposition bridges, sessions/history, routing,
-  retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
-  desktop, vision, proactive behavior, or remote binding defaults.
+- `packages/local_api` must not implement WebSocket, provider request/response
+  execution, Core assistant turns, AssistantRuntime provider stage calls,
+  RuntimeComposition bridges, sessions/history, routing, retry/fallback,
+  model-selection, API-key policy, tools, memory, UI, voice, desktop, vision,
+  proactive behavior, or remote binding defaults.
+- `/v1/turns` must remain an injected-handler adapter only; no direct
+  RuntimeComposition/Core/AssistantRuntime/ProviderRuntime/provider adapter
+  execution may be added to the API package.
 - `packages/local_api` must not hard-code local token/secret values or print
   token material.
 - Service placeholder folders remain README-only.

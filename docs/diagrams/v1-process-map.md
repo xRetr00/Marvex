@@ -7,7 +7,7 @@ sequenceDiagram
   participant Provider as Provider Adapter
   participant Telemetry as Telemetry
 
-  CLI->>Core: POST /v1/turns TurnInput
+  CLI->>Core: POST /v1/turns envelope carrying AssistantTurnInput
   Core->>Telemetry: turn_received
   Core->>Telemetry: provider_request_created
   Core->>Telemetry: provider_request_sent
@@ -16,7 +16,7 @@ sequenceDiagram
   Core->>Telemetry: provider_response_received
   Core->>Telemetry: final_response_created
   Core->>Telemetry: turn_completed
-  Core-->>CLI: TurnOutput
+  Core-->>CLI: AssistantTurnResult
 ```
 
-Failure path: after `provider_request_sent` or `provider_response_received`, Core emits `turn_failed` and returns a `TurnOutput` with `error`.
+Failure path: after `provider_request_sent` or `provider_response_received`, Core emits `turn_failed` and returns an `AssistantTurnResult` with `error`.

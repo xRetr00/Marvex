@@ -1,21 +1,22 @@
 # Project Status
 
-current_phase: local_api_turns_contract_decision_pack
+current_phase: protected_local_api_fake_turns_endpoint_pack
 
-implementation_status: local_api_turns_contract_decided
+implementation_status: local_api_fake_turns_endpoint_adapter_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 120 Local API /v1/turns Contract and Ownership Decision Pack
+Task 121 Protected Local API Fake Turns Endpoint Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 120:
+Latest full validation baseline from Task 121:
 
+- `python -m pytest tests\local_api -q` -> 26 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 655 passed, 1 skipped
+- `python -m pytest -q` -> 666 passed, 1 skipped
 
 Task 118 manual smoke: `python -m packages.local_api.runner` responded on
 `http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
@@ -95,6 +96,13 @@ instructions, nullable `previous_response_id`, and empty provider options. A
 completed handler returns `AssistantTurnResult`; request/auth/transport failures
 return top-level `ErrorEnvelope`.
 
+Task 121 implements the protected fake-provider-only `/v1/turns` HTTP/auth/JSON
+adapter with an injected `LocalTurnRequestEnvelope -> AssistantTurnResult`
+handler. Auth runs before body parsing or handler invocation. Tests use stubbed
+handlers only. The API still does not import or call RuntimeComposition, Core,
+AssistantRuntime, ProviderRuntime, adapters, services, CLI apps, telemetry
+implementation modules, or provider SDKs.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -119,10 +127,10 @@ Process Readiness has started:
   `GET /version` only
 - manual local health/version runner exists for developer smoke on
   `127.0.0.1:8765`
-- local bearer-token auth helper exists for future protected endpoints only
-- future `/v1/turns` contract is decided as protected fake-provider only through
-  an injected handler, but no endpoint exists yet
-- no turn endpoint, service daemon, subprocess runtime, or service mode exists
+- local bearer-token auth helper protects `/v1/turns`
+- protected `/v1/turns` adapter exists with an injected handler boundary only
+- no real turn execution composition, service daemon, subprocess runtime, or
+  service mode exists
 
 Assistant-runtime foundation now present:
 
@@ -177,7 +185,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-119 Compact Milestone Summary
+## Task 102-121 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -230,6 +238,9 @@ ownership governance, and library research governance remain accepted.
 - Task 120 decides the protected `/v1/turns` contract, owner split, auth
   enforcement, fake-provider-only first target, response/error behavior, and
   rollback path without implementing the endpoint or adding API execution.
+- Task 121 implements the protected fake-provider-only `/v1/turns` adapter with
+  auth-before-body validation and stubbed-handler tests only, without adding
+  real execution composition.
 
 ## Architecture Health Notes
 
@@ -249,14 +260,12 @@ ownership governance, and library research governance remain accepted.
 - The latest manual smoke for that proof path succeeded, but it remains a
   manual developer check and is not part of `run_all_checks.py`.
 - Local service readiness now has a health/version API app object and a manual
-  loopback runner only. It is not a service daemon and does not implement
-  `/v1/turns`.
-- Local API auth policy now exists for future protected endpoints only.
-  Health/version behavior remains unchanged.
-- The future `/v1/turns` contract is now decided: protected fake-provider only
-  for the first implementation, request body as a local API envelope carrying
-  `AssistantTurnInput`, response body as `AssistantTurnResult`, and
-  RuntimeComposition-owned execution behind an injected handler.
+  loopback runner only. It is not a service daemon.
+- Local API auth policy protects `/v1/turns`; health/version behavior remains
+  public and unchanged.
+- The `/v1/turns` adapter is protected fake-provider-only by request envelope:
+  it accepts a local envelope carrying `AssistantTurnInput`, returns
+  `AssistantTurnResult`, and delegates only to an injected handler.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
@@ -282,7 +291,7 @@ Blocked without a separate approved task spec:
 - real provider promotion for assistant-runtime turns
 - Core normal orchestration replacement
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
-- protected `/v1/turns` endpoint implementation until the next bounded task
+- real execution composition behind `/v1/turns`
 - LM Studio or other real-provider local API mode
 - telemetry persistence/storage/logging sinks
 - contract or port promotion
@@ -295,13 +304,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Implement protected fake-provider-only `POST /v1/turns` with an injected turn
-handler. Keep `packages.local_api` limited to bearer auth, JSON validation, and
-serialization. Do not import RuntimeComposition, Core, AssistantRuntime,
-ProviderRuntime, adapters, CLI apps, services, telemetry implementation modules,
-or provider SDKs from `packages.local_api`. Add local API tests for
-auth-before-body, request validation, safe `ErrorEnvelope` failures, successful
-stubbed handler serialization to `AssistantTurnResult`, and unchanged public
-`/health` and `/version`. Update the local API boundary gate only as needed to
-allow the endpoint contract while still blocking direct execution imports and
-blocked behavior.
+Decide whether a separate composition owner may provide the injected local API
+fake-turn handler for manual smoke. Keep RuntimeComposition/Core/
+AssistantRuntime/ProviderRuntime imports out of `packages.local_api`, preserve
+auth-before-body behavior, and do not add LM Studio API mode, trace API,
+WebSocket, service daemon behavior, sessions/history, routing, retry/fallback,
+model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, or
+default CLI changes.
