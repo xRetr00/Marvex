@@ -60,3 +60,6 @@ Task 127 implementation:
 - Event projections exclude raw `TraceEvent.data`, provider payloads, provider
   response ids, prompts/messages, auth material, stack traces, secrets, file
   contents, and environment data.
+- Task 128 uses the same instance as both the fake-turn telemetry sink and trace
+  reader in the developer-only local API fake runner. That remains
+  current-process-only and disappears when the process exits.

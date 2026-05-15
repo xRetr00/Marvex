@@ -1,22 +1,22 @@
 # Project Status
 
-current_phase: local_api_trace_reader_pack
+current_phase: local_api_fake_turn_trace_recording_pack
 
-implementation_status: protected_in_memory_trace_reader_added
+implementation_status: fake_turn_trace_recording_integrated
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 127 Protected Local API In-Memory Trace Reader Pack
+Task 128 Local API Fake Turns Trace Recording Integration Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 127:
+Latest full validation baseline from Task 128:
 
-- `python -m pytest tests\local_api tests\telemetry -q` -> 117 passed
+- `python -m pytest tests\local_api tests\telemetry tests\integration -q` -> 157 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 689 passed, 1 skipped
+- `python -m pytest -q` -> 691 passed, 1 skipped
 
 Task 118 manual smoke: `python -m packages.local_api.runner` responded on
 `http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
@@ -141,6 +141,14 @@ reader, with auth-before-lookup behavior, safe not-found/reader-failure
 envelopes, and no persistence, global trace store, runtime execution, service
 daemon, WebSocket, sessions/history, tools, memory, or real-provider API mode.
 
+Task 128 wires the developer-only fake `/v1/turns` manual path to that reader.
+RuntimeComposition can pass an explicitly injected telemetry sink into the fake
+provider AssistantRuntime bridge, and the fake-turns manual runner constructs
+one current-process `InMemoryTraceReader` instance for both recording and
+protected trace reads. This does not add persistence, global trace state,
+real-provider API mode, service daemon behavior, WebSocket/events,
+sessions/history, routing, retry/fallback, tools, or memory.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -177,6 +185,8 @@ Process Readiness has started:
   telemetry-owned reader/store, injected into Local API, protected by bearer auth
 - protected `GET /v1/traces/{trace_id}` now reads only from an explicitly
   injected current-process in-memory telemetry reader
+- the developer-only fake `/v1/turns` runner now injects one current-process
+  reader/sink so the same process can read the fake turn trace by `trace_id`
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
 - no persistent trace storage, cross-process lookup, trace search, or streaming
@@ -310,6 +320,10 @@ ownership governance, and library research governance remain accepted.
   endpoint returns safe projection envelopes only; raw `TraceEvent.data`,
   provider payloads, provider response ids, auth material, and secrets are not
   exposed.
+- Task 128 integrates fake-turn trace recording only for the manual/dev local
+  API fake path. RuntimeComposition passes the injected sink through existing
+  fake-provider bridge telemetry, while Local API continues to receive only
+  injected handler/reader callables.
 
 ## Architecture Health Notes
 
@@ -343,7 +357,9 @@ ownership governance, and library research governance remain accepted.
   turns and routes it through the existing fake-provider bridge path.
 - RuntimeComposition also owns the developer-only fake-turns smoke runner that
   injects that handler into the local API runner. Its manual fake smoke has
-  been recorded. It is not a service daemon or production token lifecycle.
+  been recorded, and it now shares an in-memory trace reader between fake turn
+  recording and protected trace reads. It is not a service daemon or production
+  token lifecycle.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate

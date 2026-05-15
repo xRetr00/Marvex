@@ -63,6 +63,12 @@ Current bridge proof:
 - Task 126 keeps trace exposure outside RuntimeComposition ownership.
   RuntimeComposition must not own trace storage, trace lookup, sanitizer policy,
   or trace API behavior.
+- Task 128 allows the fake local API handler factory to receive an optional
+  telemetry sink and pass it to the existing fake-provider bridge. The
+  developer-only fake-turns smoke runner constructs one `InMemoryTraceReader`
+  instance and injects it both as the fake turn telemetry sink and local API
+  trace reader. RuntimeComposition still does not own trace storage policy,
+  lookup semantics, sanitizer policy, HTTP parsing, or auth.
 
 Forbidden responsibilities:
 

@@ -79,6 +79,9 @@ Process Readiness has started:
   an explicitly injected current-process in-memory telemetry reader. It does not
   add persistence, service daemon behavior, WebSocket/events, real-provider API
   mode, sessions/history, or default CLI changes.
+- The developer-only fake `/v1/turns` manual runner now shares one
+  current-process in-memory telemetry reader between fake turn recording and
+  protected trace reads.
 
 Git workflow governance exists:
 

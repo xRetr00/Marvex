@@ -321,6 +321,10 @@ Latest manual local fake `/v1/turns` smoke:
   `trace-local-api-fake-turns-smoke`, turn id
   `turn-local-api-fake-turns-smoke`, final text `fake provider response`,
   one provider ref with provider `fake` and ref id `fake-response-001`.
+- After Task 128, the same manual runner also injects an in-memory trace reader;
+  a protected `GET /v1/traces/{trace_id}` call in the same process can read
+  safe projected fake-turn lifecycle events. This remains optional manual
+  developer smoke and is not required by pytest or `run_all_checks.py`.
 - Top-level `provider_response_id` was not present; provider identity surfaced
   through `provider_turn_refs`.
 - Missing auth returned HTTP 401 `AUTH_REQUIRED` from `local_api` with reason

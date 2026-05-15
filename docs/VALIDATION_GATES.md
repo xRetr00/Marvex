@@ -98,9 +98,8 @@ construction until an explicit future integration task.
 ### Local API Boundary Gate
 
 Local API is limited to approved health/version readiness plus the protected
-fake-provider `/v1/turns` HTTP/auth/JSON adapter. Task 126 also approves a
-future protected trace-read adapter decision, but no trace endpoint behavior is
-implemented yet.
+fake-provider `/v1/turns` HTTP/auth/JSON adapter and the protected injected
+trace-reader HTTP/auth/JSON adapter.
 
 - `packages/local_api` may import approved contracts, ProcessRuntime, and
   standard-library JSON parsing only.
@@ -119,8 +118,8 @@ implemented yet.
 - `/v1/turns` must remain an injected-handler adapter only; no direct
   RuntimeComposition/Core/AssistantRuntime/ProviderRuntime/provider adapter
   execution may be added to the API package.
-- Future `/v1/traces/{trace_id}` must remain an injected trace-reader adapter
-  only. Local API must not own trace storage, telemetry sanitizer policy,
+- `/v1/traces/{trace_id}` must remain an injected trace-reader adapter only.
+  Local API must not own trace storage, telemetry sanitizer policy,
   persistence, streaming, or cross-process lookup.
 - `packages/local_api` must not hard-code local token/secret values or print
   token material.

@@ -9,6 +9,7 @@ from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 
 from .health_version_api import (
     LocalApiConfig,
+    TraceReader,
     TurnHandler,
     WsgiApp,
     create_health_version_api_app,
@@ -54,6 +55,7 @@ def run_local_health_version_api(
     provider: HealthVersionProvider | None = None,
     server_factory: ServerFactory = make_server,
     turn_handler: TurnHandler | None = None,
+    trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
     startup_message: str | None = None,
 ) -> int:
@@ -61,6 +63,7 @@ def run_local_health_version_api(
     app = create_health_version_api_app(
         effective_provider,
         turn_handler=turn_handler,
+        trace_reader=trace_reader,
         local_auth_token=local_auth_token,
     )
     httpd = server_factory(config.host, config.port, app)

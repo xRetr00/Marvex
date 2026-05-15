@@ -112,6 +112,15 @@ Task 127 trace read implementation:
   This package still does not import telemetry implementation modules or own
   trace storage/sanitizer policy.
 
+Task 128 fake trace integration:
+
+- The developer-only RuntimeComposition fake-turns runner may inject the same
+  current-process telemetry reader into this app as `trace_reader` while also
+  passing it to the fake turn handler as telemetry sink.
+- This package still only sees injected callables. It does not import
+  RuntimeComposition or telemetry implementation modules, and it does not record
+  trace events itself.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

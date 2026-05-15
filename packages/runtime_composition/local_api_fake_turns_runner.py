@@ -5,6 +5,7 @@ from collections.abc import Sequence
 
 from packages.local_api.health_version_api import LocalApiConfig
 from packages.local_api.runner import ServerFactory, run_local_health_version_api
+from packages.telemetry import InMemoryTraceReader
 
 from .local_api_fake_turns import create_local_api_fake_turn_handler
 
@@ -22,9 +23,11 @@ def run_local_fake_turns_api(
         "Local fake turns API smoke runner listening on "
         f"http://{config.host}:{config.port}; dev-only bearer token required."
     )
+    trace_reader = InMemoryTraceReader()
     kwargs = {
         "config": config,
-        "turn_handler": create_local_api_fake_turn_handler(),
+        "turn_handler": create_local_api_fake_turn_handler(telemetry_sink=trace_reader),
+        "trace_reader": trace_reader,
         "local_auth_token": dev_token,
         "startup_message": startup_message,
     }

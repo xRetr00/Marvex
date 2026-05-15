@@ -5,8 +5,15 @@ from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from wsgiref.util import setup_testing_defaults
 
-from packages.contracts import AssistantTurnResult, ErrorCode, ErrorEnvelope
+from packages.contracts import (
+    AssistantTurnResult,
+    ErrorCode,
+    ErrorEnvelope,
+    TraceLevel,
+    TraceStage,
+)
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
+from packages.telemetry import make_trace_event
 
 
 EXPECTED_TOKEN = "fake-local-token"
@@ -73,26 +80,29 @@ def make_request_payload(*, previous_response_id: str | None = None) -> dict:
     }
 
 
-def make_app(handler):
+def make_app(handler, *, trace_reader=None):
     from packages.local_api import create_health_version_api_app
 
     return create_health_version_api_app(
         make_provider(),
         turn_handler=handler,
+        trace_reader=trace_reader,
         local_auth_token=EXPECTED_TOKEN,
     )
 
 
 def call_app(
     app,
+    path: str = "/v1/turns",
     *,
+    method: str = "POST",
     body: object | None = None,
     auth: str | None = f"Bearer {EXPECTED_TOKEN}",
 ) -> tuple[str, dict[str, str], dict]:
     environ: dict[str, object] = {}
     setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "POST"
-    environ["PATH_INFO"] = "/v1/turns"
+    environ["REQUEST_METHOD"] = method
+    environ["PATH_INFO"] = path
     if auth is not None:
         environ["HTTP_AUTHORIZATION"] = auth
     if body is None:
@@ -202,6 +212,78 @@ def test_local_api_with_fake_handler_executes_fake_provider_path():
     assert "provider_response_id" not in payload
 
 
+def test_local_api_fake_turn_trace_is_readable_through_same_injected_reader():
+    from packages.runtime_composition import create_local_api_fake_turn_handler
+    from packages.telemetry import InMemoryTraceReader
+
+    trace_reader = InMemoryTraceReader()
+    app = make_app(
+        create_local_api_fake_turn_handler(telemetry_sink=trace_reader),
+        trace_reader=trace_reader,
+    )
+
+    turn_status, _headers, turn_payload = call_app(
+        app,
+        body=make_request_payload(previous_response_id="previous-local-api"),
+    )
+    trace_status, _headers, trace_payload = call_app(
+        app,
+        "/v1/traces/trace-local-api-composed",
+        method="GET",
+    )
+
+    result = AssistantTurnResult.model_validate(turn_payload)
+    serialized_trace = json.dumps(trace_payload)
+    assert turn_status == "200 OK"
+    assert result.trace_id == "trace-local-api-composed"
+    assert trace_status == "200 OK"
+    assert trace_payload["schema_version"] == "0.1.1-draft"
+    assert trace_payload["trace_id"] == "trace-local-api-composed"
+    assert trace_payload["scope"] == "current_process"
+    assert trace_payload["source"] == "in_memory"
+    assert trace_payload["event_count"] >= 1
+    assert trace_payload["truncated"] is False
+    assert all("data" not in event for event in trace_payload["events"])
+    assert any(event["stage"] == "turn_completed" for event in trace_payload["events"])
+    assert "provider_response_id" not in serialized_trace
+    assert "fake-response-001" not in serialized_trace
+    assert "Hello through local API" not in serialized_trace
+    assert "Use fake provider." not in serialized_trace
+    assert "previous-local-api" not in serialized_trace
+    assert "fake provider response" not in serialized_trace
+
+
+def test_local_api_fake_turn_trace_rejects_auth_before_lookup():
+    from packages.runtime_composition import create_local_api_fake_turn_handler
+    from packages.telemetry import InMemoryTraceReader
+
+    trace_reader = InMemoryTraceReader()
+    app = make_app(
+        create_local_api_fake_turn_handler(telemetry_sink=trace_reader),
+        trace_reader=trace_reader,
+    )
+    call_app(app, body=make_request_payload())
+
+    missing_status, _headers, missing_payload = call_app(
+        app,
+        "/v1/traces/trace-local-api-composed",
+        method="GET",
+        auth=None,
+    )
+    wrong_status, _headers, wrong_payload = call_app(
+        app,
+        "/v1/traces/trace-local-api-composed",
+        method="GET",
+        auth="Bearer wrong-token",
+    )
+
+    assert missing_status == "401 Unauthorized"
+    assert ErrorEnvelope.model_validate(missing_payload).code == ErrorCode.AUTH_REQUIRED
+    assert wrong_status == "401 Unauthorized"
+    assert ErrorEnvelope.model_validate(wrong_payload).code == ErrorCode.AUTH_REQUIRED
+    assert "wrong-token" not in json.dumps(wrong_payload)
+
+
 def test_local_api_auth_failure_does_not_call_composed_fake_handler(monkeypatch):
     import packages.runtime_composition.local_api_fake_turns as fake_turns
 
@@ -230,11 +312,25 @@ def test_fake_turns_smoke_runner_injects_runtime_composition_handler(monkeypatch
     captured: dict[str, object] = {}
     server = RecordingServer()
 
-    def fake_handler_factory():
-        captured["factory_called"] = True
+    def fake_handler_factory(*, telemetry_sink=None):
+        captured["factory_telemetry_sink"] = telemetry_sink
 
         def handle(request):
             captured["request"] = request
+            telemetry_sink.emit(
+                make_trace_event(
+                    schema_version=request.assistant_turn_input.schema_version,
+                    trace_id=request.assistant_turn_input.trace_id,
+                    turn_id=request.assistant_turn_input.turn_id,
+                    stage=TraceStage.TURN_COMPLETED,
+                    level=TraceLevel.INFO,
+                    message="Manual smoke fake turn completed.",
+                    data={
+                        "status": "success",
+                        "provider_response_id": "must-not-appear",
+                    },
+                )
+            )
             return AssistantTurnResult(
                 schema_version="0.1.1-draft",
                 trace_id=request.assistant_turn_input.trace_id,
@@ -291,10 +387,18 @@ def test_fake_turns_smoke_runner_injects_runtime_composition_handler(monkeypatch
     assert server.closed is True
     assert captured["host"] == "127.0.0.1"
     assert captured["port"] == 8765
-    assert captured["factory_called"] is True
+    assert captured["factory_telemetry_sink"] is not None
     assert captured["request"].previous_response_id == "previous-smoke"
     assert status == "200 OK"
     assert result.assistant_final_response.text == "manual smoke bridge response"
+    trace_status, _headers, trace_payload = call_app(
+        captured["app"],
+        "/v1/traces/trace-local-api-composed",
+        method="GET",
+    )
+    assert trace_status == "200 OK"
+    assert trace_payload["trace_id"] == "trace-local-api-composed"
+    assert "provider_response_id" not in json.dumps(trace_payload)
 
 
 def test_fake_turns_smoke_runner_rejects_blank_dev_token_before_starting():

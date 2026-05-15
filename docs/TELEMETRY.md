@@ -66,6 +66,11 @@ construct and inject it explicitly. `read_trace(...)` returns a safe envelope
 with sanitized event projections and never returns raw `TraceEvent` objects or
 raw `TraceEvent.data`.
 
+Task 128 wires the developer-only fake local API `/v1/turns` runner to construct
+one `InMemoryTraceReader` instance and inject it as both telemetry sink and
+trace reader. This is current-process-only manual smoke support, not persistent
+telemetry, cross-process lookup, service lifecycle, or real-provider API mode.
+
 ## Privacy And Redaction
 
 Telemetry must be useful for debugging without becoming a transcript or secrets store.
