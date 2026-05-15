@@ -87,6 +87,16 @@ Task 123 manual smoke support:
 - This package still does not import RuntimeComposition or decide execution
   policy.
 
+Task 126 trace exposure decision:
+
+- Future `GET /v1/traces/{trace_id}` must be protected by the same local bearer
+  auth policy as `/v1/turns`.
+- The first implementation may receive an injected trace reader and serialize a
+  safe local API envelope only.
+- This package must not own trace storage, sanitizer policy, persistence,
+  RuntimeComposition calls, Core calls, AssistantRuntime calls, ProviderRuntime
+  calls, or provider execution.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.
@@ -102,6 +112,7 @@ Non-behavior:
 
 - No daemon, subprocess supervisor, WebSocket, trace API, or service lifecycle
   runner is added.
+- No trace storage or trace endpoint behavior is implemented.
 - The manual runner is developer smoke only and is not CI or product behavior.
 - No real execution composition is implemented behind `/v1/turns`.
 - No provider, RuntimeComposition, Core assistant turn, or AssistantRuntime

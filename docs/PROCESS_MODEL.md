@@ -81,6 +81,13 @@ It injects the fake handler into the local API runner with a caller-provided
 fake/dev bearer token. The local API package remains a generic runner and app
 adapter; it still does not import RuntimeComposition.
 
+Task 126 decides that a future trace endpoint should exist before real-provider
+local API turn execution, but only as protected current-process trace reading.
+The first trace store/read model should be telemetry-owned, in-memory, injected
+explicitly into local service composition, and cleared on process exit. Local
+API may expose it only as an auth/JSON adapter; RuntimeComposition must not own
+trace lookup or storage.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -112,6 +119,7 @@ endpoints and protects the `/v1/turns` adapter. Task 120 narrows `/v1/turns` to
 protected fake-provider only with an injected handler. Task 121 implements only
 that protected adapter. Task 122 adds fake-provider handler composition outside
 local API. Task 123 adds manual fake-turns smoke composition in
-RuntimeComposition; trace APIs, WebSocket, service lifecycle, subprocess
-supervision, and real-provider execution remain future explicit service-runtime
-work.
+RuntimeComposition. Task 126 decides trace exposure ownership and safety but
+does not implement a trace API or trace storage. WebSocket, service lifecycle,
+subprocess supervision, persistence, and real-provider API execution remain
+future explicit service-runtime work.

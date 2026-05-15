@@ -36,3 +36,13 @@ Sanitization:
   default telemetry.
 - this wiring does not add runtime product behavior, logging sinks, or
   persistent storage.
+
+Trace exposure decision:
+
+- Task 126 decides that the first future trace API should read only from an
+  explicitly injected current-process in-memory telemetry recording sink/store.
+- Telemetry owns trace recording, lookup, and read-time sanitization.
+- Local API may serialize only a safe envelope/projection provided through an
+  injected reader; it must not own trace storage.
+- Persistent storage, trace streaming, cross-process/session lookup, and raw
+  trace-object exposure remain blocked.

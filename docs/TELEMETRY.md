@@ -53,6 +53,13 @@ Future storage guidance:
 - Rotation: rotate when a log file reaches 5 MB or at process start after a date change.
 - Access: local process only; trace APIs require local auth.
 
+Task 126 decides the first future trace exposure path. Before any real-provider
+local API turn mode, Marvex should add a protected current-process trace read
+path backed by an explicitly injected in-memory telemetry recording sink/store.
+That store and read-time safety belong to `packages.telemetry`, not Local API
+or RuntimeComposition. The first read path must not implement persistence,
+cross-process lookup, session history, global state, or trace streaming.
+
 ## Privacy And Redaction
 
 Telemetry must be useful for debugging without becoming a transcript or secrets store.
@@ -140,6 +147,12 @@ structured-output-shaped data is passed to `make_trace_event(...)`, raw provider
 output, raw previews, parsed payloads, prompts, transcripts, provider/session
 identifiers, auth tokens, and secrets are redacted before the `TraceEvent` is
 created. Non-JSON-compatible structured-output trace data is rejected.
+
+Future trace API reads must apply the same safety posture at read time. The API
+must return a local envelope with sanitized trace-event projections, not raw
+internal trace objects. Raw prompts, provider payloads, provider response ids,
+session/history bodies, auth material, secrets, stack traces, and unsanitized
+`TraceEvent.data` must not be exposed over HTTP.
 
 Future structured-output runtime integration must still name the exact caller,
 data shape, sink behavior, failure behavior, and boundary tests before emitting

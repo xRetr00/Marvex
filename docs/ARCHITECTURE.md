@@ -301,6 +301,17 @@ injects the RuntimeComposition fake handler into the local API runner with a
 caller-provided fake/dev token. `packages.local_api` still does not import
 RuntimeComposition.
 
+Task 126 decision note: future `GET /v1/traces/{trace_id}` should be decided
+and implemented before any real-provider `/v1/turns` API mode, but the first
+strategy is current-process and in-memory only. `packages.telemetry` owns trace
+recording, lookup, and read-time safety; `packages.local_api` may only expose an
+injected trace reader through bearer-protected HTTP/auth/JSON; RuntimeComposition
+must not own trace storage, trace lookup, or sanitizer policy. The endpoint must
+return a local API envelope with sanitized trace-event projections, not raw
+trace objects. Persistent telemetry, trace streaming, cross-process lookup,
+service daemon lifecycle, sessions/history, and real-provider API execution
+remain blocked until separate tasks approve them.
+
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and

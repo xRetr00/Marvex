@@ -1,20 +1,19 @@
 # Project Status
 
-current_phase: local_api_fake_turns_manual_smoke_pack
+current_phase: local_api_trace_exposure_decision_pack
 
-implementation_status: local_api_fake_turns_manual_smoke_added
+implementation_status: trace_exposure_decision_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 123 Local API Fake Turns Manual Smoke Pack
+Task 126 Local API Trace Exposure Decision Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 123:
+Latest full validation baseline from Task 126:
 
-- `python -m pytest tests\local_api tests\integration -q` -> 66 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 673 passed, 1 skipped
 
@@ -116,6 +115,23 @@ caller-provided fake/dev bearer token. The default `packages.local_api.runner`
 entry remains health/version-only, and `packages.local_api` still does not
 import RuntimeComposition.
 
+Task 125 executes and records the developer-only fake `/v1/turns` manual smoke.
+The runner responded on `127.0.0.1:8765` for `/health`, `/version`, and a
+valid protected fake turn. The turn returned `AssistantTurnResult` with trace id
+and turn id present, final text `fake provider response`, and one fake provider
+ref. Missing and wrong auth returned safe token-free `AUTH_REQUIRED` envelopes.
+No runtime behavior, default CLI behavior, real-provider API execution, service
+daemon, trace API, WebSocket, sessions/history, routing, retry/fallback,
+model-selection, tools, memory, UI, voice, desktop, vision, or proactive
+behavior was added.
+
+Task 126 decides future local trace exposure without implementing it. The first
+future trace endpoint should be bearer-protected, implemented before
+real-provider `/v1/turns`, backed only by an explicitly injected current-process
+in-memory telemetry reader/store, and returned as a safe local API envelope with
+sanitized event projections. Telemetry owns recording/lookup/read safety; Local
+API owns auth/HTTP/JSON only; RuntimeComposition owns no trace storage or lookup.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -146,8 +162,13 @@ Process Readiness has started:
   injected local API handler boundary
 - RuntimeComposition provides a developer-only fake `/v1/turns` manual smoke
   runner that composes that handler with the local API runner
+- the developer-only fake `/v1/turns` manual smoke has been executed and
+  recorded with bounded safe output details
+- the future trace exposure decision is recorded: current-process, in-memory,
+  telemetry-owned reader/store, injected into Local API, protected by bearer auth
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
+- no trace endpoint or trace storage exists
 
 Assistant-runtime foundation now present:
 
@@ -264,12 +285,22 @@ ownership governance, and library research governance remain accepted.
 - Task 123 adds a RuntimeComposition-owned developer-only manual fake
   `/v1/turns` smoke runner with a caller-provided fake/dev token, while keeping
   local API free of RuntimeComposition imports.
+- Task 125 records a successful developer-only fake `/v1/turns` manual smoke:
+  health/version responded, a valid protected fake turn returned
+  `AssistantTurnResult`, auth failures returned safe `AUTH_REQUIRED`, and no
+  runtime behavior changed.
+- Task 126 decides the future trace exposure path: protected
+  `GET /v1/traces/{trace_id}`, local API envelope, telemetry-owned
+  current-process in-memory reader/store, no raw trace objects, no persistence,
+  and no implementation in this task.
 
 ## Architecture Health Notes
 
 - The current direction is still foundation-first rather than product-first.
 - Telemetry owns redaction/sanitization policy; callers use safe event
   construction instead of owning sanitizer policy.
+- Future trace reads must remain telemetry-owned for recording/lookup/safety and
+  Local API-owned only for auth/HTTP/JSON adapter behavior.
 - AssistantRuntime remains provider-agnostic and does not import Core,
   ProviderRuntime, adapters, ports, CLI, or services.
 - Core has a narrow assistant-runtime provider-stage seam but the existing
@@ -292,8 +323,8 @@ ownership governance, and library research governance remain accepted.
 - RuntimeComposition now owns the fake injected handler factory for local API
   turns and routes it through the existing fake-provider bridge path.
 - RuntimeComposition also owns the developer-only fake-turns smoke runner that
-  injects that handler into the local API runner. It is not a service daemon or
-  production token lifecycle.
+  injects that handler into the local API runner. Its manual fake smoke has
+  been recorded. It is not a service daemon or production token lifecycle.
 - ProviderRuntime remains the only approved production provider construction
   boundary and has not been wired into the AssistantRuntime provider-stage path.
 - Future real-provider assistant-runtime composition should be a separate
@@ -321,7 +352,8 @@ Blocked without a separate approved task spec:
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
 - real-provider execution composition behind `/v1/turns`
 - LM Studio or other real-provider local API mode
-- telemetry persistence/storage/logging sinks
+- telemetry persistence/storage/logging sinks beyond an approved injected
+  current-process in-memory trace reader/store task
 - contract or port promotion
 - tools, memory, UI, voice, desktop, vision, proactive behavior
 - sessions, hidden history, routing, retry/fallback, API keys, or model routing
@@ -332,10 +364,11 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Optionally run and record the documented developer-only manual fake `/v1/turns`
-smoke. Keep RuntimeComposition/Core/AssistantRuntime/ProviderRuntime imports
-out of `packages.local_api`, use only a clearly fake/dev token, preserve
-auth-before-body behavior, and do not add LM Studio API mode, trace API,
-WebSocket, service daemon behavior, sessions/history, routing, retry/fallback,
-model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, or
-default CLI changes.
+If approved, implement the protected fake/local-only trace-read path behind an
+explicitly injected current-process telemetry recording sink/reader. Keep Local
+API limited to bearer auth, route parsing, trace-id validation, error mapping,
+and JSON serialization. Do not add persistent telemetry, cross-process lookup,
+WebSocket/event streams, service daemon behavior, real-provider API execution,
+LM Studio API mode, sessions/history, routing, retry/fallback, model-selection,
+API-key policy, tools, memory, UI, voice, desktop, vision, proactive behavior,
+or default CLI changes.

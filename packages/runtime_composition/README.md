@@ -60,6 +60,9 @@ Current bridge proof:
   `create_local_api_fake_turn_handler(...)` into the local API runner with a
   caller-provided fake/dev bearer token. It does not add LM Studio or
   real-provider API execution.
+- Task 126 keeps trace exposure outside RuntimeComposition ownership.
+  RuntimeComposition must not own trace storage, trace lookup, sanitizer policy,
+  or trace API behavior.
 
 Forbidden responsibilities:
 

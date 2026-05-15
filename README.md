@@ -73,6 +73,11 @@ Process Readiness has started:
   factory that can be injected into the app for controlled fake execution.
 - A developer-only RuntimeComposition smoke runner can start local API fake
   `/v1/turns` execution with a caller-provided fake/dev bearer token.
+- The developer-only fake `/v1/turns` smoke has been run and recorded with
+  bounded safe output details; it remains manual-only and fake-provider-only.
+- A future trace exposure decision exists for protected current-process trace
+  reads through an injected telemetry-owned in-memory reader; no trace endpoint
+  or trace storage is implemented yet.
 
 Git workflow governance exists:
 
@@ -103,6 +108,7 @@ Forbidden now:
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
 No turn endpoint exists yet with real-provider execution composition behind it.
+No trace retrieval endpoint or telemetry persistence exists yet.
 No service daemon exists yet.
 No subprocess runtime or service mode exists yet.
 The local health/version API runner is manual smoke only, not product service behavior.

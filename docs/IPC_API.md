@@ -115,10 +115,12 @@ Task 119.
 Current context: Task 117 added a dependency-free WSGI app object for
 `GET /health` and `GET /version`. Task 118 added a manual loopback runner for
 those public readiness endpoints. Task 119 defined the local bearer-token auth
-boundary for future protected endpoints, but no protected endpoint is wired.
-The local API package still does not execute providers, call RuntimeComposition,
-call Core assistant helpers, call AssistantRuntime provider-stage behavior,
-store traces, or manage sessions.
+boundary for protected endpoints. Task 121 wires that auth boundary to the
+protected fake-provider `/v1/turns` HTTP/auth/JSON adapter with an injected
+handler. Tasks 122 and 123 compose the fake handler and developer-only fake
+smoke runner outside `packages.local_api`. The local API package still does not
+execute providers, call RuntimeComposition, call Core assistant helpers, call
+AssistantRuntime provider-stage behavior, store traces, or manage sessions.
 
 Endpoint class: protected endpoint. Requires
 `Authorization: Bearer <local-token>`.
@@ -385,12 +387,10 @@ token is caller-provided, fake/dev-only, and not printed by the runner.
 
 Next task unlocked:
 
-Record an optional manual fake `/v1/turns` smoke execution after running the
-documented PowerShell commands. That future task must not add real provider API
-mode, LM Studio API mode, trace API, WebSocket, service daemon behavior,
-sessions/history, routing, retry/fallback, model-selection, API-key policy,
-tools, memory, UI, voice, desktop, vision, or default CLI changes unless
-explicitly approved.
+Task 125 recorded the manual fake `/v1/turns` smoke execution. The next API
+step must stay bounded to an explicitly approved ownership decision or
+implementation slice. Task 126 decides trace exposure before any real-provider
+API mode.
 
 Rollback path:
 
@@ -402,11 +402,69 @@ adapters, RuntimeComposition bridge internals, or default CLI behavior.
 
 ### GET /v1/traces/{trace_id}
 
-Future protected endpoint. Requires `Authorization: Bearer <local-token>`.
+Decision title: Local API trace exposure decision after Task 125.
 
-Returns trace events for one turn.
+Current context: Task 125 proved protected fake `/v1/turns` returns
+`trace_id`/`turn_id`; trace retrieval, storage, persistence, and real-provider
+API mode still do not exist.
 
-Requires local auth. Must return only the requested trace for the current local session unless a future approved session store changes that rule.
+Decision: implement a protected current-process trace endpoint before any
+real-provider `/v1/turns` API mode.
+
+Options considered: persistent trace storage is rejected first because
+retention, rotation, filesystem path, and privacy need a separate task. Local
+API-owned storage is rejected because Local API owns HTTP/auth/JSON only.
+RuntimeComposition-owned storage is rejected because it is composition only. A
+separate trace runtime/store is deferred until persistence is approved.
+Telemetry-owned current-process in-memory recording sink/store is recommended.
+
+Owner/store decision: `packages.telemetry` owns trace recording, lookup, and
+read-time safety for the first in-memory store. `packages.local_api` may receive
+an injected trace reader and handle only bearer auth, route parsing, trace-id
+validation, status mapping, and JSON serialization. No hidden global store is
+approved.
+
+Auth decision: require `Authorization: Bearer <local-token>`.
+
+Response shape decision: return a local API envelope, not raw `TraceEvent`
+objects: `schema_version`, `trace_id`, `scope: "current_process"`,
+`source: "in_memory_trace_store"`, `events`, `event_count`, and `truncated`;
+each event is a sanitized projection with `event_id`, `timestamp`, `stage`,
+`level`, bounded safe `message`, and sanitized `data`.
+
+Allowed fields: trace/turn/event ids, timestamps, stages, levels, bounded safe
+messages, status enums, error codes, finish reasons, service names, and
+aggregate usage/counts. Forbidden fields: raw prompts/messages/conversations,
+provider payloads/previews, parsed payloads, stack traces, auth/API keys,
+secrets, environment variables, file contents, session/history bodies, tool or
+memory data, provider response ids, unsanitized `TraceEvent.data`, and events
+outside the current injected store scope.
+
+Error behavior: missing/invalid auth -> `401 AUTH_REQUIRED`; invalid or blank
+trace id -> `400 VALIDATION_ERROR`; unknown current-process trace id ->
+`404 NOT_FOUND` with safe reason `trace_not_found`; missing injected reader ->
+`503 SERVICE_UNHEALTHY`; unexpected reader failure -> `500 INTERNAL_ERROR`.
+
+Scope rule: the first trace endpoint may read only events recorded by the
+current local process and injected in-memory store, not disk, other processes,
+old runner invocations, or cross-session/global caches.
+
+Blocked: endpoint implementation in Task 126, persistent telemetry, trace
+search, cross-process lookup, streaming, service daemon lifecycle,
+real-provider API mode, sessions/history, routing, retry/fallback,
+model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, and
+proactive behavior.
+
+Next task unlocked: implement the protected fake/local-only trace-read path
+behind an injected telemetry reader, with tests for auth-before-lookup, safe
+envelope shape, missing traces, no token/raw-data leakage, no direct Local API
+runtime/composition calls, and no persistence.
+
+Rollback path: leave `/v1/traces/{trace_id}` unimplemented and continue
+surfacing only `trace_id` in `/v1/turns`; no Core, AssistantRuntime,
+ProviderRuntime, RuntimeComposition, adapter, CLI, or `/v1/turns` shape changes
+should be needed.
+
 
 ### WS /v1/events
 
@@ -433,8 +491,6 @@ Future workers use a JSON-RPC-style envelope:
 ```
 
 Error responses must use `ErrorEnvelope`.
-
-## IPC Rules
 
 - Every request carries `trace_id`.
 - Every response declares schema version.
