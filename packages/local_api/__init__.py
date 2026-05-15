@@ -2,6 +2,7 @@ from .auth_policy import LOCAL_AUTH_HEADER, LOCAL_AUTH_SCHEME, validate_local_be
 from .health_version_api import (
     LocalApiConfig,
     LocalTurnRequestEnvelope,
+    TraceReader,
     TurnHandler,
     create_health_version_api_app,
 )
@@ -12,6 +13,7 @@ __all__ = [
     "LOCAL_AUTH_SCHEME",
     "LocalApiConfig",
     "LocalTurnRequestEnvelope",
+    "TraceReader",
     "TurnHandler",
     "create_default_health_version_provider",
     "create_health_version_api_app",

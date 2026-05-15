@@ -60,6 +60,12 @@ That store and read-time safety belong to `packages.telemetry`, not Local API
 or RuntimeComposition. The first read path must not implement persistence,
 cross-process lookup, session history, global state, or trace streaming.
 
+Task 127 adds that first local-only reader as `InMemoryTraceReader`. It is an
+instance-owned current-process `TelemetrySink` plus reader; callers must
+construct and inject it explicitly. `read_trace(...)` returns a safe envelope
+with sanitized event projections and never returns raw `TraceEvent` objects or
+raw `TraceEvent.data`.
+
 ## Privacy And Redaction
 
 Telemetry must be useful for debugging without becoming a transcript or secrets store.

@@ -1,12 +1,15 @@
 # Telemetry Package
 
-Status: minimal Provider Foundation lifecycle implementation.
+Status: minimal Provider Foundation lifecycle implementation plus local-only
+in-memory trace reader.
 
 Ownership: Trace and diagnostics boundary.
 
 Responsibility: Provide `TelemetrySink`, `NoopTelemetrySink`, trace event
 construction for the v1 turn lifecycle, sanitizer primitives, and
 structured-output-shaped trace data safety inside telemetry event construction.
+Task 127 also adds `InMemoryTraceReader` for injected current-process trace
+reads.
 
 Forbidden responsibilities:
 
@@ -46,3 +49,14 @@ Trace exposure decision:
   injected reader; it must not own trace storage.
 - Persistent storage, trace streaming, cross-process/session lookup, and raw
   trace-object exposure remain blocked.
+
+Task 127 implementation:
+
+- `InMemoryTraceReader` is an instance-owned current-process `TelemetrySink`
+  and reader.
+- `emit(...)` records events by trace id inside that instance only.
+- `read_trace(...)` returns a safe local API envelope with `schema_version`,
+  `trace_id`, `scope`, `source`, `events`, `event_count`, and `truncated`.
+- Event projections exclude raw `TraceEvent.data`, provider payloads, provider
+  response ids, prompts/messages, auth material, stack traces, secrets, file
+  contents, and environment data.

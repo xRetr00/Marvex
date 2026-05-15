@@ -1,6 +1,7 @@
 # Local API Package
 
-Status: local health/version API readiness plus protected fake-turn adapter.
+Status: local health/version API readiness plus protected fake-turn and trace
+read adapters.
 
 Ownership: local API adapter boundary for approved process-readiness and
 assistant-envelope contracts.
@@ -14,6 +15,8 @@ Current behavior:
 - `GET /version` returns the existing `VersionInfo` contract shape.
 - `POST /v1/turns` is protected by local bearer auth and accepts only the
   Task 120 fake-provider request envelope through an injected handler.
+- `GET /v1/traces/{trace_id}` is protected by local bearer auth and reads only
+  through an explicitly injected trace reader.
 - Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
 - `LocalApiConfig` defaults to `host="127.0.0.1"` and `port=8765`.
 - `validate_local_bearer_token(...)` enforces auth for `/v1/turns`. It is not
@@ -22,8 +25,8 @@ Current behavior:
 Endpoint classes:
 
 - Public local readiness endpoints: `GET /health` and `GET /version`.
-- Protected future endpoints: assistant turn submission, trace access, and
-  event streams.
+- Protected endpoints: assistant turn submission and trace access. Event streams
+  remain future work.
 
 Task 120 `/v1/turns` decision:
 
@@ -97,6 +100,18 @@ Task 126 trace exposure decision:
   RuntimeComposition calls, Core calls, AssistantRuntime calls, ProviderRuntime
   calls, or provider execution.
 
+Task 127 trace read implementation:
+
+- `create_health_version_api_app(...)` accepts optional `trace_reader`.
+- `trace_reader` has shape `read_trace(trace_id: str) -> dict | None`.
+- Auth is enforced before trace-id validation and before reader lookup.
+- Missing/invalid auth, invalid trace ids, unknown traces, missing reader, and
+  reader exceptions return safe `ErrorEnvelope` JSON without token values or raw
+  exception details.
+- Successful responses serialize the telemetry-provided safe trace envelope.
+  This package still does not import telemetry implementation modules or own
+  trace storage/sanitizer policy.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.
@@ -110,9 +125,9 @@ Auth decision:
 
 Non-behavior:
 
-- No daemon, subprocess supervisor, WebSocket, trace API, or service lifecycle
-  runner is added.
-- No trace storage or trace endpoint behavior is implemented.
+- No daemon, subprocess supervisor, WebSocket, or service lifecycle runner is
+  added.
+- No local API-owned trace storage is implemented.
 - The manual runner is developer smoke only and is not CI or product behavior.
 - No real execution composition is implemented behind `/v1/turns`.
 - No provider, RuntimeComposition, Core assistant turn, or AssistantRuntime

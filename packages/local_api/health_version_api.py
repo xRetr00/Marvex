@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 from packages.contracts import (
     AssistantTurnInput,
@@ -23,6 +23,7 @@ StartResponse = Callable[
 WsgiApp = Callable[[dict[str, Any], StartResponse], Iterable[bytes]]
 SCHEMA_VERSION = "0.1.1-draft"
 LOCAL_TURNS_PATH = "/v1/turns"
+LOCAL_TRACES_PREFIX = "/v1/traces/"
 LOCAL_TURNS_EXECUTION_MODE = "assistant_runtime_fake_provider"
 LOCAL_TURN_REQUEST_FIELDS = {
     "schema_version",
@@ -55,10 +56,16 @@ class LocalTurnRequestEnvelope:
 TurnHandler = Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]
 
 
+class TraceReader(Protocol):
+    def read_trace(self, trace_id: str) -> dict[str, Any] | None:
+        ...
+
+
 def create_health_version_api_app(
     provider: HealthVersionProvider,
     *,
     turn_handler: TurnHandler | None = None,
+    trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
 ) -> WsgiApp:
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
@@ -83,6 +90,14 @@ def create_health_version_api_app(
                 turn_handler=turn_handler,
                 expected_auth_value=local_auth_token or "",
             )
+        if method == "GET" and path.startswith(LOCAL_TRACES_PREFIX):
+            return _handle_trace_request(
+                environ,
+                start_response,
+                path=path,
+                trace_reader=trace_reader,
+                expected_auth_value=local_auth_token or "",
+            )
         return _json_response(
             start_response,
             "404 Not Found",
@@ -99,6 +114,104 @@ def create_health_version_api_app(
         )
 
     return app
+
+
+def _handle_trace_request(
+    environ: dict[str, Any],
+    start_response: StartResponse,
+    *,
+    path: str,
+    trace_reader: TraceReader | None,
+    expected_auth_value: str,
+) -> Iterable[bytes]:
+    auth_error = validate_local_bearer_token(
+        authorization_header=_authorization_header(environ),
+        expected_token=expected_auth_value,
+        trace_id="trace-local-api-auth-required",
+    )
+    if auth_error is not None:
+        return _json_response(
+            start_response,
+            "401 Unauthorized",
+            auth_error.model_dump_json(),
+        )
+
+    trace_id = path[len(LOCAL_TRACES_PREFIX) :]
+    if not _valid_trace_id(trace_id):
+        return _json_response(
+            start_response,
+            "400 Bad Request",
+            _error_envelope(
+                trace_id="trace-local-api-validation-error",
+                error_id="local-api-trace-validation-error",
+                code=ErrorCode.VALIDATION_ERROR,
+                message="Local API trace request validation failed.",
+                recoverable=False,
+                reason="invalid_trace_id",
+            ).model_dump_json(),
+        )
+
+    if trace_reader is None:
+        return _json_response(
+            start_response,
+            "503 Service Unavailable",
+            _error_envelope(
+                trace_id=trace_id,
+                error_id="local-api-trace-reader-unavailable",
+                code=ErrorCode.SERVICE_UNHEALTHY,
+                message="Local API trace reader unavailable.",
+                recoverable=True,
+                reason="trace_reader_unavailable",
+            ).model_dump_json(),
+        )
+
+    try:
+        envelope = trace_reader.read_trace(trace_id)
+    except Exception:
+        return _json_response(
+            start_response,
+            "500 Internal Server Error",
+            _error_envelope(
+                trace_id=trace_id,
+                error_id="local-api-trace-reader-failed",
+                code=ErrorCode.INTERNAL_ERROR,
+                message="Local API trace reader failed.",
+                recoverable=False,
+                reason="trace_reader_failure",
+            ).model_dump_json(),
+        )
+
+    if envelope is None:
+        return _json_response(
+            start_response,
+            "404 Not Found",
+            _error_envelope(
+                trace_id=trace_id,
+                error_id="local-api-trace-not-found",
+                code=ErrorCode.NOT_FOUND,
+                message="Local API trace not found.",
+                recoverable=False,
+                reason="trace_not_found",
+            ).model_dump_json(),
+        )
+
+    try:
+        response_body = json.dumps(envelope)
+    except Exception:
+        return _json_response(
+            start_response,
+            "500 Internal Server Error",
+            _error_envelope(
+                trace_id=trace_id,
+                error_id="local-api-trace-reader-failed",
+                code=ErrorCode.INTERNAL_ERROR,
+                message="Local API trace reader failed.",
+                recoverable=False,
+                reason="trace_reader_failure",
+            ).model_dump_json(),
+        )
+
+    return _json_response(start_response, "200 OK", response_body)
 
 
 def _handle_turn_request(
@@ -160,6 +273,12 @@ def _handle_turn_request(
 def _authorization_header(environ: dict[str, Any]) -> str | None:
     value = environ.get("HTTP_AUTHORIZATION")
     return value if isinstance(value, str) else None
+
+
+def _valid_trace_id(trace_id: str) -> bool:
+    if not trace_id.strip():
+        return False
+    return all(character.isalnum() or character in ".:-_" for character in trace_id)
 
 
 def _parse_turn_request(

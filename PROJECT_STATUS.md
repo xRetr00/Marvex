@@ -1,21 +1,22 @@
 # Project Status
 
-current_phase: local_api_trace_exposure_decision_pack
+current_phase: local_api_trace_reader_pack
 
-implementation_status: trace_exposure_decision_recorded
+implementation_status: protected_in_memory_trace_reader_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 126 Local API Trace Exposure Decision Pack
+Task 127 Protected Local API In-Memory Trace Reader Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 126:
+Latest full validation baseline from Task 127:
 
+- `python -m pytest tests\local_api tests\telemetry -q` -> 117 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 673 passed, 1 skipped
+- `python -m pytest -q` -> 689 passed, 1 skipped
 
 Task 118 manual smoke: `python -m packages.local_api.runner` responded on
 `http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
@@ -132,6 +133,14 @@ in-memory telemetry reader/store, and returned as a safe local API envelope with
 sanitized event projections. Telemetry owns recording/lookup/read safety; Local
 API owns auth/HTTP/JSON only; RuntimeComposition owns no trace storage or lookup.
 
+Task 127 implements that first protected trace-read path. Telemetry now provides
+an instance-owned `InMemoryTraceReader` sink/reader that records current-process
+events and returns sanitized local API trace envelopes. Local API exposes
+`GET /v1/traces/{trace_id}` behind bearer auth and an explicitly injected
+reader, with auth-before-lookup behavior, safe not-found/reader-failure
+envelopes, and no persistence, global trace store, runtime execution, service
+daemon, WebSocket, sessions/history, tools, memory, or real-provider API mode.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -166,9 +175,12 @@ Process Readiness has started:
   recorded with bounded safe output details
 - the future trace exposure decision is recorded: current-process, in-memory,
   telemetry-owned reader/store, injected into Local API, protected by bearer auth
+- protected `GET /v1/traces/{trace_id}` now reads only from an explicitly
+  injected current-process in-memory telemetry reader
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
-- no trace endpoint or trace storage exists
+- no persistent trace storage, cross-process lookup, trace search, or streaming
+  exists
 
 Assistant-runtime foundation now present:
 
@@ -293,6 +305,11 @@ ownership governance, and library research governance remain accepted.
   `GET /v1/traces/{trace_id}`, local API envelope, telemetry-owned
   current-process in-memory reader/store, no raw trace objects, no persistence,
   and no implementation in this task.
+- Task 127 implements the protected fake/local-only trace-read path using
+  `packages.telemetry.InMemoryTraceReader` and local API reader injection. The
+  endpoint returns safe projection envelopes only; raw `TraceEvent.data`,
+  provider payloads, provider response ids, auth material, and secrets are not
+  exposed.
 
 ## Architecture Health Notes
 
@@ -317,6 +334,8 @@ ownership governance, and library research governance remain accepted.
   loopback runner only. It is not a service daemon.
 - Local API auth policy protects `/v1/turns`; health/version behavior remains
   public and unchanged.
+- Local API auth policy also protects `GET /v1/traces/{trace_id}` when a trace
+  reader is explicitly injected.
 - The `/v1/turns` adapter is protected fake-provider-only by request envelope:
   it accepts a local envelope carrying `AssistantTurnInput`, returns
   `AssistantTurnResult`, and delegates only to an injected handler.
@@ -352,8 +371,8 @@ Blocked without a separate approved task spec:
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
 - real-provider execution composition behind `/v1/turns`
 - LM Studio or other real-provider local API mode
-- telemetry persistence/storage/logging sinks beyond an approved injected
-  current-process in-memory trace reader/store task
+- telemetry persistence/logging sinks, cross-process trace storage, trace search,
+  and trace streaming
 - contract or port promotion
 - tools, memory, UI, voice, desktop, vision, proactive behavior
 - sessions, hidden history, routing, retry/fallback, API keys, or model routing
@@ -364,11 +383,9 @@ not implementation permission.
 
 ## Next Implementation Task
 
-If approved, implement the protected fake/local-only trace-read path behind an
-explicitly injected current-process telemetry recording sink/reader. Keep Local
-API limited to bearer auth, route parsing, trace-id validation, error mapping,
-and JSON serialization. Do not add persistent telemetry, cross-process lookup,
+Next work should stay bounded to a separately approved service/API or provider
+integration slice. Do not add persistent telemetry, cross-process lookup,
 WebSocket/event streams, service daemon behavior, real-provider API execution,
 LM Studio API mode, sessions/history, routing, retry/fallback, model-selection,
 API-key policy, tools, memory, UI, voice, desktop, vision, proactive behavior,
-or default CLI changes.
+or default CLI changes without an explicit task.

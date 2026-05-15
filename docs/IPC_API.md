@@ -348,7 +348,8 @@ Error behavior:
 Trace/provider reference exposure:
 
 - `/v1/turns` returns only the assistant result shape.
-- Trace events remain unavailable over HTTP until a separate trace API task.
+- Trace ids can be read separately through protected `GET /v1/traces/{trace_id}`
+  when a current-process in-memory reader is explicitly injected.
 - Provider references are summaries only through `provider_turn_refs`.
 - Provider response ids must not become a top-level assistant-turn result field.
 
@@ -356,7 +357,7 @@ What remains blocked:
 
 - real-provider `/v1/turns` execution
 - LM Studio API endpoint mode
-- trace retrieval or event streaming
+- persistent trace retrieval, cross-process lookup, or event streaming
 - local service daemon or lifecycle management
 - token generation, discovery, rotation, or persistence
 - session/history state
@@ -385,12 +386,10 @@ The runner composes the local API runner with
 `create_local_api_fake_turn_handler(...)` outside `packages.local_api`. The
 token is caller-provided, fake/dev-only, and not printed by the runner.
 
-Next task unlocked:
-
-Task 125 recorded the manual fake `/v1/turns` smoke execution. The next API
-step must stay bounded to an explicitly approved ownership decision or
-implementation slice. Task 126 decides trace exposure before any real-provider
-API mode.
+Task 127 adds the protected local-only trace-read adapter through injected
+reader composition. Any next API step must stay bounded to an explicitly
+approved ownership decision or implementation slice before real-provider API
+mode.
 
 Rollback path:
 
@@ -402,35 +401,21 @@ adapters, RuntimeComposition bridge internals, or default CLI behavior.
 
 ### GET /v1/traces/{trace_id}
 
-Decision title: Local API trace exposure decision after Task 125.
+Status: implemented in Task 127 as a protected fake/local-only trace-read
+adapter. Requires `Authorization: Bearer <local-token>`.
 
-Current context: Task 125 proved protected fake `/v1/turns` returns
-`trace_id`/`turn_id`; trace retrieval, storage, persistence, and real-provider
-API mode still do not exist.
+Ownership: `packages.telemetry` owns current-process event recording, lookup,
+and read-time safety through an explicitly constructed in-memory reader.
+`packages.local_api` owns only bearer auth, route parsing, trace-id validation,
+status mapping, and JSON serialization. The reader is injected into the app;
+there is no hidden global trace store.
 
-Decision: implement a protected current-process trace endpoint before any
-real-provider `/v1/turns` API mode.
-
-Options considered: persistent trace storage is rejected first because
-retention, rotation, filesystem path, and privacy need a separate task. Local
-API-owned storage is rejected because Local API owns HTTP/auth/JSON only.
-RuntimeComposition-owned storage is rejected because it is composition only. A
-separate trace runtime/store is deferred until persistence is approved.
-Telemetry-owned current-process in-memory recording sink/store is recommended.
-
-Owner/store decision: `packages.telemetry` owns trace recording, lookup, and
-read-time safety for the first in-memory store. `packages.local_api` may receive
-an injected trace reader and handle only bearer auth, route parsing, trace-id
-validation, status mapping, and JSON serialization. No hidden global store is
-approved.
-
-Auth decision: require `Authorization: Bearer <local-token>`.
-
-Response shape decision: return a local API envelope, not raw `TraceEvent`
-objects: `schema_version`, `trace_id`, `scope: "current_process"`,
-`source: "in_memory_trace_store"`, `events`, `event_count`, and `truncated`;
-each event is a sanitized projection with `event_id`, `timestamp`, `stage`,
-`level`, bounded safe `message`, and sanitized `data`.
+Response envelope: `schema_version`, `trace_id`, `scope: "current_process"`,
+`source: "in_memory"`, `events`, `event_count`, and `truncated`. Events are
+sanitized projections, not raw `TraceEvent` objects. Projection fields are
+`trace_id`, optional safe `turn_id`, `event_id`, `timestamp`, `stage`, `level`,
+bounded safe `message`, and safe status/error/finish/service/usage fields.
+`TraceEvent.data` is not serialized.
 
 Allowed fields: trace/turn/event ids, timestamps, stages, levels, bounded safe
 messages, status enums, error codes, finish reasons, service names, and
@@ -444,26 +429,20 @@ Error behavior: missing/invalid auth -> `401 AUTH_REQUIRED`; invalid or blank
 trace id -> `400 VALIDATION_ERROR`; unknown current-process trace id ->
 `404 NOT_FOUND` with safe reason `trace_not_found`; missing injected reader ->
 `503 SERVICE_UNHEALTHY`; unexpected reader failure -> `500 INTERNAL_ERROR`.
+Auth is checked before trace-id lookup.
 
 Scope rule: the first trace endpoint may read only events recorded by the
 current local process and injected in-memory store, not disk, other processes,
 old runner invocations, or cross-session/global caches.
 
-Blocked: endpoint implementation in Task 126, persistent telemetry, trace
-search, cross-process lookup, streaming, service daemon lifecycle,
-real-provider API mode, sessions/history, routing, retry/fallback,
-model-selection, API-key policy, tools, memory, UI, voice, desktop, vision, and
-proactive behavior.
+Blocked: persistent telemetry, trace search, cross-process lookup, streaming,
+service daemon lifecycle, real-provider API mode, sessions/history, routing,
+retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
+desktop, vision, and proactive behavior.
 
-Next task unlocked: implement the protected fake/local-only trace-read path
-behind an injected telemetry reader, with tests for auth-before-lookup, safe
-envelope shape, missing traces, no token/raw-data leakage, no direct Local API
-runtime/composition calls, and no persistence.
-
-Rollback path: leave `/v1/traces/{trace_id}` unimplemented and continue
-surfacing only `trace_id` in `/v1/turns`; no Core, AssistantRuntime,
-ProviderRuntime, RuntimeComposition, adapter, CLI, or `/v1/turns` shape changes
-should be needed.
+Rollback path: remove the route branch and reader injection. No Core,
+AssistantRuntime, ProviderRuntime, RuntimeComposition, adapter, CLI, or
+`/v1/turns` shape changes should be needed.
 
 
 ### WS /v1/events

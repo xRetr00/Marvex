@@ -75,9 +75,10 @@ Process Readiness has started:
   `/v1/turns` execution with a caller-provided fake/dev bearer token.
 - The developer-only fake `/v1/turns` smoke has been run and recorded with
   bounded safe output details; it remains manual-only and fake-provider-only.
-- A future trace exposure decision exists for protected current-process trace
-  reads through an injected telemetry-owned in-memory reader; no trace endpoint
-  or trace storage is implemented yet.
+- A protected local-only `GET /v1/traces/{trace_id}` adapter can now read from
+  an explicitly injected current-process in-memory telemetry reader. It does not
+  add persistence, service daemon behavior, WebSocket/events, real-provider API
+  mode, sessions/history, or default CLI changes.
 
 Git workflow governance exists:
 
@@ -108,7 +109,8 @@ Forbidden now:
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
 No turn endpoint exists yet with real-provider execution composition behind it.
-No trace retrieval endpoint or telemetry persistence exists yet.
+No persistent trace storage, cross-process trace lookup, or trace streaming
+exists yet.
 No service daemon exists yet.
 No subprocess runtime or service mode exists yet.
 The local health/version API runner is manual smoke only, not product service behavior.
