@@ -37,6 +37,9 @@ Production bridge decision:
   import Local API, RuntimeComposition, Core, or AssistantRuntime, and it must
   not own HTTP auth, trace reads, preflight enforcement, routing, retry/fallback,
   model selection, or API-key policy.
+- Task 131 keeps that path indirect: the local API LM Studio handler calls the
+  RuntimeComposition bridge, which calls `create_provider(...)` with the approved
+  `lmstudio_responses` provider name.
 
 Approved provider names:
 

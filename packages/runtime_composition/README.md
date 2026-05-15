@@ -78,6 +78,12 @@ Current bridge proof:
   provider routing, model selection, preflight enforcement, retry/fallback,
   API-key policy, session/history state, HTTP parsing, bearer auth, trace
   lookup policy, persistence, or service daemon lifecycle.
+- Task 131 implements that developer-only path through
+  `create_local_api_lmstudio_turn_handler(...)` and
+  `local_api_lmstudio_responses_runner.py`. The handler calls
+  `run_lmstudio_responses_assistant_bridge(...)`; the runner injects one
+  `InMemoryTraceReader` as both telemetry sink and local API trace reader.
+  Local API still receives only injected callables.
 
 Forbidden responsibilities:
 

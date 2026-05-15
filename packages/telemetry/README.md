@@ -67,3 +67,4 @@ Task 127 implementation:
   should use the same explicit current-process `InMemoryTraceReader` pattern.
   It must not add persistence, a global trace store, cross-process lookup,
   search, streaming, or raw provider/secret exposure.
+- Task 131 implements that manual runner injection pattern.

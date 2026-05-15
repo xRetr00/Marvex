@@ -24,7 +24,9 @@ WsgiApp = Callable[[dict[str, Any], StartResponse], Iterable[bytes]]
 SCHEMA_VERSION = "0.1.1-draft"
 LOCAL_TURNS_PATH = "/v1/turns"
 LOCAL_TRACES_PREFIX = "/v1/traces/"
-LOCAL_TURNS_EXECUTION_MODE = "assistant_runtime_fake_provider"
+LOCAL_TURNS_FAKE_EXECUTION_MODE = "assistant_runtime_fake_provider"
+LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE = "assistant_runtime_lmstudio_responses"
+LOCAL_TURNS_EXECUTION_MODE = LOCAL_TURNS_FAKE_EXECUTION_MODE
 LOCAL_TURN_REQUEST_FIELDS = {
     "schema_version",
     "execution_mode",
@@ -67,6 +69,7 @@ def create_health_version_api_app(
     turn_handler: TurnHandler | None = None,
     trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
+    accepted_turn_execution_modes: tuple[str, ...] = (LOCAL_TURNS_EXECUTION_MODE,),
 ) -> WsgiApp:
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
@@ -89,6 +92,7 @@ def create_health_version_api_app(
                 start_response,
                 turn_handler=turn_handler,
                 expected_auth_value=local_auth_token or "",
+                accepted_turn_execution_modes=accepted_turn_execution_modes,
             )
         if method == "GET" and path.startswith(LOCAL_TRACES_PREFIX):
             return _handle_trace_request(
@@ -220,6 +224,7 @@ def _handle_turn_request(
     *,
     turn_handler: TurnHandler | None,
     expected_auth_value: str,
+    accepted_turn_execution_modes: tuple[str, ...],
 ) -> Iterable[bytes]:
     auth_error = validate_local_bearer_token(
         authorization_header=_authorization_header(environ),
@@ -247,7 +252,10 @@ def _handle_turn_request(
             ).model_dump_json(),
         )
 
-    request = _parse_turn_request(environ)
+    request = _parse_turn_request(
+        environ,
+        accepted_turn_execution_modes=accepted_turn_execution_modes,
+    )
     if isinstance(request, ErrorEnvelope):
         return _json_response(start_response, "400 Bad Request", request.model_dump_json())
 
@@ -283,6 +291,8 @@ def _valid_trace_id(trace_id: str) -> bool:
 
 def _parse_turn_request(
     environ: dict[str, Any],
+    *,
+    accepted_turn_execution_modes: tuple[str, ...] = (LOCAL_TURNS_EXECUTION_MODE,),
 ) -> LocalTurnRequestEnvelope | ErrorEnvelope:
     try:
         raw_body = _read_request_body(environ)
@@ -298,7 +308,7 @@ def _parse_turn_request(
 
     if payload["schema_version"] != SCHEMA_VERSION:
         return _validation_error("invalid_schema_version")
-    if payload["execution_mode"] != LOCAL_TURNS_EXECUTION_MODE:
+    if payload["execution_mode"] not in accepted_turn_execution_modes:
         return _validation_error("unsupported_execution_mode")
     if not isinstance(payload["model"], str) or not payload["model"].strip():
         return _validation_error("invalid_model")

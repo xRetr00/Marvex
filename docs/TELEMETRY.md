@@ -71,6 +71,13 @@ one `InMemoryTraceReader` instance and inject it as both telemetry sink and
 trace reader. This is current-process-only manual smoke support, not persistent
 telemetry, cross-process lookup, service lifecycle, or real-provider API mode.
 
+Task 131 applies the same current-process reader/sink pattern to the
+developer-only LM Studio Responses local API runner. The runner constructs one
+`InMemoryTraceReader` instance, passes it as telemetry sink to the LM Studio
+handler, and injects it as the protected trace reader. This still does not add
+persistence, a global trace store, trace search, cross-process lookup, or raw
+provider payload exposure.
+
 ## Privacy And Redaction
 
 Telemetry must be useful for debugging without becoming a transcript or secrets store.

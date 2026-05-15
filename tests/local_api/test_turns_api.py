@@ -133,13 +133,23 @@ def make_result(turn_input: AssistantTurnInput) -> AssistantTurnResult:
     )
 
 
-def make_app(handler=None, *, token: str | None = EXPECTED_TOKEN):
+def make_app(
+    handler=None,
+    *,
+    token: str | None = EXPECTED_TOKEN,
+    accepted_turn_execution_modes=None,
+):
     from packages.local_api import create_health_version_api_app
 
+    kwargs = {
+        "turn_handler": handler,
+        "local_auth_token": token,
+    }
+    if accepted_turn_execution_modes is not None:
+        kwargs["accepted_turn_execution_modes"] = accepted_turn_execution_modes
     return create_health_version_api_app(
         make_provider(),
-        turn_handler=handler,
-        local_auth_token=token,
+        **kwargs,
     )
 
 
@@ -322,6 +332,48 @@ def test_turns_invokes_handler_once_with_validated_envelope():
     assert request.instructions is None
     assert request.previous_response_id == "previous-response-001"
     assert request.provider_options == {}
+
+
+def test_turns_can_accept_injected_lmstudio_execution_mode_without_changing_default():
+    default_handler = RecordingHandler()
+    lmstudio_handler = RecordingHandler()
+    lmstudio_payload = make_request_payload(
+        execution_mode="assistant_runtime_lmstudio_responses",
+        model="local-model",
+    )
+
+    default_status, _headers, default_payload = call_app(
+        make_app(default_handler),
+        "/v1/turns",
+        method="POST",
+        body=lmstudio_payload,
+        auth="Bearer fake-local-token",
+    )
+    injected_status, _headers, injected_payload = call_app(
+        make_app(
+            lmstudio_handler,
+            accepted_turn_execution_modes=("assistant_runtime_lmstudio_responses",),
+        ),
+        "/v1/turns",
+        method="POST",
+        body=lmstudio_payload,
+        auth="Bearer fake-local-token",
+    )
+
+    default_error = ErrorEnvelope.model_validate(default_payload)
+    injected_result = AssistantTurnResult.model_validate(injected_payload)
+    assert default_status == "400 Bad Request"
+    assert default_error.code == ErrorCode.VALIDATION_ERROR
+    assert default_error.details == {"reason": "unsupported_execution_mode"}
+    assert default_handler.requests == []
+    assert injected_status == "200 OK"
+    assert injected_result.trace_id == "trace-turns-test"
+    assert len(lmstudio_handler.requests) == 1
+    assert (
+        lmstudio_handler.requests[0].execution_mode
+        == "assistant_runtime_lmstudio_responses"
+    )
+    assert lmstudio_handler.requests[0].model == "local-model"
 
 
 def test_turns_serializes_successful_handler_result_as_assistant_turn_result():

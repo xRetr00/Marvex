@@ -82,6 +82,8 @@ Provider-stage skeleton:
   mode: AssistantRuntime continues to see only an injected send-capable provider
   and explicit model/input values through Core, not Local API, ProviderRuntime,
   adapters, provider routing, preflight policy, or session/history state.
+- Task 131 implements the local API LM Studio path without changing
+  AssistantRuntime behavior.
 
 Structured-output consumer seam:
 

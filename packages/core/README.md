@@ -46,6 +46,7 @@ Assistant-runtime provider-stage wiring skeleton:
   this Core helper only through RuntimeComposition-owned handler composition.
   Core must not import Local API, RuntimeComposition, ProviderRuntime, adapters,
   or provider-specific policy for that mode.
+- Task 131 implements that local API mode without changing Core behavior.
 
 Forbidden responsibilities:
 

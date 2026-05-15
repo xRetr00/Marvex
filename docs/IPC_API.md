@@ -111,9 +111,10 @@ are JSON objects; detailed build metadata shape is future contract work.
 
 Decision title: Task 130 Real-Provider Local API Turns Decision.
 
-Status: implemented today only for `assistant_runtime_fake_provider`. The route
-is protected by bearer auth, parses a local adapter envelope carrying
-`AssistantTurnInput`, and delegates to an injected
+Status: implemented for the default fake mode and, as of Task 131, for an
+explicit developer-only LM Studio Responses runner mode. The route is protected
+by bearer auth, parses a local adapter envelope carrying `AssistantTurnInput`,
+and delegates to an injected
 `Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`. Local API still
 does not import RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
 adapters, telemetry implementation modules, CLI apps, services, or SDKs.
@@ -138,10 +139,10 @@ Options considered:
 - Add generic provider mode: rejected. It would introduce routing,
   provider-specific API policy, model selection, or API-key policy too early.
 
-Recommended path: unlock one narrow implementation pack for LM Studio Responses
-local API turns. It must add an explicit execution mode
-`assistant_runtime_lmstudio_responses`, keep `assistant_runtime_fake_provider`
-unchanged, and compose through RuntimeComposition outside `packages.local_api`.
+Task 131 implementation path: one narrow RuntimeComposition handler/runner now
+supports LM Studio Responses local API turns. It uses explicit execution mode
+`assistant_runtime_lmstudio_responses`, keeps `assistant_runtime_fake_provider`
+unchanged, and composes through RuntimeComposition outside `packages.local_api`.
 
 Request envelope decision: reuse the existing local adapter envelope. For the
 LM Studio mode, `execution_mode` must be
@@ -189,8 +190,7 @@ response, and trace read not found/reader failure. Failure bodies must not expos
 raw provider payloads, exception details, bearer tokens, secrets, prompts, or
 provider response ids.
 
-Manual smoke requirement: the future runner should be developer-only and shaped
-like
+Manual smoke requirement: the runner is developer-only and shaped like
 `python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token <fake-dev-token>`.
 With LM Studio already running and a model loaded, submit a protected
 `POST /v1/turns` using `assistant_runtime_lmstudio_responses`, extract
@@ -218,16 +218,20 @@ must not import concrete adapters, own provider routing, session/history,
 retry/fallback, model-selection, API-key policy, trace lookup, HTTP parsing, or
 auth policy.
 
-What remains blocked: generic provider mode, LM Studio API behavior without a
-separate implementation task, service daemon lifecycle, token generation or
-discovery, preflight enforcement, persistence, cross-process traces, WebSocket
-events, sessions/history, routing, retry/fallback, model selection, API-key
-policy, tools, memory, UI, voice, desktop, vision, and proactive behavior.
+What remains blocked: generic provider mode, additional provider modes, service
+daemon lifecycle, token generation or discovery, preflight enforcement,
+persistence, cross-process traces, WebSocket events, sessions/history, routing,
+retry/fallback, model selection, API-key policy, tools, memory, UI, voice,
+desktop, vision, and proactive behavior.
 
-Exact next implementation task unlocked: add an explicit developer-only LM
-Studio Responses local API turns runner and handler composition pack for
-`assistant_runtime_lmstudio_responses`, with current-process in-memory trace
-recording and protected trace read smoke coverage.
+Task 131 implementation note:
+
+- RuntimeComposition adds `create_local_api_lmstudio_turn_handler(...)`.
+- The manual runner injects that handler plus one `InMemoryTraceReader`.
+- Local API accepts the LM Studio execution mode only when that mode is
+  explicitly injected by the runner.
+- No generic provider router, model selector, preflight probe, retry/fallback,
+  session/history store, persistent trace store, or service daemon is added.
 
 Rollback path: if this decision proves too broad, do not implement the next
 pack, keep `/v1/turns` fake-only, and keep real-provider execution available

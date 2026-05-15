@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: real_provider_local_api_turns_decision_pack
+current_phase: local_api_lmstudio_responses_turns_runner_pack
 
-implementation_status: real_provider_local_api_turns_decision_recorded
+implementation_status: lmstudio_responses_local_api_runner_added
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 130 Real-Provider Local API Turns Decision Pack
+Task 131 Local API LM Studio Responses Turns Runner Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 130:
+Latest full validation baseline from Task 131:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 691 passed, 1 skipped
+- `python -m pytest -q` -> 702 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -33,6 +33,10 @@ Recent local API/runtime milestones:
   `assistant_runtime_lmstudio_responses`, with explicit request `model`, no
   preflight enforcement, no generic provider routing, no persistence, no
   sessions/history, and no service daemon behavior.
+- Task 131 implements that explicit developer-only runner/handler path. The
+  manual runner injects one current-process `InMemoryTraceReader` for both
+  telemetry recording and protected trace reads. Local API still receives only
+  injected handler/reader callables.
 
 ## Current Foundation Capabilities
 
@@ -216,6 +220,8 @@ ownership governance, and library research governance remain accepted.
 - Task 130 decides that the next real-provider local API step should be an
   explicit LM Studio Responses manual/dev mode only, not a generic provider API
   or service daemon.
+- Task 131 adds that explicit manual/dev LM Studio Responses local API runner
+  and handler while preserving fake mode and local API boundaries.
 
 ## Architecture Health Notes
 
@@ -265,6 +271,9 @@ ownership governance, and library research governance remain accepted.
   API-key policy owner, or product orchestrator.
 - Task 130 unlocks only a future explicit LM Studio Responses local API
   implementation pack; it does not itself implement real-provider `/v1/turns`.
+- Task 131 implements only that explicit developer runner/handler path; it is
+  not default, generic provider routing, model selection, preflight enforcement,
+  retry/fallback, session/history, or service daemon behavior.
 - `PROJECT_STATUS.md` is no longer a chronological task log; historical detail
   belongs in package READMEs, tests, task reports, and git history.
 
@@ -277,8 +286,8 @@ Blocked without a separate approved task spec:
 - real provider promotion for assistant-runtime turns
 - Core normal orchestration replacement
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
-- real-provider execution composition behind `/v1/turns` except the exact
-  Task 130-approved LM Studio Responses implementation pack
+- real-provider execution composition behind `/v1/turns` beyond the explicit
+  Task 131 developer-only LM Studio Responses runner/handler path
 - generic provider local API mode and any non-LM-Studio first provider mode
 - telemetry persistence/logging sinks, cross-process trace storage, trace search,
   and trace streaming
@@ -292,11 +301,11 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work unlocked by Task 130: add an explicit developer-only LM Studio
-Responses local API turns runner/handler pack for
-`assistant_runtime_lmstudio_responses`, using explicit request `model`, bearer
-auth, injected handler composition, and the same current-process
-`InMemoryTraceReader` pattern as fake mode.
+Next work should execute and record the developer-only LM Studio local API smoke
+when a local LM Studio server and model are available: start the explicit runner,
+submit a protected `assistant_runtime_lmstudio_responses` turn with explicit
+`model`, then read the returned trace through protected
+`GET /v1/traces/{trace_id}`.
 
 Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
 service daemon behavior, generic provider API mode, sessions/history, routing,

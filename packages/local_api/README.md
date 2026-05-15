@@ -134,6 +134,14 @@ Task 130 real-provider API decision:
 - It must not select/default models, probe providers, own provider-specific
   policy, store traces, or manage sessions/history.
 
+Task 131 LM Studio runner support:
+
+- `create_health_version_api_app(...)` and `run_local_health_version_api(...)`
+  accept an optional `accepted_turn_execution_modes` tuple.
+- The default remains `assistant_runtime_fake_provider`.
+- The LM Studio runner injects `assistant_runtime_lmstudio_responses` explicitly
+  with its handler. This package still owns no provider execution policy.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

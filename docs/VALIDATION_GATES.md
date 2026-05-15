@@ -70,6 +70,9 @@ RuntimeComposition owns narrow bridge/factory composition only.
   composition entrypoint; this exception does not allow RuntimeComposition to
   own HTTP parsing, auth validation, routing, sessions/history, retry/fallback,
   model-selection, or API-key policy.
+- `packages/runtime_composition/local_api_lmstudio_responses_runner.py` may
+  import the local API runner/config only as a developer-only LM Studio
+  Responses `/v1/turns` smoke composition entrypoint with the same restrictions.
 - Core and AssistantRuntime must not import or mention the runtime composition
   bridge.
 - ProviderRuntime must not import Core or AssistantRuntime.
@@ -118,6 +121,8 @@ trace-reader HTTP/auth/JSON adapter.
 - `/v1/turns` must remain an injected-handler adapter only; no direct
   RuntimeComposition/Core/AssistantRuntime/ProviderRuntime/provider adapter
   execution may be added to the API package.
+- Accepted `/v1/turns` execution modes may be injected by explicit manual
+  runners; the default local API behavior remains fake-provider only.
 - `/v1/traces/{trace_id}` must remain an injected trace-reader adapter only.
   Local API must not own trace storage, telemetry sanitizer policy,
   persistence, streaming, or cross-process lookup.

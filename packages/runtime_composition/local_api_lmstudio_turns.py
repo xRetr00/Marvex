@@ -1,0 +1,91 @@
+from __future__ import annotations
+
+from typing import Callable, Protocol
+
+from packages.contracts import (
+    AssistantTurnInput,
+    AssistantTurnResult,
+    ErrorCode,
+    ErrorEnvelope,
+)
+from packages.telemetry import TelemetrySink
+
+from .assistant_provider_bridge import run_lmstudio_responses_assistant_bridge
+
+
+LOCAL_API_LMSTUDIO_RESPONSES_EXECUTION_MODE = "assistant_runtime_lmstudio_responses"
+
+
+class LocalApiLmstudioTurnRequest(Protocol):
+    schema_version: str
+    execution_mode: str
+    assistant_turn_input: AssistantTurnInput
+    model: str | None
+    instructions: str | None
+    previous_response_id: str | None
+    provider_options: dict[str, object]
+
+
+LocalApiLmstudioTurnHandler = Callable[
+    [LocalApiLmstudioTurnRequest], AssistantTurnResult
+]
+
+
+def create_local_api_lmstudio_turn_handler(
+    *,
+    telemetry_sink: TelemetrySink | None = None,
+) -> LocalApiLmstudioTurnHandler:
+    def handle_lmstudio_turn(
+        request: LocalApiLmstudioTurnRequest,
+    ) -> AssistantTurnResult:
+        if request.execution_mode != LOCAL_API_LMSTUDIO_RESPONSES_EXECUTION_MODE:
+            return _validation_result(request, "unsupported_execution_mode")
+        if not isinstance(request.model, str) or not request.model.strip():
+            return _validation_result(request, "invalid_model")
+        if request.provider_options:
+            return _validation_result(request, "invalid_provider_options")
+
+        kwargs = {
+            "model": request.model,
+            "instructions": request.instructions,
+            "previous_response_id": request.previous_response_id,
+            "provider_options": request.provider_options,
+        }
+        if telemetry_sink is not None:
+            kwargs["telemetry_sink"] = telemetry_sink
+        return run_lmstudio_responses_assistant_bridge(
+            request.assistant_turn_input,
+            **kwargs,
+        )
+
+    return handle_lmstudio_turn
+
+
+def _validation_result(
+    request: LocalApiLmstudioTurnRequest,
+    reason: str,
+) -> AssistantTurnResult:
+    turn_input = request.assistant_turn_input
+    return AssistantTurnResult(
+        schema_version=request.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        assistant_final_response=None,
+        output_events=[],
+        stage_summaries=[],
+        provider_turn_refs=[],
+        tool_result_refs=[],
+        memory_result_refs=[],
+        session_result_ref=None,
+        error=ErrorEnvelope(
+            schema_version=request.schema_version,
+            trace_id=turn_input.trace_id,
+            error_id=f"{turn_input.turn_id}:local-api-lmstudio-validation",
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Local API LM Studio turn request validation failed.",
+            recoverable=False,
+            source="runtime_composition",
+            details={"reason": reason},
+        ),
+        metadata={},
+    )

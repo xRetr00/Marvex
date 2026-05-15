@@ -14,6 +14,9 @@ CLI_MAIN = CLI_ROOT / "main.py"
 MANUAL_LOCAL_API_FAKE_TURNS_RUNNER = (
     "packages/runtime_composition/local_api_fake_turns_runner.py"
 )
+MANUAL_LOCAL_API_LMSTUDIO_TURNS_RUNNER = (
+    "packages/runtime_composition/local_api_lmstudio_responses_runner.py"
+)
 CLI_APPROVED_RUNTIME_COMPOSITION_IMPORTS = {
     "run_fake_provider_assistant_bridge",
     "run_lmstudio_responses_assistant_bridge",
@@ -68,6 +71,11 @@ BRIDGE_FORBIDDEN_TOKENS = (
     "memory runtime",
 )
 APPROVED_REAL_PROVIDER_TOKENS = ("lmstudio_responses",)
+APPROVED_LMSTUDIO_LOCAL_API_FILES = {
+    "packages/runtime_composition/__init__.py",
+    "packages/runtime_composition/local_api_lmstudio_responses_runner.py",
+    "packages/runtime_composition/local_api_lmstudio_turns.py",
+}
 BRIDGE_MAX_LINES = 250
 BRIDGE_SIZE_JUSTIFICATION = "runtime composition size justification"
 
@@ -111,7 +119,10 @@ def _scan_bridge_layer(failures: list[str]) -> None:
         text = _read(path)
         lowered = text.lower()
         allowed_import_prefixes = ALLOWED_BRIDGE_IMPORT_PREFIXES
-        if rel == MANUAL_LOCAL_API_FAKE_TURNS_RUNNER:
+        if rel in {
+            MANUAL_LOCAL_API_FAKE_TURNS_RUNNER,
+            MANUAL_LOCAL_API_LMSTUDIO_TURNS_RUNNER,
+        }:
             allowed_import_prefixes = (
                 ALLOWED_BRIDGE_IMPORT_PREFIXES
                 + MANUAL_LOCAL_API_FAKE_TURNS_RUNNER_IMPORT_PREFIXES
@@ -127,8 +138,11 @@ def _scan_bridge_layer(failures: list[str]) -> None:
         for token in BRIDGE_FORBIDDEN_TOKENS:
             scanned = lowered
             if token == "lmstudio":
-                for allowed in APPROVED_REAL_PROVIDER_TOKENS:
-                    scanned = scanned.replace(allowed, "")
+                if rel in APPROVED_LMSTUDIO_LOCAL_API_FILES:
+                    scanned = scanned.replace("lmstudio", "")
+                else:
+                    for allowed in APPROVED_REAL_PROVIDER_TOKENS:
+                        scanned = scanned.replace(allowed, "")
             if token in scanned:
                 failures.append(f"{rel} contains forbidden bridge behavior token: {token}")
 

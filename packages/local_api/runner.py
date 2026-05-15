@@ -57,14 +57,20 @@ def run_local_health_version_api(
     turn_handler: TurnHandler | None = None,
     trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
+    accepted_turn_execution_modes: tuple[str, ...] | None = None,
     startup_message: str | None = None,
 ) -> int:
     effective_provider = provider or create_default_health_version_provider()
+    app_kwargs = {
+        "turn_handler": turn_handler,
+        "trace_reader": trace_reader,
+        "local_auth_token": local_auth_token,
+    }
+    if accepted_turn_execution_modes is not None:
+        app_kwargs["accepted_turn_execution_modes"] = accepted_turn_execution_modes
     app = create_health_version_api_app(
         effective_provider,
-        turn_handler=turn_handler,
-        trace_reader=trace_reader,
-        local_auth_token=local_auth_token,
+        **app_kwargs,
     )
     httpd = server_factory(config.host, config.port, app)
     print(
