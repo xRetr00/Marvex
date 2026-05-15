@@ -305,12 +305,12 @@ Expected failure signs:
 - If the port is already in use, stop the other local process or choose a later
   approved runner enhancement; do not add automatic daemon management here.
 
-Latest manual local fake `/v1/turns` smoke:
+Latest manual local fake `/v1/turns` plus trace-read smoke:
 
-- Date: 2026-05-14.
+- Date: 2026-05-15.
 - Command shape:
   `python -m packages.runtime_composition.local_api_fake_turns_runner --dev-token <fake-dev-token>`.
-- Fake/dev token behavior: used the documented fake example token label only;
+- Fake/dev token behavior: used the documented fake label `local-dev-token`;
   auth error responses did not echo token material.
 - Observed `/health`: HTTP 200, service `marvex-local-api`, status `ok`,
   schema version `0.1.1-draft`, non-negative uptime.
@@ -318,21 +318,27 @@ Latest manual local fake `/v1/turns` smoke:
   `0.1.0`, schema version `0.1.1-draft`, health/version contract versions
   `0.1.1-draft`.
 - Observed `/v1/turns`: HTTP 200 `AssistantTurnResult`, trace id
-  `trace-local-api-fake-turns-smoke`, turn id
-  `turn-local-api-fake-turns-smoke`, final text `fake provider response`,
+  `trace-local-api-fake-turns-plus-trace-smoke`, turn id
+  `turn-local-api-fake-turns-plus-trace-smoke`, final text `fake provider response`,
   one provider ref with provider `fake` and ref id `fake-response-001`.
-- After Task 128, the same manual runner also injects an in-memory trace reader;
-  a protected `GET /v1/traces/{trace_id}` call in the same process can read
-  safe projected fake-turn lifecycle events. This remains optional manual
-  developer smoke and is not required by pytest or `run_all_checks.py`.
+- Observed `/v1/traces/{trace_id}` with auth: HTTP 200; same trace id, scope
+  `current_process`, source `in_memory`, `event_count` 5, `truncated` false.
+- Trace stages/levels summary: `provider_request_created:info`,
+  `provider_request_sent:info`, `provider_response_received:info`,
+  `final_response_created:info`, `turn_completed:info`.
+- Trace envelope fields observed: `schema_version`, `trace_id`, `scope`,
+  `source`, `events`, `event_count`, `truncated`.
+- Trace projection did not expose raw `TraceEvent.data`, prompt text,
+  `provider_response_id`, provider response ref id, bearer token, or provider
+  payloads.
 - Top-level `provider_response_id` was not present; provider identity surfaced
   through `provider_turn_refs`.
-- Missing auth returned HTTP 401 `AUTH_REQUIRED` from `local_api` with reason
-  `missing`.
-- Wrong auth returned HTTP 401 `AUTH_REQUIRED` from `local_api` with reason
-  `invalid`.
+- Missing trace auth returned HTTP 401 `AUTH_REQUIRED` from `local_api` with
+  reason `missing`.
+- Wrong trace auth returned HTTP 401 `AUTH_REQUIRED` from `local_api` with
+  reason `invalid`.
 - Safe bounded excerpt:
-  `AssistantTurnResult trace-local-api-fake-turns-smoke / turn-local-api-fake-turns-smoke -> fake provider response`.
+  `AssistantTurnResult trace-local-api-fake-turns-plus-trace-smoke / turn-local-api-fake-turns-plus-trace-smoke -> fake provider response; trace_events=5`.
 - The smoke remains developer-only, fake-provider-only, and outside CI /
   `run_all_checks.py`.
 

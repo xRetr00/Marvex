@@ -1,20 +1,19 @@
 # Project Status
 
-current_phase: local_api_fake_turn_trace_recording_pack
+current_phase: local_api_fake_turn_trace_smoke_record_pack
 
-implementation_status: fake_turn_trace_recording_integrated
+implementation_status: fake_turn_trace_smoke_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 128 Local API Fake Turns Trace Recording Integration Pack
+Task 129 Local API Fake Turns Plus Trace Read Manual Smoke Record Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 128:
+Latest full validation baseline from Task 129:
 
-- `python -m pytest tests\local_api tests\telemetry tests\integration -q` -> 157 passed
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 691 passed, 1 skipped
 
@@ -149,6 +148,13 @@ protected trace reads. This does not add persistence, global trace state,
 real-provider API mode, service daemon behavior, WebSocket/events,
 sessions/history, routing, retry/fallback, tools, or memory.
 
+Task 129 executes and records the full developer-only fake local API smoke:
+health/version, protected fake `/v1/turns`, returned trace id, protected
+`/v1/traces/{trace_id}`, and missing/wrong trace auth. The trace read returned
+five safe projected current-process events for the same fake turn trace, with no
+raw `TraceEvent.data`, prompt text, provider response id, token, or provider
+payload exposure. No runtime code changed.
+
 ## Current Foundation Capabilities
 
 Provider Foundation completed:
@@ -187,6 +193,8 @@ Process Readiness has started:
   injected current-process in-memory telemetry reader
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
+- the fake `/v1/turns` plus protected trace-read manual smoke has been executed
+  and recorded with bounded safe output details
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
 - no persistent trace storage, cross-process lookup, trace search, or streaming
