@@ -31,6 +31,12 @@ Production bridge decision:
   CLI proof mode. ProviderRuntime still only creates approved providers and does
   not own CLI output, preflight probing, routing, retry/fallback, session/history,
   model-selection, or AssistantRuntime result conversion.
+- Task 130 decides that a future local API LM Studio Responses mode should still
+  reach providers only through RuntimeComposition calling ProviderRuntime with
+  the explicit approved `lmstudio_responses` provider. ProviderRuntime must not
+  import Local API, RuntimeComposition, Core, or AssistantRuntime, and it must
+  not own HTTP auth, trace reads, preflight enforcement, routing, retry/fallback,
+  model selection, or API-key policy.
 
 Approved provider names:
 

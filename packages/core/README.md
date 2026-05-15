@@ -42,6 +42,10 @@ Assistant-runtime provider-stage wiring skeleton:
   approved assistant-envelope result shape, but the API must not call Core
   directly. Core remains a callee behind RuntimeComposition-owned composition
   and an injected local API turn handler.
+- Task 130 decides that a future LM Studio Responses local API mode may call
+  this Core helper only through RuntimeComposition-owned handler composition.
+  Core must not import Local API, RuntimeComposition, ProviderRuntime, adapters,
+  or provider-specific policy for that mode.
 
 Forbidden responsibilities:
 

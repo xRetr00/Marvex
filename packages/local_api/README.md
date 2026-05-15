@@ -121,6 +121,19 @@ Task 128 fake trace integration:
   RuntimeComposition or telemetry implementation modules, and it does not record
   trace events itself.
 
+Task 130 real-provider API decision:
+
+- The next allowed real-provider local API path, if implemented, is only an
+  explicit LM Studio Responses mode with execution mode
+  `assistant_runtime_lmstudio_responses`.
+- This package must keep the same role: bearer auth, JSON parsing/validation,
+  status mapping, and serialization around injected handler/reader callables.
+- It must not import RuntimeComposition, Core, AssistantRuntime,
+  ProviderRuntime, adapters, telemetry implementation modules, CLI apps,
+  services, or provider SDKs.
+- It must not select/default models, probe providers, own provider-specific
+  policy, store traces, or manage sessions/history.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

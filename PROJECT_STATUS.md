@@ -1,159 +1,38 @@
 # Project Status
 
-current_phase: local_api_fake_turn_trace_smoke_record_pack
+current_phase: real_provider_local_api_turns_decision_pack
 
-implementation_status: fake_turn_trace_smoke_recorded
+implementation_status: real_provider_local_api_turns_decision_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 129 Local API Fake Turns Plus Trace Read Manual Smoke Record Pack
+Task 130 Real-Provider Local API Turns Decision Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 129:
+Latest full validation baseline from Task 130:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 691 passed, 1 skipped
 
-Task 118 manual smoke: `python -m packages.local_api.runner` responded on
-`http://127.0.0.1:8765` for both `/health` and `/version`. The smoke remains
-manual-only and is not required by pytest or `run_all_checks.py`.
+Recent local API/runtime milestones:
 
-Task 111 adds the first separate runtime composition/factory bridge proof using
-ProviderRuntime-created fake provider only. It does not change default CLI
-behavior or implement real provider, service, API, telemetry storage,
-session/history, routing, retry/fallback, tool, memory, or product behavior.
-
-Task 112 wires the official CLI fake-provider AssistantRuntime foundation mode
-to RuntimeComposition instead of local CLI provider composition. It also moves
-existing default CLI provider-foundation composition behind RuntimeComposition
-without changing default output behavior.
-
-Task 113 adds a RuntimeComposition-only real-provider-backed AssistantRuntime
-proof for `lmstudio_responses`. Automated tests stub ProviderRuntime behavior;
-no live provider, CLI flag, service/API, session/history, routing,
-retry/fallback, model-selection, API-key policy, tool, memory, or product
-behavior is added.
-
-Task 114 adds the explicit non-default CLI proof flag
-`--assistant-runtime-lmstudio-responses`. The CLI calls RuntimeComposition only;
-it does not import ProviderRuntime or adapters, create providers, own routing,
-retry/fallback, sessions/history, model-selection, API-key policy, service/API,
-or product behavior. Automated tests mock the bridge; live LM Studio remains
-manual smoke only.
-
-Task 115 documents the live-smoke checklist and failure policy for that explicit
-CLI proof mode. It does not add automatic preflight probing, retry/fallback,
-routing, sessions/history, model-selection policy, service/API behavior, or
-default product behavior.
-
-Task 116 executes and records a manual live smoke for
-`--assistant-runtime-lmstudio-responses` against LM Studio with `qwen3.5-0.8b`.
-The smoke succeeded with assistant response text, provider response id, trace id,
-and turn id present. A Windows legacy-console Unicode print failure observed on
-the first run was fixed narrowly in the CLI proof-mode result printer by
-replacing unencodable characters. No default CLI behavior, preflight,
-retry/fallback, routing, session/history, model-selection, service/API, or
-product behavior was added.
-
-Task 117 adds `packages.local_api`, a dependency-free local WSGI app object for
-`GET /health` and `GET /version` only. It uses the approved `HealthCheck` and
-`VersionInfo` contracts through `HealthVersionProvider`, defaults local API
-configuration to `127.0.0.1`, and adds a local API boundary gate. It does not
-add a service listener, `/v1/turns`, provider execution, RuntimeComposition
-assistant bridges, Core assistant execution, WebSocket, trace API,
-sessions/history, routing, retry/fallback, model-selection, tools, memory, or
-product behavior.
-
-Task 118 adds `packages.local_api.runner`, a standard-library manual loopback
-runner for the existing health/version WSGI app object. It defaults to
-`127.0.0.1:8765`, is documented as developer smoke only, and remains outside CI
-and `run_all_checks.py` live execution. It does not implement `/v1/turns`,
-provider execution, RuntimeComposition assistant bridges, Core assistant
-execution, AssistantRuntime provider-stage execution, WebSocket, trace API,
-daemon management, subprocess supervision, sessions/history, routing,
-retry/fallback, model-selection, tools, memory, or product behavior.
-
-Task 119 defines the local API authentication boundary for future protected
-endpoints. Health/version remain public loopback readiness endpoints.
-Future turn, trace, and event endpoints must use
-`Authorization: Bearer <local-token>`. `packages.local_api.auth_policy` provides
-a reusable safe bearer-token validator that returns `AUTH_REQUIRED`
-`ErrorEnvelope` failures without echoing token values. It is not wired to
-`/health`, `/version`, or any protected endpoint.
-
-Task 120 decides the future protected `POST /v1/turns` contract and ownership
-boundary without implementing the endpoint. The first implementation target is
-fake-provider only through an injected turn handler. `packages.local_api` owns
-HTTP/auth/JSON validation and serialization only; RuntimeComposition remains the
-future provider/Core/AssistantRuntime composition owner behind that handler.
-The request envelope carries approved `AssistantTurnInput`, explicit
-`execution_mode: "assistant_runtime_fake_provider"`, model, nullable
-instructions, nullable `previous_response_id`, and empty provider options. A
-completed handler returns `AssistantTurnResult`; request/auth/transport failures
-return top-level `ErrorEnvelope`.
-
-Task 121 implements the protected fake-provider-only `/v1/turns` HTTP/auth/JSON
-adapter with an injected `LocalTurnRequestEnvelope -> AssistantTurnResult`
-handler. Auth runs before body parsing or handler invocation. Tests use stubbed
-handlers only. The API still does not import or call RuntimeComposition, Core,
-AssistantRuntime, ProviderRuntime, adapters, services, CLI apps, telemetry
-implementation modules, or provider SDKs.
-
-Task 122 adds `packages.runtime_composition.create_local_api_fake_turn_handler(...)`
-as the first fake-provider-only execution handler factory for the protected
-local API turns endpoint. The handler adapts `LocalTurnRequestEnvelope` to
-`run_fake_provider_assistant_bridge(...)`. Local API still receives the handler
-only by injection and does not import RuntimeComposition.
-
-Task 123 adds `packages.runtime_composition.local_api_fake_turns_runner` as a
-developer-only manual smoke entrypoint for fake `/v1/turns` execution. It
-injects the RuntimeComposition fake handler into the local API runner with a
-caller-provided fake/dev bearer token. The default `packages.local_api.runner`
-entry remains health/version-only, and `packages.local_api` still does not
-import RuntimeComposition.
-
-Task 125 executes and records the developer-only fake `/v1/turns` manual smoke.
-The runner responded on `127.0.0.1:8765` for `/health`, `/version`, and a
-valid protected fake turn. The turn returned `AssistantTurnResult` with trace id
-and turn id present, final text `fake provider response`, and one fake provider
-ref. Missing and wrong auth returned safe token-free `AUTH_REQUIRED` envelopes.
-No runtime behavior, default CLI behavior, real-provider API execution, service
-daemon, trace API, WebSocket, sessions/history, routing, retry/fallback,
-model-selection, tools, memory, UI, voice, desktop, vision, or proactive
-behavior was added.
-
-Task 126 decides future local trace exposure without implementing it. The first
-future trace endpoint should be bearer-protected, implemented before
-real-provider `/v1/turns`, backed only by an explicitly injected current-process
-in-memory telemetry reader/store, and returned as a safe local API envelope with
-sanitized event projections. Telemetry owns recording/lookup/read safety; Local
-API owns auth/HTTP/JSON only; RuntimeComposition owns no trace storage or lookup.
-
-Task 127 implements that first protected trace-read path. Telemetry now provides
-an instance-owned `InMemoryTraceReader` sink/reader that records current-process
-events and returns sanitized local API trace envelopes. Local API exposes
-`GET /v1/traces/{trace_id}` behind bearer auth and an explicitly injected
-reader, with auth-before-lookup behavior, safe not-found/reader-failure
-envelopes, and no persistence, global trace store, runtime execution, service
-daemon, WebSocket, sessions/history, tools, memory, or real-provider API mode.
-
-Task 128 wires the developer-only fake `/v1/turns` manual path to that reader.
-RuntimeComposition can pass an explicitly injected telemetry sink into the fake
-provider AssistantRuntime bridge, and the fake-turns manual runner constructs
-one current-process `InMemoryTraceReader` instance for both recording and
-protected trace reads. This does not add persistence, global trace state,
-real-provider API mode, service daemon behavior, WebSocket/events,
-sessions/history, routing, retry/fallback, tools, or memory.
-
-Task 129 executes and records the full developer-only fake local API smoke:
-health/version, protected fake `/v1/turns`, returned trace id, protected
-`/v1/traces/{trace_id}`, and missing/wrong trace auth. The trace read returned
-five safe projected current-process events for the same fake turn trace, with no
-raw `TraceEvent.data`, prompt text, provider response id, token, or provider
-payload exposure. No runtime code changed.
+- RuntimeComposition owns explicit fake and LM Studio Responses
+  AssistantRuntime bridge proofs; CLI uses only explicit proof flags for those
+  paths and default CLI behavior remains provider-foundation scoped.
+- Local API now has public loopback `/health` and `/version`, protected fake
+  `/v1/turns`, and protected injected `GET /v1/traces/{trace_id}`. Local API
+  owns HTTP/auth/JSON only and receives execution/trace behavior by injection.
+- The developer-only fake `/v1/turns` runner shares one current-process
+  `InMemoryTraceReader` instance between fake turn recording and protected trace
+  reads. Task 129 smoke verified five safe projected events for the same trace.
+- Task 130 decides the next real-provider local API step: add only an explicit
+  LM Studio Responses developer runner/mode
+  `assistant_runtime_lmstudio_responses`, with explicit request `model`, no
+  preflight enforcement, no generic provider routing, no persistence, no
+  sessions/history, and no service daemon behavior.
 
 ## Current Foundation Capabilities
 
@@ -253,7 +132,7 @@ Historical governance retained compactly: Task 024 Status and README Drift Clean
 Git workflow governance, assistant-turn spine/contract governance, runtime
 ownership governance, and library research governance remain accepted.
 
-## Task 102-123 Compact Milestone Summary
+## Task 102-130 Compact Milestone Summary
 
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
@@ -332,6 +211,11 @@ ownership governance, and library research governance remain accepted.
   API fake path. RuntimeComposition passes the injected sink through existing
   fake-provider bridge telemetry, while Local API continues to receive only
   injected handler/reader callables.
+- Task 129 records successful manual fake local API turn plus protected trace
+  read smoke, with safe current-process trace projections only.
+- Task 130 decides that the next real-provider local API step should be an
+  explicit LM Studio Responses manual/dev mode only, not a generic provider API
+  or service daemon.
 
 ## Architecture Health Notes
 
@@ -369,9 +253,7 @@ ownership governance, and library research governance remain accepted.
   recording and protected trace reads. It is not a service daemon or production
   token lifecycle.
 - ProviderRuntime remains the only approved production provider construction
-  boundary and has not been wired into the AssistantRuntime provider-stage path.
-- Future real-provider assistant-runtime composition should be a separate
-  bridge/factory layer that imports ProviderRuntime and the Core helper while
+  boundary. RuntimeComposition may call it for approved bridge proofs while
   importing no concrete adapters and owning no routing/session/history policy.
 - RuntimeComposition is now the approved CLI composition dependency for the
   existing provider-foundation path and the fake-provider AssistantRuntime
@@ -381,6 +263,8 @@ ownership governance, and library research governance remain accepted.
   for `lmstudio_responses`, now reachable from an explicit CLI proof flag. It
   is not a router, session manager, retry/fallback owner, model-selection owner,
   API-key policy owner, or product orchestrator.
+- Task 130 unlocks only a future explicit LM Studio Responses local API
+  implementation pack; it does not itself implement real-provider `/v1/turns`.
 - `PROJECT_STATUS.md` is no longer a chronological task log; historical detail
   belongs in package READMEs, tests, task reports, and git history.
 
@@ -393,8 +277,9 @@ Blocked without a separate approved task spec:
 - real provider promotion for assistant-runtime turns
 - Core normal orchestration replacement
 - service/API/HTTP/WebSocket/subprocess runtime or daemon behavior
-- real-provider execution composition behind `/v1/turns`
-- LM Studio or other real-provider local API mode
+- real-provider execution composition behind `/v1/turns` except the exact
+  Task 130-approved LM Studio Responses implementation pack
+- generic provider local API mode and any non-LM-Studio first provider mode
 - telemetry persistence/logging sinks, cross-process trace storage, trace search,
   and trace streaming
 - contract or port promotion
@@ -407,9 +292,14 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work should stay bounded to a separately approved service/API or provider
-integration slice. Do not add persistent telemetry, cross-process lookup,
-WebSocket/event streams, service daemon behavior, real-provider API execution,
-LM Studio API mode, sessions/history, routing, retry/fallback, model-selection,
-API-key policy, tools, memory, UI, voice, desktop, vision, proactive behavior,
-or default CLI changes without an explicit task.
+Next work unlocked by Task 130: add an explicit developer-only LM Studio
+Responses local API turns runner/handler pack for
+`assistant_runtime_lmstudio_responses`, using explicit request `model`, bearer
+auth, injected handler composition, and the same current-process
+`InMemoryTraceReader` pattern as fake mode.
+
+Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
+service daemon behavior, generic provider API mode, sessions/history, routing,
+retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
+desktop, vision, proactive behavior, or default CLI changes without another
+explicit task.

@@ -69,6 +69,15 @@ Current bridge proof:
   instance and injects it both as the fake turn telemetry sink and local API
   trace reader. RuntimeComposition still does not own trace storage policy,
   lookup semantics, sanitizer policy, HTTP parsing, or auth.
+- Task 130 decides that the next real-provider local API step should be an
+  explicit developer-only LM Studio Responses handler/runner for
+  `assistant_runtime_lmstudio_responses`. If implemented, this package may
+  compose the existing `run_lmstudio_responses_assistant_bridge(...)` behind an
+  injected local API handler and may construct one current-process
+  `InMemoryTraceReader` for manual smoke. It still must not own generic
+  provider routing, model selection, preflight enforcement, retry/fallback,
+  API-key policy, session/history state, HTTP parsing, bearer auth, trace
+  lookup policy, persistence, or service daemon lifecycle.
 
 Forbidden responsibilities:
 

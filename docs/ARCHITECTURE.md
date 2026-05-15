@@ -248,6 +248,16 @@ RuntimeComposition LM Studio Responses bridge. CLI still does not import
 ProviderRuntime or adapters and does not own provider routing, retry/fallback,
 session/history, model-selection, API-key, service/API, or product behavior.
 
+Task 130 decision note: the next safest real-provider local API step is a
+separate developer-only LM Studio Responses `/v1/turns` mode using explicit
+`execution_mode: "assistant_runtime_lmstudio_responses"` and explicit request
+`model`. It must be implemented, if approved, through RuntimeComposition
+handler injection and the existing Core/AssistantRuntime provider-stage path.
+Local API remains HTTP/auth/JSON only. Generic provider routing, model
+selection, preflight enforcement, sessions/history, retry/fallback, API-key
+policy, service daemon behavior, persistent traces, and WebSocket/events remain
+blocked.
+
 Task 117 implementation note: `packages/local_api` adds a dependency-free
 local WSGI app object for `GET /health` and `GET /version` only, backed by the
 approved `HealthCheck` and `VersionInfo` contracts. It defaults local API config

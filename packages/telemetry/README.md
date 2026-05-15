@@ -63,3 +63,7 @@ Task 127 implementation:
 - Task 128 uses the same instance as both the fake-turn telemetry sink and trace
   reader in the developer-only local API fake runner. That remains
   current-process-only and disappears when the process exits.
+- Task 130 decides that a future LM Studio Responses local API manual runner
+  should use the same explicit current-process `InMemoryTraceReader` pattern.
+  It must not add persistence, a global trace store, cross-process lookup,
+  search, streaming, or raw provider/secret exposure.

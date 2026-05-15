@@ -109,295 +109,129 @@ are JSON objects; detailed build metadata shape is future contract work.
 
 ### POST /v1/turns
 
-Decision title: Local API `/v1/turns` contract and ownership decision after
-Task 119.
+Decision title: Task 130 Real-Provider Local API Turns Decision.
 
-Current context: Task 117 added a dependency-free WSGI app object for
-`GET /health` and `GET /version`. Task 118 added a manual loopback runner for
-those public readiness endpoints. Task 119 defined the local bearer-token auth
-boundary for protected endpoints. Task 121 wires that auth boundary to the
-protected fake-provider `/v1/turns` HTTP/auth/JSON adapter with an injected
-handler. Tasks 122 and 123 compose the fake handler and developer-only fake
-smoke runner outside `packages.local_api`. The local API package still does not
-execute providers, call RuntimeComposition, call Core assistant helpers, call
-AssistantRuntime provider-stage behavior, store traces, or manage sessions.
+Status: implemented today only for `assistant_runtime_fake_provider`. The route
+is protected by bearer auth, parses a local adapter envelope carrying
+`AssistantTurnInput`, and delegates to an injected
+`Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`. Local API still
+does not import RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
+adapters, telemetry implementation modules, CLI apps, services, or SDKs.
 
-Endpoint class: protected endpoint. Requires
-`Authorization: Bearer <local-token>`.
+Current context after Task 129: fake `/v1/turns` plus protected
+`GET /v1/traces/{trace_id}` smoke succeeded in one current process. The fake
+turn returned `trace_id`, `turn_id`, and a fake provider ref; trace read
+returned five safe projected in-memory events; missing/wrong trace auth returned
+`401 AUTH_REQUIRED`.
 
 Options considered:
 
-- Provider-foundation `TurnInput` -> `TurnOutput`: rejected for the public
-  assistant-turn endpoint. Those contracts remain provider-foundation scoped and
-  must not be silently repurposed as assistant-turn contracts.
-- Direct `AssistantTurnInput` -> `AssistantTurnResult`: accepted as the nested
-  contract family for the first endpoint because these are the approved
-  assistant-envelope contracts.
-- Text-only local API convenience request: rejected for the first
-  implementation because it would move input normalization into the HTTP adapter
-  or require the API package to import AssistantRuntime helpers.
-- API calls RuntimeComposition directly: rejected for `packages.local_api`.
-  RuntimeComposition owns execution composition, but the local API package owns
-  only HTTP parsing, auth, and serialization.
-- API calls Core or AssistantRuntime directly: rejected. Core owns orchestration
-  helpers and AssistantRuntime owns provider-stage behavior; neither dependency
-  belongs in the HTTP adapter.
-- Both fake provider and LM Studio modes in the first endpoint: rejected.
-  LM Studio is real-provider proof behavior and must remain explicit CLI/manual
-  smoke only until a later service/API promotion task.
+- Block real-provider API until service daemon/token lifecycle: rejected for the
+  first developer-only proof because the existing explicit local runner, bearer
+  auth boundary, and in-memory trace reader are enough for a bounded manual
+  smoke path.
+- Add LM Studio Responses API mode now: recommended, but only as a separate
+  explicit opt-in implementation task and manual runner.
+- Add preflight first: rejected. Provider reachability/model probing would risk
+  turning diagnostics into model-selection or availability policy.
+- Add real-provider manual-runner mode only: recommended first shape.
+- Add generic provider mode: rejected. It would introduce routing,
+  provider-specific API policy, model selection, or API-key policy too early.
 
-Implemented first shape:
+Recommended path: unlock one narrow implementation pack for LM Studio Responses
+local API turns. It must add an explicit execution mode
+`assistant_runtime_lmstudio_responses`, keep `assistant_runtime_fake_provider`
+unchanged, and compose through RuntimeComposition outside `packages.local_api`.
 
-- `packages.local_api` owns the HTTP route, bearer auth enforcement, JSON body
-  parsing, request validation, and response serialization.
-- The endpoint accepts an explicitly injected turn handler. The handler is a
-  callable/protocol boundary, not a global singleton and not a local API-owned
-  provider/runtime implementation.
-- RuntimeComposition remains the owner of future provider/Core/AssistantRuntime
-  composition behind that handler. `packages.local_api` must not import
-  RuntimeComposition.
-- The first concrete provider mode is fake-provider only by request-envelope
-  mode. The API does not execute the provider; tests use stubbed handlers only.
-- LM Studio Responses over `/v1/turns` remains blocked until a later task
-  approves service/API promotion criteria, live-smoke expectations, failure
-  policy, and explicit opt-in configuration.
+Request envelope decision: reuse the existing local adapter envelope. For the
+LM Studio mode, `execution_mode` must be
+`assistant_runtime_lmstudio_responses`, `assistant_turn_input` must validate as
+`AssistantTurnInput`, `model` is required and non-empty, `instructions` and
+`previous_response_id` are explicit nullable fields, and `provider_options`
+remains `{}` until a later task approves keys. No provider payloads, raw
+prompts, sessions/history, tool data, memory data, auth material, or trace
+payloads may be carried in metadata.
 
-Request body decision:
+Response contract decision: successful handler completion still returns
+`AssistantTurnResult`; request/auth/transport failures still return top-level
+`ErrorEnvelope`. There is no top-level `provider_response_id`; provider identity
+may appear only through assistant-envelope reference fields such as
+`provider_turn_refs`.
 
-The first `/v1/turns` request body is a local HTTP adapter envelope that carries
-the approved `AssistantTurnInput` contract. It is not a new Core contract and
-does not modify `AssistantTurnInput`.
+Auth decision: `/v1/turns` remains protected by
+`Authorization: Bearer <local-token>`. Auth must run before body validation or
+handler invocation. Missing, malformed, unconfigured, or wrong tokens return
+`401 AUTH_REQUIRED` without echoing token material. `/health` and `/version`
+remain public loopback readiness endpoints.
 
-```json
-{
-  "schema_version": "0.1.1-draft",
-  "execution_mode": "assistant_runtime_fake_provider",
-  "assistant_turn_input": {
-    "schema_version": "0.1.1-draft",
-    "trace_id": "trace-001",
-    "turn_id": "turn-001",
-    "input_event_id": "event-001",
-    "session_ref": null,
-    "identity_ref": null,
-    "user_visible_input": "Hello",
-    "assistant_mode": "default",
-    "policy_context": {
-      "requested_capabilities": [],
-      "sensitivity": "normal"
-    },
-    "metadata": {}
-  },
-  "model": "fake-model",
-  "instructions": null,
-  "previous_response_id": null,
-  "provider_options": {}
-}
-```
+Model requirement decision: the API supports only caller-provided explicit
+`model`. It must not default, discover, select, route, or rewrite models.
 
-Request rules:
+Preflight decision: no automatic preflight is required before first real-provider
+local API mode. Failure behavior should remain provider-stage mapped errors from
+the existing RuntimeComposition/Core/AssistantRuntime path. Future preflight, if
+approved, must be observe-only and must not block or select providers by
+default.
 
-- `schema_version` is required and must be `0.1.1-draft` for the first
-  implementation.
-- `execution_mode` is required and the only accepted first value is
-  `assistant_runtime_fake_provider`.
-- `assistant_turn_input` is required and must validate as `AssistantTurnInput`.
-- `assistant_turn_input.trace_id` and `assistant_turn_input.turn_id` are the
-  endpoint trace and turn identities.
-- `model` is required and non-empty. The local API must pass it through; it must
-  not choose models or implement model-selection policy.
-- `instructions` is required and nullable.
-- `previous_response_id` is required and nullable. When present, it is passed as
-  an explicit provider-continuity value to the injected handler. It must not be
-  read from `metadata`, stored in hidden state, or treated as session history.
-- `provider_options` is required and must be `{}` for the first fake-provider
-  implementation unless a later task approves specific keys.
-- Unknown top-level fields are rejected with `VALIDATION_ERROR`.
-- Request metadata must not carry provider request bodies, provider responses,
-  raw prompts, session/history bodies, tool data, memory data, auth material, or
-  trace payloads.
+Trace recording/read decision: the real-provider manual runner should use the
+same explicit current-process `InMemoryTraceReader` model as fake mode. One
+instance may be injected as the handler telemetry sink and as the trace reader
+for `GET /v1/traces/{trace_id}`. Telemetry owns recording, lookup, and safe
+projection. No persistence, global trace store, search, streaming, or
+cross-process lookup is allowed.
 
-Response body decision:
+Failure behavior decision: tests for the implementation pack must cover auth
+missing/malformed/wrong, invalid JSON/request fields, unsupported execution
+mode, missing/blank model, non-empty provider options, handler unavailable,
+handler exception sanitization, provider unavailable, provider timeout-like
+failure, provider error response, empty provider output, malformed provider
+response, and trace read not found/reader failure. Failure bodies must not expose
+raw provider payloads, exception details, bearer tokens, secrets, prompts, or
+provider response ids.
 
-Successful handler completion returns `AssistantTurnResult`.
+Manual smoke requirement: the future runner should be developer-only and shaped
+like
+`python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token <fake-dev-token>`.
+With LM Studio already running and a model loaded, submit a protected
+`POST /v1/turns` using `assistant_runtime_lmstudio_responses`, extract
+`trace_id`, then read protected `GET /v1/traces/{trace_id}` and verify safe
+projected current-process events. This smoke remains outside CI and
+`run_all_checks.py`.
 
-```json
-{
-  "schema_version": "0.1.1-draft",
-  "trace_id": "trace-001",
-  "turn_id": "turn-001",
-  "assistant_final_response": {
-    "schema_version": "0.1.1-draft",
-    "response_type": "text",
-    "text": "Hello.",
-    "payload_ref": null,
-    "output_channel_intent": "default",
-    "safe_for_display": true,
-    "safe_for_speech": true,
-    "memory_write_candidate_hint": false,
-    "finish_reason": "stop",
-    "metadata": {}
-  },
-  "output_events": [],
-  "stage_summaries": [],
-  "provider_turn_refs": [
-    {
-      "ref_type": "provider_turn",
-      "ref_id": "fake-response-001",
-      "stage_name": "provider_reasoning",
-      "provider_name": "fake",
-      "status": "completed",
-      "trace_id": "trace-001"
-    }
-  ],
-  "tool_result_refs": [],
-  "memory_result_refs": [],
-  "session_result_ref": null,
-  "error": null,
-  "metadata": {}
-}
-```
-
-Response rules:
-
-- `trace_id` and `turn_id` are surfaced only through the returned
-  `AssistantTurnResult`.
-- There is no top-level `provider_response_id` in the HTTP response.
-- Provider response identity is exposed only as a reference/summary in
-  `provider_turn_refs[].ref_id`, following the assistant-envelope contract.
-- Raw `ProviderRequest`, raw `ProviderResponse`, provider payloads, prompts,
-  provider SDK errors, provider options, and trace event bodies must not be
-  embedded.
-- A completed assistant turn that contains a mapped provider-stage failure still
-  returns `AssistantTurnResult` with its nested `error`. Transport/request
-  failures return top-level `ErrorEnvelope`.
-
-Auth enforcement decision:
-
-- Auth is checked before body validation or handler invocation.
-- Missing, malformed, unconfigured, or wrong bearer tokens return HTTP `401`
-  with `ErrorEnvelope.code` `AUTH_REQUIRED`.
-- Auth failures use a server-generated local trace id such as
-  `trace-local-api-auth-required` unless a later service-runtime task approves a
-  per-request trace allocator.
-- Token material must not be logged, echoed, persisted, stored in response
-  details, or copied into metadata.
-- `/health` and `/version` remain public local readiness endpoints and must not
-  require auth.
-
-Dependency direction:
+Allowed dependency direction:
 
 ```text
 HTTP client
   -> packages.local_api protected endpoint adapter
-    -> injected turn handler callable/protocol
-      -> RuntimeComposition-owned fake-provider bridge
+    -> injected turn handler
+      -> RuntimeComposition-owned LM Studio Responses handler/runner
         -> Core assistant-provider-stage helper
           -> AssistantRuntime provider-stage helper
-        -> ProviderRuntime fake provider construction
+        -> ProviderRuntime approved provider factory
 ```
 
-Allowed imports for `packages.local_api` in the first endpoint implementation:
+Forbidden dependency direction: `packages.local_api` must not import
+RuntimeComposition/Core/AssistantRuntime/ProviderRuntime/adapters. Core and
+AssistantRuntime must not import RuntimeComposition or ProviderRuntime/adapters.
+ProviderRuntime must not import Core or AssistantRuntime. RuntimeComposition
+must not import concrete adapters, own provider routing, session/history,
+retry/fallback, model-selection, API-key policy, trace lookup, HTTP parsing, or
+auth policy.
 
-- approved contract models and enums from `packages.contracts`
-- `packages.process_runtime` for existing health/version readiness
-- local API modules, including the auth helper
-- Python standard-library modules needed for WSGI, JSON parsing, dataclasses,
-  typing/protocols, and safe comparisons
+What remains blocked: generic provider mode, LM Studio API behavior without a
+separate implementation task, service daemon lifecycle, token generation or
+discovery, preflight enforcement, persistence, cross-process traces, WebSocket
+events, sessions/history, routing, retry/fallback, model selection, API-key
+policy, tools, memory, UI, voice, desktop, vision, and proactive behavior.
 
-Forbidden imports for `packages.local_api`:
+Exact next implementation task unlocked: add an explicit developer-only LM
+Studio Responses local API turns runner and handler composition pack for
+`assistant_runtime_lmstudio_responses`, with current-process in-memory trace
+recording and protected trace read smoke coverage.
 
-- `packages.runtime_composition`
-- `packages.core`
-- `packages.assistant_runtime`
-- `packages.provider_runtime`
-- `packages.adapters`
-- `packages.telemetry` implementation modules
-- `apps`
-- `services`
-- provider SDKs
-
-Forbidden first-endpoint behavior:
-
-- no direct RuntimeComposition/Core/AssistantRuntime/ProviderRuntime calls from
-  `packages.local_api`
-- no LM Studio or other real-provider API execution
-- no provider routing, retry/fallback, model-selection policy, API-key policy,
-  preflight probing, sessions, history, trace API, WebSocket, service daemon,
-  supervisor lifecycle, tools, memory, UI, voice, desktop, vision, proactive
-  behavior, or long-running tasks
-- no hidden global handler, token, session, or trace state
-- no default CLI behavior change
-
-Error behavior:
-
-- Missing or invalid auth: HTTP `401`, top-level `ErrorEnvelope` with
-  `AUTH_REQUIRED`.
-- Unknown route: HTTP `404`, top-level `ErrorEnvelope` with `NOT_FOUND`.
-- Malformed JSON, non-object JSON, missing required fields, invalid
-  `AssistantTurnInput`, unsupported `execution_mode`, non-empty
-  `provider_options`, or unknown top-level fields: HTTP `400`, top-level
-  `ErrorEnvelope` with `VALIDATION_ERROR`.
-- Handler not configured or explicitly unavailable: HTTP `503`, top-level
-  `ErrorEnvelope` with `SERVICE_UNHEALTHY`.
-- Unexpected implementation exception: HTTP `500`, top-level `ErrorEnvelope`
-  with `INTERNAL_ERROR` and no raw exception detail.
-- Provider-stage failures returned by the handler remain nested inside
-  `AssistantTurnResult.error` when the handler completed and returned a valid
-  assistant result.
-
-Trace/provider reference exposure:
-
-- `/v1/turns` returns only the assistant result shape.
-- Trace ids can be read separately through protected `GET /v1/traces/{trace_id}`
-  when a current-process in-memory reader is explicitly injected.
-- Provider references are summaries only through `provider_turn_refs`.
-- Provider response ids must not become a top-level assistant-turn result field.
-
-What remains blocked:
-
-- real-provider `/v1/turns` execution
-- LM Studio API endpoint mode
-- persistent trace retrieval, cross-process lookup, or event streaming
-- local service daemon or lifecycle management
-- token generation, discovery, rotation, or persistence
-- session/history state
-- routing, retry/fallback, model-selection, API-key policy, tools, memory, UI,
-  voice, desktop, vision, proactive behavior, and product runtime behavior
-
-Current implementation note:
-
-Task 121 implements the protected fake-provider-only `/v1/turns` adapter with
-an injected handler shape:
-`Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`. Auth is enforced
-before body parsing or handler invocation. The local API package still does not
-import or call RuntimeComposition, Core, AssistantRuntime, ProviderRuntime,
-provider adapters, CLI apps, services, telemetry implementation modules, or
-provider SDKs.
-
-Task 122 adds the first composition-owned fake handler factory:
-`packages.runtime_composition.create_local_api_fake_turn_handler(...)`. That
-factory returns a handler for the Task 121 envelope and calls
-`run_fake_provider_assistant_bridge(...)`. The local API package still receives
-the handler only by injection.
-
-Task 123 adds the developer-only fake-turns smoke runner:
-`python -m packages.runtime_composition.local_api_fake_turns_runner --dev-token <fake-dev-token>`.
-The runner composes the local API runner with
-`create_local_api_fake_turn_handler(...)` outside `packages.local_api`. The
-token is caller-provided, fake/dev-only, and not printed by the runner.
-
-Task 127 adds the protected local-only trace-read adapter through injected
-reader composition. Any next API step must stay bounded to an explicitly
-approved ownership decision or implementation slice before real-provider API
-mode.
-
-Rollback path:
-
-If this contract proves too narrow, revert the `/v1/turns` endpoint to the
-existing unknown-route `NOT_FOUND` behavior and remove any injected handler
-wiring. Because execution stays outside `packages.local_api`, rollback should
-not require changes to Core, AssistantRuntime, ProviderRuntime, provider
-adapters, RuntimeComposition bridge internals, or default CLI behavior.
+Rollback path: if this decision proves too broad, do not implement the next
+pack, keep `/v1/turns` fake-only, and keep real-provider execution available
+only through the existing explicit CLI proof mode.
 
 ### GET /v1/traces/{trace_id}
 

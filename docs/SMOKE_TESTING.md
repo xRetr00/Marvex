@@ -342,6 +342,35 @@ Latest manual local fake `/v1/turns` plus trace-read smoke:
 - The smoke remains developer-only, fake-provider-only, and outside CI /
   `run_all_checks.py`.
 
+### Future Local LM Studio `/v1/turns` API Smoke
+
+Task 130 decides that the first real-provider local API mode should be a
+separate developer-only LM Studio Responses runner, not a generic provider
+router and not service daemon behavior. The future command shape is:
+
+```powershell
+python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token <fake-dev-token>
+```
+
+Smoke prerequisites and expectations:
+
+- LM Studio is already running at the configured local OpenAI-compatible API.
+- A model is loaded and passed explicitly in the request body.
+- The protected request uses `execution_mode:
+  "assistant_runtime_lmstudio_responses"`.
+- `provider_options` remains `{}` unless a later task approves keys.
+- `/health` and `/version` remain public.
+- `POST /v1/turns` and `GET /v1/traces/{trace_id}` require bearer auth.
+- The response validates as `AssistantTurnResult`; any provider reference stays
+  in assistant-envelope reference fields, not as a top-level
+  `provider_response_id`.
+- The trace read returns only safe current-process in-memory projections.
+- Missing/wrong auth returns safe `AUTH_REQUIRED` without token echo.
+
+This future smoke must remain manual-only and outside `run_all_checks.py`. It
+must not record full prompts, raw provider payloads, full provider outputs,
+secrets, bearer tokens, environment values, stack traces, or persistent traces.
+
 Latest manual local health/version runner smoke:
 
 - Date: 2026-05-13.

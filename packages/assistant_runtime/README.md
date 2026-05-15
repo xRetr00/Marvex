@@ -78,6 +78,10 @@ Provider-stage skeleton:
   `AssistantTurnResult` for completed handler calls, but the API must not import
   or call AssistantRuntime directly. AssistantRuntime remains reachable only
   through Core/RuntimeComposition-owned provider-stage composition.
+- Task 130 keeps that boundary for the future LM Studio Responses local API
+  mode: AssistantRuntime continues to see only an injected send-capable provider
+  and explicit model/input values through Core, not Local API, ProviderRuntime,
+  adapters, provider routing, preflight policy, or session/history state.
 
 Structured-output consumer seam:
 

@@ -88,6 +88,12 @@ explicitly into local service composition, and cleared on process exit. Local
 API may expose it only as an auth/JSON adapter; RuntimeComposition must not own
 trace lookup or storage.
 
+Task 130 decides that real-provider local API execution may proceed next only
+as an explicit developer-only LM Studio Responses mode and manual runner. It is
+not a service daemon, process supervisor, generic provider router, model
+selection layer, preflight enforcer, session/history store, or token lifecycle
+system. The local API package remains an injected HTTP/auth/JSON adapter.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
