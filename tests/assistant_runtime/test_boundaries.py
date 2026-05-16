@@ -46,3 +46,16 @@ def test_assistant_runtime_import_boundary():
                 f".{part}" in lowered or lowered.endswith(f".{part}")
                 for part in forbidden_domain_import_parts
             )
+
+
+def test_assistant_runtime_boundary_gate_tracks_state_ownership():
+    source = Path("scripts/check_assistant_runtime_boundaries.py").read_text(
+        encoding="utf-8"
+    )
+
+    assert "STATE_PRIMITIVE_NAMES" in source
+    assert "TurnStateSnapshot" in source
+    assert "AssistantTurnExecutionSummary" in source
+    assert "packages.local_api" in source
+    assert "packages.runtime_composition" in source
+    assert "packages.telemetry" in source

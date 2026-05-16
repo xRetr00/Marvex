@@ -12,6 +12,8 @@ Current responsibilities:
 - build deterministic reference-only stage summaries for the no-provider path
 - run a minimal deterministic `AssistantTurnRuntime` skeleton over an existing
   `AssistantTurnInput`
+- build safe assistant-turn state primitives: one-turn state snapshots,
+  execution summaries, and transition records
 - run an explicit injected provider-stage skeleton that maps neutral provider
   contract responses into `AssistantTurnResult`
 - validate an isolated experimental structured-output handoff-like input draft
@@ -35,6 +37,41 @@ Non-responsibilities:
 - no memory, tools, voice, UI, desktop, proactive, HTTP, IPC, daemon, or process
   runtime behavior
 - no telemetry persistence, logging sink, or product trace storage
+
+Assistant runtime state foundation:
+
+- `state.py` is AssistantRuntime-owned and pure. It defines
+  `TurnStateSnapshot`, `AssistantTurnExecutionSummary`, and
+  `StateTransitionRecord` for one assistant turn.
+- `TurnStateSnapshot` records only stable turn identity, input event identity,
+  explicit `previous_response_id` presence, session-reference presence,
+  user-visible-input presence, safe metadata keys, and the invariant that no
+  transcript is persisted by this foundation.
+- Session readiness is reference-only. A `session_ref` may be acknowledged as
+  present, but the session id, session body, conversation history, transcript,
+  and long-term recall remain outside this package until a future sessions
+  foundation is explicitly approved.
+- `previous_response_id` remains explicit caller input only. AssistantRuntime
+  stores only presence/absence in the snapshot and must not recover it from
+  `AssistantTurnInput.metadata` or any hidden state channel.
+- `AssistantTurnExecutionSummary` links `trace_id` and `turn_id`, completion
+  state, error code, final-response presence, reference counts, output-event
+  count, and safe stage statuses. It does not include final response text,
+  provider payloads, provider outputs, raw prompts, or transcripts.
+- `StateTransitionRecord` gives future stage sequencing a safe projected record:
+  `trace_id`, `turn_id`, sequence, state names, and a sanitized reason.
+- Safe projections redact unsafe keys or values with `[REDACTED]` and are
+  intended for debugging/telemetry linkage only, not persistence of assistant
+  state by default.
+- Telemetry may link to these primitives only by `trace_id` and `turn_id` and
+  remains the owner of trace event safety, persistence, and reads. Telemetry is
+  not the assistant state store.
+- Local API and future clients may receive safe state metadata only through
+  injected turn handlers; Local API must not import or construct these state
+  primitives directly.
+- Core and RuntimeComposition may compose approved paths around the primitives
+  but must not become state registries, session managers, transcript stores, or
+  service brains.
 
 Provider-stage skeleton:
 

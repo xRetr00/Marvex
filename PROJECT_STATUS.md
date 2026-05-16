@@ -1,21 +1,43 @@
 # Project Status
 
-current_phase: telemetry_persistence_foundation
+current_phase: assistant_runtime_state_foundation
 
-implementation_status: telemetry_persistence_foundation_complete
+implementation_status: assistant_runtime_state_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Telemetry Persistence Foundation Complete
+Assistant Runtime State Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 146:
+Latest full validation baseline from Assistant Runtime State Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 745 passed, 1 skipped
+- `python -m pytest -q` -> 754 passed, 1 skipped
+
+## Assistant Runtime State Foundation State
+
+The Assistant Runtime State Foundation is complete as a narrow
+AssistantRuntime-owned state layer for one assistant turn. AssistantRuntime now
+defines safe turn snapshots, execution summaries, and transition records that
+link runtime state to telemetry through `trace_id` and `turn_id` without storing
+raw prompts, provider payloads, provider outputs, tokens, transcripts, or session
+bodies. `previous_response_id` remains explicit caller input only and is exposed
+in state snapshots as presence/absence, not as a stored value. Session readiness
+is reference-only: `session_ref` presence can be represented, but full
+sessions/history, transcript persistence, memory, tools, UI, voice, desktop,
+vision, proactive behavior, generic provider routing, retry/fallback, model
+selection, daemon supervision, and WebSocket/events remain blocked.
+
+Boundary validation now also prevents AssistantRuntime state primitive ownership
+from drifting into Core, Local API, local service startup, RuntimeComposition,
+ProviderRuntime, or telemetry. Local API remains HTTP/auth/JSON-only,
+RuntimeComposition remains explicit composition-only, telemetry remains trace
+safety/persistence/read ownership rather than assistant state storage, Core
+remains orchestration-only, and ProviderRuntime remains provider construction
+only.
 
 ## Telemetry Persistence Foundation State
 
@@ -194,8 +216,9 @@ Process Readiness has started:
   and recorded with bounded safe output details
 - no real-provider turn execution composition, service daemon, subprocess
   runtime, or service mode exists
-- no persistent trace storage, cross-process lookup, trace search, or streaming
-  exists
+- telemetry now has explicit local NDJSON persistence, while cross-process
+  lookup, trace search, trace streaming, service daemon behavior, and default
+  product sink wiring remain blocked
 
 Assistant-runtime foundation now present:
 
@@ -403,8 +426,8 @@ Blocked without a separate approved task spec:
 - real-provider execution composition behind `/v1/turns` beyond the explicit
   Task 131 developer-only LM Studio Responses runner/handler path
 - generic provider local API mode and any non-LM-Studio first provider mode
-- telemetry persistence/logging sinks, cross-process trace storage, trace search,
-  and trace streaming
+- telemetry cross-process trace storage, trace search, trace streaming, default
+  product sink wiring, and non-local persistence backends
 - contract or port promotion
 - tools, memory, UI, voice, desktop, vision, proactive behavior
 - sessions, hidden history, routing, retry/fallback, API keys, or model routing
@@ -415,14 +438,12 @@ not implementation permission.
 
 ## Next Implementation Task
 
-The Local Runtime API Foundation is complete. Next work should be a separately
-approved foundation slice. Do not add raw bearer-token storage, daemon
-supervision, auto-restart, generic provider routing, persistent telemetry,
-sessions/history, WebSocket/events, retry/fallback, model selection, or broader
-token lifecycle machinery without another explicit task.
-
-Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
-service daemon behavior, generic provider API mode, sessions/history, routing,
-retry/fallback, model-selection, API-key policy, tools, memory, UI, voice,
-desktop, vision, proactive behavior, or default CLI changes without another
-explicit task.
+The recommended next major foundation is an Assistant Stage Lifecycle / Session
+Contract Decision slice: decide how one-turn state snapshots and transition
+records are produced by approved assistant stages, and define any future session
+reference contract before implementing sessions/history. Do not add raw
+transcript persistence, memory, tools, UI, voice, desktop, vision, proactive
+behavior, service daemon behavior, generic provider API mode, routing,
+retry/fallback, model selection, API-key policy, WebSocket/event streams,
+cross-process trace lookup, or default CLI changes without another explicit
+task.

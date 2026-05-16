@@ -10,12 +10,22 @@ ASSISTANT_RUNTIME_ROOT = ROOT / "packages" / "assistant_runtime"
 
 FORBIDDEN_IMPORT_PREFIXES = (
     "packages.core",
+    "packages.local_api",
+    "packages.local_service_startup",
     "packages.provider_runtime",
     "packages.adapters",
     "packages.ports",
+    "packages.runtime_composition",
+    "packages.telemetry",
     "apps.cli",
     "services",
 )
+ASSISTANT_RUNTIME_IMPORT_ALLOWLIST = {
+    "packages/assistant_runtime/provider_stage.py": {"packages.telemetry"},
+    "packages/assistant_runtime/structured_output_turn_result.py": {
+        "packages.telemetry"
+    },
+}
 FORBIDDEN_IMPORT_PARTS = (
     "tool",
     "tools",
@@ -74,6 +84,19 @@ FORBIDDEN_SUBSYSTEM_BEHAVIOR_TERMS = (
     "ipc daemon",
     "service daemon",
 )
+STATE_PRIMITIVE_NAMES = (
+    "TurnStateSnapshot",
+    "AssistantTurnExecutionSummary",
+    "StateTransitionRecord",
+)
+STATE_OWNER_FORBIDDEN_ROOTS = (
+    ROOT / "packages" / "core",
+    ROOT / "packages" / "local_api",
+    ROOT / "packages" / "local_service_startup",
+    ROOT / "packages" / "provider_runtime",
+    ROOT / "packages" / "runtime_composition",
+    ROOT / "packages" / "telemetry",
+)
 
 
 def _python_files(root: Path) -> list[Path]:
@@ -110,6 +133,15 @@ def _import_violates(module: str | None, prefixes: tuple[str, ...]) -> bool:
     ) or bool(lowered_parts.intersection(FORBIDDEN_IMPORT_PARTS))
 
 
+def _import_allowed(rel: str, module: str | None) -> bool:
+    if module is None:
+        return False
+    return any(
+        module == allowed or module.startswith(f"{allowed}.")
+        for allowed in ASSISTANT_RUNTIME_IMPORT_ALLOWLIST.get(rel, set())
+    )
+
+
 def _scan_imports(paths: list[Path], failures: list[str]) -> None:
     for path in paths:
         rel = _rel(path)
@@ -122,6 +154,8 @@ def _scan_imports(paths: list[Path], failures: list[str]) -> None:
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
             module = _module_from_import(node)
+            if _import_allowed(rel, module):
+                continue
             if _import_violates(module, forbidden_import_prefixes):
                 failures.append(f"{rel} imports forbidden boundary: {module}")
             for alias in node.names:
@@ -154,12 +188,25 @@ def _scan_text(paths: list[Path], failures: list[str]) -> None:
                 failures.append(f"{rel} mentions provider-bridge term: {term}")
 
 
+def _scan_state_primitive_ownership(failures: list[str]) -> None:
+    for root in STATE_OWNER_FORBIDDEN_ROOTS:
+        for path in _python_files(root):
+            text = path.read_text(encoding="utf-8")
+            rel = _rel(path)
+            for name in STATE_PRIMITIVE_NAMES:
+                if name in text:
+                    failures.append(
+                        f"{rel} mentions AssistantRuntime state primitive: {name}"
+                    )
+
+
 def main() -> int:
     failures: list[str] = []
     paths = _python_files(ASSISTANT_RUNTIME_ROOT)
 
     _scan_imports(paths, failures)
     _scan_text(paths, failures)
+    _scan_state_primitive_ownership(failures)
 
     if failures:
         for failure in failures:

@@ -58,6 +58,7 @@ AssistantTurnRuntime owns:
 - stage order
 - per-stage lifecycle coordination
 - stage result aggregation
+- one-turn assistant state snapshots and safe state projections
 - trace/cancellation propagation to stages
 
 AssistantTurnRuntime must not own subsystem internals.
@@ -65,6 +66,7 @@ AssistantTurnRuntime must not own subsystem internals.
 AssistantTurnRuntime must not own:
 
 - provider SDK behavior
+- session history or transcript storage
 - memory storage
 - tool execution internals
 - policy engine internals
@@ -137,6 +139,13 @@ Future worker calls receive `trace_id` through approved worker envelopes.
 Telemetry/EventRuntime owns diagnostic trace emission and future event
 persistence. Diagnostic trace events are not memory records. Assistant
 event/history records are not raw telemetry logs.
+
+AssistantRuntime state projections link to telemetry by `trace_id` and `turn_id`
+only. They may expose presence flags, reference counts, stage statuses, and
+sanitized transition reasons, but not raw prompts, provider payloads, provider
+outputs, tokens, transcripts, or session bodies. `previous_response_id` remains
+explicit caller input and may be represented only as presence/absence in
+AssistantRuntime state snapshots.
 
 ## Anti-God-Object Guardrails
 

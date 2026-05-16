@@ -52,9 +52,12 @@ parsing, auth validation, routing, sessions/history, retry/fallback,
 model-selection, or API-key policy.
 
 `check_assistant_runtime_boundaries.py` enforces the AssistantRuntime dependency
-boundary so the no-provider assistant-runtime skeleton stays isolated from Core,
-ProviderRuntime, adapters, ports, apps, services, provider bridge terms,
-concrete providers, and future subsystem behavior.
+boundary so assistant-envelope helpers, the no-provider skeleton, approved
+provider-stage diagnostics, and assistant-runtime-owned state primitives stay
+isolated from Core, Local API, local service startup, RuntimeComposition,
+ProviderRuntime, adapters, ports, apps, services, concrete providers, provider
+bridge terms, and future subsystem behavior. It also blocks other runtime
+owners from directly mentioning AssistantRuntime state primitive names.
 
 `check_provider_structured_output_boundaries.py` enforces the no-network
 provider structured-output adapter boundary so validation stays isolated from

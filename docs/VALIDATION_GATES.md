@@ -340,14 +340,21 @@ only. It does not authorize runtime behavior.
 
 ### Assistant Runtime Boundary Gate
 
-AssistantRuntime is limited to pure assistant-envelope helper and no-provider
-skeleton behavior until a separate task approves runtime integration.
+AssistantRuntime is limited to pure assistant-envelope helpers, no-provider
+skeleton behavior, provider-stage helper behavior through injected contracts,
+and safe one-turn state primitives.
 
 - `packages/assistant_runtime` Python source may import approved contracts and
-  local assistant-runtime helpers.
+  local assistant-runtime helpers. Existing telemetry event construction imports
+  are allowed only for approved provider-stage and structured-output diagnostics.
 - `packages/assistant_runtime` Python source must not import or mention Core,
-  ProviderRuntime, adapters, ports, CLI apps, services, concrete providers,
-  provider bridge terms, or future subsystem runtime behavior.
+  Local API, local service startup, RuntimeComposition, ProviderRuntime,
+  adapters, ports, CLI apps, services, concrete providers, provider bridge terms,
+  or future subsystem runtime behavior.
+- AssistantRuntime state primitive names must not appear in Core, Local API,
+  local service startup, RuntimeComposition, ProviderRuntime, or telemetry
+  Python source. Those layers may compose or read approved outputs through
+  explicit injected paths only; they must not own assistant state lifecycle.
 - Strict scans target Python source files only, not README or documentation
   files.
 - `scripts/run_all_checks.py` runs the assistant runtime boundary gate.
