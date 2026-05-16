@@ -1,26 +1,21 @@
 # Project Status
 
-current_phase: local_client_discovery_policy_decided
+current_phase: local_discovery_metadata_writer_foundation
 
-implementation_status: local_discovery_policy_decision_recorded
+implementation_status: local_discovery_metadata_writer_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 141 Local Client Discovery Policy Decision
+Task 142 Local Discovery Metadata Writer Foundation
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 138:
+Latest full validation baseline from Task 142:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 709 passed, 1 skipped
-
-Latest full validation baseline from Task 139:
-
-- `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 722 passed, 1 skipped
+- `python -m pytest -q` -> 725 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -91,6 +86,12 @@ Recent local API/runtime milestones:
   endpoint access still requires an explicit private token handoff outside that
   file. Discovery-file writes, readers, cleanup, and permissions remain future
   narrow implementation tasks.
+- Task 142 implements the first safe discovery metadata writer in
+  `packages.local_service_startup`. It writes only token-redacted loopback
+  startup metadata under an explicit local-user root, rejects out-of-scope paths
+  and remote bind metadata, and does not write bearer tokens or provider
+  credentials. Reader/client helpers, cleanup, startup-runner integration, and
+  token handoff remain future narrow tasks.
 
 ## Current Foundation Capabilities
 
@@ -133,6 +134,9 @@ Process Readiness has started:
 - local service startup can now run a narrow Local API service-runner startup
   proof that injects the generated token into the existing Local API runner and
   prints safe metadata only
+- local service startup can now write safe local-user-scoped discovery metadata
+  without raw tokens, remote bind addresses, provider credentials, or handler
+  configuration
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
 - the fake `/v1/turns` plus protected trace-read manual smoke has been executed
@@ -360,8 +364,8 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may implement a narrow local-user-scoped discovery metadata writer in
-`packages.local_service_startup`. Keep it safe-only: loopback metadata, token
+Next work may add a narrow discovery reader/client helper or explicitly wire the
+writer into a startup mode. Keep it safe-only: loopback metadata, token
 presence, schema/version fields, no raw bearer token, no daemon supervision,
 auto-restart, generic provider routing, persistent telemetry, sessions/history,
 WebSocket/events,

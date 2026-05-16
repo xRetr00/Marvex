@@ -138,6 +138,13 @@ requested by startup config; a reader/client helper may only read this safe
 metadata and must not become a token store, service registry, launcher, daemon,
 retry/fallback layer, model selector, or cross-process trace lookup.
 
+Task 142 implementation note: `packages.local_service_startup.discovery` writes
+safe discovery metadata only when given an explicit path under a local-user
+root. It serializes the public startup metadata, rejects out-of-scope paths and
+non-loopback metadata, best-effort restricts file permissions, and never writes
+the raw local bearer token. The startup runner does not write discovery files
+yet; reader/client helpers and cleanup remain future tasks.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

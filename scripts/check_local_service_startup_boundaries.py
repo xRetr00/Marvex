@@ -14,6 +14,7 @@ FORBIDDEN_INTEGRATION_ROOTS = [
 ]
 STARTUP_IMPORT_TOKEN = "packages.local_service_startup"
 LOCAL_API_SERVICE_RUNNER = "packages/local_service_startup/local_api_service_runner.py"
+DISCOVERY_METADATA_WRITER = "packages/local_service_startup/discovery.py"
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
@@ -24,6 +25,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "enum",
     "json",
     "os",
+    "pathlib",
     "secrets",
     "types",
     "typing",
@@ -104,6 +106,8 @@ def _scan_startup_imports_and_tokens(failures: list[str]) -> None:
         text = _read(path)
         lowered = text.lower()
         for token in FORBIDDEN_SOURCE_TOKENS:
+            if rel == DISCOVERY_METADATA_WRITER and token == "write_text":
+                continue
             if token in lowered:
                 failures.append(f"{rel} contains forbidden startup behavior token: {token}")
 

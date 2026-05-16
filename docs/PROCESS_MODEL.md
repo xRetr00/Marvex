@@ -130,6 +130,10 @@ running service through local-user-scoped safe metadata only. That metadata is
 for finding loopback service location and token-required state, not for carrying
 the bearer token or starting/supervising the service.
 
+Task 142 implements only the safe discovery metadata writer. It does not wire
+discovery writes into startup, read discovery metadata, hand off tokens, clean up
+files, supervise services, or change Local API request handling.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
