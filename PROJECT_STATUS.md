@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: local_api_service_runner_startup_proof
+current_phase: local_api_startup_proof_smoke_recorded
 
-implementation_status: local_api_service_runner_startup_proof_implemented
+implementation_status: local_api_service_runner_startup_proof_smoke_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 139 Local API Service Runner Startup Proof
+Task 140 Local API Service Runner Startup Proof Smoke Record
 
 ## Validation Baseline
 
@@ -81,6 +81,10 @@ Recent local API/runtime milestones:
   public startup metadata. Discovery-file writes, daemon supervision,
   auto-restart, RuntimeComposition service ownership, generic provider routing,
   persistent telemetry, sessions/history, and WebSocket/events remain blocked.
+- Task 140 records a bounded manual smoke for the startup-proof runner:
+  `/health` and `/version` returned HTTP 200 on loopback, missing/wrong
+  `/v1/turns` auth returned HTTP 401, startup metadata reported token presence
+  only, and stdout did not include `local_auth_token`.
 
 ## Current Foundation Capabilities
 
@@ -350,10 +354,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may add an explicit manual smoke record for the startup-runner proof
-or decide the first local client discovery path. Keep that work narrow: no
-discovery-file writes, daemon supervision, auto-restart, generic provider
-routing, persistent telemetry, sessions/history, WebSocket/events,
+Next work may decide the first local client discovery path. Keep that work
+narrow: no discovery-file writes until the decision is documented, no daemon
+supervision, auto-restart, generic provider routing, persistent telemetry,
+sessions/history, WebSocket/events,
 retry/fallback, model selection, or broader token lifecycle machinery without
 another explicit task.
 

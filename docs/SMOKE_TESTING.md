@@ -178,13 +178,8 @@ loopback readiness endpoints and do not require the local auth token.
 
 Task 121 adds a protected `/v1/turns` adapter to the app object, but the manual
 runner does not provide a fake development token or stub turn handler. Manual
-`/v1/turns` smoke remains deferred so this runner stays health/version-only and
-does not grow execution composition.
-
-Task 122 adds a RuntimeComposition-owned fake handler factory for `/v1/turns`,
-but the manual runner still does not inject it or publish a development bearer
-token. Manual fake `/v1/turns` smoke remains deferred to a separate task that
-can explicitly document the token, request shape, and expected output.
+`/v1/turns` smoke moved to explicit RuntimeComposition-owned runners so the
+base runner stays generic and does not grow execution composition.
 
 Task 123 adds a developer-only RuntimeComposition smoke runner for fake
 `/v1/turns` execution. It composes the local API runner with the
@@ -209,15 +204,18 @@ The metadata reports token presence and `token_value_logged: false`, never the
 raw token; discovery-file writes, supervision, auto-restart, handler
 composition, and WebSocket/events remain blocked.
 
-Check health:
+Latest startup-proof runner smoke on 2026-05-16:
+
+- Command shape: `python -m packages.local_service_startup.local_api_service_runner --port <local-port>`.
+- `/health` and `/version`: HTTP 200 for `marvex-local-api`.
+- Metadata: loopback URL, auth required, token present, token not logged,
+  discovery disabled; stdout omitted `local_auth_token`.
+- Missing/wrong `/v1/turns` auth returned HTTP 401; stderr had only access logs.
+
+Check health and version:
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:8765/health
-```
-
-Check version:
-
-```powershell
 Invoke-RestMethod http://127.0.0.1:8765/version
 ```
 
