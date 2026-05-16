@@ -145,6 +145,12 @@ non-loopback metadata, best-effort restricts file permissions, and never writes
 the raw local bearer token. The startup runner does not write discovery files
 yet; reader/client helpers and cleanup remain future tasks.
 
+Task 143 implementation note: the same discovery module can now read safe
+local-user-scoped metadata for a future client. The reader validates local-user
+scope, JSON object shape, loopback URL, and token-redaction rules before
+returning metadata. It does not read tokens, launch services, clean up files,
+select providers, retry connections, or perform protected Local API calls.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

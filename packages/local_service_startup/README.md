@@ -14,8 +14,8 @@ Current responsibilities:
 - represent future discovery mode metadata without writing discovery files
 - run a narrow Local API service-runner startup proof that injects the generated
   token into the existing Local API runner and prints safe public metadata only
-- write local-user-scoped safe discovery metadata only when explicitly called;
-  raw bearer tokens are never written
+- write and read local-user-scoped safe discovery metadata only when explicitly
+  called; raw bearer tokens are never written or returned
 
 Forbidden responsibilities:
 
@@ -42,6 +42,6 @@ Dependency direction:
   only for the approved startup proof; it must not own HTTP parsing, auth
   validation internals, handler composition, trace storage, or service daemon
   behavior
-- `discovery.py` may write safe local-user-scoped metadata only; it must not
-  become a token store, registry, launcher, cleanup manager, or reader/client
-  owner without another approved task
+- `discovery.py` may write/read safe local-user-scoped metadata only; it must
+  not become a token store, registry, launcher, cleanup manager, retry layer, or
+  protected API client without another approved task

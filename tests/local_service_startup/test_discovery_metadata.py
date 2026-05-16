@@ -91,3 +91,84 @@ def test_discovery_writer_rejects_remote_bind_metadata(tmp_path):
         )
 
     assert not (tmp_path / "local-api.json").exists()
+
+
+def test_discovery_reader_returns_safe_metadata_for_future_clients(tmp_path):
+    from packages.local_service_startup import DiscoveryMode
+    from packages.local_service_startup import LocalApiServiceStartupConfig
+    from packages.local_service_startup import create_local_api_startup
+    from packages.local_service_startup.discovery import (
+        read_local_api_discovery_metadata,
+    )
+    from packages.local_service_startup.discovery import (
+        write_local_api_discovery_metadata,
+    )
+
+    discovery_file = tmp_path / "marvex" / "local-api.json"
+    startup = create_local_api_startup(
+        LocalApiServiceStartupConfig(
+            discovery_mode=DiscoveryMode.FUTURE_LOCAL_FILE,
+            discovery_file_path=str(discovery_file),
+            local_auth_token="fake-token-must-not-be-readable",
+        )
+    )
+    write_local_api_discovery_metadata(
+        startup.public_metadata(),
+        discovery_file_path=str(discovery_file),
+        local_user_root=tmp_path,
+    )
+
+    payload = read_local_api_discovery_metadata(
+        discovery_file_path=str(discovery_file),
+        local_user_root=tmp_path,
+    )
+    serialized = json.dumps(payload, sort_keys=True)
+
+    assert payload["base_url"] == "http://127.0.0.1:8765"
+    assert payload["auth_required"] is True
+    assert payload["auth_token_present"] is True
+    assert "fake-token-must-not-be-readable" not in serialized
+    assert "local_auth_token" not in serialized
+
+
+def test_discovery_reader_rejects_unsafe_metadata_file(tmp_path):
+    from packages.local_service_startup.discovery import (
+        read_local_api_discovery_metadata,
+    )
+
+    discovery_file = tmp_path / "marvex" / "local-api.json"
+    discovery_file.parent.mkdir(parents=True)
+    discovery_file.write_text(
+        json.dumps(
+            {
+                "schema_version": "0.1.1-draft",
+                "service": "marvex-local-api",
+                "base_url": "http://127.0.0.1:8765",
+                "bind_host": "127.0.0.1",
+                "port": 8765,
+                "auth_required": True,
+                "auth_token_present": True,
+                "token_value_logged": False,
+                "local_auth_token": "fake-token-must-not-be-read",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="unsafe"):
+        read_local_api_discovery_metadata(
+            discovery_file_path=str(discovery_file),
+            local_user_root=tmp_path,
+        )
+
+
+def test_discovery_reader_rejects_paths_outside_local_user_scope(tmp_path):
+    from packages.local_service_startup.discovery import (
+        read_local_api_discovery_metadata,
+    )
+
+    with pytest.raises(ValueError, match="local-user scoped"):
+        read_local_api_discovery_metadata(
+            discovery_file_path=str(tmp_path.parent / "outside.json"),
+            local_user_root=tmp_path,
+        )

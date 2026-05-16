@@ -40,6 +40,26 @@ def write_local_api_discovery_metadata(
     return LocalApiDiscoveryWriteResult(discovery_file_path=str(path))
 
 
+def read_local_api_discovery_metadata(
+    *,
+    discovery_file_path: str,
+    local_user_root: str | Path | None = None,
+) -> dict[str, Any]:
+    root = _resolve_local_user_root(local_user_root)
+    path = Path(discovery_file_path).expanduser().resolve()
+    if not _is_relative_to(path, root):
+        raise ValueError("discovery_file_path must be local-user scoped")
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError("discovery metadata must be valid JSON") from exc
+    if not isinstance(payload, dict):
+        raise ValueError("discovery metadata must be a JSON object")
+    _validate_safe_discovery_payload(payload)
+    return payload
+
+
 def _resolve_local_user_root(local_user_root: str | Path | None) -> Path:
     if local_user_root is None:
         return Path.home().resolve()

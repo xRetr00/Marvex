@@ -134,6 +134,10 @@ Task 142 implements only the safe discovery metadata writer. It does not wire
 discovery writes into startup, read discovery metadata, hand off tokens, clean up
 files, supervise services, or change Local API request handling.
 
+Task 143 adds only the safe discovery metadata reader. It gives future clients a
+validated way to inspect loopback service metadata without receiving bearer
+tokens or service lifecycle authority.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.

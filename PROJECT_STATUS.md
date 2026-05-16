@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: local_discovery_metadata_writer_foundation
+current_phase: local_discovery_metadata_reader_foundation
 
-implementation_status: local_discovery_metadata_writer_implemented
+implementation_status: local_discovery_metadata_reader_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 142 Local Discovery Metadata Writer Foundation
+Task 143 Local Discovery Metadata Reader Foundation
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 142:
+Latest full validation baseline from Task 143:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 725 passed, 1 skipped
+- `python -m pytest -q` -> 728 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -92,6 +92,11 @@ Recent local API/runtime milestones:
   and remote bind metadata, and does not write bearer tokens or provider
   credentials. Reader/client helpers, cleanup, startup-runner integration, and
   token handoff remain future narrow tasks.
+- Task 143 adds the matching safe discovery metadata reader. It reads only
+  local-user-scoped JSON metadata, rejects unsafe/raw-token fields and remote
+  bind metadata, and returns safe service location/token-presence data for a
+  future client without becoming a launcher, registry, token store, or retry
+  layer.
 
 ## Current Foundation Capabilities
 
@@ -364,9 +369,9 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may add a narrow discovery reader/client helper or explicitly wire the
-writer into a startup mode. Keep it safe-only: loopback metadata, token
-presence, schema/version fields, no raw bearer token, no daemon supervision,
+Next work may explicitly wire safe discovery writes into a startup mode or add
+cleanup behavior. Keep it safe-only: loopback metadata, token presence,
+schema/version fields, no raw bearer token, no daemon supervision,
 auto-restart, generic provider routing, persistent telemetry, sessions/history,
 WebSocket/events,
 retry/fallback, model selection, or broader token lifecycle machinery without
