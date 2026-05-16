@@ -41,17 +41,27 @@ Current Provider Foundation implementation emits lifecycle events through the
 `TelemetrySink` protocol. The default runtime sink is `NoopTelemetrySink`, and
 tests may inject recording sinks.
 
-No default persistent telemetry storage is implemented yet. Persistent trace
-storage is future explicit work and requires its own approved task spec before
-implementation.
+Task 146 adds the first telemetry-owned local persistence foundation as
+`PersistentTraceStore`. It is explicit and injected only; no default runtime,
+daemon, Local API, Core, RuntimeComposition, ProviderRuntime, CLI, or service
+wiring is added.
 
-Future storage guidance:
+Storage policy:
 
-- Location: `.marvex/logs/` under the workspace or configured user data directory.
-- Format: newline-delimited JSON trace events.
-- Retention: keep at most 7 days or 50 MB by default, whichever is reached first.
-- Rotation: rotate when a log file reaches 5 MB or at process start after a date change.
-- Access: local process only; trace APIs require local auth.
+- Location: an explicit local-user-scoped file path chosen by the caller.
+- Format: newline-delimited JSON trace-event records.
+- Redaction: event message and `TraceEvent.data` are sanitized before write.
+- Retention: bounded size rotation; default file size is 5 MB with two rotated
+  files retained.
+- Read scope: local file persistence only; protected API access still requires
+  an injected reader and local auth.
+- Failure: write failures raise `TELEMETRY_WRITE_FAILED` without raw event data
+  or secret details.
+
+Persistent storage remains forbidden from sessions/history, memory, tools, UI,
+voice, desktop, vision, proactive behavior, generic provider routing,
+retry/fallback, model selection, daemon supervision, WebSocket/events, remote
+trace access, and raw sensitive transcript capture.
 
 Task 126 decides the first future trace exposure path. Before any real-provider
 local API turn mode, Marvex should add a protected current-process trace read

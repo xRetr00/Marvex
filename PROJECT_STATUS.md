@@ -1,21 +1,32 @@
 # Project Status
 
-current_phase: local_runtime_api_foundation_complete
+current_phase: telemetry_persistence_foundation
 
-implementation_status: local_runtime_api_foundation_complete
+implementation_status: telemetry_persistence_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Local Runtime API Foundation Complete
+Telemetry Persistence Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 145:
+Latest full validation baseline from Task 146:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 738 passed, 1 skipped
+- `python -m pytest -q` -> 745 passed, 1 skipped
+
+## Telemetry Persistence Foundation State
+
+Task 146 adds telemetry-owned local trace persistence. `PersistentTraceStore`
+writes safe newline-delimited JSON records to an explicit local-user-scoped file,
+sanitizes event messages and `TraceEvent.data` before persistence, rotates by
+bounded file size/count, skips malformed stored records during reads, and raises
+safe `TELEMETRY_WRITE_FAILED` errors on write failure. Local API remains an
+injected auth/HTTP/JSON access layer, RuntimeComposition remains explicit
+composition only, Core remains storage-format blind, and ProviderRuntime remains
+telemetry-persistence blind.
 
 ## Local Runtime API Foundation Completion State
 

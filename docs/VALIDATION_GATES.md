@@ -150,6 +150,26 @@ Local API client helpers are limited to future Shell/CLI connection proof paths.
   voice, desktop, vision, or proactive behavior.
 - `scripts/run_all_checks.py` runs the local API client boundary gate.
 
+### Telemetry Boundary Gate
+
+Telemetry owns trace event safety, read-time projection, and local persistence.
+
+- `packages/telemetry` may import approved contracts and standard-library file,
+  JSON, timestamp, regex, and typing helpers.
+- Telemetry persistence must stay telemetry-owned and local-file only unless a
+  later task approves another sink.
+- Persistent trace stores must sanitize before write and must not persist raw
+  prompts, provider payloads, provider outputs, tokens, provider credentials,
+  environment values, stack traces with secrets, or full sensitive transcripts
+  by default.
+- Telemetry must not import Local API, Local API client, local service startup,
+  RuntimeComposition, Core, AssistantRuntime, ProviderRuntime, adapters, CLI
+  apps, or services.
+- Telemetry must not implement sessions/history, memory, tools, UI, voice,
+  desktop, vision, proactive behavior, generic provider routing, retry/fallback,
+  model selection, daemon supervision, WebSocket/events, or remote trace access.
+- `scripts/run_all_checks.py` runs the telemetry boundary gate.
+
 ### Local Service Startup Boundary Gate
 
 Local service startup is limited to safe startup metadata and local bearer-token

@@ -28,6 +28,7 @@ Scripts:
 - `check_local_service_startup_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
+- `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
 - `check_vaxil_boundary.py`
 
@@ -60,6 +61,11 @@ provider structured-output adapter boundary so validation stays isolated from
 Core, AssistantRuntime, ProviderRuntime, adapters, ports, apps, services,
 concrete providers, prompt rendering, provider response ids, and deferred
 frameworks.
+
+`check_telemetry_boundaries.py` enforces the telemetry boundary so trace safety,
+read projections, and local persistence stay inside `packages/telemetry` without
+imports from Local API, RuntimeComposition, Core, ProviderRuntime, adapters,
+CLI apps, services, or future subsystem behavior.
 
 `check_process_runtime_boundaries.py` enforces the ProcessRuntime dependency
 boundary so local health/version object construction stays isolated until an

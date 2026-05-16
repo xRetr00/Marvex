@@ -1,7 +1,7 @@
 # Telemetry Package
 
 Status: minimal Provider Foundation lifecycle implementation plus local-only
-in-memory trace reader.
+in-memory trace reader and telemetry-owned local persistence foundation.
 
 Ownership: Trace and diagnostics boundary.
 
@@ -9,23 +9,29 @@ Responsibility: Provide `TelemetrySink`, `NoopTelemetrySink`, trace event
 construction for the v1 turn lifecycle, sanitizer primitives, and
 structured-output-shaped trace data safety inside telemetry event construction.
 Task 127 also adds `InMemoryTraceReader` for injected current-process trace
-reads.
+reads. Task 146 adds `PersistentTraceStore` for local NDJSON persistence with
+redaction before write and bounded file rotation.
 
 Forbidden responsibilities:
 
-- Persistent trace storage until an approved storage task exists.
-- Logging sinks until an approved logging/storage task exists.
+- Persistence outside telemetry ownership.
+- Logging sinks outside the approved local trace persistence store.
 - Core orchestration.
 - Provider behavior.
 - CLI interaction.
 - Tool execution.
 - Future module domains outside trace diagnostics.
 - Logging secrets or raw sensitive transcripts by default.
+- Sessions/history, memory, tools, UI, voice, desktop, vision, proactive
+  behavior, generic provider routing, retry/fallback, model selection, daemon
+  supervision, WebSocket/events, or remote trace access.
 
 Dependency direction:
 
 - May depend on approved contracts.
 - Must remain isolated from adapters, CLI, and services.
+- Local API receives telemetry readers only by injection and must not import or
+  own persistence internals.
 
 Sanitization:
 
@@ -68,3 +74,19 @@ Task 127 implementation:
   It must not add persistence, a global trace store, cross-process lookup,
   search, streaming, or raw provider/secret exposure.
 - Task 131 implements that manual runner injection pattern.
+
+Telemetry persistence foundation:
+
+- `PersistentTraceStore` is a telemetry-owned `TelemetrySink` plus trace reader.
+- It writes newline-delimited JSON records to an explicit local-user-scoped file
+  path.
+- It sanitizes event messages and `TraceEvent.data` before writing.
+- It rejects non-JSON-compatible event data before creating a file.
+- It rotates local files by size with a bounded rotated-file count.
+- Read envelopes use `scope: "local_persistence"` and `source: "local_file"`.
+- Malformed stored records are counted and skipped; raw malformed text is not
+  returned.
+- Write failures raise `TelemetryPersistenceError` with
+  `TELEMETRY_WRITE_FAILED` and no raw event or secret details.
+- The store is not wired into default runtime, Local API, RuntimeComposition,
+  Core, ProviderRuntime, CLI, or services.
