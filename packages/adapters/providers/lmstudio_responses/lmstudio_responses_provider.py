@@ -75,7 +75,7 @@ class LMStudioResponsesProvider:
                     trace_id=request.trace_id,
                     error_id=self._config.error_id,
                     code=ErrorCode.PROVIDER_ERROR,
-                    message=str(exc),
+                    message=self._safe_exception_message(exc),
                     recoverable=True,
                     source="lmstudio_responses_provider",
                     details={"exception_type": type(exc).__name__},
@@ -122,6 +122,13 @@ class LMStudioResponsesProvider:
         if self._config.timeout is not None:
             kwargs["timeout"] = self._config.timeout
         return kwargs
+
+    def _safe_exception_message(self, exc: Exception) -> str:
+        message = str(exc)
+        api_key = self._config.api_key
+        if api_key:
+            message = message.replace(api_key, "[REDACTED]")
+        return message
 
     def _filter_provider_options(
         self, provider_options: dict[str, Any]

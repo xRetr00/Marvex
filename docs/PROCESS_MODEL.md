@@ -94,6 +94,13 @@ not a service daemon, process supervisor, generic provider router, model
 selection layer, preflight enforcer, session/history store, or token lifecycle
 system. The local API package remains an injected HTTP/auth/JSON adapter.
 
+Task 131 implements that explicit developer-only LM Studio Responses local API
+runner/handler through RuntimeComposition injection. Task 134 adds only the
+narrow LM Studio provider-token pass-through from `MARVEX_LMSTUDIO_API_KEY` to
+ProviderRuntime config. This still does not create a generic provider API,
+service daemon, token lifecycle system, persistent telemetry, sessions/history,
+routing, retry/fallback, model selection, WebSocket, or product service mode.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -125,7 +132,10 @@ endpoints and protects the `/v1/turns` adapter. Task 120 narrows `/v1/turns` to
 protected fake-provider only with an injected handler. Task 121 implements only
 that protected adapter. Task 122 adds fake-provider handler composition outside
 local API. Task 123 adds manual fake-turns smoke composition in
-RuntimeComposition. Task 126 decides trace exposure ownership and safety but
-does not implement a trace API or trace storage. WebSocket, service lifecycle,
-subprocess supervision, persistence, and real-provider API execution remain
-future explicit service-runtime work.
+RuntimeComposition. Tasks 127 and 128 add protected current-process trace read
+for the manual fake path. Task 131 adds the explicit developer-only LM Studio
+Responses local API path, and Task 134 adds narrow LM Studio token pass-through
+for that path. WebSocket, service lifecycle, subprocess supervision,
+persistence, generic provider API execution, token lifecycle, sessions/history,
+routing, retry/fallback, and model selection remain future explicit
+service-runtime work.

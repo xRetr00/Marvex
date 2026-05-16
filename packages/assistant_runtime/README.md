@@ -84,6 +84,10 @@ Provider-stage skeleton:
   adapters, provider routing, preflight policy, or session/history state.
 - Task 131 implements the local API LM Studio path without changing
   AssistantRuntime behavior.
+- Task 133 keeps provider-token configuration out of AssistantRuntime.
+  AssistantRuntime still sees only an injected send-capable provider and
+  explicit provider-stage inputs; it must not read, store, log, route, validate,
+  or expose provider credentials.
 
 Structured-output consumer seam:
 

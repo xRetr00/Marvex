@@ -142,6 +142,17 @@ Task 131 LM Studio runner support:
 - The LM Studio runner injects `assistant_runtime_lmstudio_responses` explicitly
   with its handler. This package still owns no provider execution policy.
 
+Task 133 provider-token boundary:
+
+- The local bearer token protects Marvex local endpoints only.
+- LM Studio provider API tokens must not be accepted in local API headers,
+  request bodies, `provider_options`, metadata, or trace-reader input.
+- Provider credentials belong to ProviderRuntime plus the concrete provider
+  adapter config and may reach this package only indirectly through an injected
+  handler that has already been composed elsewhere.
+- Task 134 implements LM Studio provider-token pass-through without changing
+  this package or the local API request envelope.
+
 Auth decision:
 
 - Protected future endpoints must use `Authorization: Bearer <local-token>`.

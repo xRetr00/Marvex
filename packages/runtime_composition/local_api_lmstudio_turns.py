@@ -34,6 +34,7 @@ LocalApiLmstudioTurnHandler = Callable[
 def create_local_api_lmstudio_turn_handler(
     *,
     telemetry_sink: TelemetrySink | None = None,
+    lmstudio_responses_api_key: str | None = None,
 ) -> LocalApiLmstudioTurnHandler:
     def handle_lmstudio_turn(
         request: LocalApiLmstudioTurnRequest,
@@ -53,6 +54,8 @@ def create_local_api_lmstudio_turn_handler(
         }
         if telemetry_sink is not None:
             kwargs["telemetry_sink"] = telemetry_sink
+        if lmstudio_responses_api_key is not None:
+            kwargs["lmstudio_responses_api_key"] = lmstudio_responses_api_key
         return run_lmstudio_responses_assistant_bridge(
             request.assistant_turn_input,
             **kwargs,

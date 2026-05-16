@@ -42,6 +42,7 @@ def run_lmstudio_responses_assistant_bridge(
     previous_response_id: str | None = None,
     provider_options: dict[str, Any] | None = None,
     telemetry_sink: TelemetrySink | None = None,
+    lmstudio_responses_api_key: str | None = None,
 ) -> AssistantTurnResult:
     return _run_provider_assistant_bridge(
         turn_input,
@@ -51,6 +52,7 @@ def run_lmstudio_responses_assistant_bridge(
         previous_response_id=previous_response_id,
         provider_options=provider_options,
         telemetry_sink=telemetry_sink,
+        lmstudio_responses_api_key=lmstudio_responses_api_key,
     )
 
 
@@ -63,8 +65,14 @@ def _run_provider_assistant_bridge(
     previous_response_id: str | None,
     provider_options: dict[str, Any] | None,
     telemetry_sink: TelemetrySink | None,
+    lmstudio_responses_api_key: str | None = None,
 ) -> AssistantTurnResult:
-    provider = create_provider(ProviderRuntimeConfig(provider_name=provider_name))
+    provider = create_provider(
+        ProviderRuntimeConfig(
+            provider_name=provider_name,
+            lmstudio_responses_api_key=lmstudio_responses_api_key,
+        )
+    )
     return run_assistant_provider_stage_turn(
         turn_input,
         provider=provider,

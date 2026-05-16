@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Sequence
 
 from packages.local_api.health_version_api import (
@@ -13,9 +14,13 @@ from packages.telemetry import InMemoryTraceReader
 from .local_api_lmstudio_turns import create_local_api_lmstudio_turn_handler
 
 
+LMSTUDIO_RESPONSES_API_KEY_ENV_VAR = "MARVEX_LMSTUDIO_API_KEY"
+
+
 def run_local_lmstudio_responses_api(
     *,
     dev_token: str,
+    lmstudio_responses_api_key: str | None = None,
     config: LocalApiConfig = LocalApiConfig(),
     server_factory: ServerFactory | None = None,
 ) -> int:
@@ -31,6 +36,7 @@ def run_local_lmstudio_responses_api(
         "config": config,
         "turn_handler": create_local_api_lmstudio_turn_handler(
             telemetry_sink=trace_reader,
+            lmstudio_responses_api_key=lmstudio_responses_api_key,
         ),
         "trace_reader": trace_reader,
         "local_auth_token": dev_token,
@@ -63,12 +69,20 @@ def _build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def read_lmstudio_responses_api_key_from_env() -> str | None:
+    value = os.environ.get(LMSTUDIO_RESPONSES_API_KEY_ENV_VAR)
+    if value is None or not value.strip():
+        return None
+    return value
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = _build_parser()
     args = parser.parse_args(argv)
     try:
         return run_local_lmstudio_responses_api(
             dev_token=args.dev_token,
+            lmstudio_responses_api_key=read_lmstudio_responses_api_key_from_env(),
             config=LocalApiConfig(port=args.port),
         )
     except ValueError as exc:

@@ -82,6 +82,13 @@ Process Readiness has started:
 - The developer-only fake `/v1/turns` manual runner now shares one
   current-process in-memory telemetry reader between fake turn recording and
   protected trace reads.
+- A developer-only RuntimeComposition runner can also inject an explicit LM
+  Studio Responses `/v1/turns` handler and the same current-process trace
+  reader pattern. The provider token path is LM Studio-only through
+  ProviderRuntime config and `MARVEX_LMSTUDIO_API_KEY`; the request body, Local
+  API, Core, AssistantRuntime, telemetry, and default CLI remain provider-token
+  blind. Token-backed live success is still deferred until the user provides a
+  local LM Studio API token.
 
 Git workflow governance exists:
 
@@ -111,7 +118,9 @@ Forbidden now:
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
 
-No turn endpoint exists yet with real-provider execution composition behind it.
+No turn endpoint exists yet as a generic, default, or product real-provider
+execution surface. The only real-provider local API path is the explicit
+developer-only LM Studio Responses runner.
 No persistent trace storage, cross-process trace lookup, or trace streaming
 exists yet.
 No service daemon exists yet.

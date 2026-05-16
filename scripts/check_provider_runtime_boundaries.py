@@ -42,11 +42,13 @@ PROVIDER_RUNTIME_ALLOWED_ADAPTER_IMPORTS = [
     "from packages.adapters.providers.fake import FakeProvider",
     "from packages.adapters.providers.litellm import LiteLLMProvider",
     "from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider",
+    "from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProviderConfig",
 ]
 PROVIDER_RUNTIME_ALLOWED_ADAPTER_NAMES = {
     "FakeProvider",
     "LiteLLMProvider",
     "LMStudioResponsesProvider",
+    "LMStudioResponsesProviderConfig",
 }
 
 PROVIDER_RUNTIME_FORBIDDEN_IMPORTS = [

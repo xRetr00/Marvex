@@ -138,6 +138,62 @@ def test_real_provider_bridge_creates_provider_through_provider_runtime(monkeypa
     assert result.provider_turn_refs[0].ref_id == "lmstudio-response-001"
 
 
+def test_lmstudio_bridge_passes_fake_api_key_only_in_provider_runtime_config(
+    monkeypatch,
+):
+    import packages.runtime_composition.assistant_provider_bridge as bridge
+
+    captured = {}
+    provider = RecordingProvider(success_response())
+    fake_api_key = "fake-lmstudio-token-for-test"
+
+    def recording_create_provider(config):
+        captured["config"] = config
+        return provider
+
+    monkeypatch.setattr(bridge, "create_provider", recording_create_provider)
+
+    result = bridge.run_lmstudio_responses_assistant_bridge(
+        make_turn_input(),
+        model="local-model",
+        lmstudio_responses_api_key=fake_api_key,
+    )
+
+    assert result.error is None
+    assert captured["config"].provider_name == "lmstudio_responses"
+    assert captured["config"].lmstudio_responses_api_key == fake_api_key
+    assert provider.requests[0].provider_options == {}
+    assert fake_api_key not in str(result.model_dump())
+
+
+def test_lmstudio_provider_error_does_not_echo_configured_fake_api_key():
+    from packages.adapters.providers.lmstudio_responses import (
+        LMStudioResponsesProvider,
+        LMStudioResponsesProviderConfig,
+    )
+    from tests.adapters.test_lmstudio_responses_provider import (
+        RecordingClient,
+        RecordingClientFactory,
+        make_request,
+    )
+
+    fake_api_key = "fake-lmstudio-token-for-test"
+    client = RecordingClient(
+        exception=RuntimeError(f"provider rejected {fake_api_key}")
+    )
+    provider = LMStudioResponsesProvider(
+        config=LMStudioResponsesProviderConfig(api_key=fake_api_key),
+        client_factory=RecordingClientFactory(client),
+    )
+
+    response = provider.send(make_request())
+    serialized = str(response.model_dump())
+
+    assert response.error is not None
+    assert response.error.code == ErrorCode.PROVIDER_ERROR
+    assert fake_api_key not in serialized
+
+
 def test_real_provider_bridge_injects_provider_into_core_helper(monkeypatch):
     import packages.runtime_composition.assistant_provider_bridge as bridge
 

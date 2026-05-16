@@ -84,6 +84,17 @@ Current bridge proof:
   `run_lmstudio_responses_assistant_bridge(...)`; the runner injects one
   `InMemoryTraceReader` as both telemetry sink and local API trace reader.
   Local API still receives only injected callables.
+- Task 133 decides that the developer-only LM Studio runner/bridge may pass an
+  explicit ProviderRuntime LM Studio credential config when approved, but it
+  must not own provider credential policy. The recommended manual source is a
+  developer-provided environment variable value read by the runner without
+  printing it. The token must not enter the local API request body,
+  `provider_options`, Core, AssistantRuntime, telemetry events, logs, or error
+  details.
+- Task 134 implements only that pass-through for the developer-only LM Studio
+  local API runner. It reads `MARVEX_LMSTUDIO_API_KEY`, passes the value as
+  `lmstudio_responses_api_key` to ProviderRuntime, and does not print, log,
+  persist, trace, or serialize the value.
 
 Forbidden responsibilities:
 
@@ -96,6 +107,9 @@ Forbidden responsibilities:
 - Local API HTTP parsing, bearer auth enforcement, JSON validation, or response
   serialization.
 - Production token lifecycle or service daemon ownership for local API.
+- Generic provider credential management. A narrow developer-runner pass-through
+  for the approved LM Studio ProviderRuntime config is allowed only by a
+  specific task.
 
 Dependency direction:
 

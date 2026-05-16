@@ -258,6 +258,26 @@ selection, preflight enforcement, sessions/history, retry/fallback, API-key
 policy, service daemon behavior, persistent traces, and WebSocket/events remain
 blocked.
 
+Task 133 decision note: LM Studio local API token configuration belongs to the
+provider adapter construction path, not to Local API, Core, AssistantRuntime, or
+request metadata. The current `LMStudioResponsesProviderConfig` has a
+placeholder SDK key and `ProviderRuntimeConfig` has no credential field. The
+next implementation should add a narrow LM Studio-only ProviderRuntime config
+input that is converted into `LMStudioResponsesProviderConfig(api_key=...)`.
+RuntimeComposition may pass that config for the developer-only LM Studio local
+API runner, sourced from an environment variable value or explicit test fake,
+but it must not own provider credential policy. `provider_options`, Local API
+request bodies, `AssistantTurnInput.metadata`, traces, logs, and error
+envelopes must not carry provider tokens.
+
+Task 134 implementation note: ProviderRuntime now exposes the LM Studio-only
+`lmstudio_responses_api_key` field and maps it only to
+`LMStudioResponsesProviderConfig(api_key=...)`. The developer-only LM Studio
+local API runner reads `MARVEX_LMSTUDIO_API_KEY` and passes it through
+RuntimeComposition to ProviderRuntime without changing Local API request
+envelopes, Core, AssistantRuntime, telemetry, provider routing, model selection,
+preflight, retry/fallback, sessions/history, or default CLI behavior.
+
 Task 117 implementation note: `packages/local_api` adds a dependency-free
 local WSGI app object for `GET /health` and `GET /version` only, backed by the
 approved `HealthCheck` and `VersionInfo` contracts. It defaults local API config

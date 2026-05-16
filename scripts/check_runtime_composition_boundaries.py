@@ -36,6 +36,7 @@ MANUAL_LOCAL_API_FAKE_TURNS_RUNNER_IMPORT_PREFIXES = (
     "__future__",
     "argparse",
     "collections.abc",
+    "os",
     "packages.local_api.health_version_api",
     "packages.local_api.runner",
 )
@@ -73,6 +74,12 @@ BRIDGE_FORBIDDEN_TOKENS = (
 APPROVED_REAL_PROVIDER_TOKENS = ("lmstudio_responses",)
 APPROVED_LMSTUDIO_LOCAL_API_FILES = {
     "packages/runtime_composition/__init__.py",
+    "packages/runtime_composition/assistant_provider_bridge.py",
+    "packages/runtime_composition/local_api_lmstudio_responses_runner.py",
+    "packages/runtime_composition/local_api_lmstudio_turns.py",
+}
+APPROVED_LMSTUDIO_TOKEN_PASS_THROUGH_FILES = {
+    "packages/runtime_composition/assistant_provider_bridge.py",
     "packages/runtime_composition/local_api_lmstudio_responses_runner.py",
     "packages/runtime_composition/local_api_lmstudio_turns.py",
 }
@@ -143,6 +150,11 @@ def _scan_bridge_layer(failures: list[str]) -> None:
                 else:
                     for allowed in APPROVED_REAL_PROVIDER_TOKENS:
                         scanned = scanned.replace(allowed, "")
+            if token in {"api key", "api_key", "apikey"} and rel in (
+                APPROVED_LMSTUDIO_TOKEN_PASS_THROUGH_FILES
+            ):
+                scanned = scanned.replace("marvex_lmstudio_api_key", "")
+                scanned = scanned.replace("lmstudio_responses_api_key", "")
             if token in scanned:
                 failures.append(f"{rel} contains forbidden bridge behavior token: {token}")
 

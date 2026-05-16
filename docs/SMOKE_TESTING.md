@@ -371,6 +371,111 @@ This smoke must remain manual-only and outside `run_all_checks.py`. It
 must not record full prompts, raw provider payloads, full provider outputs,
 secrets, bearer tokens, environment values, stack traces, or persistent traces.
 
+Latest manual local LM Studio `/v1/turns` plus trace-read smoke:
+
+- Date: 2026-05-16.
+- Command shape:
+  `python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token <fake-dev-token>`.
+- Model used: `qwen3.5-0.8b`.
+- LM Studio setup: local server started on `127.0.0.1:1234`; model loaded with
+  identifier `qwen3.5-0.8b`; server was stopped after the smoke.
+- Fake/dev token behavior: used the documented fake label `local-dev-token`;
+  auth error responses did not echo token material.
+- Observed `/health`: HTTP 200, service `marvex-local-api`, status `ok`,
+  schema version `0.1.1-draft`.
+- Observed `/version`: HTTP 200, service `marvex-local-api`, service version
+  `0.1.0`, schema version `0.1.1-draft`.
+- Observed `/v1/turns`: HTTP 200 `AssistantTurnResult` with nested provider
+  error, trace id `trace-local-api-lmstudio-smoke-132`, turn id
+  `turn-local-api-lmstudio-smoke-132`, no final assistant response, one provider
+  ref for `lmstudio_responses`, and no top-level `provider_response_id`.
+- Underlying provider smoke result: `lmstudio_responses` failed with
+  `PROVIDER_ERROR (AuthenticationError)` because the current LM Studio server
+  requires a valid local API token and rejected the placeholder SDK key.
+- Observed `/v1/traces/{trace_id}` with auth: HTTP 200; same trace id, scope
+  `current_process`, source `in_memory`, `event_count` 4, `truncated` false.
+- Trace stages/levels summary: `provider_request_created:info`,
+  `provider_request_sent:info`, `provider_response_received:error`,
+  `turn_failed:error`.
+- Trace envelope fields observed: `schema_version`, `trace_id`, `scope`,
+  `source`, `events`, `event_count`, `truncated`.
+- Trace projection did not expose raw `TraceEvent.data`, prompt text,
+  `provider_response_id`, bearer token, secrets, provider payloads, or provider
+  raw previews.
+- Missing/wrong `/v1/turns` auth returned HTTP 401 `AUTH_REQUIRED` with reasons
+  `missing` and `invalid`.
+- Missing/wrong `/v1/traces/{trace_id}` auth returned HTTP 401 `AUTH_REQUIRED`
+  with reasons `missing` and `invalid`.
+- Safe bounded excerpt:
+  `AssistantTurnResult trace-local-api-lmstudio-smoke-132 / turn-local-api-lmstudio-smoke-132 -> nested PROVIDER_ERROR; trace_events=4`.
+- No runtime code changed. A later provider configuration task should decide how
+  to supply LM Studio local API tokens without adding generic API-key policy to
+  Local API or RuntimeComposition.
+
+Task 133 LM Studio token configuration decision:
+
+- Context: Task 132 proved local API auth, `/v1/turns`, mapped provider-error
+  response, and same-process trace read; live success was blocked by LM Studio
+  requiring its own local API token while the adapter used the placeholder SDK
+  key.
+- Options rejected: `provider_options`, Local API request/header policy, generic
+  credential management/routing, and adapter-local-only config.
+- Recommended token owner: the LM Studio adapter owns SDK `api_key` use;
+  ProviderRuntime owns constructing that adapter from explicit provider runtime
+  config.
+- Recommended propagation path: developer shell environment -> developer-only
+  RuntimeComposition runner config -> `ProviderRuntimeConfig` LM Studio-specific
+  credential field -> `LMStudioResponsesProviderConfig(api_key=...)` -> OpenAI
+  SDK client construction. The local `/v1/turns` body remains unchanged.
+- Token-aware layers: LM Studio adapter, ProviderRuntime construction, and the
+  explicit developer-only RuntimeComposition runner/bridge pass-through.
+- Token-blind layers: Local API, Core, AssistantRuntime, ports, contracts,
+  telemetry trace projection, CLI default paths, services, and future workers.
+- Logging/redaction rules: provider tokens must never be logged, persisted,
+  echoed in `ErrorEnvelope`, included in trace events, included in provider
+  refs, copied into metadata, or recorded in smoke output.
+- Test strategy: use fake token values only; assert ProviderRuntime constructs
+  `LMStudioResponsesProviderConfig` with the fake token; assert the adapter sends
+  the fake token only to the SDK client factory; assert errors, traces, and
+  local API auth failures do not contain the fake token; assert
+  `provider_options` remains rejected for credentials.
+- Manual smoke strategy: keep `--dev-token` only for fake Marvex local bearer
+  auth. A future runner enhancement may accept an environment-variable name for
+  the LM Studio token, read the value without printing it, and pass it through
+  ProviderRuntime config. The smoke record should mention only that a provider
+  token was configured, not its name or value.
+- Rollback path: remove the ProviderRuntime credential field and runner
+  environment read, returning to the adapter placeholder SDK key and the current
+  safe `PROVIDER_ERROR` failure behavior.
+
+Task 134 LM Studio token configuration implementation:
+
+- ProviderRuntimeConfig now has the LM Studio-only field
+  `lmstudio_responses_api_key`.
+- For `provider_name="lmstudio_responses"`, ProviderRuntime maps a configured
+  value to `LMStudioResponsesProviderConfig(api_key=...)`.
+- Non-LM-Studio providers reject `lmstudio_responses_api_key`.
+- The developer-only LM Studio local API runner reads
+  `MARVEX_LMSTUDIO_API_KEY` without printing or recording its value and passes
+  it through RuntimeComposition to ProviderRuntime.
+- If `MARVEX_LMSTUDIO_API_KEY` is missing or blank, behavior remains
+  deterministic: the runner passes no provider token override and the adapter
+  keeps its existing placeholder SDK key behavior.
+- The `/v1/turns` request body remains unchanged; provider credentials remain
+  forbidden in request bodies and `provider_options`.
+- Provider exception messages redact the configured adapter API key if provider
+  exception text includes it.
+
+Recommended manual smoke setup after Task 134:
+
+```powershell
+$env:MARVEX_LMSTUDIO_API_KEY="<real-local-lmstudio-token>"
+python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token local-dev-token
+```
+
+Do not record the token value or environment dump in smoke notes. Record only
+whether the provider token environment variable was present.
+
 Latest manual local health/version runner smoke:
 
 - Date: 2026-05-13.

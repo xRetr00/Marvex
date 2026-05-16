@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: local_api_lmstudio_responses_turns_runner_pack
+current_phase: lmstudio_responses_token_config_implementation_pack
 
-implementation_status: lmstudio_responses_local_api_runner_added
+implementation_status: lmstudio_responses_token_config_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 131 Local API LM Studio Responses Turns Runner Pack
+Task 134 LM Studio Responses Token Config Implementation Pack
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 131:
+Latest full validation baseline from Task 134:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 702 passed, 1 skipped
+- `python -m pytest -q` -> 709 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -37,6 +37,22 @@ Recent local API/runtime milestones:
   manual runner injects one current-process `InMemoryTraceReader` for both
   telemetry recording and protected trace reads. Local API still receives only
   injected handler/reader callables.
+- Task 132 records a manual LM Studio local API smoke. The local API runner,
+  auth, mapped provider-error response, and protected trace read worked
+  end-to-end on 2026-05-16, but LM Studio returned `AuthenticationError`
+  because the current local server requires a valid local API token and rejected
+  the placeholder SDK key. No runtime code changed.
+- Task 133 decides the LM Studio token path as docs-only: provider credentials
+  belong to ProviderRuntime plus the LM Studio adapter config, may be passed by
+  the explicit developer-only RuntimeComposition runner, and must not enter
+  Local API, Core, AssistantRuntime, request envelopes, traces, logs, or errors.
+- Task 134 implements the narrow LM Studio-only token path:
+  `ProviderRuntimeConfig.lmstudio_responses_api_key` maps to
+  `LMStudioResponsesProviderConfig(api_key=...)`, and the developer-only LM
+  Studio local API runner reads `MARVEX_LMSTUDIO_API_KEY` without printing or
+  recording its value. Local API, Core, AssistantRuntime, telemetry, default
+  CLI behavior, request bodies, and `provider_options` remain provider-token
+  blind.
 
 ## Current Foundation Capabilities
 
@@ -301,11 +317,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work should execute and record the developer-only LM Studio local API smoke
-when a local LM Studio server and model are available: start the explicit runner,
-submit a protected `assistant_runtime_lmstudio_responses` turn with explicit
-`model`, then read the returned trace through protected
-`GET /v1/traces/{trace_id}`.
+Next work may rerun the manual LM Studio local API smoke with
+`MARVEX_LMSTUDIO_API_KEY` configured outside repo files and outputs. Record only
+whether the provider token environment variable was present and whether the
+existing `/v1/turns` plus `/v1/traces/{trace_id}` smoke succeeds.
 
 Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
 service daemon behavior, generic provider API mode, sessions/history, routing,

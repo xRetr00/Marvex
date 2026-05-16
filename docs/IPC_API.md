@@ -165,6 +165,13 @@ handler invocation. Missing, malformed, unconfigured, or wrong tokens return
 `401 AUTH_REQUIRED` without echoing token material. `/health` and `/version`
 remain public loopback readiness endpoints.
 
+Provider-token distinction: the local bearer token protects Marvex local
+endpoints only. LM Studio provider API tokens are not local API auth tokens and
+must not be accepted in the `/v1/turns` request envelope, `provider_options`, or
+headers consumed by `packages.local_api`. Provider credentials belong to the
+provider adapter construction path through ProviderRuntime and any explicit
+RuntimeComposition developer-runner config approved for that provider.
+
 Model requirement decision: the API supports only caller-provided explicit
 `model`. It must not default, discover, select, route, or rewrite models.
 

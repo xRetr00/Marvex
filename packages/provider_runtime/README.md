@@ -40,6 +40,18 @@ Production bridge decision:
 - Task 131 keeps that path indirect: the local API LM Studio handler calls the
   RuntimeComposition bridge, which calls `create_provider(...)` with the approved
   `lmstudio_responses` provider name.
+- Task 133 decides that LM Studio local API token configuration belongs in this
+  provider construction boundary plus the LM Studio adapter config. The current
+  `ProviderRuntimeConfig` has only `provider_name`; the next implementation
+  should add a narrow LM Studio-specific credential input and map it to
+  `LMStudioResponsesProviderConfig(api_key=...)`. This must not become generic
+  provider routing, model selection, retry/fallback, environment policy, or
+  Local API auth behavior.
+- Task 134 implements that narrow path with
+  `ProviderRuntimeConfig.lmstudio_responses_api_key`. The field is accepted only
+  for `provider_name="lmstudio_responses"` and maps only to
+  `LMStudioResponsesProviderConfig(api_key=...)`. Missing or blank values keep
+  the existing placeholder SDK key behavior.
 
 Approved provider names:
 
@@ -55,6 +67,7 @@ Forbidden responsibilities:
 - New provider SDKs.
 - Dynamic provider loading.
 - Retry, fallback, model selection, health selection, or provider policy.
+- Generic credential management or provider API-key policy.
 - Session storage or history management.
 - Tool execution, MCP, streaming, memory, intent, UI, voice, or desktop context.
 

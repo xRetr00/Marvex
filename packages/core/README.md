@@ -47,6 +47,9 @@ Assistant-runtime provider-stage wiring skeleton:
   Core must not import Local API, RuntimeComposition, ProviderRuntime, adapters,
   or provider-specific policy for that mode.
 - Task 131 implements that local API mode without changing Core behavior.
+- Task 133 keeps provider-token configuration out of Core. Core continues to
+  receive an already constructed provider through the existing helper and must
+  not read, store, log, route, or validate provider credentials.
 
 Forbidden responsibilities:
 
@@ -58,6 +61,7 @@ Forbidden responsibilities:
 - Tool execution.
 - Memory, intent, voice, UI, desktop context, or proactive behavior.
 - Hidden global state.
+- Provider-token or provider-credential handling.
 
 Dependency direction:
 
