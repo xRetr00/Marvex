@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: local_api_service_runner_startup_foundation
+current_phase: local_api_service_runner_startup_proof
 
-implementation_status: local_service_startup_foundation_implemented
+implementation_status: local_api_service_runner_startup_proof_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 138 Local API Service Runner Startup Foundation
+Task 139 Local API Service Runner Startup Proof
 
 ## Validation Baseline
 
@@ -16,6 +16,11 @@ Latest full validation baseline from Task 138:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 709 passed, 1 skipped
+
+Latest full validation baseline from Task 139:
+
+- `python scripts\run_all_checks.py` -> PASS all validation checks passed
+- `python -m pytest -q` -> 722 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -70,6 +75,12 @@ Recent local API/runtime milestones:
   discovery-file writes, daemon supervision, Local API handler integration,
   RuntimeComposition service ownership, Core lifecycle coupling, and
   ProviderRuntime credential policy blocked.
+- Task 139 adds a narrow Local API service-runner startup proof. It generates
+  the local bearer token through `packages.local_service_startup`, injects that
+  raw token only into the existing Local API runner call, and prints only safe
+  public startup metadata. Discovery-file writes, daemon supervision,
+  auto-restart, RuntimeComposition service ownership, generic provider routing,
+  persistent telemetry, sessions/history, and WebSocket/events remain blocked.
 
 ## Current Foundation Capabilities
 
@@ -109,6 +120,9 @@ Process Readiness has started:
   injected current-process in-memory telemetry reader
 - local service startup foundation can now generate a local bearer token and
   safe startup metadata without starting a service or writing discovery files
+- local service startup can now run a narrow Local API service-runner startup
+  proof that injects the generated token into the existing Local API runner and
+  prints safe metadata only
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
 - the fake `/v1/turns` plus protected trace-read manual smoke has been executed
@@ -336,11 +350,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may integrate the startup foundation into an explicit local API
-service runner only if the task stays narrow: inject the generated token into
-the existing Local API runner startup path and print safe metadata only. Do not
-write discovery files, implement daemon supervision, auto-restart, generic
-provider routing, persistent telemetry, sessions/history, WebSocket/events,
+Next work may add an explicit manual smoke record for the startup-runner proof
+or decide the first local client discovery path. Keep that work narrow: no
+discovery-file writes, daemon supervision, auto-restart, generic provider
+routing, persistent telemetry, sessions/history, WebSocket/events,
 retry/fallback, model selection, or broader token lifecycle machinery without
 another explicit task.
 

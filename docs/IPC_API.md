@@ -117,6 +117,14 @@ metadata reports presence only and always sets `token_value_logged: false`.
 Discovery file writing, token storage, daemon lifecycle, and service integration
 remain blocked.
 
+Task 139 implementation note: `packages.local_service_startup` adds a narrow
+Local API service-runner startup proof. It calls the existing Local API runner
+with a generated local bearer token and prints only safe public metadata. The
+metadata reports token presence but not the raw token. Discovery-file writes,
+token storage, daemon lifecycle, auto-restart, generic provider routing,
+persistent telemetry, sessions/history, WebSocket/events, and broader token
+lifecycle management remain blocked.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

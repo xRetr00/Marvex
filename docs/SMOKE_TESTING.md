@@ -198,6 +198,17 @@ Start the runner from the repository root:
 python -m packages.local_api.runner
 ```
 
+Task 139 adds a manual startup-proof runner that generates a local bearer token
+through `packages.local_service_startup`, injects it into the same Local API runner,
+and prints safe startup metadata only:
+
+```powershell
+python -m packages.local_service_startup.local_api_service_runner
+```
+The metadata reports token presence and `token_value_logged: false`, never the
+raw token; discovery-file writes, supervision, auto-restart, handler
+composition, and WebSocket/events remain blocked.
+
 Check health:
 
 ```powershell

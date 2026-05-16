@@ -50,3 +50,9 @@ remain blocked until separate implementation tasks approve them.
 Task 138 adds a startup object foundation only. It may describe future discovery
 metadata and explicit shutdown semantics, but it must not write files, start a
 daemon loop, enable auto-restart, or start a supervisor.
+
+Task 139 adds only a bounded Local API service-runner startup proof around the
+existing Local API runner. It may inject the generated local token into that
+runner and print safe metadata, but it must not write discovery files, print raw
+token values, start supervision, add auto-restart, or become a daemon lifecycle
+manager.

@@ -13,9 +13,12 @@ FORBIDDEN_INTEGRATION_ROOTS = [
     ROOT / "packages" / "runtime_composition",
 ]
 STARTUP_IMPORT_TOKEN = "packages.local_service_startup"
+LOCAL_API_SERVICE_RUNNER = "packages/local_service_startup/local_api_service_runner.py"
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
+    "argparse",
+    "collections.abc",
     "dataclasses",
     "datetime",
     "enum",
@@ -24,6 +27,10 @@ ALLOWED_IMPORT_PREFIXES = (
     "secrets",
     "types",
     "typing",
+)
+LOCAL_API_SERVICE_RUNNER_IMPORT_PREFIXES = (
+    "packages.local_api.health_version_api",
+    "packages.local_api.runner",
 )
 FORBIDDEN_IMPORT_PREFIXES = (
     "apps",
@@ -101,15 +108,26 @@ def _scan_startup_imports_and_tokens(failures: list[str]) -> None:
                 failures.append(f"{rel} contains forbidden startup behavior token: {token}")
 
         tree = ast.parse(text, filename=str(path))
+        allowed_import_prefixes = ALLOWED_IMPORT_PREFIXES
+        forbidden_import_prefixes = FORBIDDEN_IMPORT_PREFIXES
+        if rel == LOCAL_API_SERVICE_RUNNER:
+            allowed_import_prefixes = (
+                ALLOWED_IMPORT_PREFIXES + LOCAL_API_SERVICE_RUNNER_IMPORT_PREFIXES
+            )
+            forbidden_import_prefixes = tuple(
+                prefix
+                for prefix in FORBIDDEN_IMPORT_PREFIXES
+                if prefix != "packages.local_api"
+            )
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
             module = _module_from_import(node)
             if module is None:
                 continue
-            if _matches_prefix(module, FORBIDDEN_IMPORT_PREFIXES):
+            if _matches_prefix(module, forbidden_import_prefixes):
                 failures.append(f"{rel} imports forbidden dependency: {module}")
-            if not _matches_prefix(module, ALLOWED_IMPORT_PREFIXES):
+            if not _matches_prefix(module, allowed_import_prefixes):
                 failures.append(f"{rel} imports non-approved dependency: {module}")
 
 

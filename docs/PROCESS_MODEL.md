@@ -117,6 +117,14 @@ returns safe public startup metadata, and defines explicit startup/shutdown
 semantics without starting a daemon, writing discovery files, integrating Local
 API handlers, changing CLI proof commands, or supervising a process.
 
+Task 139 adds the first Local API service-runner startup proof. The startup
+boundary creates the local bearer token and safe metadata, then calls the
+existing Local API runner with that token and a safe metadata startup message.
+It does not write discovery files, expose the raw token, add daemon
+supervision, auto-restart, handler composition, persistent telemetry,
+sessions/history, routing, retry/fallback, model selection, or WebSocket/event
+behavior.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -161,5 +169,5 @@ CLI proof commands, no background daemon creep, no hidden global token store, no
 automatic restart loop without approved telemetry, and no discovery metadata
 that exposes anything beyond local loopback connection details.
 
-The Task 138 startup foundation is not yet a running service. It is a testable
-object boundary for a future service runner task.
+The Task 139 startup proof is still not a daemon or supervisor. It is a bounded
+manual service-runner proof around the existing Local API runner.
