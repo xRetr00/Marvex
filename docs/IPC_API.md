@@ -160,6 +160,16 @@ token storage, cleanup loop, client connection helper, provider routing,
 retry/fallback, model selection, sessions/history, WebSocket/events, or
 persistent telemetry is added.
 
+Task 145 implementation note: `packages.local_api_client` adds the first narrow
+future Shell/CLI connection helper. It reads safe discovery metadata, validates
+loopback/token-redaction rules, calls public readiness endpoints without auth,
+and calls protected `/v1/turns` plus `GET /v1/traces/{trace_id}` only when the
+caller supplies the local bearer token per request. The discovery file still
+does not contain the token; future clients must receive the raw token through a
+private startup handoff outside public metadata. The helper does not launch or
+supervise services, cache tokens, manage sessions/history, retry/fallback,
+select models, route providers, persist telemetry, or own UI behavior.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

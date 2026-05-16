@@ -24,6 +24,7 @@ Scripts:
 - `check_provider_runtime_boundaries.py`
 - `check_runtime_composition_boundaries.py`
 - `check_local_api_boundaries.py`
+- `check_local_api_client_boundaries.py`
 - `check_local_service_startup_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
@@ -75,6 +76,11 @@ AssistantRuntime provider-stage calls, WebSocket, session/history, routing,
 retry/fallback, model/API-key policy, remote-bind defaults, hard-coded
 token/secret values, token printing, and service placeholder implementation
 drift.
+
+`check_local_api_client_boundaries.py` enforces the narrow future Shell/CLI
+client-helper boundary so `packages/local_api_client` can read safe discovery
+metadata and make explicit JSON calls without becoming a daemon, token store,
+RuntimeComposition owner, provider router, retry/session layer, or product UI.
 
 `check_local_service_startup_boundaries.py` enforces the local service startup
 foundation boundary so startup metadata and local bearer-token generation stay

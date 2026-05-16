@@ -131,6 +131,25 @@ trace-reader HTTP/auth/JSON adapter.
 - Service placeholder folders remain README-only.
 - `scripts/run_all_checks.py` runs the local API boundary gate.
 
+### Local API Client Boundary Gate
+
+Local API client helpers are limited to future Shell/CLI connection proof paths.
+
+- `packages/local_api_client` may read safe local discovery metadata through the
+  local service startup discovery reader and use Python standard-library HTTP
+  helpers for explicit JSON requests.
+- It may call public readiness endpoints without auth and protected turn/trace
+  endpoints only when the caller supplies a local bearer token per call.
+- It must not store, discover, rotate, print, or cache raw bearer tokens.
+- It must not import Local API handlers, Core, AssistantRuntime,
+  ProviderRuntime, RuntimeComposition, adapters, telemetry implementation, CLI
+  apps, or services.
+- It must not implement daemon launch, auto-start, cleanup, supervision,
+  WebSocket/events, session/history, retry/fallback, provider routing, model
+  selection, persistent telemetry, cross-process traces, tools, memory, UI,
+  voice, desktop, vision, or proactive behavior.
+- `scripts/run_all_checks.py` runs the local API client boundary gate.
+
 ### Local Service Startup Boundary Gate
 
 Local service startup is limited to safe startup metadata and local bearer-token

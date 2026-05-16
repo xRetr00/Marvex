@@ -204,6 +204,8 @@ The metadata reports token presence and `token_value_logged: false`, never the
 raw token; discovery-file writes, supervision, auto-restart, handler
 composition, and WebSocket/events remain blocked.
 
+Task 145 adds `packages.local_api_client`: safe discovery read, public readiness calls, and caller-supplied bearer tokens for protected turn/trace calls.
+
 Latest startup-proof runner smoke on 2026-05-16:
 
 - Command shape: `python -m packages.local_service_startup.local_api_service_runner --port <local-port>`.

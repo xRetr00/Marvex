@@ -146,6 +146,13 @@ token-redacted loopback metadata, and does not add daemon supervision,
 auto-start, cleanup, client calls, provider routing, retry/fallback, model
 selection, persistent telemetry, sessions/history, or WebSocket/event behavior.
 
+Task 145 adds a narrow local API client helper for future Shell/CLI connection
+proofs. The helper can read token-redacted discovery metadata and make explicit
+loopback JSON requests, but protected calls require the caller to pass the local
+bearer token per request through a private startup handoff outside the discovery
+file. It does not own service launch, shutdown, cleanup, token persistence,
+retry/fallback, sessions/history, provider routing, or UI behavior.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.

@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: local_api_startup_discovery_write_wiring
+current_phase: local_api_client_connection_proof
 
-implementation_status: local_api_startup_discovery_write_wiring_implemented
+implementation_status: local_api_client_connection_proof_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 144 Local API Startup Discovery Write Wiring
+Task 145 Local API Client Connection Proof
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 144:
+Latest full validation baseline from Task 145:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 731 passed, 1 skipped
+- `python -m pytest -q` -> 738 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -106,6 +106,13 @@ Recent local API/runtime milestones:
   and does not add daemon supervision, hidden auto-start, token storage, cleanup,
   client calls, provider routing, retry/fallback, model selection,
   sessions/history, WebSocket/events, or persistent telemetry.
+- Task 145 adds `packages.local_api_client` as a narrow future Shell/CLI
+  connection proof helper. It reads safe discovery metadata, validates loopback
+  and token-redaction rules, calls public readiness endpoints without auth, and
+  calls protected `/v1/turns` plus `GET /v1/traces/{trace_id}` only when the
+  caller supplies the local bearer token per request. The discovery file still
+  never stores the raw token; private token handoff remains outside public
+  discovery metadata.
 
 ## Current Foundation Capabilities
 
@@ -154,6 +161,9 @@ Process Readiness has started:
 - the Local API service-runner startup proof can now explicitly write that safe
   discovery metadata through `--discovery-file <path>` while still passing the
   raw generated token only to the Local API runner call
+- a narrow future Shell/CLI client helper can now load safe discovery metadata
+  and make explicit loopback JSON calls while requiring per-call bearer token
+  input for protected turn and trace endpoints
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
 - the fake `/v1/turns` plus protected trace-read manual smoke has been executed
@@ -209,8 +219,8 @@ Validation gates now present:
 - project status, file-size, schema-version, library-decision, and library
   research gates
 - port, ProviderRuntime, ProcessRuntime, AssistantRuntime, provider structured
-  output, runtime composition, local API, runtime ownership, Vaxil boundary,
-  and assistant-turn contract gates
+  output, runtime composition, local API, local API client, runtime ownership,
+  Vaxil boundary, and assistant-turn contract gates
 
 Historical governance retained compactly: Task 024 Status and README Drift Cleanup,
 Git workflow governance, assistant-turn spine/contract governance, runtime
@@ -381,12 +391,12 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may add a bounded explicit client/read helper flow or cleanup
-behavior. Keep it safe-only: loopback metadata, token presence, schema/version
-fields, no raw bearer token, no daemon supervision, auto-restart, generic
-provider routing, persistent telemetry, sessions/history, WebSocket/events,
-retry/fallback, model selection, or broader token lifecycle machinery without
-another explicit task.
+Next work may finalize the Local Runtime API Foundation status or add a bounded
+cleanup/manual-smoke record if needed. Keep it safe-only: loopback metadata,
+token presence, schema/version fields, no raw bearer token, no daemon
+supervision, auto-restart, generic provider routing, persistent telemetry,
+sessions/history, WebSocket/events, retry/fallback, model selection, or broader
+token lifecycle machinery without another explicit task.
 
 Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
 service daemon behavior, generic provider API mode, sessions/history, routing,
