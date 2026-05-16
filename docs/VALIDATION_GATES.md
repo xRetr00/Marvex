@@ -153,6 +153,10 @@ generation for a future Local API service runner.
   call providers, or own routing/retry/fallback/model-selection behavior.
 - Public startup metadata must be token-safe; raw local bearer tokens remain
   only in the in-memory startup result for future runner use.
+- Future discovery metadata must stay local-user-scoped and safe-only: loopback
+  service metadata and token presence are allowed; raw bearer tokens, provider
+  credentials, environment values, prompts, traces, sessions/history, remote
+  bind addresses, handler config, and provider config are forbidden.
 - `scripts/run_all_checks.py` runs the local service startup boundary gate.
 
 ### Vaxil Boundary Gate

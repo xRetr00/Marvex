@@ -125,6 +125,19 @@ token storage, daemon lifecycle, auto-restart, generic provider routing,
 persistent telemetry, sessions/history, WebSocket/events, and broader token
 lifecycle management remain blocked.
 
+Task 141 discovery decision: the first future discovery implementation should be
+a local-user-scoped JSON metadata file written by `packages.local_service_startup`.
+The file may contain only safe loopback connection fields already present in
+public startup metadata, plus schema/service/version/process fields and warning
+state. It must not contain the raw local bearer token, provider credentials,
+environment values, prompts, traces, sessions, history, remote bind addresses,
+or handler/provider configuration. Protected endpoint access still requires an
+explicit private token handoff outside the discovery file. The first writer must
+reject non-loopback metadata and avoid discovery writes unless explicitly
+requested by startup config; a reader/client helper may only read this safe
+metadata and must not become a token store, service registry, launcher, daemon,
+retry/fallback layer, model selector, or cross-process trace lookup.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

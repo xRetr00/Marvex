@@ -14,11 +14,16 @@ Current responsibilities:
 - represent future discovery mode metadata without writing discovery files
 - run a narrow Local API service-runner startup proof that injects the generated
   token into the existing Local API runner and prints safe public metadata only
+- future approved discovery helpers may write/read local-user-scoped safe
+  metadata only; they must never write raw bearer tokens
 
 Forbidden responsibilities:
 
 - daemon loops, background service management, or auto-restart behavior
 - discovery file writes or token storage
+- raw bearer tokens, provider credentials, environment values, traces,
+  sessions/history, remote bind addresses, or provider config in discovery
+  metadata
 - Local API HTTP request parsing or handler behavior
 - Local API handler composition or HTTP behavior beyond calling the existing
   runner with generated startup config

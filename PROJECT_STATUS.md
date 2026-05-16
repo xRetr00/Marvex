@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: local_api_startup_proof_smoke_recorded
+current_phase: local_client_discovery_policy_decided
 
-implementation_status: local_api_service_runner_startup_proof_smoke_recorded
+implementation_status: local_discovery_policy_decision_recorded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 140 Local API Service Runner Startup Proof Smoke Record
+Task 141 Local Client Discovery Policy Decision
 
 ## Validation Baseline
 
@@ -85,6 +85,12 @@ Recent local API/runtime milestones:
   `/health` and `/version` returned HTTP 200 on loopback, missing/wrong
   `/v1/turns` auth returned HTTP 401, startup metadata reported token presence
   only, and stdout did not include `local_auth_token`.
+- Task 141 decides the first local client discovery path before implementation:
+  future discovery metadata may be a local-user-scoped JSON file containing only
+  loopback connection metadata and token presence, never raw tokens. Protected
+  endpoint access still requires an explicit private token handoff outside that
+  file. Discovery-file writes, readers, cleanup, and permissions remain future
+  narrow implementation tasks.
 
 ## Current Foundation Capabilities
 
@@ -354,10 +360,11 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may decide the first local client discovery path. Keep that work
-narrow: no discovery-file writes until the decision is documented, no daemon
-supervision, auto-restart, generic provider routing, persistent telemetry,
-sessions/history, WebSocket/events,
+Next work may implement a narrow local-user-scoped discovery metadata writer in
+`packages.local_service_startup`. Keep it safe-only: loopback metadata, token
+presence, schema/version fields, no raw bearer token, no daemon supervision,
+auto-restart, generic provider routing, persistent telemetry, sessions/history,
+WebSocket/events,
 retry/fallback, model selection, or broader token lifecycle machinery without
 another explicit task.
 
