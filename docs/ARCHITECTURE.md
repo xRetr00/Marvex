@@ -278,6 +278,26 @@ RuntimeComposition to ProviderRuntime without changing Local API request
 envelopes, Core, AssistantRuntime, telemetry, provider routing, model selection,
 preflight, retry/fallback, sessions/history, or default CLI behavior.
 
+Task 137 decision note: future Marvex local service lifecycle and local bearer
+token startup behavior belong to a future service runner/startup boundary. That
+boundary may generate the local bearer token, keep startup/shutdown explicit,
+and publish local-user-scoped discovery metadata or require explicit
+CLI-provided config. It must not print the token value by default. Local API
+remains only HTTP/auth/JSON, RuntimeComposition remains only approved
+composition, ProviderRuntime remains provider construction, Core and
+AssistantRuntime remain provider/service-lifecycle agnostic, and telemetry owns
+trace safety. This decision does not implement a daemon, token generation,
+token storage, discovery file, WebSocket/event stream, persistent telemetry,
+sessions/history, routing, retry/fallback, model selection, or generic provider
+mode.
+
+Task 138 implementation note: `packages/local_service_startup` is that first
+startup foundation boundary. It is not Local API, RuntimeComposition,
+ProviderRuntime, Core, AssistantRuntime, or telemetry. It owns local bearer-token
+generation and safe startup metadata only. Core, ProviderRuntime, Local API, and
+RuntimeComposition do not import it yet; a future service-runner integration
+task must explicitly approve any connection.
+
 Task 117 implementation note: `packages/local_api` adds a dependency-free
 local WSGI app object for `GET /health` and `GET /version` only, backed by the
 approved `HealthCheck` and `VersionInfo` contracts. It defaults local API config

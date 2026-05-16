@@ -101,6 +101,22 @@ ProviderRuntime config. This still does not create a generic provider API,
 service daemon, token lifecycle system, persistent telemetry, sessions/history,
 routing, retry/fallback, model selection, WebSocket, or product service mode.
 
+Task 137 decides the future local service startup and token boundary without
+implementing it. A future service runner/startup boundary owns generated local
+bearer token creation, startup reporting, shutdown behavior, and any local
+user-scoped discovery metadata. Local API validates a supplied token for
+protected routes but does not generate or discover it. RuntimeComposition may
+compose approved handlers but must not become a daemon supervisor, token
+lifecycle manager, long-term service registry, router, retry/fallback owner, or
+model selector. Core remains service-lifecycle agnostic and must not know local
+bearer token mechanics.
+
+Task 138 implements only the startup object foundation for that boundary in
+`packages.local_service_startup`. It generates an in-memory local bearer token,
+returns safe public startup metadata, and defines explicit startup/shutdown
+semantics without starting a daemon, writing discovery files, integrating Local
+API handlers, changing CLI proof commands, or supervising a process.
+
 ## Failure Rule
 
 A non-critical subprocess failure must not corrupt Core state. The Shell may crash without killing Core. Provider Worker failure must return an error envelope, not crash the turn lifecycle. Future workers must degrade cleanly.
@@ -139,3 +155,11 @@ for that path. WebSocket, service lifecycle, subprocess supervision,
 persistence, generic provider API execution, token lifecycle, sessions/history,
 routing, retry/fallback, and model selection remain future explicit
 service-runtime work.
+
+Future service startup must be explicit and bounded: no hidden auto-start from
+CLI proof commands, no background daemon creep, no hidden global token store, no
+automatic restart loop without approved telemetry, and no discovery metadata
+that exposes anything beyond local loopback connection details.
+
+The Task 138 startup foundation is not yet a running service. It is a testable
+object boundary for a future service runner task.

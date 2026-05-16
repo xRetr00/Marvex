@@ -56,6 +56,67 @@ behavior, or product behavior.
 - Ports must default to configurable local ports. If a preferred port is busy, the service may choose an available local port and report it through startup output or a local discovery file.
 - Port selection must not silently expose a service on a remote interface.
 
+## Local Service Startup And Token Discovery Decision
+
+Decision title: Task 137 Service Lifecycle And Local Token Startup Boundary.
+
+Status: decision-only. No daemon, token generation, token storage, discovery
+file, supervisor, or service runner implementation is approved by this section.
+
+Current context: Task 136 proved the explicit developer-only LM Studio Local
+API runner can handle public `/health` and `/version`, protected `/v1/turns`,
+and protected `GET /v1/traces/{trace_id}` with a locally supplied provider
+token. That smoke used a caller-provided fake/dev local bearer token. It did not
+implement production local token startup behavior.
+
+Decision:
+
+- Future generated local bearer token creation belongs to a future service
+  runner/startup boundary, not ProviderRuntime, Core, AssistantRuntime,
+  RuntimeComposition bridge helpers, Local API request handlers, provider
+  adapters, telemetry, CLI proof commands, or contracts.
+- Local API owns only HTTP/auth/JSON enforcement for protected endpoints. It
+  may validate a token value supplied by startup composition, but it must not
+  generate, persist, discover, rotate, print, or supervise that token.
+- RuntimeComposition may compose explicitly approved handlers/runners, but it
+  must not become a daemon supervisor, token lifecycle manager, service
+  registry, routing brain, retry/fallback owner, model selector, or
+  long-running process manager.
+- Core remains provider-agnostic and service-lifecycle agnostic. Core must not
+  know local bearer token mechanics or service discovery details.
+- Future service startup output may report the local API URL, token presence,
+  and where an authorized local client can discover connection metadata, but it
+  must not print the raw local bearer token by default.
+- Future local service discovery should use either explicit CLI-provided config
+  or a local-user-scoped discovery file. The first implementation must choose
+  one narrow path explicitly. Any discovery file must be readable only by the
+  local user where platform support allows, must describe only loopback
+  connection metadata, and must not expose remote interfaces.
+- Trace access remains protected by the same local bearer token as turn
+  submission. Persistent trace storage and cross-process trace lookup remain
+  blocked until a separate telemetry-owned task approves them.
+- Future service startup and shutdown must be explicit, bounded, traceable, and
+  process-ready. Hidden auto-start, hidden global state, background CLI daemon
+  behavior, and automatic restart loops remain blocked unless a later service
+  lifecycle task approves them with telemetry and shutdown rules.
+
+Blocked until separate implementation tasks: token generation, token storage,
+discovery-file writes, service daemon lifecycle, supervisor behavior,
+auto-restart, remote binding, WebSocket/events, persistent telemetry,
+sessions/history, generic provider routing, retry/fallback, model selection,
+memory, tools, UI, voice, desktop, vision, and proactive behavior.
+
+Task 138 implementation note: `packages.local_service_startup` adds the first
+startup foundation object model. It can create a high-entropy in-memory local
+bearer token and safe public startup metadata with `schema_version`, `service`,
+`base_url`, `bind_host`, `port`, `auth_required`, `auth_token_present`,
+`token_value_logged`, `discovery_mode`, optional `discovery_file_path`,
+`process_id`, `started_at`, `contract_versions`, and `warnings`. The raw token
+exists only on the in-memory startup result for future runner use; public
+metadata reports presence only and always sets `token_value_logged: false`.
+Discovery file writing, token storage, daemon lifecycle, and service integration
+remain blocked.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

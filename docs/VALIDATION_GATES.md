@@ -131,6 +131,24 @@ trace-reader HTTP/auth/JSON adapter.
 - Service placeholder folders remain README-only.
 - `scripts/run_all_checks.py` runs the local API boundary gate.
 
+### Local Service Startup Boundary Gate
+
+Local service startup is limited to safe startup metadata and local bearer-token
+generation for a future Local API service runner.
+
+- `packages/local_service_startup` may use standard-library startup helpers for
+  safe object construction and secure local bearer-token generation.
+- It must not import Core, Local API, RuntimeComposition, ProviderRuntime,
+  AssistantRuntime, adapters, telemetry, CLI apps, services, or provider SDKs.
+- Core, ProviderRuntime, Local API, and RuntimeComposition must not import the
+  startup package until a separate service-runner integration task approves it.
+- It must not write discovery files, read environment variables, start daemon or
+  supervisor behavior, import server frameworks, implement WebSocket/events,
+  call providers, or own routing/retry/fallback/model-selection behavior.
+- Public startup metadata must be token-safe; raw local bearer tokens remain
+  only in the in-memory startup result for future runner use.
+- `scripts/run_all_checks.py` runs the local service startup boundary gate.
+
 ### Vaxil Boundary Gate
 
 Vaxil may be mentioned only as a cautionary research source. Code reuse language and imports are forbidden.

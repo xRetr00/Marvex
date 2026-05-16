@@ -24,6 +24,7 @@ Scripts:
 - `check_provider_runtime_boundaries.py`
 - `check_runtime_composition_boundaries.py`
 - `check_local_api_boundaries.py`
+- `check_local_service_startup_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -74,6 +75,13 @@ AssistantRuntime provider-stage calls, WebSocket, session/history, routing,
 retry/fallback, model/API-key policy, remote-bind defaults, hard-coded
 token/secret values, token printing, and service placeholder implementation
 drift.
+
+`check_local_service_startup_boundaries.py` enforces the local service startup
+foundation boundary so startup metadata and local bearer-token generation stay
+outside Core, ProviderRuntime, Local API handlers, and RuntimeComposition. It
+also blocks discovery-file writes, environment reads, framework imports,
+provider execution, WebSocket behavior, and provider bridge calls in the startup
+package.
 
 `check_library_decisions.py` enforces required decision fields and confirms each
 runtime dependency in `[project].dependencies` has a matching decision record.

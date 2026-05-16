@@ -1,18 +1,18 @@
 # Project Status
 
-current_phase: lmstudio_responses_token_backed_local_api_smoke_record
+current_phase: local_api_service_runner_startup_foundation
 
-implementation_status: lmstudio_responses_token_backed_local_api_smoke_succeeded
+implementation_status: local_service_startup_foundation_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 136 Token-Backed LM Studio Local API Smoke Record
+Task 138 Local API Service Runner Startup Foundation
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 136:
+Latest full validation baseline from Task 138:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 709 passed, 1 skipped
@@ -58,6 +58,18 @@ Recent local API/runtime milestones:
   `/v1/turns`, and protected `GET /v1/traces/{trace_id}` succeeded for
   `qwen3.5-0.8b`. Trace output exposed only safe current-process projections;
   missing/wrong auth for both protected routes returned `401 AUTH_REQUIRED`.
+- Task 137 decides the future service lifecycle and local bearer token startup
+  boundary without implementation. A future service runner/startup boundary owns
+  generated local bearer token creation, explicit startup/shutdown reporting,
+  and any local-user-scoped discovery metadata. Local API remains HTTP/auth/JSON
+  only, RuntimeComposition remains composition-only, Core remains service-token
+  blind, and trace reads remain auth-protected.
+- Task 138 implements the first `packages.local_service_startup` foundation. It
+  generates a high-entropy in-memory local bearer token, produces safe public
+  startup metadata, defines explicit startup/shutdown semantics, and keeps
+  discovery-file writes, daemon supervision, Local API handler integration,
+  RuntimeComposition service ownership, Core lifecycle coupling, and
+  ProviderRuntime credential policy blocked.
 
 ## Current Foundation Capabilities
 
@@ -95,6 +107,8 @@ Process Readiness has started:
   telemetry-owned reader/store, injected into Local API, protected by bearer auth
 - protected `GET /v1/traces/{trace_id}` now reads only from an explicitly
   injected current-process in-memory telemetry reader
+- local service startup foundation can now generate a local bearer token and
+  safe startup metadata without starting a service or writing discovery files
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
 - the fake `/v1/turns` plus protected trace-read manual smoke has been executed
@@ -322,12 +336,13 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work should decide the service lifecycle and local token startup boundary
-before any daemon/service implementation. Keep the decision narrow: local bearer
-token generation/discovery, startup reporting, and ownership only. Do not
-implement service daemon behavior, generic provider routing, persistent
-telemetry, sessions/history, WebSocket/events, retry/fallback, model selection,
-or token lifecycle machinery without another explicit task.
+Next work may integrate the startup foundation into an explicit local API
+service runner only if the task stays narrow: inject the generated token into
+the existing Local API runner startup path and print safe metadata only. Do not
+write discovery files, implement daemon supervision, auto-restart, generic
+provider routing, persistent telemetry, sessions/history, WebSocket/events,
+retry/fallback, model selection, or broader token lifecycle machinery without
+another explicit task.
 
 Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
 service daemon behavior, generic provider API mode, sessions/history, routing,

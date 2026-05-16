@@ -31,3 +31,22 @@ Restart behavior must be explicit. No hidden automatic restart loops without tel
 
 Shutdown must be graceful when possible and bounded by timeout. Forced termination must emit a trace event.
 
+## Local Service Startup Token Rule
+
+Future local bearer token generation belongs to the service runner/startup
+boundary for the running process. Request handlers, Core, ProviderRuntime,
+AssistantRuntime, RuntimeComposition bridge helpers, provider adapters, and CLI
+proof commands must not generate or own that token.
+
+Startup may report the loopback URL, token presence, and an approved local
+discovery path or explicit config instructions. Startup must not print the raw
+token value by default.
+
+Any future discovery file must be local-user scoped, describe only loopback
+connection metadata, and must not expose remote interfaces. Writing discovery
+files, token storage, daemon lifecycle, supervisor behavior, and restart policy
+remain blocked until separate implementation tasks approve them.
+
+Task 138 adds a startup object foundation only. It may describe future discovery
+metadata and explicit shutdown semantics, but it must not write files, start a
+daemon loop, enable auto-restart, or start a supervisor.
