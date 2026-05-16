@@ -1,18 +1,18 @@
 # Project Status
 
-current_phase: lmstudio_responses_token_config_implementation_pack
+current_phase: lmstudio_responses_token_backed_local_api_smoke_record
 
-implementation_status: lmstudio_responses_token_config_implemented
+implementation_status: lmstudio_responses_token_backed_local_api_smoke_succeeded
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 134 LM Studio Responses Token Config Implementation Pack
+Task 136 Token-Backed LM Studio Local API Smoke Record
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 134:
+Latest full validation baseline from Task 136:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 709 passed, 1 skipped
@@ -53,6 +53,11 @@ Recent local API/runtime milestones:
   recording its value. Local API, Core, AssistantRuntime, telemetry, default
   CLI behavior, request bodies, and `provider_options` remain provider-token
   blind.
+- Task 136 records a token-backed LM Studio local API smoke. With the provider
+  token supplied from local environment only, `/health`, `/version`, protected
+  `/v1/turns`, and protected `GET /v1/traces/{trace_id}` succeeded for
+  `qwen3.5-0.8b`. Trace output exposed only safe current-process projections;
+  missing/wrong auth for both protected routes returned `401 AUTH_REQUIRED`.
 
 ## Current Foundation Capabilities
 
@@ -317,10 +322,12 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may rerun the manual LM Studio local API smoke with
-`MARVEX_LMSTUDIO_API_KEY` configured outside repo files and outputs. Record only
-whether the provider token environment variable was present and whether the
-existing `/v1/turns` plus `/v1/traces/{trace_id}` smoke succeeds.
+Next work should decide the service lifecycle and local token startup boundary
+before any daemon/service implementation. Keep the decision narrow: local bearer
+token generation/discovery, startup reporting, and ownership only. Do not
+implement service daemon behavior, generic provider routing, persistent
+telemetry, sessions/history, WebSocket/events, retry/fallback, model selection,
+or token lifecycle machinery without another explicit task.
 
 Do not add persistent telemetry, cross-process lookup, WebSocket/event streams,
 service daemon behavior, generic provider API mode, sessions/history, routing,

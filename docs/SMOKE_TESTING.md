@@ -414,39 +414,18 @@ Latest manual local LM Studio `/v1/turns` plus trace-read smoke:
 
 Task 133 LM Studio token configuration decision:
 
-- Context: Task 132 proved local API auth, `/v1/turns`, mapped provider-error
-  response, and same-process trace read; live success was blocked by LM Studio
-  requiring its own local API token while the adapter used the placeholder SDK
-  key.
-- Options rejected: `provider_options`, Local API request/header policy, generic
-  credential management/routing, and adapter-local-only config.
-- Recommended token owner: the LM Studio adapter owns SDK `api_key` use;
-  ProviderRuntime owns constructing that adapter from explicit provider runtime
-  config.
-- Recommended propagation path: developer shell environment -> developer-only
-  RuntimeComposition runner config -> `ProviderRuntimeConfig` LM Studio-specific
-  credential field -> `LMStudioResponsesProviderConfig(api_key=...)` -> OpenAI
-  SDK client construction. The local `/v1/turns` body remains unchanged.
-- Token-aware layers: LM Studio adapter, ProviderRuntime construction, and the
-  explicit developer-only RuntimeComposition runner/bridge pass-through.
-- Token-blind layers: Local API, Core, AssistantRuntime, ports, contracts,
-  telemetry trace projection, CLI default paths, services, and future workers.
-- Logging/redaction rules: provider tokens must never be logged, persisted,
-  echoed in `ErrorEnvelope`, included in trace events, included in provider
-  refs, copied into metadata, or recorded in smoke output.
-- Test strategy: use fake token values only; assert ProviderRuntime constructs
-  `LMStudioResponsesProviderConfig` with the fake token; assert the adapter sends
-  the fake token only to the SDK client factory; assert errors, traces, and
-  local API auth failures do not contain the fake token; assert
-  `provider_options` remains rejected for credentials.
-- Manual smoke strategy: keep `--dev-token` only for fake Marvex local bearer
-  auth. A future runner enhancement may accept an environment-variable name for
-  the LM Studio token, read the value without printing it, and pass it through
-  ProviderRuntime config. The smoke record should mention only that a provider
-  token was configured, not its name or value.
+- Task 132 proved local API auth, `/v1/turns`, mapped provider-error response,
+  and same-process trace read; live success was blocked by LM Studio requiring a
+  valid provider token.
+- Provider tokens belong only to the LM Studio adapter config, ProviderRuntime
+  construction, and explicit developer-only RuntimeComposition pass-through.
+- Local API, Core, AssistantRuntime, ports, contracts, telemetry projection, CLI
+  default paths, services, request bodies, metadata, and `provider_options`
+  remain provider-token blind.
+- Provider tokens must never be logged, persisted, echoed in errors, included in
+  traces/provider refs, copied into metadata, or recorded in smoke output.
 - Rollback path: remove the ProviderRuntime credential field and runner
-  environment read, returning to the adapter placeholder SDK key and the current
-  safe `PROVIDER_ERROR` failure behavior.
+  environment read, returning to placeholder-key safe provider-error behavior.
 
 Task 134 LM Studio token configuration implementation:
 
@@ -475,6 +454,27 @@ python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev
 
 Do not record the token value or environment dump in smoke notes. Record only
 whether the provider token environment variable was present.
+
+Latest token-backed manual local LM Studio `/v1/turns` plus trace-read smoke:
+
+- Date: 2026-05-16.
+- Command shape:
+  `python -m packages.runtime_composition.local_api_lmstudio_responses_runner --dev-token <fake-dev-token>`.
+- Provider token source: `MARVEX_LMSTUDIO_API_KEY` present in local environment;
+  token value not printed, recorded, or copied into docs.
+- Model used: `qwen3.5-0.8b`.
+- Observed `/health`: HTTP 200, `marvex-local-api:ok`.
+- Observed `/version`: HTTP 200, `marvex-local-api:0.1.0`.
+- Observed `/v1/turns`: HTTP 200 `AssistantTurnResult` success with trace id.
+- Observed trace read: HTTP 200, `current_process`, `in_memory`,
+  `event_count` 5, `truncated` false.
+- Trace stages/levels summary: `provider_request_created:info`,
+  `provider_request_sent:info`, `provider_response_received:info`,
+  `final_response_created:info`, `turn_completed:info`.
+- Missing/wrong auth returned HTTP 401 for both protected routes.
+- Trace safety check: no provider token value, raw provider payload, raw
+  environment value, full prompt/transcript, stack trace, or auth material.
+- No runtime behavior changed.
 
 Latest manual local health/version runner smoke:
 
