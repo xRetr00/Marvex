@@ -13,14 +13,15 @@ Current responsibilities:
 - define explicit startup/shutdown semantics as object-level state
 - represent future discovery mode metadata without writing discovery files
 - run a narrow Local API service-runner startup proof that injects the generated
-  token into the existing Local API runner and prints safe public metadata only
+  token into the existing Local API runner, prints safe public metadata only,
+  and can explicitly write safe local-user-scoped discovery metadata
 - write and read local-user-scoped safe discovery metadata only when explicitly
   called; raw bearer tokens are never written or returned
 
 Forbidden responsibilities:
 
 - daemon loops, background service management, or auto-restart behavior
-- discovery file writes or token storage
+- token storage or implicit discovery file writes
 - raw bearer tokens, provider credentials, environment values, traces,
   sessions/history, remote bind addresses, or provider config in discovery
   metadata
@@ -39,7 +40,8 @@ Dependency direction:
 - may use Python standard-library startup helpers
 - must not be imported by Core, ProviderRuntime, or Local API handlers
 - `local_api_service_runner.py` may import the existing Local API runner/config
-  only for the approved startup proof; it must not own HTTP parsing, auth
+  only for the approved startup proof; it may call the local discovery writer
+  when an explicit path is provided, but it must not own HTTP parsing, auth
   validation internals, handler composition, trace storage, or service daemon
   behavior
 - `discovery.py` may write/read safe local-user-scoped metadata only; it must

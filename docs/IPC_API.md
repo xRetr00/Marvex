@@ -100,11 +100,11 @@ Decision:
   behavior, and automatic restart loops remain blocked unless a later service
   lifecycle task approves them with telemetry and shutdown rules.
 
-Blocked until separate implementation tasks: token generation, token storage,
-discovery-file writes, service daemon lifecycle, supervisor behavior,
-auto-restart, remote binding, WebSocket/events, persistent telemetry,
-sessions/history, generic provider routing, retry/fallback, model selection,
-memory, tools, UI, voice, desktop, vision, and proactive behavior.
+Blocked until separate implementation tasks: token storage, service daemon
+lifecycle, supervisor behavior, auto-restart, remote binding, WebSocket/events,
+persistent telemetry, sessions/history, generic provider routing,
+retry/fallback, model selection, memory, tools, UI, voice, desktop, vision, and
+proactive behavior.
 
 Task 138 implementation note: `packages.local_service_startup` adds the first
 startup foundation object model. It can create a high-entropy in-memory local
@@ -142,14 +142,23 @@ Task 142 implementation note: `packages.local_service_startup.discovery` writes
 safe discovery metadata only when given an explicit path under a local-user
 root. It serializes the public startup metadata, rejects out-of-scope paths and
 non-loopback metadata, best-effort restricts file permissions, and never writes
-the raw local bearer token. The startup runner does not write discovery files
-yet; reader/client helpers and cleanup remain future tasks.
+the raw local bearer token. Reader/client helpers and cleanup remain future
+tasks.
 
 Task 143 implementation note: the same discovery module can now read safe
 local-user-scoped metadata for a future client. The reader validates local-user
 scope, JSON object shape, loopback URL, and token-redaction rules before
 returning metadata. It does not read tokens, launch services, clean up files,
 select providers, retry connections, or perform protected Local API calls.
+
+Task 144 implementation note: the startup proof runner can now explicitly write
+that safe discovery metadata by passing `--discovery-file <path>`. The path is
+validated under the local-user root, the file contains only token-redacted
+loopback startup metadata, and the raw bearer token is still injected only into
+the in-process Local API runner call. No daemon supervision, hidden auto-start,
+token storage, cleanup loop, client connection helper, provider routing,
+retry/fallback, model selection, sessions/history, WebSocket/events, or
+persistent telemetry is added.
 
 ## Future HTTP Endpoint Contracts
 

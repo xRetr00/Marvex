@@ -42,10 +42,10 @@ Startup may report the loopback URL, token presence, and an approved local
 discovery path or explicit config instructions. Startup must not print the raw
 token value by default.
 
-Any future discovery file must be local-user scoped, describe only loopback
-connection metadata, and must not expose remote interfaces. Writing discovery
-files, token storage, daemon lifecycle, supervisor behavior, and restart policy
-remain blocked until separate implementation tasks approve them.
+Any discovery file must be local-user scoped, describe only loopback connection
+metadata, and must not expose remote interfaces. Token storage, daemon
+lifecycle, supervisor behavior, and restart policy remain blocked until
+separate implementation tasks approve them.
 
 Task 138 adds a startup object foundation only. It may describe future discovery
 metadata and explicit shutdown semantics, but it must not write files, start a
@@ -53,6 +53,11 @@ daemon loop, enable auto-restart, or start a supervisor.
 
 Task 139 adds only a bounded Local API service-runner startup proof around the
 existing Local API runner. It may inject the generated local token into that
-runner and print safe metadata, but it must not write discovery files, print raw
-token values, start supervision, add auto-restart, or become a daemon lifecycle
-manager.
+runner and print safe metadata. Task 139 did not write discovery files. It must
+not print raw token values, start supervision, add auto-restart, or become a
+daemon lifecycle manager.
+
+Task 144 wires the approved safe discovery writer into that startup proof only
+when an explicit discovery file path is provided. The file remains
+local-user-scoped, loopback-only, and token-redacted; the runner still does not
+store tokens, supervise a daemon, auto-restart, or own client behavior.

@@ -123,7 +123,8 @@ existing Local API runner with that token and a safe metadata startup message.
 It does not write discovery files, expose the raw token, add daemon
 supervision, auto-restart, handler composition, persistent telemetry,
 sessions/history, routing, retry/fallback, model selection, or WebSocket/event
-behavior.
+behavior. Task 144 later narrows this by allowing explicit safe discovery
+writes only.
 
 Task 141 decides the first discovery policy: local clients may later discover a
 running service through local-user-scoped safe metadata only. That metadata is
@@ -137,6 +138,13 @@ files, supervise services, or change Local API request handling.
 Task 143 adds only the safe discovery metadata reader. It gives future clients a
 validated way to inspect loopback service metadata without receiving bearer
 tokens or service lifecycle authority.
+
+Task 144 wires safe discovery metadata writes into the startup proof only when
+an explicit discovery file path is provided. The runner still creates the local
+bearer token in memory, passes it only to the Local API runner, writes only
+token-redacted loopback metadata, and does not add daemon supervision,
+auto-start, cleanup, client calls, provider routing, retry/fallback, model
+selection, persistent telemetry, sessions/history, or WebSocket/event behavior.
 
 ## Failure Rule
 

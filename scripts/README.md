@@ -79,9 +79,9 @@ drift.
 `check_local_service_startup_boundaries.py` enforces the local service startup
 foundation boundary so startup metadata and local bearer-token generation stay
 outside Core, ProviderRuntime, Local API handlers, and RuntimeComposition. It
-also blocks discovery-file writes, environment reads, framework imports,
-provider execution, WebSocket behavior, and provider bridge calls in the startup
-package.
+allows only the approved safe discovery writer path, and otherwise blocks
+environment reads, framework imports, provider execution, WebSocket behavior,
+and provider bridge calls in the startup package.
 
 `check_library_decisions.py` enforces required decision fields and confirms each
 runtime dependency in `[project].dependencies` has a matching decision record.

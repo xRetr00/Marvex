@@ -144,13 +144,15 @@ generation for a future Local API service runner.
   startup package until a separate service-runner integration task approves it.
 - `packages/local_service_startup/local_api_service_runner.py` may import the
   existing Local API runner/config only for the approved startup proof that
-  injects a generated local token and prints safe metadata. This exception does
-  not allow Local API handler composition, HTTP parsing ownership, trace
-  storage, daemon supervision, discovery-file writes, routing, retry/fallback,
-  model selection, or token lifecycle management.
-- It must not write discovery files, read environment variables, start daemon or
-  supervisor behavior, import server frameworks, implement WebSocket/events,
-  call providers, or own routing/retry/fallback/model-selection behavior.
+  injects a generated local token, prints safe metadata, and optionally writes
+  safe discovery metadata through `packages.local_service_startup.discovery`
+  when an explicit local-user-scoped path is supplied. This exception does not
+  allow Local API handler composition, HTTP parsing ownership, trace storage,
+  daemon supervision, routing, retry/fallback, model selection, or broader token
+  lifecycle management.
+- It must not read environment variables, start daemon or supervisor behavior,
+  import server frameworks, implement WebSocket/events, call providers, or own
+  routing/retry/fallback/model-selection behavior.
 - Public startup metadata must be token-safe; raw local bearer tokens remain
   only in the in-memory startup result for future runner use.
 - Future discovery metadata must stay local-user-scoped and safe-only: loopback

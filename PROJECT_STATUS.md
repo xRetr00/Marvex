@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: local_discovery_metadata_reader_foundation
+current_phase: local_api_startup_discovery_write_wiring
 
-implementation_status: local_discovery_metadata_reader_implemented
+implementation_status: local_api_startup_discovery_write_wiring_implemented
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 143 Local Discovery Metadata Reader Foundation
+Task 144 Local API Startup Discovery Write Wiring
 
 ## Validation Baseline
 
-Latest full validation baseline from Task 143:
+Latest full validation baseline from Task 144:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 728 passed, 1 skipped
+- `python -m pytest -q` -> 731 passed, 1 skipped
 
 Recent local API/runtime milestones:
 
@@ -67,15 +67,17 @@ Recent local API/runtime milestones:
 - Task 138 implements the first `packages.local_service_startup` foundation. It
   generates a high-entropy in-memory local bearer token, produces safe public
   startup metadata, defines explicit startup/shutdown semantics, and keeps
-  discovery-file writes, daemon supervision, Local API handler integration,
-  RuntimeComposition service ownership, Core lifecycle coupling, and
-  ProviderRuntime credential policy blocked.
+  discovery-file writing outside the foundation object itself. Daemon
+  supervision, Local API handler integration, RuntimeComposition service
+  ownership, Core lifecycle coupling, and ProviderRuntime credential policy
+  stay blocked.
 - Task 139 adds a narrow Local API service-runner startup proof. It generates
   the local bearer token through `packages.local_service_startup`, injects that
   raw token only into the existing Local API runner call, and prints only safe
-  public startup metadata. Discovery-file writes, daemon supervision,
-  auto-restart, RuntimeComposition service ownership, generic provider routing,
-  persistent telemetry, sessions/history, and WebSocket/events remain blocked.
+  public startup metadata. Discovery-file writes were still blocked at Task
+  139. Daemon supervision, auto-restart, RuntimeComposition service ownership,
+  generic provider routing, persistent telemetry, sessions/history, and
+  WebSocket/events remain blocked.
 - Task 140 records a bounded manual smoke for the startup-proof runner:
   `/health` and `/version` returned HTTP 200 on loopback, missing/wrong
   `/v1/turns` auth returned HTTP 401, startup metadata reported token presence
@@ -97,6 +99,13 @@ Recent local API/runtime milestones:
   bind metadata, and returns safe service location/token-presence data for a
   future client without becoming a launcher, registry, token store, or retry
   layer.
+- Task 144 wires the approved discovery metadata writer into the startup proof
+  runner only when an explicit discovery file path is supplied. The runner
+  writes safe loopback metadata, rejects missing or out-of-scope discovery file
+  paths, keeps the raw bearer token out of startup output and discovery files,
+  and does not add daemon supervision, hidden auto-start, token storage, cleanup,
+  client calls, provider routing, retry/fallback, model selection,
+  sessions/history, WebSocket/events, or persistent telemetry.
 
 ## Current Foundation Capabilities
 
@@ -142,6 +151,9 @@ Process Readiness has started:
 - local service startup can now write safe local-user-scoped discovery metadata
   without raw tokens, remote bind addresses, provider credentials, or handler
   configuration
+- the Local API service-runner startup proof can now explicitly write that safe
+  discovery metadata through `--discovery-file <path>` while still passing the
+  raw generated token only to the Local API runner call
 - the developer-only fake `/v1/turns` runner now injects one current-process
   reader/sink so the same process can read the fake turn trace by `trace_id`
 - the fake `/v1/turns` plus protected trace-read manual smoke has been executed
@@ -369,11 +381,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may explicitly wire safe discovery writes into a startup mode or add
-cleanup behavior. Keep it safe-only: loopback metadata, token presence,
-schema/version fields, no raw bearer token, no daemon supervision,
-auto-restart, generic provider routing, persistent telemetry, sessions/history,
-WebSocket/events,
+Next work may add a bounded explicit client/read helper flow or cleanup
+behavior. Keep it safe-only: loopback metadata, token presence, schema/version
+fields, no raw bearer token, no daemon supervision, auto-restart, generic
+provider routing, persistent telemetry, sessions/history, WebSocket/events,
 retry/fallback, model selection, or broader token lifecycle machinery without
 another explicit task.
 
