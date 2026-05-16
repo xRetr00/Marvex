@@ -170,6 +170,14 @@ private startup handoff outside public metadata. The helper does not launch or
 supervise services, cache tokens, manage sessions/history, retry/fallback,
 select models, route providers, persist telemetry, or own UI behavior.
 
+Completion note: the Local Runtime API Foundation now covers explicit startup,
+safe discovery metadata, public loopback readiness, protected turn submission,
+protected current-process trace reads, and a narrow client connection proof.
+Daemon supervision, raw token storage, remote binding, sessions/history,
+WebSocket/events, persistent telemetry, generic provider routing, retry/fallback,
+model selection, memory, tools, UI, voice, desktop, vision, and proactive
+behavior remain blocked.
+
 ## Future HTTP Endpoint Contracts
 
 The following endpoints are future explicit tasks. Their response contracts

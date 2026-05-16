@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: local_api_client_connection_proof
+current_phase: local_runtime_api_foundation_complete
 
-implementation_status: local_api_client_connection_proof_implemented
+implementation_status: local_runtime_api_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Task 145 Local API Client Connection Proof
+Local Runtime API Foundation Complete
 
 ## Validation Baseline
 
@@ -16,6 +16,19 @@ Latest full validation baseline from Task 145:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 738 passed, 1 skipped
+
+## Local Runtime API Foundation Completion State
+
+The Local Runtime API Foundation is complete as a future Shell/CLI-facing local
+service foundation. A future client can locate token-redacted loopback metadata,
+check public `/health` and `/version`, and call protected `/v1/turns` plus
+`GET /v1/traces/{trace_id}` through explicit bearer-auth paths. Discovery files
+remain local-user-scoped and never contain raw bearer tokens; protected calls
+require a private startup token handoff outside public metadata. Current trace
+reads remain same-process, auth-protected, telemetry-owned safe projections.
+Local API stays HTTP/auth/JSON only, local service startup owns startup/token and
+discovery metadata, RuntimeComposition stays explicit composition only, and
+Core/ProviderRuntime remain token/lifecycle/discovery blind.
 
 Recent local API/runtime milestones:
 
@@ -391,9 +404,8 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Next work may finalize the Local Runtime API Foundation status or add a bounded
-cleanup/manual-smoke record if needed. Keep it safe-only: loopback metadata,
-token presence, schema/version fields, no raw bearer token, no daemon
+The Local Runtime API Foundation is complete. Next work should be a separately
+approved foundation slice. Do not add raw bearer-token storage, daemon
 supervision, auto-restart, generic provider routing, persistent telemetry,
 sessions/history, WebSocket/events, retry/fallback, model selection, or broader
 token lifecycle machinery without another explicit task.
