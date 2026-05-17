@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: session_conversation_foundation
+current_phase: memory_foundation
 
-implementation_status: session_conversation_foundation_complete
+implementation_status: memory_foundation_checkpoint_1
 
 accepted_docs: true
 
 current_governance_gate:
 
-Session And Conversation Foundation Complete
+Memory Foundation Checkpoint 1
 
 ## Validation Baseline
 
@@ -16,6 +16,30 @@ Latest full validation baseline from Session and Conversation Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 765 passed, 1 skipped
+
+## Memory Foundation State
+
+Checkpoint 1 defines `packages.memory_runtime` as the memory owner boundary.
+MemoryRuntime now owns safe `MemoryRef`, `MemoryRecord`, `MemoryWriteCandidate`,
+`MemoryReadResult`, `MemoryForgetResult`, safe projections, and an explicit
+instance-owned `CurrentProcessMemoryStore` proof. The store is current-process
+only and is not long-term recall, file persistence, embeddings, vector search,
+or product memory.
+
+Memory means policy-governed assistant recall material such as safe facts,
+preferences, instructions, or summaries. It is not a transcript store, telemetry
+store, session store, provider state store, prompt cache, vector database, tool
+state, UI state, voice state, desktop context, vision state, proactive state,
+router, model selector, daemon, or WebSocket/event stream. Memory records may
+link to `session_ref`, `conversation_ref`, `trace_id`, and `turn_id`, but raw
+transcripts, raw prompts, provider payloads, provider outputs, tokens,
+credentials, environment values, and secrets are rejected by default.
+
+Memory write candidates remain pending until a future policy owner approves
+them. Forget/delete is represented by `MemoryRef` and returns a safe result
+without exposing stored content. Core, Local API, RuntimeComposition,
+ProviderRuntime, telemetry, AssistantRuntime, SessionRuntime, and
+local_service_startup must not own memory storage or recall.
 
 ## Session And Conversation Foundation State
 

@@ -381,6 +381,28 @@ metadata, current-process projections, and an optional instance-owned registry.
   Local API lifecycle behavior.
 - `scripts/run_all_checks.py` runs the session runtime boundary gate.
 
+### MemoryRuntime Boundary Gate
+
+MemoryRuntime is limited to safe memory refs, records, write candidates,
+read/forget results, safe projections, and an optional instance-owned
+current-process proof store.
+
+- `packages/memory_runtime` may import approved contracts, Pydantic, and
+  standard-library collection/date/typing helpers only.
+- MemoryRuntime must not import Core, AssistantRuntime, Local API, Local API
+  client, local service startup, ProviderRuntime, RuntimeComposition,
+  SessionRuntime, telemetry, adapters, CLI apps, services, JSON/file storage,
+  SQLite, vector libraries, or provider SDKs.
+- Core, AssistantRuntime, Local API, local service startup, ProviderRuntime,
+  RuntimeComposition, SessionRuntime, and telemetry must not import or mention
+  MemoryRuntime owner models, stores, or projection helpers.
+- MemoryRuntime must not implement embeddings, vector search, automatic
+  transcript extraction, raw transcript persistence, provider-driven writes,
+  tools, UI, voice, desktop, vision, proactive behavior, generic provider
+  routing, retry/fallback, model selection, daemon supervision, WebSocket/events,
+  or Local API lifecycle behavior.
+- `scripts/run_all_checks.py` runs the memory runtime boundary gate.
+
 ### Provider Structured Output Boundary Gate
 
 Provider structured output is limited to no-network validation of already

@@ -156,6 +156,13 @@ RuntimeComposition, ProviderRuntime, telemetry, and local service startup may
 carry or link safe references only through approved contracts and must not become
 session lifecycle owners.
 
+MemoryRuntime owns memory records, memory refs, memory write candidates, safe
+read results, safe forget results, and future memory read/write orchestration.
+It may link records to `session_ref`, `conversation_ref`, `trace_id`, and
+`turn_id`, but it must not store raw transcripts by default or delegate memory
+ownership to Core, Local API, RuntimeComposition, telemetry, ProviderRuntime,
+AssistantRuntime, SessionRuntime, or local service startup.
+
 ## Anti-God-Object Guardrails
 
 - `TurnOrchestrator` must not be expanded into assistant-level logic.
