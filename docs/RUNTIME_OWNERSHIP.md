@@ -228,3 +228,9 @@ Before any runtime-related implementation task, the task spec must answer:
 - What is the boundary between diagnostic trace events and assistant event history?
 - Which process supervision library or pattern will be approved?
 - Does provider fallback require a separate provider routing runtime?
+
+## CapabilityRuntime Boundary
+
+CapabilityRuntime owns manifests, eligibility decisions, permission decisions, human approval requirements, context delivery policy, compaction policy, provider/tool-call proposal envelopes, permission-gated execution requests, result/error envelopes, safe summaries, loop guards, planning readiness models, and verification hooks.
+
+Capability adapters own external protocol integration only. MCP, OpenAI tool, LiteLLM gateway, LM Studio, skill, plugin, connector, and integration adapters cannot bypass CapabilityRuntime policy. Core, ProviderRuntime, RuntimeComposition, Local API, MemoryRuntime, SessionRuntime, Telemetry, and local_service_startup must not become capability registries, dispatchers, or execution owners.

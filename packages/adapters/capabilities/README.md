@@ -1,0 +1,1 @@
+# Capability adapter seams.

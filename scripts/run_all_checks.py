@@ -20,6 +20,7 @@ CHECKS = [
     "check_assistant_runtime_boundaries.py",
     "check_session_runtime_boundaries.py",
     "check_memory_runtime_boundaries.py",
+    "check_capability_runtime_boundaries.py",
     "check_provider_structured_output_boundaries.py",
     "check_telemetry_boundaries.py",
     "check_runtime_ownership.py",
@@ -65,3 +66,4 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

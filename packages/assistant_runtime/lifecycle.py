@@ -85,6 +85,11 @@ class AssistantTurnLifecycleSummary:
     memory_forget_ready: bool
     telemetry_event_count: int
     persistent_trace_linked: bool
+    capability_readiness_count: int = 0
+    selected_eligible_capability_count: int = 0
+    denied_capability_count: int = 0
+    executed_fake_capability_count: int = 0
+    capability_safe_result_status: str | None = None
     transcript_persisted: bool = False
     raw_payload_persisted: bool = False
 
@@ -111,6 +116,11 @@ class AssistantTurnLifecycleSummary:
             "memory_forget_ready": self.memory_forget_ready,
             "telemetry_event_count": self.telemetry_event_count,
             "persistent_trace_linked": self.persistent_trace_linked,
+            "capability_readiness_count": self.capability_readiness_count,
+            "selected_eligible_capability_count": self.selected_eligible_capability_count,
+            "denied_capability_count": self.denied_capability_count,
+            "executed_fake_capability_count": self.executed_fake_capability_count,
+            "capability_safe_result_status": self.capability_safe_result_status,
             "transcript_persisted": False,
             "raw_payload_persisted": False,
         }
@@ -131,12 +141,21 @@ def build_turn_lifecycle_summary(
     memory_forget_ready: bool = False,
     telemetry_event_count: int = 0,
     persistent_trace_linked: bool = False,
+    capability_readiness_count: int = 0,
+    selected_eligible_capability_count: int = 0,
+    denied_capability_count: int = 0,
+    executed_fake_capability_count: int = 0,
+    capability_safe_result_status: str | None = None,
 ) -> AssistantTurnLifecycleSummary:
     _validate_counts(
         memory_read_ref_count=memory_read_ref_count,
         memory_write_candidate_ref_count=memory_write_candidate_ref_count,
         memory_policy_decision_ref_count=memory_policy_decision_ref_count,
         telemetry_event_count=telemetry_event_count,
+        capability_readiness_count=capability_readiness_count,
+        selected_eligible_capability_count=selected_eligible_capability_count,
+        denied_capability_count=denied_capability_count,
+        executed_fake_capability_count=executed_fake_capability_count,
     )
     if result is not None:
         _validate_result_identity(turn_input, result)
@@ -179,6 +198,11 @@ def build_turn_lifecycle_summary(
         memory_forget_ready=memory_forget_ready,
         telemetry_event_count=telemetry_event_count,
         persistent_trace_linked=persistent_trace_linked,
+        capability_readiness_count=capability_readiness_count,
+        selected_eligible_capability_count=selected_eligible_capability_count,
+        denied_capability_count=denied_capability_count,
+        executed_fake_capability_count=executed_fake_capability_count,
+        capability_safe_result_status=capability_safe_result_status,
         transcript_persisted=False,
         raw_payload_persisted=False,
     )
@@ -318,3 +342,5 @@ def _dump_ref(ref: SessionRef | ConversationRef | None) -> dict[str, str] | None
     if ref is None:
         return None
     return ref.model_dump()
+
+

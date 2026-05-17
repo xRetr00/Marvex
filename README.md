@@ -135,3 +135,7 @@ The real-provider proof remains opt-in only and does not approve service/API or
 product behavior changes. Live LM Studio use is manual smoke only and is not
 required by pytest or `scripts/run_all_checks.py`; the latest recorded manual
 smoke for the proof path succeeded against a local LM Studio model.
+
+## Capability Platform Foundation
+
+Capability Platform Foundation adds `packages/capability_runtime` plus disabled/proof adapter seams under `packages/adapters/capabilities`. It establishes policy-governed capability proposals, context delivery, compaction, loop guards, fake deterministic dispatch proof, and safe lifecycle summaries without real tool execution.

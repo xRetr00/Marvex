@@ -543,3 +543,25 @@ generic provider API mode, routing, retry/fallback, model selection, API-key
 policy execution, WebSocket/event streams, cross-process trace lookup, raw
 transcript persistence, memory backend promotion, automatic memory extraction,
 or default CLI changes.
+
+## Capability Platform Foundation
+
+Capability Platform Foundation is complete as a foundation slice. It adds `packages/capability_runtime`, adapter seams under `packages/adapters/capabilities`, safe lifecycle summary linkage in AssistantRuntime, deterministic fake capability proof tests, dependency/adoption documentation, and the `check_capability_runtime_boundaries.py` validation gate.
+
+Complete:
+
+- CapabilityRuntime central models for refs, manifests, permissions, approval, eligibility, context delivery, compaction, proposals, execution requests, result/error envelopes, summaries, loop guards, planning readiness, verification hooks, and safe projections.
+- Adapter seams for MCP, OpenAI tools/Agents SDK shape, LiteLLM gateway/toolset metadata, LM Studio tool/MCP host proposals, skills, plugins, connectors, integrations, and harness/context delivery concepts.
+- Safe deterministic fake capability proof: permission -> dispatch -> result -> safe summary, with no shell, filesystem, network, browser, OS, or raw payload persistence.
+- AssistantRuntime lifecycle can reference safe capability readiness/result counts without dispatching capabilities.
+- Boundary validation blocks ownership drift and adapter policy bypass.
+
+Blocked/deferred:
+
+- Official MCP SDK is not added yet because this phase does not introduce real MCP protocol mechanics, arbitrary server execution, registry install, or real tool calls. It remains the required SDK when real MCP protocol code is introduced.
+- OpenAI Agents SDK, LangGraph/LangChain, LlamaIndex, Claude Skills runtime behavior, and external account connectors remain reference/adaptor-seam only until separate approved tasks.
+
+Recommended next:
+
+- Add a no-network provider tool-call proposal fixture that maps provider-native tool proposals into CapabilityRuntime proposals without execution.
+- Add an approved MCP SDK spike only when Marvex is ready for a disabled real client listing proof with explicit local allowlists.

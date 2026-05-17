@@ -478,3 +478,22 @@ The task spec must define goal, allowed files, forbidden files, contract impact,
 ### Contract Approval Gate
 
 Implementation may use only contracts listed in `docs/CONTRACT_APPROVALS.md` with approval status `approved` and `implementation_allowed` set to `yes`.
+
+## Capability Platform Foundation Gate
+
+The Capability Platform Foundation gate is enforced by `scripts/check_capability_runtime_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+The gate requires `packages/capability_runtime` and `packages/adapters/capabilities` to keep clear ownership: CapabilityRuntime owns manifests, eligibility, permission decisions, context delivery, compaction, call proposals, execution requests, result envelopes, safe summaries, approval requirements, loop guards, planning readiness, and verification hooks. Adapters cannot bypass CapabilityRuntime policy and cannot import disabled real backend SDKs directly in this foundation phase.
+
+Protected boundaries:
+
+- Core cannot execute or select tools.
+- Local API cannot execute tools.
+- RuntimeComposition cannot become a capability registry or brain.
+- ProviderRuntime cannot own tools, MCP, skills, or capability policy.
+- Telemetry cannot own capability state.
+- AssistantRuntime can reference safe capability summary counts but cannot dispatch capabilities or import capability adapters.
+- MemoryRuntime and SessionRuntime cannot own tools or capability dispatch.
+- local_service_startup cannot own capabilities.
+
+Boundary phrase: adapters cannot bypass CapabilityRuntime policy.

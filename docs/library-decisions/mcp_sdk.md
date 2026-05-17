@@ -29,3 +29,11 @@ adopt / defer / reject decision: Defer for implementation, adopt as the preferre
 risks: MCP tool execution can cross trust boundaries. STDIO/server launch paths are high risk and require allowlists, sandboxing, explicit config, and policy checks. Tool discovery must not mean tool exposure.
 
 comparison to custom routing: MCP is not an intent router. It must not influence route selection except through explicit tool capability metadata consumed after policy approval.
+
+## Capability Platform Update - 2026-05-17
+
+Decision: create adapter seam now, backend disabled until later.
+
+The Capability Platform Foundation introduces `packages/adapters/capabilities/mcp.py` with MCP server refs, tool refs, allowlists, transport values (`stdio`, `sse`, `streamable_http`), listing projections, call proposals, and a disabled backend. The official MCP Python SDK remains the required dependency when Marvex introduces real MCP protocol mechanics. It is not added in this phase because the implementation intentionally forbids arbitrary server execution, registry installs, auto-call behavior, and real MCP tool execution.
+
+This preserves the library-first rule without hand-rolling MCP protocol code: Marvex models the adapter boundary now, and the SDK adoption point remains a later explicit task.

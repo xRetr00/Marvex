@@ -30,3 +30,9 @@ Use this table after `docs/SYSTEM_MAP.md` to choose the smallest useful read set
 | Governance | Architecture/task/status validation | `scripts/run_all_checks.py`, named `scripts/check_*.py` | validation command output | `docs/VALIDATION_GATES.md`, `docs/AI_AGENT_RULES.md` | run-all checks | Changing rules, templates, status, or gates | Product behavior task unless a specific gate fails |
 | Smoke Providers | Manual provider verification | `scripts/smoke_providers.py` | none | `docs/SMOKE_TESTING.md` | manual smoke only | Running manual fake/LiteLLM/LM Studio checks | Normal unit-test-only tasks |
 | Service Placeholders | Future service boundaries | `services/*/README.md` | none | `docs/SERVICE_PLACEHOLDER_POLICY.md`, `docs/PROCESS_MODEL.md` | service placeholder gate | Planning future service contracts | Current v1 product behavior tasks |
+
+## Capability Platform Foundation
+
+- `packages/capability_runtime/`: CapabilityRuntime-owned manifests, refs, policy decisions, context delivery, compaction, proposals, permission-gated execution requests, envelopes, summaries, loop guards, planning readiness, and verification hooks.
+- `packages/adapters/capabilities/`: disabled/proof adapter seams for MCP, OpenAI tools, LiteLLM gateway/toolsets, LM Studio tools/MCP, skills, plugins, connectors, and integrations. Adapters cannot bypass CapabilityRuntime policy.
+- `docs/CAPABILITY_PLATFORM_FOUNDATION.md`: capability ownership, dependency posture, safety invariants, and implemented/deferred surfaces.
