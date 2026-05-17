@@ -14,6 +14,7 @@ from packages.adapters.capabilities.integrations import (
     PluginRef,
     SideEffectClassification,
 )
+from packages.adapters.capabilities.harness import CapabilityHarnessManifest, CapabilityHarnessRef
 from packages.adapters.capabilities.litellm_gateway import LiteLLMToolsetRef, LiteLLMToolsetProjection
 from packages.adapters.capabilities.lmstudio import LMStudioLocalToolProposal, LMStudioMcpHostRef
 from packages.adapters.capabilities.mcp import (
@@ -29,6 +30,7 @@ from packages.adapters.capabilities.openai_tools import (
     OpenAIFunctionToolProposal,
     OpenAIHostedToolRef,
     OpenAIRemoteMcpToolRef,
+    OpenAIToolSchemaDelivery,
 )
 from packages.adapters.capabilities.skills import SkillManifest, SkillRef, SkillValidationResult
 from packages.capability_runtime import CapabilityKind, CapabilityRef
@@ -81,6 +83,9 @@ def test_openai_litellm_and_lmstudio_tool_calls_are_proposals_only() -> None:
 
     assert openai_proposal.to_capability_proposal().raw_arguments_persisted is False
     assert toolset.safe_projection()["marvex_policy_authoritative"] is True
+    delivery = OpenAIToolSchemaDelivery(schema_version="1", proposals=(openai_proposal,), delivery_target="provider_schema", raw_schema_persisted=False)
+
+    assert delivery.safe_projection()["proposal_count"] == 1
     assert lmstudio.to_capability_proposal().capability_ref.identifier == "lmstudio.local_fake_status"
 
 
@@ -136,4 +141,20 @@ def test_plugin_connector_and_integration_manifests_classify_auth_data_and_side_
     assert plugin.safe_projection()["arbitrary_execution_allowed"] is False
     assert integration.to_capability_ref().kind is CapabilityKind.INTEGRATION
 
+
+
+
+def test_harness_manifest_models_prompt_context_and_verification_hooks() -> None:
+    manifest = CapabilityHarnessManifest(
+        schema_version="1",
+        harness_ref=CapabilityHarnessRef(harness_id="prompt-context-safe"),
+        prompt_contribution_kinds=("capability_schema_summary",),
+        context_delivery_ready=True,
+        compaction_ready=True,
+        verification_hook_ready=True,
+        raw_prompt_persisted=False,
+    )
+
+    assert manifest.to_capability_ref().kind is CapabilityKind.HARNESS
+    assert manifest.safe_projection()["raw_prompt_persisted"] is False
 

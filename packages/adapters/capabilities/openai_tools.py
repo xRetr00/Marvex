@@ -44,3 +44,17 @@ class OpenAIFunctionToolProposal(OpenAIToolAdapterModel):
             arguments_schema=self.json_schema,
             raw_arguments_persisted=False,
         )
+
+class OpenAIToolSchemaDelivery(OpenAIToolAdapterModel):
+    schema_version: str = Field(..., min_length=1)
+    proposals: tuple[OpenAIFunctionToolProposal, ...]
+    delivery_target: Literal["provider_schema", "tool_search_ready"]
+    raw_schema_persisted: Literal[False] = False
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "proposal_count": len(self.proposals),
+            "delivery_target": self.delivery_target,
+            "raw_schema_persisted": False,
+        }

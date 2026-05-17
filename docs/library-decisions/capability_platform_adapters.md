@@ -27,3 +27,5 @@ adopt / defer / reference decisions:
 - awesome-harness-engineering and awesome-context-ai: reference-only vocabulary for harness, context delivery, compaction, permissions, verification, and safety.
 
 scope: CapabilityRuntime and adapter seams only. This decision does not approve real tool execution, arbitrary MCP server connection, account connectors, browser/computer use, shell tools, filesystem edit tools, UI/voice/desktop/proactive behavior, generic provider routing, or autonomous agent loops.
+
+Official MCP Registry and official MCP Python/TypeScript SDKs were included in the 2026-05-17 source review. Registry content is discovery metadata only and does not authorize installing or connecting arbitrary servers.

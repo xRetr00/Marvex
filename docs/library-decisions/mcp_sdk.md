@@ -37,3 +37,5 @@ Decision: create adapter seam now, backend disabled until later.
 The Capability Platform Foundation introduces `packages/adapters/capabilities/mcp.py` with MCP server refs, tool refs, allowlists, transport values (`stdio`, `sse`, `streamable_http`), listing projections, call proposals, and a disabled backend. The official MCP Python SDK remains the required dependency when Marvex introduces real MCP protocol mechanics. It is not added in this phase because the implementation intentionally forbids arbitrary server execution, registry installs, auto-call behavior, and real MCP tool execution.
 
 This preserves the library-first rule without hand-rolling MCP protocol code: Marvex models the adapter boundary now, and the SDK adoption point remains a later explicit task.
+
+Capability Platform update: official MCP Registry and the official MCP TypeScript SDK were reviewed as ecosystem sources. Registry entries remain reference-only and cannot be installed or connected automatically. The TypeScript SDK is not adopted because Marvex runtime adapters are Python in this phase; it remains relevant for future UI or worker surfaces only behind an adapter.

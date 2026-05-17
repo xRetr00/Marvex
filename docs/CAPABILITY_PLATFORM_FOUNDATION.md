@@ -35,3 +35,4 @@ LangGraph, LangChain, LlamaIndex, Claude Skills, awesome-harness-engineering, an
 - Context delivery includes only eligible capability projections and bounded excluded reasons. It does not inject all capabilities into every prompt.
 - Provider tool calls are proposals and require Marvex permission before any future execution path.
 - Raw inputs, raw outputs, raw prompts, provider payloads, credentials, environment variables, and full transcripts are not persisted by default.
+- `packages/adapters/capabilities/harness.py`: prompt/context harness manifest seam for schema-summary prompt contributions, context delivery readiness, compaction readiness, and verification hook readiness.
