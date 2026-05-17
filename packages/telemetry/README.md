@@ -66,6 +66,9 @@ Task 127 implementation:
 - Event projections exclude raw `TraceEvent.data`, provider payloads, provider
   response ids, prompts/messages, auth material, stack traces, secrets, file
   contents, and environment data.
+- Event projections may include safe `session_ref` and `conversation_ref`
+  objects when they use only `ref_type` plus safe `ref_id`; telemetry still does
+  not own session lifecycle, transcripts, or history.
 - Task 128 uses the same instance as both the fake-turn telemetry sink and trace
   reader in the developer-only local API fake runner. That remains
   current-process-only and disappears when the process exits.
@@ -84,6 +87,8 @@ Telemetry persistence foundation:
 - It rejects non-JSON-compatible event data before creating a file.
 - It rotates local files by size with a bounded rotated-file count.
 - Read envelopes use `scope: "local_persistence"` and `source: "local_file"`.
+- Read envelopes may project safe `session_ref` and `conversation_ref` linkage
+  from sanitized event data without returning raw session bodies or transcripts.
 - Malformed stored records are counted and skipped; raw malformed text is not
   returned.
 - Write failures raise `TelemetryPersistenceError` with

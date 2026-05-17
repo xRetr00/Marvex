@@ -2,13 +2,13 @@
 
 current_phase: session_conversation_foundation
 
-implementation_status: session_conversation_foundation_checkpoint_1
+implementation_status: session_conversation_foundation_checkpoint_2
 
 accepted_docs: true
 
 current_governance_gate:
 
-Session And Conversation Foundation Checkpoint 1
+Session And Conversation Foundation Checkpoint 2
 
 ## Validation Baseline
 
@@ -26,11 +26,14 @@ current-process-only registry. This boundary groups turns by safe references and
 links them to `trace_id` and `turn_id` while storing only
 `previous_response_id` presence and `transcript_persisted: false`.
 
-The boundary decision is explicit: a session is the current assistant interaction
-container; a conversation is the logical user-visible grouping. Both are safe
-references only in this foundation. Full transcripts, hidden history, long-term
-memory, embeddings/vector search, tool state, UI state, voice state, desktop
-context, vision state, proactive behavior, generic provider routing,
+Checkpoint 2 adds the approved linkage path from `AssistantTurnInput` into
+SessionRuntime turn metadata and allows telemetry readers to project safe
+`session_ref` and `conversation_ref` objects beside `trace_id` and `turn_id`.
+The boundary decision is explicit: a session is the current assistant
+interaction container; a conversation is the logical user-visible grouping. Both
+are safe references only in this foundation. Full transcripts, hidden history,
+long-term memory, embeddings/vector search, tool state, UI state, voice state,
+desktop context, vision state, proactive behavior, generic provider routing,
 retry/fallback, model selection, daemon supervision, and WebSocket/events remain
 blocked. Core, Local API, RuntimeComposition, ProviderRuntime, telemetry, and
 local_service_startup must not become session stores or lifecycle owners.

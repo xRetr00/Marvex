@@ -27,6 +27,7 @@ _USAGE_KEY_PARTS = (
     "count",
     "token",
 )
+_REF_ID_SAFE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_")
 
 
 class InMemoryTraceReader:
@@ -96,11 +97,34 @@ def _safe_event_fields(data: dict[str, Any]) -> dict[str, Any]:
         usage = _safe_usage(data["usage"])
         if usage:
             fields["usage"] = usage
+    session_ref = _safe_ref(data.get("session_ref"), expected_ref_type="session")
+    if session_ref is not None:
+        fields["session_ref"] = session_ref
+    conversation_ref = _safe_ref(
+        data.get("conversation_ref"),
+        expected_ref_type="conversation",
+    )
+    if conversation_ref is not None:
+        fields["conversation_ref"] = conversation_ref
     if "service" in fields and "service_name" not in fields:
         fields["service_name"] = fields.pop("service")
     else:
         fields.pop("service", None)
     return fields
+
+
+def _safe_ref(value: Any, *, expected_ref_type: str) -> dict[str, str] | None:
+    if not isinstance(value, dict) or set(value) != {"ref_type", "ref_id"}:
+        return None
+    ref_type = value.get("ref_type")
+    ref_id = value.get("ref_id")
+    if ref_type != expected_ref_type or not isinstance(ref_id, str):
+        return None
+    if not ref_id or ref_id != ref_id.strip():
+        return None
+    if any(character not in _REF_ID_SAFE_CHARS for character in ref_id):
+        return None
+    return {"ref_type": expected_ref_type, "ref_id": ref_id}
 
 
 def _safe_usage(value: Any) -> dict[str, int | float] | None:

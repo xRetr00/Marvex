@@ -4,7 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from packages.contracts import ConversationRef, SessionRef
+from packages.contracts import AssistantTurnInput, ConversationRef, SessionRef
 
 
 JsonProjection = dict[str, object]
@@ -96,3 +96,19 @@ def _dump_ref(ref: SessionRef | ConversationRef | None) -> dict[str, str] | None
         return None
     return ref.model_dump()
 
+
+def build_turn_linkage_from_assistant_turn_input(
+    turn_input: AssistantTurnInput,
+    *,
+    conversation_ref: ConversationRef | None = None,
+    previous_response_id: str | None = None,
+) -> TurnLinkageMetadata:
+    return TurnLinkageMetadata(
+        schema_version=turn_input.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        session_ref=turn_input.session_ref,
+        conversation_ref=conversation_ref,
+        previous_response_id_present=bool(previous_response_id),
+        transcript_persisted=False,
+    )

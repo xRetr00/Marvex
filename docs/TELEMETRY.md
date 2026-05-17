@@ -55,6 +55,8 @@ Storage policy:
   files retained.
 - Read scope: local file persistence only; protected API access still requires
   an injected reader and local auth.
+- Safe session linkage: read projections may include `session_ref` and
+  `conversation_ref` when each object contains only `ref_type` and safe `ref_id`.
 - Failure: write failures raise `TELEMETRY_WRITE_FAILED` without raw event data
   or secret details.
 
@@ -75,6 +77,11 @@ instance-owned current-process `TelemetrySink` plus reader; callers must
 construct and inject it explicitly. `read_trace(...)` returns a safe envelope
 with sanitized event projections and never returns raw `TraceEvent` objects or
 raw `TraceEvent.data`.
+
+Session and conversation linkage is reference-only in trace readers. Telemetry
+may project safe `session_ref` and `conversation_ref` objects next to `trace_id`
+and `turn_id`, but it must not become a session store, history store, memory
+store, or transcript persistence owner.
 
 Task 128 wires the developer-only fake local API `/v1/turns` runner to construct
 one `InMemoryTraceReader` instance and inject it as both telemetry sink and

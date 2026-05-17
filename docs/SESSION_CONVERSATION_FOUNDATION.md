@@ -15,6 +15,12 @@ for one-turn state. Telemetry may link safe references to `trace_id` and
 `turn_id`. Core, Local API, RuntimeComposition, ProviderRuntime,
 local_service_startup, and telemetry must not become session stores.
 
+`packages.session_runtime.build_turn_linkage_from_assistant_turn_input(...)`
+builds safe linkage from `AssistantTurnInput` without importing AssistantRuntime
+or storing user-visible input, metadata bodies, transcripts, or provider
+continuity values. Telemetry readers may project safe references from trace data
+beside `trace_id` and `turn_id`; they still do not own session lifecycle.
+
 ## Safe Linkage
 
 Allowed persistent or projected fields:
@@ -53,4 +59,3 @@ Future memory may depend on this foundation only by reading safe references and
 turn linkage metadata through an approved contract. Memory must remain a
 separate owner and must not reinterpret SessionRuntime projections as recall,
 semantic history, transcripts, embeddings, or profile storage.
-

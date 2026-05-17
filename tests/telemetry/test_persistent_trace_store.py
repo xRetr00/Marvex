@@ -71,6 +71,42 @@ def test_persistent_trace_store_writes_redacted_ndjson_and_reads_safe_envelope(t
     }
 
 
+def test_persistent_trace_store_projects_safe_session_conversation_refs(tmp_path):
+    from packages.telemetry import PersistentTraceStore
+
+    trace_file = tmp_path / "telemetry" / "traces.ndjson"
+    store = PersistentTraceStore(trace_file_path=trace_file, local_user_root=tmp_path)
+
+    store.emit(
+        make_event(
+            session_ref={"ref_type": "session", "ref_id": "session-persist-001"},
+            conversation_ref={
+                "ref_type": "conversation",
+                "ref_id": "conversation-persist-001",
+            },
+            prompt="raw prompt text",
+            transcript="full transcript body",
+        )
+    )
+
+    raw_text = trace_file.read_text(encoding="utf-8")
+    envelope = store.read_trace("trace-persist-test")
+    event = envelope["events"][0]
+
+    assert event["session_ref"] == {
+        "ref_type": "session",
+        "ref_id": "session-persist-001",
+    }
+    assert event["conversation_ref"] == {
+        "ref_type": "conversation",
+        "ref_id": "conversation-persist-001",
+    }
+    assert "raw prompt text" not in raw_text
+    assert "full transcript body" not in raw_text
+    assert "raw prompt text" not in str(envelope)
+    assert "full transcript body" not in str(envelope)
+
+
 def test_persistent_trace_store_rejects_paths_outside_local_user_root(tmp_path):
     from packages.telemetry import PersistentTraceStore
 

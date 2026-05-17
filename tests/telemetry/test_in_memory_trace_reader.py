@@ -103,6 +103,38 @@ def test_in_memory_trace_reader_projection_excludes_raw_and_sensitive_data():
     assert event["service_name"] == "local-api"
 
 
+def test_in_memory_trace_reader_projects_safe_session_conversation_refs():
+    from packages.telemetry import InMemoryTraceReader
+
+    reader = InMemoryTraceReader()
+    reader.emit(
+        make_event(
+            session_ref={"ref_type": "session", "ref_id": "session-reader-001"},
+            conversation_ref={
+                "ref_type": "conversation",
+                "ref_id": "conversation-reader-001",
+            },
+            prompt="raw prompt must not project",
+            transcript="full transcript must not project",
+        )
+    )
+
+    envelope = reader.read_trace("trace-reader-test")
+
+    event = envelope["events"][0]
+    serialized = str(envelope).lower()
+    assert event["session_ref"] == {
+        "ref_type": "session",
+        "ref_id": "session-reader-001",
+    }
+    assert event["conversation_ref"] == {
+        "ref_type": "conversation",
+        "ref_id": "conversation-reader-001",
+    }
+    assert "raw prompt" not in serialized
+    assert "full transcript" not in serialized
+
+
 def test_in_memory_trace_reader_is_instance_owned_not_module_global():
     from packages.telemetry import InMemoryTraceReader
 
