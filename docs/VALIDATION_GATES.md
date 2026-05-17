@@ -497,3 +497,15 @@ Protected boundaries:
 - local_service_startup cannot own capabilities.
 
 Boundary phrase: adapters cannot bypass CapabilityRuntime policy.
+
+## MCP Adapter Foundation Gate
+
+The MCP Adapter Foundation gate is enforced by `scripts/check_mcp_adapter_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+The gate permits `packages/adapters/capabilities/mcp.py` to import the official MCP Python SDK for MCP protocol mechanics only. CapabilityRuntime remains authoritative for manifests, permission decisions, call proposals, execution requests, and result envelopes.
+
+The MCP adapter must keep server/tool allowlists, blocked dangerous tool metadata, no arbitrary server launch, no MCP registry install, no automatic calls, and no raw input/output persistence. It must not import transport launch helpers, subprocess/file/browser/socket helpers, Core, AssistantRuntime, ProviderRuntime, RuntimeComposition, Local API, services, or telemetry implementations.
+
+Boundary phrase: CapabilityRuntime remains authoritative.
+
+<!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->

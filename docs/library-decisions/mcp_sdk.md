@@ -1,41 +1,39 @@
 # Library Decision: Official MCP Python SDK
 
-library name: MCP Python SDK
+library name: mcp
 
 official source: https://github.com/modelcontextprotocol/python-sdk and https://modelcontextprotocol.io/
 
-maintenance status: Active as of April 29, 2026. PyPI latest version observed as `mcp==1.27.0`. The GitHub repository identifies itself as the official Python SDK for Model Context Protocol servers and clients and links to the protocol documentation and specification.
+maintenance status: Active as of May 18, 2026. PyPI latest version observed locally with `python -m pip index versions mcp` as `mcp==1.27.1`.
 
-why use it: Marvex should not hand-roll MCP JSON-RPC, transport handling, tool discovery, or tool-call envelopes. The official SDK is the correct component if Marvex later exposes or consumes MCP servers.
+why use it: Marvex must not hand-roll MCP protocol clients, JSON-RPC envelopes, transport session behavior, tool listing, or tool call protocol mechanics. The official MCP Python SDK is the approved dependency for MCP client/session mechanics inside the MCP adapter boundary.
 
-why not custom code: Custom MCP code would duplicate a moving protocol, increase interoperability risk, and likely miss transport/security edge cases. MCP should be a component-level adapter dependency, not a Marvex-built protocol implementation.
+why not custom code: Custom MCP protocol code would duplicate a moving protocol, increase interoperability risk, and likely miss session, initialization, transport, and result-shape edge cases that the official SDK already owns.
 
-fallback if abandoned: Keep MCP behind a worker/adapter boundary so Marvex can replace the SDK, disable MCP, or support only explicit native tools through a separate task.
+fallback if abandoned: Keep MCP behind `packages.adapters.capabilities.mcp` and the future Tool Worker boundary so Marvex can replace the SDK, disable MCP, or support only explicit native tools without changing Core or CapabilityRuntime policy ownership.
 
-pyproject dependency: none in Task 033
+pyproject dependency: mcp
 
-declared dependency: not declared; Task 033 must not edit pyproject.toml
+declared dependency: mcp==1.27.1
 
-verified date: 2026-04-29
+verified date: 2026-05-18
 
 verified by: Codex
 
-scope: Candidate only. Future use must be limited to MCP client/server adapters. It must not introduce a tool runtime, agent runtime, broad tool exposure, or direct Core dependency.
+scope: Adopted for the MCP Adapter Foundation only. `packages.adapters.capabilities.mcp` may use the official SDK `ClientSession`, `Tool`, and `CallToolResult` shapes for approved sessions. The adapter must not launch arbitrary MCP servers, install registry entries, auto-call tools, persist raw payloads, or bypass CapabilityRuntime permission and execution envelopes.
 
-architecture fit: Good for future MCP integration after policy gates and tool boundaries exist. It belongs behind Tool Worker or MCP adapter boundaries, not inside Core.
+architecture fit: Good. MCP protocol mechanics belong behind the adapter/worker boundary; CapabilityRuntime remains authoritative for capability refs, manifests, permission decisions, call proposals, execution requests, and safe result envelopes. Core, AssistantRuntime, ProviderRuntime, Local API, RuntimeComposition, MemoryRuntime, SessionRuntime, and telemetry must not become MCP protocol owners.
 
-adopt / defer / reject decision: Defer for implementation, adopt as the preferred official SDK when MCP work is approved. Task 033 does not build MCP runtime.
+adopt / defer / reject decision: Adopt narrowly for MCP protocol mechanics in the MCP adapter. Defer transport/server-launch ownership, registry install, broad tool execution, and product runtime integration to future explicit tasks.
 
-risks: MCP tool execution can cross trust boundaries. STDIO/server launch paths are high risk and require allowlists, sandboxing, explicit config, and policy checks. Tool discovery must not mean tool exposure.
+risks: MCP tool discovery can expose dangerous local or remote capabilities. STDIO/server launch paths are high risk. Tool schemas and tool results may contain sensitive data. Mitigations in this phase: explicit server/tool allowlists, dangerous tool-name blocking, schema sanitization, CapabilityRuntime proposal/execution request requirements, safe result summaries only, and no raw input/output persistence.
 
-comparison to custom routing: MCP is not an intent router. It must not influence route selection except through explicit tool capability metadata consumed after policy approval.
+comparison to custom routing: MCP is not an intent router or assistant brain. It supplies protocol mechanics for tool discovery/calls after Marvex policy approval; it must not influence route selection except through explicit safe capability metadata consumed by CapabilityRuntime.
 
-## Capability Platform Update - 2026-05-17
+## MCP Adapter Foundation - 2026-05-18
 
-Decision: create adapter seam now, backend disabled until later.
+Decision: adopt the official MCP Python SDK for real MCP protocol mechanics while keeping the adapter policy-gated and non-launching.
 
-The Capability Platform Foundation introduces `packages/adapters/capabilities/mcp.py` with MCP server refs, tool refs, allowlists, transport values (`stdio`, `sse`, `streamable_http`), listing projections, call proposals, and a disabled backend. The official MCP Python SDK remains the required dependency when Marvex introduces real MCP protocol mechanics. It is not added in this phase because the implementation intentionally forbids arbitrary server execution, registry installs, auto-call behavior, and real MCP tool execution.
+The MCP Adapter Foundation updates `packages/adapters/capabilities/mcp.py` from a disabled proof seam to an SDK-backed adapter boundary. It accepts an already-approved SDK `ClientSession`, initializes and lists tools only for allowlisted server refs, converts allowed tools into safe `CapabilityManifest` projections, creates `CapabilityCallProposal` objects, and calls tools only from approved `CapabilityExecutionRequest` envelopes. It returns `CapabilityResultEnvelope` summaries without raw output content.
 
-This preserves the library-first rule without hand-rolling MCP protocol code: Marvex models the adapter boundary now, and the SDK adoption point remains a later explicit task.
-
-Capability Platform update: official MCP Registry and the official MCP TypeScript SDK were reviewed as ecosystem sources. Registry entries remain reference-only and cannot be installed or connected automatically. The TypeScript SDK is not adopted because Marvex runtime adapters are Python in this phase; it remains relevant for future UI or worker surfaces only behind an adapter.
+This does not add arbitrary MCP registry install, stdio server launching, hidden transport creation, automatic tool calls, shell/filesystem/browser/desktop/network tool enablement, Core integration, Local API integration, ProviderRuntime integration, AssistantRuntime integration, or runtime turn-flow integration.

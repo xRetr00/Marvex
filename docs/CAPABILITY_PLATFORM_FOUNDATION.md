@@ -15,7 +15,7 @@ AssistantRuntime may reference safe capability summary counts in lifecycle summa
 ## Implemented Surfaces
 
 - `packages/capability_runtime`: central Pydantic models, fake deterministic adapter, context delivery, compaction, loop guard, planning, verification, and safe summary projections.
-- `packages/adapters/capabilities/mcp.py`: MCP server/tool refs, allowlist, transport enum for stdio/sse/streamable_http, listing projection, proposal model, permission-gated request model, and disabled backend.
+- `packages/adapters/capabilities/mcp.py`: MCP server/tool refs, allowlist, transport enum for stdio/sse/streamable_http, SDK-backed allowlisted tool discovery, safe schema projection into CapabilityRuntime manifests, proposal creation, approved execution-request calls through the official SDK session, safe result envelopes, permission-gated request model, and disabled backend compatibility.
 - `packages/adapters/capabilities/openai_tools.py`: OpenAI function tool, hosted tool, and remote MCP proposal seam. OpenAI tool calls remain proposals, not execution permission.
 - `packages/adapters/capabilities/litellm_gateway.py`: LiteLLM toolset/gateway metadata seam with Marvex policy authoritative.
 - `packages/adapters/capabilities/lmstudio.py`: LM Studio local tool/MCP host proposal seam with Marvex policy and trace ownership retained.
@@ -24,7 +24,7 @@ AssistantRuntime may reference safe capability summary counts in lifecycle summa
 
 ## Dependency Decision
 
-No new dependency is added in this phase. Existing `openai`, `litellm`, and `pydantic` dependency decisions remain valid for their already-approved boundaries. Official MCP SDK adoption remains deferred until Marvex introduces real MCP protocol mechanics. The current MCP adapter is a disabled/proof seam only.
+The MCP Adapter Foundation now adds `mcp==1.27.1` for official MCP Python SDK protocol mechanics inside `packages.adapters.capabilities.mcp` only. Existing `openai`, `litellm`, and `pydantic` dependency decisions remain valid for their approved boundaries. MCP SDK adoption is narrow: no arbitrary server launch, no registry install, no automatic tool calls, and no runtime turn-flow integration.
 
 LangGraph, LangChain, LlamaIndex, Claude Skills, awesome-harness-engineering, and awesome-context-ai informed the context, planning, skill, and harness vocabulary but do not own Marvex runtime behavior.
 

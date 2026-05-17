@@ -1,21 +1,31 @@
 # Project Status
 
-current_phase: assistant_stage_lifecycle_foundation_complete
+current_phase: mcp_adapter_foundation_complete
 
-implementation_status: assistant_stage_lifecycle_foundation_complete
+implementation_status: mcp_adapter_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Assistant Stage Lifecycle Foundation Complete
+MCP Adapter Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Assistant Stage Lifecycle Foundation:
+Latest full validation baseline from MCP Adapter Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 788 passed, 1 skipped
+- `python -m pytest -q` -> 805 passed, 1 skipped
+
+
+## MCP Adapter Foundation State
+
+MCP Adapter Foundation is complete as a safe, allowlisted, policy-gated adapter foundation. `packages.adapters.capabilities.mcp` now uses the official MCP Python SDK for protocol mechanics through an injected `ClientSession` boundary, while CapabilityRuntime remains authoritative for manifests, permission decisions, call proposals, execution requests, result envelopes, and safe projections.
+
+The adapter can initialize/list tools only for approved server refs, convert allowed MCP SDK tool metadata into sanitized `CapabilityManifest` projections, create permission-gated call proposals, and call SDK tools only from approved `CapabilityExecutionRequest` envelopes. Safe result envelopes expose status, content counts/types, and structured-content presence only; raw input/output persistence remains false.
+
+Blocked: arbitrary MCP registry install, hidden server launch, stdio process creation, auto-execution, shell/filesystem/browser/desktop/network tool enablement, raw payload persistence, Core integration, AssistantRuntime integration, ProviderRuntime integration, RuntimeComposition integration, Local API integration, service/CLI integration, and runtime turn-flow integration.
+
 
 ## Assistant Stage Lifecycle Foundation State
 

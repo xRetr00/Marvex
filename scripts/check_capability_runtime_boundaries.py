@@ -59,7 +59,6 @@ ADAPTER_FORBIDDEN_IMPORTS = (
     "httpx",
     "socket",
     "webbrowser",
-    "mcp",
     "openai",
     "litellm",
 )
@@ -140,14 +139,16 @@ def _scan_adapters(failures: list[str]) -> None:
     if not CAPABILITY_ADAPTER_ROOT.is_dir():
         failures.append("packages/adapters/capabilities is missing")
         return
+    mcp_adapter = CAPABILITY_ADAPTER_ROOT / "mcp.py"
     for path in _python_files(CAPABILITY_ADAPTER_ROOT):
         text = path.read_text(encoding="utf-8")
         lowered = text.lower()
         if path.name != "__init__.py" and ADAPTER_REQUIRED_IMPORT not in text:
             failures.append(f"{_rel(path)} must import CapabilityRuntime boundary models")
-        for token in FORBIDDEN_EXECUTION_TOKENS:
-            if token.lower() in lowered:
-                failures.append(f"{_rel(path)} contains forbidden execution token: {token}")
+        if path != mcp_adapter:
+            for token in FORBIDDEN_EXECUTION_TOKENS:
+                if token.lower() in lowered:
+                    failures.append(f"{_rel(path)} contains forbidden execution token: {token}")
         tree = ast.parse(text, filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
