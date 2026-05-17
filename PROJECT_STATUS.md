@@ -1,25 +1,26 @@
 # Project Status
 
-current_phase: memory_foundation
+current_phase: memory_foundation_complete
 
-implementation_status: memory_foundation_checkpoint_2
+implementation_status: memory_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Memory Foundation Checkpoint 2
+Memory Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Session and Conversation Foundation:
+Latest full validation baseline from Memory Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 765 passed, 1 skipped
+- `python -m pytest -q` -> 781 passed, 1 skipped
 
 ## Memory Foundation State
 
-Checkpoint 2 defines `packages.memory_runtime` as the memory owner boundary.
+The Memory Foundation is complete. It defines `packages.memory_runtime` as the
+memory owner boundary.
 MemoryRuntime now owns safe `MemoryRef`, `MemoryRecord`, `MemoryWriteCandidate`,
 `MemoryPolicyDecision`, `MemoryReadQuery`, `MemoryForgetRequest`,
 `MemoryReadResult`, `MemoryForgetResult`, safe projections, and an explicit
@@ -325,6 +326,12 @@ ownership governance, and library research governance remain accepted.
 
 ## Task 102-130 Compact Milestone Summary
 
+Detailed Task 102-131 history is retained in git history and package docs.
+
+<!-- file size justification: PROJECT_STATUS.md intentionally stays just over
+500 lines while the current multi-foundation status remains compacted in place;
+future status cleanups should move older milestone detail to dedicated docs. -->
+
 - Task 102 wired telemetry-owned structured-output trace safety into
   `packages.telemetry.sinks.make_trace_event(...)`.
 - Task 103 added explicit AssistantRuntime structured-output consumption as an
@@ -479,8 +486,10 @@ Blocked without a separate approved task spec:
 - telemetry cross-process trace storage, trace search, trace streaming, default
   product sink wiring, and non-local persistence backends
 - contract or port promotion
-- tools, memory, UI, voice, desktop, vision, proactive behavior
-- sessions, hidden history, routing, retry/fallback, API keys, or model routing
+- tools, UI, voice, desktop, vision, proactive behavior
+- embeddings, vector search, automatic transcript extraction, raw transcript
+  persistence, product memory integration, or memory backend promotion
+- hidden history, routing, retry/fallback, API keys, or model routing
 - structured-output handoff promotion into a public contract
 
 A roadmap item, package README note, status recommendation, or task number is
@@ -489,9 +498,10 @@ not implementation permission.
 ## Next Implementation Task
 
 The recommended next major foundation is an Assistant Stage Lifecycle Foundation
-that uses the approved assistant-envelope and safe state/session primitives to
-define stage sequencing, lifecycle records, and cancellation/error handoff
-without implementing memory, tools, UI, voice, desktop, vision, proactive
-behavior, service daemon behavior, generic provider API mode, routing,
-retry/fallback, model selection, API-key policy, WebSocket/event streams,
-cross-process trace lookup, raw transcript persistence, or default CLI changes.
+that uses the approved assistant-envelope and safe state/session/memory
+primitives to define stage sequencing, lifecycle records, and
+cancellation/error handoff without implementing tools, UI, voice, desktop,
+vision, proactive behavior, service daemon behavior, generic provider API mode,
+routing, retry/fallback, model selection, API-key policy, WebSocket/event
+streams, cross-process trace lookup, raw transcript persistence, memory backend
+promotion, automatic memory extraction, or default CLI changes.
