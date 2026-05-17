@@ -6,6 +6,15 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SESSION_RUNTIME_ROOT = ROOT / "packages" / "session_runtime"
+NON_OWNER_ROOTS = (
+    ROOT / "packages" / "assistant_runtime",
+    ROOT / "packages" / "core",
+    ROOT / "packages" / "local_api",
+    ROOT / "packages" / "local_service_startup",
+    ROOT / "packages" / "provider_runtime",
+    ROOT / "packages" / "runtime_composition",
+    ROOT / "packages" / "telemetry",
+)
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
@@ -55,6 +64,14 @@ FORBIDDEN_SOURCE_TOKENS = (
     "desktop",
     "vision",
     "proactive",
+)
+SESSION_OWNER_TERMS = (
+    "packages.session_runtime",
+    "CurrentProcessSessionRegistry",
+    "TurnLinkageMetadata",
+    "SafeSessionProjection",
+    "SafeConversationProjection",
+    "build_turn_linkage_from_assistant_turn_input",
 )
 
 
@@ -109,9 +126,20 @@ def _scan_session_runtime(failures: list[str]) -> None:
                 failures.append(f"{rel} imports non-approved dependency: {module}")
 
 
+def _scan_non_owner_roots(failures: list[str]) -> None:
+    for root in NON_OWNER_ROOTS:
+        for path in _python_files(root):
+            text = path.read_text(encoding="utf-8")
+            rel = _rel(path)
+            for term in SESSION_OWNER_TERMS:
+                if term in text:
+                    failures.append(f"{rel} mentions SessionRuntime-owned term: {term}")
+
+
 def main() -> int:
     failures: list[str] = []
     _scan_session_runtime(failures)
+    _scan_non_owner_roots(failures)
 
     if failures:
         for failure in failures:
@@ -124,4 +152,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

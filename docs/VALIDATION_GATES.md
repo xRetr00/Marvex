@@ -369,6 +369,9 @@ metadata, current-process projections, and an optional instance-owned registry.
 - SessionRuntime must not import Core, AssistantRuntime, Local API, Local API
   client, local service startup, ProviderRuntime, RuntimeComposition, telemetry,
   adapters, CLI apps, or services.
+- Core, AssistantRuntime, Local API, local service startup, ProviderRuntime,
+  RuntimeComposition, and telemetry must not import or mention SessionRuntime
+  owner models, registries, or projection helpers.
 - SessionRuntime must not persist raw prompts, raw provider payloads, raw
   provider outputs, provider response ids, tokens, secrets, credentials,
   environment values, or full transcripts by default.

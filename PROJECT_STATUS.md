@@ -2,41 +2,43 @@
 
 current_phase: session_conversation_foundation
 
-implementation_status: session_conversation_foundation_checkpoint_2
+implementation_status: session_conversation_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Session And Conversation Foundation Checkpoint 2
+Session And Conversation Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Assistant Runtime State Foundation:
+Latest full validation baseline from Session and Conversation Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 754 passed, 1 skipped
+- `python -m pytest -q` -> 764 passed, 1 skipped
 
 ## Session And Conversation Foundation State
 
-Checkpoint 1 defines the new `packages.session_runtime` boundary. Marvex now
-has a safe `ConversationRef` alongside `SessionRef`, plus turn linkage metadata,
-safe session projections, safe conversation projections, and an optional
-current-process-only registry. This boundary groups turns by safe references and
-links them to `trace_id` and `turn_id` while storing only
-`previous_response_id` presence and `transcript_persisted: false`.
+The Session and Conversation Foundation is complete. `packages.session_runtime`
+owns safe session/conversation references, turn linkage metadata, safe session
+projections, safe conversation projections, and an optional
+current-process-only registry. A session is the current assistant interaction
+container; a conversation is the logical user-visible grouping. Both are safe
+references only in this foundation.
 
-Checkpoint 2 adds the approved linkage path from `AssistantTurnInput` into
-SessionRuntime turn metadata and allows telemetry readers to project safe
-`session_ref` and `conversation_ref` objects beside `trace_id` and `turn_id`.
-The boundary decision is explicit: a session is the current assistant
-interaction container; a conversation is the logical user-visible grouping. Both
-are safe references only in this foundation. Full transcripts, hidden history,
-long-term memory, embeddings/vector search, tool state, UI state, voice state,
-desktop context, vision state, proactive behavior, generic provider routing,
-retry/fallback, model selection, daemon supervision, and WebSocket/events remain
-blocked. Core, Local API, RuntimeComposition, ProviderRuntime, telemetry, and
-local_service_startup must not become session stores or lifecycle owners.
+SessionRuntime can build safe linkage from `AssistantTurnInput` without storing
+user-visible input, metadata bodies, provider continuity values, raw prompts, or
+transcripts. Telemetry readers may project safe `session_ref` and
+`conversation_ref` objects beside `trace_id` and `turn_id`, but telemetry remains
+trace persistence/read ownership rather than session ownership. The foundation
+stores only `previous_response_id` presence and `transcript_persisted: false`.
+
+Full transcripts, hidden history, long-term memory, embeddings/vector search,
+tool state, UI state, voice state, desktop context, vision state, proactive
+behavior, generic provider routing, retry/fallback, model selection, daemon
+supervision, and WebSocket/events remain blocked. Core, Local API,
+RuntimeComposition, ProviderRuntime, telemetry, and local_service_startup must
+not become session stores or lifecycle owners.
 
 ## Assistant Runtime State Foundation State
 
@@ -459,10 +461,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-Continue the Session and Conversation Foundation inside this owner track by
-linking safe session/conversation references through approved AssistantRuntime
-and telemetry projections where needed. Do not add raw transcript persistence,
-memory, tools, UI, voice, desktop, vision, proactive behavior, service daemon
-behavior, generic provider API mode, routing, retry/fallback, model selection,
-API-key policy, WebSocket/event streams, cross-process trace lookup, or default
-CLI changes without another explicit task.
+The recommended next major foundation is an Assistant Stage Lifecycle Foundation
+that uses the approved assistant-envelope and safe state/session primitives to
+define stage sequencing, lifecycle records, and cancellation/error handoff
+without implementing memory, tools, UI, voice, desktop, vision, proactive
+behavior, service daemon behavior, generic provider API mode, routing,
+retry/fallback, model selection, API-key policy, WebSocket/event streams,
+cross-process trace lookup, raw transcript persistence, or default CLI changes.
