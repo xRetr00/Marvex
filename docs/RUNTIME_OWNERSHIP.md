@@ -147,6 +147,15 @@ outputs, tokens, transcripts, or session bodies. `previous_response_id` remains
 explicit caller input and may be represented only as presence/absence in
 AssistantRuntime state snapshots.
 
+SessionRuntime owns safe `session_ref` and `conversation_ref` linkage for turn
+grouping. It may project `trace_id`, `turn_id`, safe references,
+`previous_response_id` presence, and `transcript_persisted: false`; it must not
+store raw transcripts, raw prompts, provider payloads, provider outputs, tokens,
+provider response ids, or long-term recall data. Core, Local API,
+RuntimeComposition, ProviderRuntime, telemetry, and local service startup may
+carry or link safe references only through approved contracts and must not become
+session lifecycle owners.
+
 ## Anti-God-Object Guardrails
 
 - `TurnOrchestrator` must not be expanded into assistant-level logic.

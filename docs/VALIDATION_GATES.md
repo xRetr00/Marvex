@@ -359,6 +359,25 @@ and safe one-turn state primitives.
   files.
 - `scripts/run_all_checks.py` runs the assistant runtime boundary gate.
 
+### SessionRuntime Boundary Gate
+
+SessionRuntime is limited to safe session/conversation references, turn linkage
+metadata, current-process projections, and an optional instance-owned registry.
+
+- `packages/session_runtime` may import approved contracts, Pydantic, and
+  standard-library collection/typing helpers only.
+- SessionRuntime must not import Core, AssistantRuntime, Local API, Local API
+  client, local service startup, ProviderRuntime, RuntimeComposition, telemetry,
+  adapters, CLI apps, or services.
+- SessionRuntime must not persist raw prompts, raw provider payloads, raw
+  provider outputs, provider response ids, tokens, secrets, credentials,
+  environment values, or full transcripts by default.
+- SessionRuntime must not implement memory, embeddings/vector search, tools, UI,
+  voice, desktop, vision, proactive behavior, generic provider routing,
+  retry/fallback, model selection, daemon supervision, WebSocket/events, or
+  Local API lifecycle behavior.
+- `scripts/run_all_checks.py` runs the session runtime boundary gate.
+
 ### Provider Structured Output Boundary Gate
 
 Provider structured output is limited to no-network validation of already

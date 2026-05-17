@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: assistant_runtime_state_foundation
+current_phase: session_conversation_foundation
 
-implementation_status: assistant_runtime_state_foundation_complete
+implementation_status: session_conversation_foundation_checkpoint_1
 
 accepted_docs: true
 
 current_governance_gate:
 
-Assistant Runtime State Foundation Complete
+Session And Conversation Foundation Checkpoint 1
 
 ## Validation Baseline
 
@@ -16,6 +16,24 @@ Latest full validation baseline from Assistant Runtime State Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
 - `python -m pytest -q` -> 754 passed, 1 skipped
+
+## Session And Conversation Foundation State
+
+Checkpoint 1 defines the new `packages.session_runtime` boundary. Marvex now
+has a safe `ConversationRef` alongside `SessionRef`, plus turn linkage metadata,
+safe session projections, safe conversation projections, and an optional
+current-process-only registry. This boundary groups turns by safe references and
+links them to `trace_id` and `turn_id` while storing only
+`previous_response_id` presence and `transcript_persisted: false`.
+
+The boundary decision is explicit: a session is the current assistant interaction
+container; a conversation is the logical user-visible grouping. Both are safe
+references only in this foundation. Full transcripts, hidden history, long-term
+memory, embeddings/vector search, tool state, UI state, voice state, desktop
+context, vision state, proactive behavior, generic provider routing,
+retry/fallback, model selection, daemon supervision, and WebSocket/events remain
+blocked. Core, Local API, RuntimeComposition, ProviderRuntime, telemetry, and
+local_service_startup must not become session stores or lifecycle owners.
 
 ## Assistant Runtime State Foundation State
 
@@ -438,12 +456,10 @@ not implementation permission.
 
 ## Next Implementation Task
 
-The recommended next major foundation is an Assistant Stage Lifecycle / Session
-Contract Decision slice: decide how one-turn state snapshots and transition
-records are produced by approved assistant stages, and define any future session
-reference contract before implementing sessions/history. Do not add raw
-transcript persistence, memory, tools, UI, voice, desktop, vision, proactive
-behavior, service daemon behavior, generic provider API mode, routing,
-retry/fallback, model selection, API-key policy, WebSocket/event streams,
-cross-process trace lookup, or default CLI changes without another explicit
-task.
+Continue the Session and Conversation Foundation inside this owner track by
+linking safe session/conversation references through approved AssistantRuntime
+and telemetry projections where needed. Do not add raw transcript persistence,
+memory, tools, UI, voice, desktop, vision, proactive behavior, service daemon
+behavior, generic provider API mode, routing, retry/fallback, model selection,
+API-key policy, WebSocket/event streams, cross-process trace lookup, or default
+CLI changes without another explicit task.

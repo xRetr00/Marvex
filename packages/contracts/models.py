@@ -26,10 +26,21 @@ from .enums import (
 
 JsonObject = dict[str, Any]
 NonEmptyString = str
+_REF_ID_SAFE_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_")
 
 
 class ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid")
+
+
+def _validate_ref_id(value: str, *, label: str) -> str:
+    if not value.strip():
+        raise ValueError(f"{label} ref_id must be non-empty")
+    if value != value.strip():
+        raise ValueError(f"{label} ref_id must not include surrounding whitespace")
+    if any(character not in _REF_ID_SAFE_CHARS for character in value):
+        raise ValueError(f"{label} ref_id must contain only safe id characters")
+    return value
 
 
 class TurnInput(ContractModel):
@@ -151,6 +162,21 @@ class PayloadRef(ContractModel):
 class SessionRef(ContractModel):
     ref_type: Literal["session"]
     ref_id: NonEmptyString = Field(..., min_length=1)
+
+    @field_validator("ref_id")
+    @classmethod
+    def _validate_session_ref_id(cls, value: str) -> str:
+        return _validate_ref_id(value, label="session")
+
+
+class ConversationRef(ContractModel):
+    ref_type: Literal["conversation"]
+    ref_id: NonEmptyString = Field(..., min_length=1)
+
+    @field_validator("ref_id")
+    @classmethod
+    def _validate_conversation_ref_id(cls, value: str) -> str:
+        return _validate_ref_id(value, label="conversation")
 
 
 class IdentityRef(ContractModel):
