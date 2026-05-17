@@ -57,6 +57,9 @@ FORBIDDEN_PROVIDER_BRIDGE_TERMS = (
     "model routing",
 )
 PROVIDER_BRIDGE_TERM_ALLOWLIST = {
+    "packages/assistant_runtime/lifecycle.py": {
+        "provider_response_id",
+    },
     "packages/assistant_runtime/provider_stage.py": {
         "ProviderRequest",
         "ProviderResponse",
@@ -85,6 +88,9 @@ FORBIDDEN_SUBSYSTEM_BEHAVIOR_TERMS = (
     "service daemon",
 )
 STATE_PRIMITIVE_NAMES = (
+    "AssistantStageName",
+    "AssistantStageResult",
+    "AssistantTurnLifecycleSummary",
     "TurnStateSnapshot",
     "AssistantTurnExecutionSummary",
     "StateTransitionRecord",

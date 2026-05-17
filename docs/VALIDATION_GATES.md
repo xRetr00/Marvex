@@ -342,7 +342,7 @@ only. It does not authorize runtime behavior.
 
 AssistantRuntime is limited to pure assistant-envelope helpers, no-provider
 skeleton behavior, provider-stage helper behavior through injected contracts,
-and safe one-turn state primitives.
+safe one-turn state primitives, and safe assistant stage lifecycle primitives.
 
 - `packages/assistant_runtime` Python source may import approved contracts and
   local assistant-runtime helpers. Existing telemetry event construction imports
@@ -351,10 +351,14 @@ and safe one-turn state primitives.
   Local API, local service startup, RuntimeComposition, ProviderRuntime,
   adapters, ports, CLI apps, services, concrete providers, provider bridge terms,
   or future subsystem runtime behavior.
-- AssistantRuntime state primitive names must not appear in Core, Local API,
-  local service startup, RuntimeComposition, ProviderRuntime, or telemetry
-  Python source. Those layers may compose or read approved outputs through
-  explicit injected paths only; they must not own assistant state lifecycle.
+- AssistantRuntime state and lifecycle primitive names must not appear in Core,
+  Local API, local service startup, RuntimeComposition, ProviderRuntime, or
+  telemetry Python source. Those layers may compose or read approved outputs
+  through explicit injected paths only; they must not own assistant state or
+  assistant stage lifecycle.
+- `packages/assistant_runtime/lifecycle.py` may mention provider response id
+  only to expose presence/absence in a safe lifecycle summary. It must not store
+  or return provider response id values.
 - Strict scans target Python source files only, not README or documentation
   files.
 - `scripts/run_all_checks.py` runs the assistant runtime boundary gate.

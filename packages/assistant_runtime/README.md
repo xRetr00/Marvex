@@ -14,6 +14,9 @@ Current responsibilities:
   `AssistantTurnInput`
 - build safe assistant-turn state primitives: one-turn state snapshots,
   execution summaries, and transition records
+- build AssistantRuntime-owned stage lifecycle primitives: stage names, stage
+  results, lifecycle summaries, safe lifecycle projections, and forward-only
+  transition validation
 - run an explicit injected provider-stage skeleton that maps neutral provider
   contract responses into `AssistantTurnResult`
 - validate an isolated experimental structured-output handoff-like input draft
@@ -72,6 +75,37 @@ Assistant runtime state foundation:
 - Core and RuntimeComposition may compose approved paths around the primitives
   but must not become state registries, session managers, transcript stores, or
   service brains.
+
+Assistant stage lifecycle foundation:
+
+- `lifecycle.py` is AssistantRuntime-owned and pure. It defines
+  `AssistantStageName`, `AssistantStageResult`, and
+  `AssistantTurnLifecycleSummary` for one assistant turn.
+- The lifecycle order is explicit: input normalization, safe
+  session/conversation linkage, runtime state snapshot readiness, memory read
+  policy readiness, provider-stage preparation, provider result consumption,
+  final response assembly, memory write candidate readiness, memory policy
+  hooks, and telemetry trace linkage.
+- Lifecycle summaries may link `trace_id`, `turn_id`, safe `session_ref`, safe
+  `conversation_ref`, reference counts, memory readiness booleans, telemetry
+  event counts, persistent trace linkage, and presence bits for
+  `previous_response_id` and provider response ids.
+- Lifecycle summaries must not store raw prompts, final response text, provider
+  payloads, provider outputs, transcripts, tokens, secrets, credentials, or
+  environment values. Provider continuity and provider response identifiers are
+  represented only as presence/absence.
+- Memory integration is readiness-by-reference only. AssistantRuntime does not
+  import MemoryRuntime or own memory reads, writes, forget requests, policy
+  decisions, storage, extraction, embeddings, vector search, or backend choice.
+- Session integration is reference-only. AssistantRuntime can carry safe
+  contract refs, but SessionRuntime remains the owner of session/conversation
+  registries, projections, and linkage helpers.
+- Telemetry integration is linkage-only. AssistantRuntime can count emitted
+  events and mark trace linkage readiness, while telemetry remains the owner of
+  trace event construction policy, persistence, and reads.
+- `validate_lifecycle_transition(...)` rejects backwards stage movement and is
+  intentionally limited to forward-order validation. It is not a scheduler,
+  cancellation engine, daemon supervisor, router, or retry/fallback policy.
 
 Provider-stage skeleton:
 

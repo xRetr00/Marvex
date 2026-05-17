@@ -1,21 +1,59 @@
 # Project Status
 
-current_phase: memory_foundation_complete
+current_phase: assistant_stage_lifecycle_foundation_complete
 
-implementation_status: memory_foundation_complete
+implementation_status: assistant_stage_lifecycle_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Memory Foundation Complete
+Assistant Stage Lifecycle Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Memory Foundation:
+Latest full validation baseline from Assistant Stage Lifecycle Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 781 passed, 1 skipped
+- `python -m pytest -q` -> 788 passed, 1 skipped
+
+## Assistant Stage Lifecycle Foundation State
+
+The Assistant Stage Lifecycle Foundation is complete as an AssistantRuntime-owned
+one-turn lifecycle layer. `packages.assistant_runtime.lifecycle` now defines
+`AssistantStageName`, `AssistantStageResult`, `AssistantTurnLifecycleSummary`,
+safe lifecycle projections, and forward-only lifecycle transition validation.
+
+The lifecycle order is explicit: input normalization, safe
+session/conversation linkage, runtime state snapshot readiness, memory read
+policy readiness, provider-stage preparation, provider result consumption, final
+response assembly, memory write candidate readiness, memory policy hooks, and
+telemetry trace linkage.
+
+Lifecycle summaries safely link `trace_id`, `turn_id`, safe `session_ref`, safe
+`conversation_ref`, provider response id presence, previous response id
+presence, provider/memory/output reference counts, memory read/write/forget
+readiness, memory policy decision counts, telemetry event counts, and persistent
+trace linkage readiness. They explicitly keep `transcript_persisted: false` and
+`raw_payload_persisted: false`.
+
+AssistantRuntime does not store raw prompts, raw assistant outputs, provider
+payloads, provider outputs, provider response ids, previous response ids,
+transcripts, tokens, secrets, credentials, environment values, or memory
+content. MemoryRuntime still owns memory refs, records, policy decisions, read
+queries, write candidates, forget requests, stores, and projections.
+SessionRuntime still owns session/conversation linkage and projections.
+Telemetry still owns trace event safety, persistence, and reads. Core remains
+orchestration-only, Local API remains HTTP/auth/JSON-only, RuntimeComposition
+remains explicit approved-path composition, ProviderRuntime remains provider
+construction-only, and local_service_startup remains startup/discovery metadata
+only.
+
+Boundary validation now tracks lifecycle primitive ownership and permits
+AssistantRuntime lifecycle code to mention provider response ids only for
+presence/absence in safe summaries. Lifecycle ownership is blocked from Core,
+Local API, local_service_startup, RuntimeComposition, ProviderRuntime, and
+telemetry Python source.
 
 ## Memory Foundation State
 
@@ -497,11 +535,11 @@ not implementation permission.
 
 ## Next Implementation Task
 
-The recommended next major foundation is an Assistant Stage Lifecycle Foundation
-that uses the approved assistant-envelope and safe state/session/memory
-primitives to define stage sequencing, lifecycle records, and
-cancellation/error handoff without implementing tools, UI, voice, desktop,
-vision, proactive behavior, service daemon behavior, generic provider API mode,
-routing, retry/fallback, model selection, API-key policy, WebSocket/event
-streams, cross-process trace lookup, raw transcript persistence, memory backend
-promotion, automatic memory extraction, or default CLI changes.
+The recommended next major foundation is an Assistant Policy And Permission
+Readiness Foundation. It should define safe policy decision/readiness primitives
+and permission-flow references for future assistant stages without implementing
+tools, UI, voice, desktop, vision, proactive behavior, service daemon behavior,
+generic provider API mode, routing, retry/fallback, model selection, API-key
+policy execution, WebSocket/event streams, cross-process trace lookup, raw
+transcript persistence, memory backend promotion, automatic memory extraction,
+or default CLI changes.

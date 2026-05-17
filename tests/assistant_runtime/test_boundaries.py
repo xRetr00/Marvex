@@ -54,6 +54,8 @@ def test_assistant_runtime_boundary_gate_tracks_state_ownership():
     )
 
     assert "STATE_PRIMITIVE_NAMES" in source
+    assert "AssistantStageName" in source
+    assert "AssistantTurnLifecycleSummary" in source
     assert "TurnStateSnapshot" in source
     assert "AssistantTurnExecutionSummary" in source
     assert "packages.local_api" in source

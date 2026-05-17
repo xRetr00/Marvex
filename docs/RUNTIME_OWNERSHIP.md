@@ -61,6 +61,12 @@ AssistantTurnRuntime owns:
 - one-turn assistant state snapshots and safe state projections
 - trace/cancellation propagation to stages
 
+Current implemented lifecycle foundation: `packages.assistant_runtime` owns safe
+stage lifecycle primitives and projections for one turn. It records only safe
+refs, counts, presence bits, stage statuses, and trace linkage readiness. It
+does not perform subsystem dispatch, persistence, routing, retry/fallback,
+memory extraction, or daemon supervision.
+
 AssistantTurnRuntime must not own subsystem internals.
 
 AssistantTurnRuntime must not own:
