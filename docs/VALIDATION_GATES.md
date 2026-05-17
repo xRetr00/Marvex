@@ -383,9 +383,9 @@ metadata, current-process projections, and an optional instance-owned registry.
 
 ### MemoryRuntime Boundary Gate
 
-MemoryRuntime is limited to safe memory refs, records, write candidates,
-read/forget results, safe projections, and an optional instance-owned
-current-process proof store.
+MemoryRuntime is limited to safe memory refs, records, write candidates, policy
+decisions, read queries, forget requests, read/forget results, safe projections,
+and an optional instance-owned current-process proof store.
 
 - `packages/memory_runtime` may import approved contracts, Pydantic, and
   standard-library collection/date/typing helpers only.

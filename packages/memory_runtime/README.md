@@ -1,14 +1,17 @@
 # MemoryRuntime
 
 `packages.memory_runtime` owns the narrow Memory Foundation. It defines safe
-memory records, memory references, write candidates, read results, forget
-results, safe projections, and an optional current-process-only store.
+memory records, memory references, write candidates, policy decisions, read
+queries, forget requests, read results, forget results, safe projections, and an
+optional current-process-only store.
 
 ## Owned Surface
 
 - `MemoryRef` and safe memory ids
 - `MemoryRecord` for policy-authorized memory content
 - `MemoryWriteCandidate` for pending future write review
+- `MemoryPolicyDecision` for explicit write authorization outcomes
+- `MemoryReadQuery` and `MemoryForgetRequest` for policy-approved access paths
 - `MemoryReadResult` and `MemoryForgetResult` safe projections
 - `CurrentProcessMemoryStore` for explicit current-process proof only
 
@@ -31,3 +34,7 @@ results, safe projections, and an optional current-process-only store.
 It exists to prove the boundary and read/forget shapes; it is not long-term
 recall, file persistence, embeddings, vector search, or product memory.
 
+Reads and forgets through the generic store path require approved request
+objects. Writes are built from approved candidates plus approved policy
+decisions; no automatic transcript extraction or provider-driven write path
+exists.

@@ -2,13 +2,13 @@
 
 current_phase: memory_foundation
 
-implementation_status: memory_foundation_checkpoint_1
+implementation_status: memory_foundation_checkpoint_2
 
 accepted_docs: true
 
 current_governance_gate:
 
-Memory Foundation Checkpoint 1
+Memory Foundation Checkpoint 2
 
 ## Validation Baseline
 
@@ -19,8 +19,9 @@ Latest full validation baseline from Session and Conversation Foundation:
 
 ## Memory Foundation State
 
-Checkpoint 1 defines `packages.memory_runtime` as the memory owner boundary.
+Checkpoint 2 defines `packages.memory_runtime` as the memory owner boundary.
 MemoryRuntime now owns safe `MemoryRef`, `MemoryRecord`, `MemoryWriteCandidate`,
+`MemoryPolicyDecision`, `MemoryReadQuery`, `MemoryForgetRequest`,
 `MemoryReadResult`, `MemoryForgetResult`, safe projections, and an explicit
 instance-owned `CurrentProcessMemoryStore` proof. The store is current-process
 only and is not long-term recall, file persistence, embeddings, vector search,
@@ -35,9 +36,11 @@ link to `session_ref`, `conversation_ref`, `trace_id`, and `turn_id`, but raw
 transcripts, raw prompts, provider payloads, provider outputs, tokens,
 credentials, environment values, and secrets are rejected by default.
 
-Memory write candidates remain pending until a future policy owner approves
-them. Forget/delete is represented by `MemoryRef` and returns a safe result
-without exposing stored content. Core, Local API, RuntimeComposition,
+Memory write candidates remain pending until explicit policy approval. A record
+can be built only from an approved candidate plus an approved policy decision.
+Generic read and forget request paths require `policy_status: approved` before
+store dispatch. Forget/delete is represented by `MemoryRef` and returns a safe
+result without exposing stored content. Core, Local API, RuntimeComposition,
 ProviderRuntime, telemetry, AssistantRuntime, SessionRuntime, and
 local_service_startup must not own memory storage or recall.
 

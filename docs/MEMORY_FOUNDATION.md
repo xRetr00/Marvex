@@ -3,8 +3,10 @@
 ## Decision
 
 Memory in Marvex means policy-governed assistant recall material. The first
-approved memory shapes are safe records, references, write candidates, read
-results, forget results, and safe projections owned by `packages.memory_runtime`.
+approved memory shapes are safe records, references, write candidates, policy
+decisions, policy-approved read queries, policy-approved forget requests, read
+results, forget results, and safe projections owned by
+`packages.memory_runtime`.
 
 Memory is not a transcript store, telemetry store, session store, provider
 state store, prompt cache, vector database, tool state, UI state, voice state,
@@ -61,3 +63,7 @@ automatic transcript-derived writes remain blocked. Forget/delete behavior must
 be addressable by `MemoryRef` and return a safe result without exposing stored
 content.
 
+The current write path can build a `MemoryRecord` only from an approved
+`MemoryWriteCandidate` and approved `MemoryPolicyDecision`. The current generic
+read and forget request shapes require `policy_status: approved`; pending
+requests fail before store dispatch.

@@ -27,6 +27,8 @@ MemoryKind = Literal["fact", "preference", "instruction", "summary"]
 MemoryWriteAuthorization = Literal["explicit_user", "policy_approved"]
 MemoryCandidateSource = Literal["manual", "future_policy"]
 MemoryPolicyStatus = Literal["pending", "approved", "rejected"]
+MemoryPolicyDecisionValue = Literal["approved", "rejected"]
+MemoryPolicyDecider = Literal["explicit_user", "future_policy"]
 
 
 class MemoryRuntimeModel(BaseModel):
@@ -149,6 +151,86 @@ class MemoryWriteCandidate(MemoryRuntimeModel):
         }
 
 
+class MemoryPolicyDecision(MemoryRuntimeModel):
+    schema_version: str = Field(..., min_length=1)
+    candidate_id: str = Field(..., min_length=1)
+    decision: MemoryPolicyDecisionValue
+    decided_by: MemoryPolicyDecider
+    reason_code: str = Field(..., min_length=1)
+    approved_memory_ref: MemoryRef | None
+
+    @field_validator("reason_code")
+    @classmethod
+    def _validate_reason_code(cls, value: str) -> str:
+        if not value.strip() or value != value.strip():
+            raise ValueError("memory policy reason_code must be non-empty and trimmed")
+        if any(character not in _REF_ID_SAFE_CHARS for character in value):
+            raise ValueError("memory policy reason_code must contain only safe id characters")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_decision_ref(self) -> MemoryPolicyDecision:
+        if self.decision == "approved" and self.approved_memory_ref is None:
+            raise ValueError("approved memory policy decisions require approved_memory_ref")
+        if self.decision == "rejected" and self.approved_memory_ref is not None:
+            raise ValueError("rejected memory policy decisions must not include approved_memory_ref")
+        return self
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "candidate_id": self.candidate_id,
+            "decision": self.decision,
+            "decided_by": self.decided_by,
+            "reason_code": self.reason_code,
+            "approved_memory_ref": _dump_ref(self.approved_memory_ref),
+        }
+
+
+class MemoryReadQuery(MemoryRuntimeModel):
+    schema_version: str = Field(..., min_length=1)
+    query_id: str = Field(..., min_length=1)
+    scope: MemoryScope
+    session_ref: SessionRef | None
+    conversation_ref: ConversationRef | None
+    max_records: int = Field(..., ge=1, le=50)
+    policy_status: Literal["approved"]
+
+    @model_validator(mode="after")
+    def _validate_scope_ref(self) -> MemoryReadQuery:
+        if self.scope == "session" and self.session_ref is None:
+            raise ValueError("session-scoped memory reads require session_ref")
+        if self.scope == "conversation" and self.conversation_ref is None:
+            raise ValueError("conversation-scoped memory reads require conversation_ref")
+        return self
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "query_id": self.query_id,
+            "scope": self.scope,
+            "session_ref": _dump_ref(self.session_ref),
+            "conversation_ref": _dump_ref(self.conversation_ref),
+            "max_records": self.max_records,
+            "policy_status": self.policy_status,
+        }
+
+
+class MemoryForgetRequest(MemoryRuntimeModel):
+    schema_version: str = Field(..., min_length=1)
+    request_id: str = Field(..., min_length=1)
+    memory_ref: MemoryRef
+    policy_status: Literal["approved"]
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "schema_version": self.schema_version,
+            "request_id": self.request_id,
+            "memory_ref": _dump_ref(self.memory_ref),
+            "policy_status": self.policy_status,
+        }
+
+
 class MemoryReadResult(MemoryRuntimeModel):
     schema_version: str = Field(..., min_length=1)
     query_ref: str = Field(..., min_length=1)
@@ -193,3 +275,36 @@ def _bounded_preview(content: str) -> str:
         return content
     return f"{content[: DEFAULT_PREVIEW_LENGTH - 3]}..."
 
+
+def build_memory_record_from_candidate(
+    candidate: MemoryWriteCandidate,
+    *,
+    decision: MemoryPolicyDecision,
+    created_at: datetime,
+    tags: tuple[str, ...] = (),
+) -> MemoryRecord:
+    if candidate.candidate_id != decision.candidate_id:
+        raise ValueError("memory policy decision candidate_id must match candidate")
+    if candidate.policy_status != "approved" or decision.decision != "approved":
+        raise ValueError("approved policy decision is required to build memory records")
+    if decision.approved_memory_ref is None:
+        raise ValueError("approved policy decision is required to build memory records")
+
+    write_authorization: MemoryWriteAuthorization = (
+        "explicit_user" if decision.decided_by == "explicit_user" else "policy_approved"
+    )
+    return MemoryRecord(
+        schema_version=candidate.schema_version,
+        memory_ref=decision.approved_memory_ref,
+        scope=candidate.scope,
+        memory_kind=candidate.memory_kind,
+        session_ref=candidate.session_ref,
+        conversation_ref=candidate.conversation_ref,
+        trace_id=candidate.trace_id,
+        turn_id=candidate.turn_id,
+        content=candidate.proposed_content,
+        write_authorization=write_authorization,
+        created_at=created_at,
+        tags=tags,
+        raw_transcript_persisted=False,
+    )

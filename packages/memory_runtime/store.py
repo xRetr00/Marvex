@@ -4,7 +4,14 @@ from collections import defaultdict
 
 from packages.contracts import ConversationRef, SessionRef
 
-from .models import MemoryForgetResult, MemoryReadResult, MemoryRecord, MemoryRef
+from .models import (
+    MemoryForgetRequest,
+    MemoryForgetResult,
+    MemoryReadQuery,
+    MemoryReadResult,
+    MemoryRecord,
+    MemoryRef,
+)
 
 
 SCHEMA_VERSION = "0.1.1-draft"
@@ -41,6 +48,26 @@ class CurrentProcessMemoryStore:
             memory_ids=memory_ids,
         )
 
+    def read(self, query: MemoryReadQuery) -> MemoryReadResult:
+        if query.scope == "session":
+            if query.session_ref is None:
+                raise ValueError("session-scoped memory reads require session_ref")
+            memory_ids = self._memory_ids_by_session_ref_id.get(query.session_ref.ref_id, [])
+            return self._read_result(
+                query_ref=query.query_id,
+                memory_ids=memory_ids,
+                max_records=query.max_records,
+            )
+
+        if query.conversation_ref is None:
+            raise ValueError("conversation-scoped memory reads require conversation_ref")
+        memory_ids = self._memory_ids_by_conversation_ref_id.get(query.conversation_ref.ref_id, [])
+        return self._read_result(
+            query_ref=query.query_id,
+            memory_ids=memory_ids,
+            max_records=query.max_records,
+        )
+
     def forget(self, memory_ref: MemoryRef) -> MemoryForgetResult:
         record = self._records_by_memory_id.pop(memory_ref.ref_id, None)
         if record is not None:
@@ -51,17 +78,27 @@ class CurrentProcessMemoryStore:
             forgotten=record is not None,
         )
 
-    def _read_result(self, *, query_ref: str, memory_ids: list[str]) -> MemoryReadResult:
-        records = tuple(
+    def forget_by_request(self, request: MemoryForgetRequest) -> MemoryForgetResult:
+        return self.forget(request.memory_ref)
+
+    def _read_result(
+        self,
+        *,
+        query_ref: str,
+        memory_ids: list[str],
+        max_records: int | None = None,
+    ) -> MemoryReadResult:
+        all_records = tuple(
             self._records_by_memory_id[memory_id]
             for memory_id in memory_ids
             if memory_id in self._records_by_memory_id
         )
+        records = all_records if max_records is None else all_records[:max_records]
         return MemoryReadResult(
             schema_version=SCHEMA_VERSION,
             query_ref=query_ref,
             records=records,
-            truncated=False,
+            truncated=max_records is not None and len(all_records) > max_records,
         )
 
     def _remove_index(self, memory_id: str) -> None:
@@ -73,4 +110,3 @@ class CurrentProcessMemoryStore:
                 index[ref_id] = [item for item in memory_ids if item != memory_id]
                 if not index[ref_id]:
                     del index[ref_id]
-

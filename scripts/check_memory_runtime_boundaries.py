@@ -69,7 +69,10 @@ MEMORY_OWNER_TERMS = (
     "CurrentProcessMemoryStore",
     "MemoryRecord",
     "MemoryWriteCandidate",
+    "MemoryPolicyDecision",
+    "MemoryReadQuery",
     "MemoryReadResult",
+    "MemoryForgetRequest",
     "MemoryForgetResult",
 )
 
@@ -151,4 +154,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-
