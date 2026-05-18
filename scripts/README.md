@@ -33,6 +33,7 @@ Scripts:
 - `check_agent_execution_loop_boundaries.py`
 - `check_control_plane_boundaries.py`
 - `check_intent_context_prompt_boundaries.py`
+- `check_end_to_end_turn_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -170,3 +171,5 @@ ProviderRuntime, Telemetry, MemoryRuntime, SessionRuntime, and Control Plane API
 cannot become prompt assembly or routing-policy owners. It also checks that
 Semantic Router, Guardrails, LlamaIndex, LangChain/LangGraph, OpenAI Agents, and
 Anthropic/reference seams remain safe projection-only until future adoption.
+
+`check_end_to_end_turn_boundaries.py` enforces the End-to-End Assistant Turn Integration Foundation boundary so the integration spine can compose approved runtime layers while Local API stays HTTP/auth/JSON-only, RuntimeComposition does not become the assistant brain, Control Plane stays projection-only, and CapabilityRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, AssistantRuntime, and Telemetry keep their respective ownership.

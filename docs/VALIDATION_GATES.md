@@ -614,3 +614,23 @@ Protected boundaries:
 Blocked: raw prompt/transcript/provider/tool/browser payload persistence by default, all-tools dumping, all-skills dumping, all-memory dumping, embeddings/vector search without a separate decision, autonomous planners, recursive loops, browser/computer actions, UI, voice, desktop, vision, proactive behavior, and generic provider routing.
 
 Boundary invariant: no all-tools dumping, no all-memory dumping, and no raw prompt persistence by default.
+
+## End-to-End Assistant Turn Integration Foundation Gate
+
+The End-to-End Assistant Turn Integration Foundation gate is enforced by `scripts/check_end_to_end_turn_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+The integration spine may compose approved runtime layers in `packages.assistant_turn_integration`, but it must not become a generic provider router, model selector, autonomous planner, shell/filesystem/browser executor, raw prompt store, or replacement policy engine.
+
+Protected ownership:
+
+- Local API owns HTTP/auth/JSON only and receives the turn handler by injection.
+- CapabilityRuntime owns policy/approval/dispatch, execution requests, result envelopes, and loop guards.
+- IntentRuntime owns intent/route decisions.
+- ContextRuntime owns context selection.
+- PromptHarnessRuntime owns prompt plan construction.
+- AssistantRuntime owns lifecycle coordination and provider-stage helpers.
+- Telemetry owns trace persistence and safe trace projections.
+- Control Plane owns safe visibility and approval API only.
+- RuntimeComposition does not become the end-to-end assistant brain.
+
+Blocked: raw prompt/transcript/tool/provider/browser payload persistence by default, direct frontend or Local API tool execution, arbitrary browser/computer actions, shell execution, filesystem write/edit/delete, generic provider routing/model selection, voice, Orb, desktop overlay, vision, and proactive behavior.

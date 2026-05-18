@@ -1,26 +1,37 @@
 # Project Status
 
-current_phase: intent_context_prompt_harness_foundation_complete
+current_phase: end_to_end_assistant_turn_integration_foundation_complete
 
-implementation_status: intent_context_prompt_harness_foundation_complete
+implementation_status: end_to_end_assistant_turn_integration_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Intent, Context, and Prompt Harness Foundation Complete
+End-to-End Assistant Turn Integration Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Intent, Context, and Prompt Harness Foundation:
+Latest full validation baseline from End-to-End Assistant Turn Integration Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 850 passed, 1 skipped
+- `python -m pytest -q` -> 854 passed, 1 skipped
 - `python -m pip check` -> No broken requirements found.
 - `npm run build` from `apps/control_plane_web` -> built
 - `npm test` from `apps/control_plane_web` -> 2 passed
 
 
+## End-to-End Assistant Turn Integration Foundation State
+
+End-to-End Assistant Turn Integration Foundation is complete as a bounded assistant-turn spine in `packages.assistant_turn_integration`.
+
+Implemented: Local API turn integration through injected handlers, safe session/conversation linkage, IntentRuntime route decisions, ContextRuntime safe context selection, PromptHarnessRuntime bounded prompt plans, AssistantRuntime provider-stage/lifecycle coordination, CapabilityRuntime provider tool-call proposal handling, pending approval state, safe built-in calculator execution through approved `CapabilityExecutionRequest`, provider continuation/final response readiness, telemetry trace persistence through safe summaries, and Control Plane trace/approval/runtime visibility through safe projections.
+
+Local API owns HTTP/auth/JSON only. CapabilityRuntime owns policy/approval/dispatch. IntentRuntime owns intent/route decisions. ContextRuntime owns context selection. PromptHarnessRuntime owns prompt plan construction. AssistantRuntime owns lifecycle coordination. Telemetry owns trace persistence. Control Plane owns safe visibility and approval APIs only.
+
+Blocked: voice, Orb, desktop overlay, proactive behavior, arbitrary browser/computer actions, shell execution, filesystem write/edit/delete, raw prompt/transcript/tool/provider/browser payload persistence by default, generic provider routing/model selection, and RuntimeComposition becoming an assistant brain.
+
+Recommended next: add a narrow persisted trace plus local service composition proof for the integrated turn, keeping storage in Telemetry and startup in local_service_startup.
 ## Intent, Context, and Prompt Harness Foundation State
 
 Intent, Context, and Prompt Harness Foundation is complete as a safe routing, context selection, prompt planning, compaction, validation, and telemetry-summary boundary.

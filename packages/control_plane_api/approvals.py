@@ -14,6 +14,9 @@ class InMemoryApprovalStore:
     def from_requests(cls, requests: tuple[CapabilityApprovalRequest, ...]) -> InMemoryApprovalStore:
         return cls(requests)
 
+    def add_pending(self, request: CapabilityApprovalRequest) -> None:
+        self._pending[request.approval_request_id] = request
+
     def list_pending(self) -> ApprovalListResponse:
         approvals = tuple(ApprovalSummary.from_request(request) for request in self._pending.values())
         return ApprovalListResponse(schema_version="1", approvals=approvals, pending_count=len(approvals))
