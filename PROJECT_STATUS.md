@@ -1,35 +1,37 @@
 # Project Status
 
-current_phase: control_plane_foundation_in_progress
+current_phase: control_plane_foundation_complete
 
-implementation_status: control_plane_foundation_in_progress
+implementation_status: control_plane_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Control Plane Foundation In Progress
+Control Plane Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Agent Execution Loop and Tool-Orchestrated Turn Foundation:
+Latest full validation baseline from Control Plane Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 830 passed, 1 skipped
+- `python -m pytest -q` -> 835 passed, 1 skipped
 - `python -m pip check` -> No broken requirements found.
+- `npm run build` from `apps/control_plane_web` -> built
+- `npm test` from `apps/control_plane_web` -> 2 passed
 
 
 ## Control Plane Foundation State
 
-Control Plane Foundation is in progress. The first checkpoint adds a protected Human Approval API and safe Control Plane snapshot boundary under `packages.control_plane_api`.
+Control Plane Foundation is complete as a protected local admin/control foundation. It adds a Human Approval API, safe Control Plane snapshot boundary, isolated web frontend, typed client, and validation gates.
 
 Control Plane API must not own policy. It exposes local HTTP/auth/JSON-only approval and safe projection endpoints while CapabilityRuntime remains authoritative for approvals, permissions, risk classification, execution modes, approved execution requests, dispatch policy, execution state, and loop guards.
 
-Implemented in this checkpoint: protected approval list/read/approve/deny flows, safe approval decision reason handling, safe provider/capability/tool/MCP/skill/telemetry/trace/memory/session/agent-loop/settings snapshot projections, token-safe auth failure behavior, and a dedicated boundary gate.
+Implemented: protected approval list/read/approve/deny flows, safe approval decision reason handling, safe provider/capability/tool/MCP/skill/telemetry/trace/memory/session/agent-loop/settings snapshot projections, token-safe auth failure behavior, isolated React/TypeScript/Vite web app, TanStack Query API client, Zod response validation, dashboard/views, and dedicated boundary gates.
 
-Implemented in the web checkpoint: isolated `apps/control_plane_web` React/TypeScript/Vite app, TanStack Query safe API client, Zod response validation, Tailwind plus shadcn/ui-style local components, dashboard shell, safe loading/error states, and frontend build/test coverage. Still pending in this phase: final docs/status complete marker after full validation.
+Complete: the web app displays dashboard, approvals, traces, telemetry, providers, capabilities/tools, MCP, skills, memory/session safe views, and settings through safe API projections only. Frontend build and tests pass.
 
-Blocked: direct Control Plane tool execution, frontend Python imports, frontend tool execution, raw secrets/tokens/API keys/environment values, raw prompts/transcripts/tool payloads/browser DOM/screenshots, arbitrary remote access, Orb, desktop overlay, voice UI, vision UI, and proactive behavior UI.
+Blocked: direct Control Plane tool execution, frontend Python imports, frontend tool execution, raw secrets/tokens/API keys/environment values, raw prompts/transcripts/tool payloads/browser DOM/screenshots, arbitrary remote access, Orb, desktop overlay, voice UI, vision UI, proactive behavior UI, and any policy bypass around CapabilityRuntime approvals. Recommended next: add a narrow local service composition path that serves Control Plane API plus static web assets on loopback with generated local bearer-token handoff, without remote binding or daemon supervision.
 ## Agent Execution Loop and Tool-Orchestrated Turn Foundation State
 
 Agent Execution Loop and Tool-Orchestrated Turn Foundation is complete as a bounded model/API-ready loop foundation. CapabilityRuntime remains authoritative for permission decisions, approval requirements, approval decisions, execution request validation, result envelopes, loop guards, stop reasons, safe continuations, and telemetry-safe summaries.

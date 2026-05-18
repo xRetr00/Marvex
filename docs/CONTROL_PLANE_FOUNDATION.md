@@ -1,6 +1,6 @@
 # Control Plane Foundation
 
-Status: foundation in progress; API and web frontend scaffold are implemented.
+Status: complete foundation boundary.
 
 The Control Plane is Marvex's protected local admin/control surface. It is not the Orb, not a desktop assistant face, not voice UI, and not the final user-facing assistant shell.
 

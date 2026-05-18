@@ -8,3 +8,7 @@ __pycache__/
 venv/
 apps/control_plane_web/node_modules/
 apps/control_plane_web/dist/
+
+apps/control_plane_web/*.tsbuildinfo
+apps/control_plane_web/vite.config.js
+apps/control_plane_web/vite.config.d.ts
