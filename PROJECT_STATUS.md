@@ -1,14 +1,14 @@
 # Project Status
 
-current_phase: agent_execution_loop_tool_orchestrated_turn_foundation_complete
+current_phase: control_plane_foundation_in_progress
 
-implementation_status: agent_execution_loop_tool_orchestrated_turn_foundation_complete
+implementation_status: control_plane_foundation_in_progress
 
 accepted_docs: true
 
 current_governance_gate:
 
-Agent Execution Loop and Tool-Orchestrated Turn Foundation Complete
+Control Plane Foundation In Progress
 
 ## Validation Baseline
 
@@ -19,6 +19,17 @@ Latest full validation baseline from Agent Execution Loop and Tool-Orchestrated 
 - `python -m pip check` -> No broken requirements found.
 
 
+## Control Plane Foundation State
+
+Control Plane Foundation is in progress. The first checkpoint adds a protected Human Approval API and safe Control Plane snapshot boundary under `packages.control_plane_api`.
+
+Control Plane API must not own policy. It exposes local HTTP/auth/JSON-only approval and safe projection endpoints while CapabilityRuntime remains authoritative for approvals, permissions, risk classification, execution modes, approved execution requests, dispatch policy, execution state, and loop guards.
+
+Implemented in this checkpoint: protected approval list/read/approve/deny flows, safe approval decision reason handling, safe provider/capability/tool/MCP/skill/telemetry/trace/memory/session/agent-loop/settings snapshot projections, token-safe auth failure behavior, and a dedicated boundary gate.
+
+Still pending in this phase: isolated React/Vite web frontend, typed frontend API client, dashboard pages, frontend tests/build validation, and final complete status.
+
+Blocked: direct Control Plane tool execution, frontend Python imports, frontend tool execution, raw secrets/tokens/API keys/environment values, raw prompts/transcripts/tool payloads/browser DOM/screenshots, arbitrary remote access, Orb, desktop overlay, voice UI, vision UI, and proactive behavior UI.
 ## Agent Execution Loop and Tool-Orchestrated Turn Foundation State
 
 Agent Execution Loop and Tool-Orchestrated Turn Foundation is complete as a bounded model/API-ready loop foundation. CapabilityRuntime remains authoritative for permission decisions, approval requirements, approval decisions, execution request validation, result envelopes, loop guards, stop reasons, safe continuations, and telemetry-safe summaries.

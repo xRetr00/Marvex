@@ -31,6 +31,7 @@ Scripts:
 - `check_skills_runtime_boundaries.py`
 - `check_full_tooling_boundaries.py`
 - `check_agent_execution_loop_boundaries.py`
+- `check_control_plane_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -88,6 +89,11 @@ approval pauses, execution-request validation, denial envelopes, safe
 continuations, loop guards, and telemetry-safe summaries. It allows
 AssistantRuntime only to coordinate safe lifecycle summaries and blocks adapter
 execution or CapabilityExecutionRequest construction there.
+`check_control_plane_boundaries.py` enforces the Control Plane Foundation boundary
+so `packages/control_plane_api` stays HTTP/auth/JSON-only, cannot import tool
+adapters or own CapabilityRuntime policy, and any frontend under
+`apps/control_plane_web` cannot import Python internals, execute tools directly,
+or render raw secrets/payloads by default.
 `check_provider_structured_output_boundaries.py` enforces the no-network
 provider structured-output adapter boundary so validation stays isolated from
 Core, AssistantRuntime, ProviderRuntime, adapters, ports, apps, services,

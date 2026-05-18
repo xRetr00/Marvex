@@ -532,6 +532,24 @@ Protected boundaries:
 
 Blocked: real script execution, arbitrary skill install, remote skill loading, shell/filesystem/browser/desktop/OS access, hidden prompt rewrites, raw prompt/transcript/tool payload persistence by default, and policy/system/developer instruction override.
 
+## Control Plane Foundation Gate
+
+The Control Plane Foundation gate is enforced by `scripts/check_control_plane_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+Control Plane API must not own policy. It may expose protected local HTTP/auth/JSON endpoints and safe projection models for approvals, providers, capabilities, tools, MCP, skills, telemetry, traces, memory/session refs, agent loops, and settings. CapabilityRuntime remains authoritative for approvals, permissions, risk classification, execution modes, approved execution requests, dispatch policy, execution state, and loop guards.
+
+Web frontend must never import Python internals. It may talk only to approved local Control Plane / Local API endpoints through typed client helpers and safe JSON contracts.
+
+Protected boundaries:
+
+- Control Plane API cannot import tool adapters directly or execute tools directly.
+- Local API and Control Plane API cannot own CapabilityRuntime policy.
+- RuntimeComposition cannot become the control plane brain.
+- AssistantRuntime remains lifecycle/turn coordination owner, not UI owner.
+- Telemetry remains trace/log persistence owner.
+- Frontend cannot execute tools directly, import backend Python modules, render secrets, or render raw payloads by default.
+
+Blocked: Orb, desktop overlay, voice UI, vision UI, proactive behavior UI, arbitrary remote access, `0.0.0.0` exposure, direct frontend tool execution, raw secrets/tokens/API keys/environment values, raw transcripts/tool payloads/browser DOM/screenshots, and risky actions outside approval state plus backend policy.
 ## Agent Execution Loop and Tool-Orchestrated Turn Foundation Gate
 
 The Agent Execution Loop and Tool-Orchestrated Turn Foundation gate is enforced by `scripts/check_agent_execution_loop_boundaries.py` and is part of `scripts/run_all_checks.py`.

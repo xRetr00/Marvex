@@ -25,6 +25,7 @@ CHECKS = [
     "check_skills_runtime_boundaries.py",
     "check_full_tooling_boundaries.py",
     "check_agent_execution_loop_boundaries.py",
+    "check_control_plane_boundaries.py",
     "check_provider_structured_output_boundaries.py",
     "check_telemetry_boundaries.py",
     "check_runtime_ownership.py",
