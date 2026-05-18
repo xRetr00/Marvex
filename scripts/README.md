@@ -30,6 +30,7 @@ Scripts:
 - `check_mcp_adapter_boundaries.py`
 - `check_skills_runtime_boundaries.py`
 - `check_full_tooling_boundaries.py`
+- `check_agent_execution_loop_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -81,6 +82,12 @@ policy, approval, execution-mode, loop-guard, context-delivery, and safe-result
 authority. It permits Playwright only inside the browser adapter boundary and
 blocks raw browser/computer/tool payload persistence by default.
 
+`check_agent_execution_loop_boundaries.py` enforces the Agent Execution Loop and
+Tool-Orchestrated Turn Foundation boundary so CapabilityRuntime owns loop state,
+approval pauses, execution-request validation, denial envelopes, safe
+continuations, loop guards, and telemetry-safe summaries. It allows
+AssistantRuntime only to coordinate safe lifecycle summaries and blocks adapter
+execution or CapabilityExecutionRequest construction there.
 `check_provider_structured_output_boundaries.py` enforces the no-network
 provider structured-output adapter boundary so validation stays isolated from
 Core, AssistantRuntime, ProviderRuntime, adapters, ports, apps, services,

@@ -55,6 +55,17 @@ class CapabilityExecutionMode(str, Enum):
     DENIED = "denied"
 
 
+class AgentLoopStopReason(str, Enum):
+    NOT_STOPPED = "not_stopped"
+    COMPLETED = "completed"
+    MAX_STEPS_REACHED = "max_steps_reached"
+    REPEATED_FAILURES = "repeated_failures"
+    WAITING_FOR_HUMAN_APPROVAL = "waiting_for_human_approval"
+    POLICY_DENIED = "policy_denied"
+    TOOL_FAILED = "tool_failed"
+    PROVIDER_CONTINUATION_READY = "provider_continuation_ready"
+
+
 class CapabilityStopReason(str, Enum):
     NOT_STOPPED = "not_stopped"
     MAX_STEPS_REACHED = "max_steps_reached"

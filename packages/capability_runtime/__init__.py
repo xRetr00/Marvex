@@ -1,4 +1,8 @@
 from packages.capability_runtime.execution import (
+    AgentLoopDecision,
+    AgentLoopGuardResult,
+    AgentLoopState,
+    AgentLoopStep,
     ApprovalDecision,
     ApprovalPrompt,
     CapabilityApprovalRequest,
@@ -17,11 +21,15 @@ from packages.capability_runtime.execution import (
     SafeCapabilityProjection,
     TaskDecompositionHint,
     ToolExecutionPolicy,
+    ToolContinuationState,
+    ToolOrchestrationState,
     ToolingTelemetrySummary,
     VerificationHook,
+    evaluate_agent_loop_guard,
     make_denial_result,
 )
 from packages.capability_runtime.models import (
+    AgentLoopStopReason,
     CapabilityEligibilityDecision,
     CapabilityExecutionMode,
     CapabilityKind,
@@ -35,6 +43,11 @@ from packages.capability_runtime.models import (
 )
 
 __all__ = [
+    "AgentLoopDecision",
+    "AgentLoopGuardResult",
+    "AgentLoopState",
+    "AgentLoopStep",
+    "AgentLoopStopReason",
     "ApprovalDecision",
     "ApprovalPrompt",
     "CapabilityApprovalRequest",
@@ -61,9 +74,12 @@ __all__ = [
     "SafeCapabilityProjection",
     "TaskDecompositionHint",
     "ToolExecutionPolicy",
+    "ToolContinuationState",
+    "ToolOrchestrationState",
     "ToolRiskLevel",
     "ToolSideEffectLevel",
     "ToolingTelemetrySummary",
     "VerificationHook",
+    "evaluate_agent_loop_guard",
     "make_denial_result",
 ]

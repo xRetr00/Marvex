@@ -532,6 +532,26 @@ Protected boundaries:
 
 Blocked: real script execution, arbitrary skill install, remote skill loading, shell/filesystem/browser/desktop/OS access, hidden prompt rewrites, raw prompt/transcript/tool payload persistence by default, and policy/system/developer instruction override.
 
+## Agent Execution Loop and Tool-Orchestrated Turn Foundation Gate
+
+The Agent Execution Loop and Tool-Orchestrated Turn Foundation gate is enforced by `scripts/check_agent_execution_loop_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+CapabilityRuntime remains authoritative for bounded agent-loop state, tool-orchestration state, pending approval state, approved execution requests, denial result envelopes, safe continuation state, loop guards, stop reasons, and telemetry-safe loop summaries. provider tool calls are proposals, not execution permission.
+
+AssistantRuntime may coordinate tool-orchestrated turn lifecycle summaries through `packages.assistant_runtime.tool_orchestration`, but it must not import adapters, construct `CapabilityExecutionRequest`, or execute tools. Tool adapters may execute only approved `CapabilityExecutionRequest` paths and must return safe result envelopes.
+
+Protected boundaries:
+
+- Core cannot execute tools or own agent loops.
+- Local API cannot execute tools or own approval decisions directly.
+- RuntimeComposition cannot become the agent loop brain.
+- AssistantRuntime can coordinate safe summaries but cannot execute adapters.
+- ProviderRuntime cannot own tools or loops.
+- Telemetry cannot own loop state or persist raw tool/browser/computer/provider payloads by default.
+- MemoryRuntime and SessionRuntime can link by safe refs only.
+- Adapters cannot bypass CapabilityRuntime permission, approval, execution-request, loop-guard, or result-envelope policy.
+
+Blocked: uncontrolled autonomous agents, shell/terminal execution, filesystem write/edit/delete tools, arbitrary browser/computer actions, credential entry or extraction, purchase/payment/checkout, CAPTCHA or anti-bot bypass, UI, voice, desktop control, vision, proactive behavior, generic provider routing, and raw prompts, transcripts, tokens, tool inputs/outputs, browser DOM, screenshots, provider payloads, or environment values by default. risky actions can pause for human approval.
 ## Full Tooling and Computer Use Foundation Gate
 
 The Full Tooling and Computer Use Foundation gate is enforced by `scripts/check_full_tooling_boundaries.py` and is part of `scripts/run_all_checks.py`.

@@ -90,6 +90,8 @@ class AssistantTurnLifecycleSummary:
     denied_capability_count: int = 0
     executed_fake_capability_count: int = 0
     capability_safe_result_status: str | None = None
+    agent_loop_step_count: int = 0
+    tool_result_delivery_ready: bool = False
     transcript_persisted: bool = False
     raw_payload_persisted: bool = False
 
@@ -121,6 +123,8 @@ class AssistantTurnLifecycleSummary:
             "denied_capability_count": self.denied_capability_count,
             "executed_fake_capability_count": self.executed_fake_capability_count,
             "capability_safe_result_status": self.capability_safe_result_status,
+            "agent_loop_step_count": self.agent_loop_step_count,
+            "tool_result_delivery_ready": self.tool_result_delivery_ready,
             "transcript_persisted": False,
             "raw_payload_persisted": False,
         }

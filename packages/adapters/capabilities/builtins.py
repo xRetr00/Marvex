@@ -8,6 +8,7 @@ from typing import Callable, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from packages.capability_runtime import (
+    CapabilityExecutionRequest,
     CapabilityKind,
     CapabilityManifest,
     CapabilityRef,
@@ -174,6 +175,13 @@ class BuiltinToolCatalog(BuiltinToolModel):
     def manifests(self) -> tuple[CapabilityManifest, ...]:
         return tuple(tool.to_manifest() for tool in self.tools)
 
+    def execute_request(self, request: CapabilityExecutionRequest) -> BuiltinToolResult:
+        if request.proposal.capability_ref.identifier == "builtin.calculator":
+            calculator_request = CalculatorRequest(**request.arguments)
+            value = _eval_numeric(ast.parse(calculator_request.expression, mode="eval").body)
+            return _result_for_request(request, {"result": str(value.normalize())})
+        raise ValueError("unsupported builtin tool capability")
+
 
 def _result(capability_ref: CapabilityRef, safe_result: dict[str, object]) -> BuiltinToolResult:
     return BuiltinToolResult(
@@ -183,6 +191,22 @@ def _result(capability_ref: CapabilityRef, safe_result: dict[str, object]) -> Bu
             trace_id="builtin-trace",
             turn_id="builtin-turn",
             capability_ref=capability_ref,
+            status="succeeded",
+            safe_result=safe_result,
+            raw_input_persisted=False,
+            raw_output_persisted=False,
+        )
+    )
+
+
+def _result_for_request(request: CapabilityExecutionRequest, safe_result: dict[str, object]) -> BuiltinToolResult:
+    return BuiltinToolResult(
+        result=CapabilityResultEnvelope(
+            schema_version=request.schema_version,
+            result_id=f"{request.request_id}:result",
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            capability_ref=request.proposal.capability_ref,
             status="succeeded",
             safe_result=safe_result,
             raw_input_persisted=False,

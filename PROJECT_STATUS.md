@@ -1,23 +1,35 @@
 # Project Status
 
-current_phase: full_tooling_computer_use_foundation_complete
+current_phase: agent_execution_loop_tool_orchestrated_turn_foundation_complete
 
-implementation_status: full_tooling_computer_use_foundation_complete
+implementation_status: agent_execution_loop_tool_orchestrated_turn_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Full Tooling and Computer Use Foundation Complete
+Agent Execution Loop and Tool-Orchestrated Turn Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Full Tooling and Computer Use Foundation:
+Latest full validation baseline from Agent Execution Loop and Tool-Orchestrated Turn Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 823 passed, 1 skipped
+- `python -m pytest -q` -> 830 passed, 1 skipped
+- `python -m pip check` -> No broken requirements found.
 
 
+## Agent Execution Loop and Tool-Orchestrated Turn Foundation State
+
+Agent Execution Loop and Tool-Orchestrated Turn Foundation is complete as a bounded model/API-ready loop foundation. CapabilityRuntime remains authoritative for permission decisions, approval requirements, approval decisions, execution request validation, result envelopes, loop guards, stop reasons, safe continuations, and telemetry-safe summaries.
+
+Implemented: `AgentLoopState`, `AgentLoopStep`, `AgentLoopDecision`, `AgentLoopStopReason`, `AgentLoopGuardResult`, `ToolOrchestrationState`, `PendingApprovalState`, `ToolContinuationState`, `SafeAgentLoopProjection`, tool denial envelopes, safe continuation readiness, lifecycle summary linkage, and a safe built-in calculator execution proof through an approved `CapabilityExecutionRequest`.
+
+provider tool calls are proposals, not execution permission. risky actions can pause for human approval, denial returns a safe result envelope, and approved safe tools can execute only through request objects validated by CapabilityRuntime policy. AssistantRuntime coordinates only safe tool-orchestrated turn summaries and does not import adapters or execute tools.
+
+Blocked: uncontrolled autonomous agents, shell/terminal execution, filesystem write/edit/delete tools, arbitrary browser/computer actions, credential entry or extraction, purchase/payment/checkout, CAPTCHA or anti-bot bypass, UI, voice, desktop control, vision, proactive behavior, generic provider routing, raw prompts/transcripts/tool/provider payload persistence by default, and adapter bypass of CapabilityRuntime policy.
+
+Recommended next: add a narrow approval-service/API readiness boundary that can hold, project, and resolve pending approval refs without adding UI, desktop/browser execution, provider routing, or raw payload persistence.
 ## Full Tooling and Computer Use Foundation State
 
 Full Tooling and Computer Use Foundation is complete as a policy-gated adapter
