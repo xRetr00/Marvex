@@ -11,6 +11,7 @@ dependencies = [
   "litellm==1.83.13",
   "mcp==1.27.1",
   "openai==2.24.0",
+  "playwright==1.59.0",
   "pydantic>=2,<3",
 ]
 

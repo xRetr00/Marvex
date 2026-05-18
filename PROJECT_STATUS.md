@@ -1,21 +1,60 @@
 # Project Status
 
-current_phase: skills_runtime_foundation_complete
+current_phase: full_tooling_computer_use_foundation_complete
 
-implementation_status: skills_runtime_foundation_complete
+implementation_status: full_tooling_computer_use_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Skills Runtime Foundation Complete
+Full Tooling and Computer Use Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Skills Runtime Foundation:
+Latest full validation baseline from Full Tooling and Computer Use Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 810 passed, 1 skipped
+- `python -m pytest -q` -> 823 passed, 1 skipped
+
+
+## Full Tooling and Computer Use Foundation State
+
+Full Tooling and Computer Use Foundation is complete as a policy-gated adapter
+foundation. CapabilityRuntime remains authoritative for risk, side-effect
+classification, permission decisions, human approval requirements, approval
+prompts, approval decisions, execution modes, execution requests, result
+envelopes, context delivery, compaction, loop guards, and safe telemetry
+summaries.
+
+Implemented: `ToolRiskLevel`, `ToolSideEffectLevel`,
+`CapabilityExecutionMode`, `ToolExecutionPolicy`, approval request/decision
+models, pending approval projections, denial result envelopes, eligible-only
+tool schema delivery, repeated-failure/human-approval loop guard state, and
+tooling telemetry safe summaries. Safe built-ins now cover calculator, UTC
+time/date, capability diagnostics, and injected read-only repo status snapshots.
+
+Adapter foundations now exist for Playwright browser automation, Browser-use,
+OpenAI Computer Use, OpenAI Agents SDK tool compatibility, OpenAI function tool
+proposals, LM Studio local tool proposals, LiteLLM gateway tool proposals, and
+existing MCP SDK tools. Playwright is adopted behind
+`packages.adapters.capabilities.browser` only. Browser-use backend remains
+disabled pending a future policy review. OpenAI Agents SDK package adoption is
+blocked for now because `openai-agents==0.17.2` requires `openai>=2.26.0` while
+Marvex currently pins `openai==2.24.0`; the compatibility seam exists without
+importing the SDK package.
+
+Blocked: real shell/terminal execution, file write/edit/delete tools,
+credential entry or extraction, purchase/payment/checkout, sensitive form
+submission without future explicit approval flow, CAPTCHA/anti-bot bypass,
+stealth/proxy scraping, arbitrary desktop OS control, raw screenshots, raw DOM,
+raw page text, raw tool input/output, prompts, transcripts, tokens,
+credentials, provider payload persistence by default, and any adapter bypass of
+CapabilityRuntime policy.
+
+Recommended next: add a narrow approval-service/API surface that can hold and
+resolve `PendingApprovalState` without adding UI, browser execution, desktop
+control, or provider runtime integration.
 
 
 ## Skills Runtime Foundation State

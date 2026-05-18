@@ -65,14 +65,16 @@ ADAPTER_FORBIDDEN_IMPORTS = (
 ADAPTER_REQUIRED_IMPORT = "packages.capability_runtime"
 FORBIDDEN_EXECUTION_TOKENS = (
     "subprocess",
-    "shell",
-    "filesystem write",
-    "browser",
     "auto-call",
     "auto_call_allowed: Literal[True]",
     "arbitrary_server_execution_allowed: Literal[True]",
     "arbitrary_script_execution_allowed: Literal[True]",
 )
+LEGACY_TOKEN_EXEMPT_FILES = {
+    CAPABILITY_ADAPTER_ROOT / "builtins.py": ("shell",),
+    CAPABILITY_ADAPTER_ROOT / "browser.py": ("browser",),
+    CAPABILITY_ADAPTER_ROOT / "browser_use.py": ("browser",),
+}
 NON_OWNER_TERMS = (
     "packages.capability_runtime",
     "packages.adapters.capabilities",
@@ -149,6 +151,12 @@ def _scan_adapters(failures: list[str]) -> None:
             for token in FORBIDDEN_EXECUTION_TOKENS:
                 if token.lower() in lowered:
                     failures.append(f"{_rel(path)} contains forbidden execution token: {token}")
+            for token in ("shell", "browser", "filesystem write"):
+                if token.lower() not in lowered:
+                    continue
+                if token in LEGACY_TOKEN_EXEMPT_FILES.get(path, ()):
+                    continue
+                failures.append(f"{_rel(path)} contains forbidden execution token: {token}")
         tree = ast.parse(text, filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):

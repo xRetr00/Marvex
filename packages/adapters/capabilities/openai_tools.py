@@ -4,7 +4,14 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from packages.capability_runtime import CapabilityCallProposal, CapabilityKind, CapabilityRef
+from packages.capability_runtime import (
+    CapabilityCallProposal,
+    CapabilityExecutionMode,
+    CapabilityKind,
+    CapabilityRef,
+    ToolRiskLevel,
+    ToolSideEffectLevel,
+)
 
 
 class OpenAIToolAdapterModel(BaseModel):
@@ -40,7 +47,9 @@ class OpenAIFunctionToolProposal(OpenAIToolAdapterModel):
             turn_id=self.turn_id,
             capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier=f"openai.{self.function_name}"),
             proposed_action=self.function_name,
-            risk_level="medium",
+            risk_level=ToolRiskLevel.MEDIUM,
+            side_effect_level=ToolSideEffectLevel.READ_ONLY,
+            execution_mode=CapabilityExecutionMode.PROPOSAL_ONLY,
             arguments_schema=self.json_schema,
             raw_arguments_persisted=False,
         )

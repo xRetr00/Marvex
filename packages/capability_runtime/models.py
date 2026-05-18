@@ -27,11 +27,42 @@ class CapabilityKind(str, Enum):
     VERIFIER = "verifier"
 
 
+class ToolRiskLevel(str, Enum):
+    SAFE = "safe"
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+    CRITICAL = "critical"
+
+
+class ToolSideEffectLevel(str, Enum):
+    NONE = "none"
+    READ_ONLY = "read_only"
+    WRITE_LOCAL = "write_local"
+    NETWORK = "network"
+    BROWSER_ACTION = "browser_action"
+    DESKTOP_ACTION = "desktop_action"
+    CREDENTIAL_ACTION = "credential_action"
+    PURCHASE_OR_PAYMENT = "purchase_or_payment"
+    DESTRUCTIVE = "destructive"
+
+
+class CapabilityExecutionMode(str, Enum):
+    PROPOSAL_ONLY = "proposal_only"
+    DRY_RUN = "dry_run"
+    REQUIRES_APPROVAL = "requires_approval"
+    APPROVED_EXECUTE = "approved_execute"
+    DENIED = "denied"
+
+
 class CapabilityStopReason(str, Enum):
     NOT_STOPPED = "not_stopped"
     MAX_STEPS_REACHED = "max_steps_reached"
     POLICY_DENIED = "policy_denied"
     HUMAN_APPROVAL_REQUIRED = "human_approval_required"
+    REPEATED_FAILURES = "repeated_failures"
+    DRY_RUN_COMPLETE = "dry_run_complete"
+    PROPOSAL_ONLY_COMPLETE = "proposal_only_complete"
     VERIFICATION_FAILED = "verification_failed"
     COMPLETED = "completed"
 
@@ -85,6 +116,8 @@ class HumanApprovalRequirement(CapabilityRuntimeModel):
     required: bool
     reason_code: str = Field(..., min_length=1)
     prompt_user_visible: bool
+    risk_level: ToolRiskLevel = ToolRiskLevel.SAFE
+    side_effect_level: ToolSideEffectLevel = ToolSideEffectLevel.NONE
 
     @field_validator("reason_code")
     @classmethod
@@ -99,6 +132,12 @@ class CapabilityPermissionDecision(CapabilityRuntimeModel):
     decision: Literal["approved", "denied", "requires_human_approval"]
     reason_code: str = Field(..., min_length=1)
     human_approval: HumanApprovalRequirement
+
+    @model_validator(mode="after")
+    def _validate_human_approval_decision(self) -> CapabilityPermissionDecision:
+        if self.decision == "requires_human_approval" and not self.human_approval.required:
+            raise ValueError("requires_human_approval decisions must include human approval requirement")
+        return self
 
     @field_validator("decision_id", "reason_code")
     @classmethod

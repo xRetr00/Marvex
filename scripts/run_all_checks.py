@@ -23,6 +23,7 @@ CHECKS = [
     "check_capability_runtime_boundaries.py",
     "check_mcp_adapter_boundaries.py",
     "check_skills_runtime_boundaries.py",
+    "check_full_tooling_boundaries.py",
     "check_provider_structured_output_boundaries.py",
     "check_telemetry_boundaries.py",
     "check_runtime_ownership.py",

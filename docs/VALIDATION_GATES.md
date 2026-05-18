@@ -532,4 +532,24 @@ Protected boundaries:
 
 Blocked: real script execution, arbitrary skill install, remote skill loading, shell/filesystem/browser/desktop/OS access, hidden prompt rewrites, raw prompt/transcript/tool payload persistence by default, and policy/system/developer instruction override.
 
+## Full Tooling and Computer Use Foundation Gate
+
+The Full Tooling and Computer Use Foundation gate is enforced by `scripts/check_full_tooling_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+CapabilityRuntime remains authoritative for tool and computer-use risk levels, side-effect levels, human approval requirements, approval prompts, approval decisions, execution modes, permission decisions, execution requests, result envelopes, context delivery, compaction, loop guards, and safe telemetry summaries.
+
+The gate permits Playwright only inside the browser adapter boundary. Browser-use backend remains disabled. OpenAI Computer Use is represented as one adapter backend, not the only Marvex computer-use path. OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, and MCP tools must become CapabilityRuntime proposals before any future execution.
+
+Protected boundaries:
+
+- Core cannot call Playwright, Browser-use, OpenAI Computer Use, or tools directly.
+- Local API cannot execute browser/computer/tool actions directly.
+- RuntimeComposition cannot become the browser/computer/tool brain.
+- AssistantRuntime cannot execute browser/computer tools.
+- ProviderRuntime cannot own tools or tool policy.
+- Telemetry cannot persist raw tool/browser/computer payloads by default.
+- Adapters cannot bypass CapabilityRuntime permission, approval, execution-mode, context-delivery, loop-guard, or result-envelope policy.
+
+Blocked: shell execution, file write/edit/delete tools, credential access or entry, purchase/payment/checkout, sensitive form submission without future explicit approval flow, CAPTCHA or anti-bot bypass, stealth/proxy scraping, arbitrary desktop OS control, and raw screenshot/DOM/page/tool/provider payload persistence by default.
+
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->

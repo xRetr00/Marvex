@@ -29,6 +29,7 @@ Scripts:
 - `check_assistant_runtime_boundaries.py`
 - `check_mcp_adapter_boundaries.py`
 - `check_skills_runtime_boundaries.py`
+- `check_full_tooling_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -71,6 +72,14 @@ install, remote loading, raw prompt persistence, policy override, and ownership
 drift into Core, Local API, RuntimeComposition, ProviderRuntime, Telemetry,
 AssistantRuntime, MemoryRuntime, SessionRuntime, local service startup, and the
 MCP adapter.
+
+`check_full_tooling_boundaries.py` enforces the Full Tooling and Computer Use
+Foundation boundary so browser, computer-use, built-in, Browser-use, OpenAI
+Computer Use, OpenAI Agents compatibility, LM Studio, LiteLLM, and MCP tool
+surfaces stay proposal/envelope based and cannot bypass CapabilityRuntime
+policy, approval, execution-mode, loop-guard, context-delivery, and safe-result
+authority. It permits Playwright only inside the browser adapter boundary and
+blocks raw browser/computer/tool payload persistence by default.
 
 `check_provider_structured_output_boundaries.py` enforces the no-network
 provider structured-output adapter boundary so validation stays isolated from
