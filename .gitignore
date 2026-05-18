@@ -6,3 +6,5 @@ __pycache__/
 *.pyo
 .env
 venv/
+apps/control_plane_web/node_modules/
+apps/control_plane_web/dist/

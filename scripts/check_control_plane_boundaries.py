@@ -71,6 +71,20 @@ REQUIRED_CONTROL_API_TERMS = (
     "validate_local_bearer_token",
     "execution_started: Literal[False]",
 )
+REQUIRED_FRONTEND_FILES = (
+    "package.json",
+    "src/App.tsx",
+    "src/lib/api.ts",
+    "src/lib/schemas.ts",
+)
+REQUIRED_FRONTEND_PACKAGE_TERMS = (
+    "react",
+    "vite",
+    "@tanstack/react-query",
+    "tailwindcss",
+    "zod",
+    "class-variance-authority",
+)
 REQUIRED_DOC_PHRASES = (
     "Control Plane Foundation",
     "Control Plane API must not own policy",
@@ -89,7 +103,14 @@ def _frontend_files(root: Path) -> list[Path]:
     if not root.exists():
         return []
     suffixes = {".ts", ".tsx", ".js", ".jsx", ".json", ".html"}
-    return sorted(path for path in root.rglob("*") if path.is_file() and path.suffix in suffixes)
+    return sorted(
+        path
+        for path in root.rglob("*")
+        if path.is_file()
+        and path.suffix in suffixes
+        and "node_modules" not in path.parts
+        and "dist" not in path.parts
+    )
 
 
 def _rel(path: Path) -> str:
@@ -134,6 +155,14 @@ def main() -> int:
             if not _matches_prefix(module, CONTROL_API_ALLOWED_IMPORTS):
                 failures.append(f"{_rel(path)} imports non-approved dependency: {module}")
 
+    if FRONTEND.exists():
+        package_text = (FRONTEND / "package.json").read_text(encoding="utf-8") if (FRONTEND / "package.json").is_file() else ""
+        for frontend_file in REQUIRED_FRONTEND_FILES:
+            if not (FRONTEND / frontend_file).is_file():
+                failures.append(f"Control Plane frontend missing required file: apps/control_plane_web/{frontend_file}")
+        for term in REQUIRED_FRONTEND_PACKAGE_TERMS:
+            if term not in package_text:
+                failures.append(f"Control Plane frontend package missing dependency term: {term}")
     for path in _frontend_files(FRONTEND):
         text = path.read_text(encoding="utf-8")
         for token in FRONTEND_FORBIDDEN_TEXT:

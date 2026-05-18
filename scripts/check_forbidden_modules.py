@@ -21,8 +21,10 @@ ALLOWED_PLACEHOLDERS = {
 ALLOWED_BOUNDARY_DIRS = {
     "packages/adapters/intent",
     "tests/intent",
+    "apps/control_plane_web/src/components/ui",
 }
 EXCLUDED_TOP_LEVEL = {"docs", "templates", "scripts"}
+EXCLUDED_PARTS = {"node_modules", "dist"}
 
 
 def main() -> int:
@@ -31,6 +33,8 @@ def main() -> int:
         if not path.is_dir():
             continue
         rel = path.relative_to(ROOT).as_posix()
+        if any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
+            continue
         top = rel.split("/", 1)[0]
         if top in EXCLUDED_TOP_LEVEL:
             continue

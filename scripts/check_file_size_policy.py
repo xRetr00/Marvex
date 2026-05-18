@@ -4,6 +4,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_LINES = 500
 JUSTIFICATION = "file size justification"
+EXCLUDED_PARTS = {"node_modules", "dist"}
+EXCLUDED_FILENAMES = {"package-lock.json"}
 TEXT_SUFFIXES = {
     ".md",
     ".py",
@@ -19,6 +21,9 @@ TEXT_SUFFIXES = {
 def main() -> int:
     failures = []
     for path in ROOT.rglob("*"):
+        rel_parts = path.relative_to(ROOT).parts
+        if any(part in EXCLUDED_PARTS for part in rel_parts) or path.name in EXCLUDED_FILENAMES:
+            continue
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
         text = path.read_text(encoding="utf-8")

@@ -27,7 +27,7 @@ Control Plane API must not own policy. It exposes local HTTP/auth/JSON-only appr
 
 Implemented in this checkpoint: protected approval list/read/approve/deny flows, safe approval decision reason handling, safe provider/capability/tool/MCP/skill/telemetry/trace/memory/session/agent-loop/settings snapshot projections, token-safe auth failure behavior, and a dedicated boundary gate.
 
-Still pending in this phase: isolated React/Vite web frontend, typed frontend API client, dashboard pages, frontend tests/build validation, and final complete status.
+Implemented in the web checkpoint: isolated `apps/control_plane_web` React/TypeScript/Vite app, TanStack Query safe API client, Zod response validation, Tailwind plus shadcn/ui-style local components, dashboard shell, safe loading/error states, and frontend build/test coverage. Still pending in this phase: final docs/status complete marker after full validation.
 
 Blocked: direct Control Plane tool execution, frontend Python imports, frontend tool execution, raw secrets/tokens/API keys/environment values, raw prompts/transcripts/tool payloads/browser DOM/screenshots, arbitrary remote access, Orb, desktop overlay, voice UI, vision UI, and proactive behavior UI.
 ## Agent Execution Loop and Tool-Orchestrated Turn Foundation State
