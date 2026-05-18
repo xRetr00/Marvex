@@ -1,7 +1,7 @@
 # Marvex
 
 <p align="center">
-  <img src="assets/Marvex_WordMark_NoBackground.png" alt="Marvex logo" width="300" />
+  <img src="assets/Marvex_WordMark_NoBackground.png" alt="Marvex logo" width="1920" />
 </p>
 
 Marvex is a service-ready modular desktop system. It starts as a Python Core
