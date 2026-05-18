@@ -15,6 +15,7 @@ SDK_ALLOWED_FILES = {
     ADAPTERS / "browser.py": ("playwright",),
 }
 SDK_FORBIDDEN_NON_OWNER = ("playwright", "browser_use", "agents")
+SDK_FORBIDDEN_ADAPTERS = ("browser_use",)
 NON_OWNER_ROOTS = (
     ROOT / "packages" / "core",
     ROOT / "packages" / "local_api",
@@ -60,6 +61,7 @@ REQUIRED_DOC_PHRASES = (
     "CapabilityRuntime remains authoritative",
     "Playwright",
     "Browser-use backend remains disabled",
+    "OpenAI Agents SDK cannot own the Marvex agent loop",
     "OpenAI Computer Use",
 )
 
@@ -108,6 +110,13 @@ def main() -> int:
                 if token in text:
                     failures.append(f"{_rel(path)} contains forbidden tooling token: {token}")
 
+    for path in _python_files(ADAPTERS):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            module = _module_from_import(node)
+            if module and _matches_prefix(module, SDK_FORBIDDEN_ADAPTERS):
+                failures.append(f"{_rel(path)} imports blocked browser-use SDK dependency: {module}")
+
     for root in NON_OWNER_ROOTS:
         for path in _python_files(root):
             tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
@@ -130,6 +139,11 @@ def main() -> int:
 
     if "playwright==1.59.0" not in (ROOT / "pyproject.toml").read_text(encoding="utf-8"):
         failures.append("pyproject.toml must declare playwright==1.59.0")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    if "browser-use" in pyproject:
+        failures.append("pyproject.toml must not declare browser-use while dependency conflict is blocked")
+    if "openai-agents==0.17.2" not in pyproject:
+        failures.append("pyproject.toml must declare openai-agents==0.17.2")
     if "check_full_tooling_boundaries.py" not in RUN_ALL_CHECKS.read_text(encoding="utf-8"):
         failures.append("scripts/run_all_checks.py must run check_full_tooling_boundaries.py")
 

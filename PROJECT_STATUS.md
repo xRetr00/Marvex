@@ -9,6 +9,18 @@ accepted_docs: true
 current_governance_gate:
 Governance Reconciliation, Boundary Hardening, and Sprawl Cleanup
 
+## SDK Adoption Checkpoint
+
+Marvex adopted `semantic-router==0.1.14` behind `packages.adapters.intent.semantic_router_adapter` for local, no-cloud route definition and scoring proof only. IntentRuntime remains the policy owner; Semantic Router cannot own execution, tools, memory, prompt assembly, or routing policy.
+
+Marvex adopted `openai-agents==0.17.2` only as a compatibility dependency behind `packages.adapters.capabilities.openai_agents`. This required moving to `openai==2.37.0` and `litellm==1.84.0` after resolver proof. The OpenAI Agents SDK cannot own the Marvex agent loop, policy, tool dispatch, prompt harness, or runtime composition.
+
+`guardrails-ai` is blocked in the current Python 3.12.0 environment because pip found no matching distribution. The Guardrails adapter remains a tested safe-projection validation seam with an explicit blocked backend reason; Guardrails cannot assemble prompts or run automatic retry loops.
+
+`browser-use` is blocked as a runtime dependency for this checkpoint because `browser-use==0.12.6` resolves by selecting `mcp==1.26.0` and `openai==2.16.0`, conflicting with Marvex's `mcp==1.27.1` and OpenAI Agents-compatible `openai==2.37.0`. The browser-use seam remains disabled and CapabilityRuntime approval remains mandatory. Playwright remains the low-level browser SDK path.
+
+LlamaIndex and LangChain/LangGraph remain deferred. Resolver dry-runs succeeded, but both bring broad runtime/agent/context ownership surfaces that are not needed until a later context selector or planning backend phase.
+
 ## Validation Baseline
 
 Initial baseline before this cleanup:

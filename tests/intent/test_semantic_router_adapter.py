@@ -67,3 +67,43 @@ def test_optional_semantic_router_constructor_reports_structured_dependency_erro
     assert error.value.dependency_name == "semantic_router"
     assert error.value.adapter_name == "SemanticRouterAdapter"
     assert error.value.reason_code == "dependency_unavailable"
+
+
+def test_real_semantic_router_route_definitions_can_be_built_without_cloud_calls() -> None:
+    adapter = SemanticRouterAdapter.from_local_library_routes(
+        routes={
+            "grounded_lookup": ("latest release notes", "look up current docs"),
+            "direct_answer": ("explain this concept",),
+        },
+        ambiguity_threshold=0.5,
+    )
+
+    assert adapter.library_route_names() == ("grounded_lookup", "direct_answer")
+
+
+def test_real_semantic_router_local_path_maps_input_to_route() -> None:
+    adapter = SemanticRouterAdapter.from_local_library_routes(
+        routes={
+            "grounded_lookup": ("latest release notes", "look up current docs"),
+            "direct_answer": ("explain this concept",),
+        },
+        ambiguity_threshold=0.5,
+    )
+
+    decision = adapter.decide_route("please look up the latest docs")
+
+    assert decision.route_family == RouteFamily.GROUNDED_LOOKUP
+    assert decision.confidence >= 0.5
+    assert decision.ambiguity_flag is False
+
+
+def test_real_semantic_router_local_path_unknown_input_falls_back_safely() -> None:
+    adapter = SemanticRouterAdapter.from_local_library_routes(
+        routes={"grounded_lookup": ("latest release notes",)},
+        ambiguity_threshold=0.7,
+    )
+
+    decision = adapter.decide_route("purple unrelated phrasing")
+
+    assert decision.route_family == RouteFamily.CLARIFY
+    assert decision.ambiguity_flag is True

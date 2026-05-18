@@ -576,7 +576,7 @@ The Full Tooling and Computer Use Foundation gate is enforced by `scripts/check_
 
 CapabilityRuntime remains authoritative for tool and computer-use risk levels, side-effect levels, human approval requirements, approval prompts, approval decisions, execution modes, permission decisions, execution requests, result envelopes, context delivery, compaction, loop guards, and safe telemetry summaries.
 
-The gate permits Playwright only inside the browser adapter boundary. Browser-use backend remains disabled. OpenAI Computer Use is represented as one adapter backend, not the only Marvex computer-use path. OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, and MCP tools must become CapabilityRuntime proposals before any future execution.
+The gate permits Playwright only inside the browser adapter boundary. Browser-use backend remains disabled because its current package resolution conflicts with Marvex's MCP/OpenAI pins; its adapter may expose safe probes and proposals only. OpenAI Computer Use is represented as one adapter backend, not the only Marvex computer-use path. OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, and MCP tools must become CapabilityRuntime proposals before any future execution. OpenAI Agents SDK cannot own the Marvex agent loop, tool dispatch, policy, prompt harness, or RuntimeComposition.
 
 Protected boundaries:
 
@@ -610,6 +610,9 @@ Protected boundaries:
 - MemoryRuntime does not assemble prompts.
 - AssistantRuntime may consume safe harness plans in future work but must not dump raw prompts.
 - Adapters cannot own policy, automatic retry loops, autonomous planning loops, or raw prompt access.
+- Semantic Router may build adapter-local route definitions and scores, but it cannot own IntentRuntime policy or dispatch.
+- Guardrails may validate safe projections only when a compatible package exists; it cannot assemble prompts, see raw prompt payloads, or run automatic retry loops.
+- LlamaIndex and LangChain/LangGraph remain deferred and cannot own Core, MemoryRuntime, RuntimeComposition, planning loops, context injection, or prompt harness behavior.
 
 Blocked: raw prompt/transcript/provider/tool/browser payload persistence by default, all-tools dumping, all-skills dumping, all-memory dumping, embeddings/vector search without a separate decision, autonomous planners, recursive loops, browser/computer actions, UI, voice, desktop, vision, proactive behavior, and generic provider routing.
 

@@ -4,7 +4,7 @@ library name: browser-use
 
 official source: https://github.com/browser-use/browser-use and https://pypi.org/project/browser-use/
 
-maintenance status: Active as of May 18, 2026. PyPI latest version observed locally with `python -m pip index versions browser-use` as `browser-use==0.12.6`.
+maintenance status: Active as of May 18, 2026. Dependency audit resolved `browser-use==0.12.6` but only by selecting `mcp==1.26.0` and `openai==2.16.0`, which conflicts with Marvex's current `mcp==1.27.1` and the OpenAI Agents SDK-compatible `openai==2.37.0` path.
 
 why use it: Browser-use is a maintained agentic browser automation project and is relevant to future high-level browser task execution. It should be considered before Marvex custom-builds an agentic browser task runner.
 
@@ -20,11 +20,11 @@ verified date: 2026-05-18
 
 verified by: Codex
 
-scope: Adapter seam only. `BrowserUseTaskProposal`, `BrowserUseAdapterConfig`, `BrowserUseExecutionRequest`, and safe result envelopes exist, but backend execution remains disabled.
+scope: Blocked adapter seam only. `BrowserUseTaskProposal`, `BrowserUseAdapterConfig`, `BrowserUseExecutionRequest`, `BrowserUseBackendProbe`, and safe result envelopes exist, but backend execution remains disabled.
 
-architecture fit: Deferred. The project is relevant, but the current foundation must keep CapabilityRuntime authoritative and avoid importing external agent autonomy or hidden browser execution.
+architecture fit: Blocked for runtime dependency adoption in this goal. The project is relevant, but its current dependency pins conflict with Marvex's MCP/OpenAI pins and it also carries external agent autonomy that must stay outside CapabilityRuntime approval.
 
-adopt / defer / reject decision: Defer backend adoption. Implement the adapter boundary now and mark backend execution blocked by future policy review.
+adopt / defer / reject decision: Block runtime dependency adoption for this goal. Dry-run evidence: `browser-use==0.12.6` selects `mcp==1.26.0` and `openai==2.16.0`; Marvex keeps `mcp==1.27.1` and upgraded to `openai==2.37.0` for OpenAI Agents SDK compatibility. Keep the seam disabled with an import/configuration probe and no execution path.
 
 risks: Browser-use can combine model planning with browser actions, which risks hidden tool loops, prompt injection through page content, credential entry, form submission, raw page persistence, and external execution outside Marvex approval policy. Current mitigation is a disabled backend seam with explicit approval-required proposals.
 

@@ -7,6 +7,8 @@ from packages.adapters.prompt_harness.external_seams import (
 from packages.adapters.prompt_harness.guardrails_adapter import (
     DisabledGuardrailsBackend,
     GuardrailsAdapterConfig,
+    GuardrailsDependencyBlockedBackend,
+    GuardrailsValidationBackend,
     PromptHarnessGuardrailsAdapter,
 )
 
@@ -14,6 +16,8 @@ __all__ = [
     "DisabledGuardrailsBackend",
     "DisabledHarnessLibraryBackend",
     "GuardrailsAdapterConfig",
+    "GuardrailsDependencyBlockedBackend",
+    "GuardrailsValidationBackend",
     "HarnessBackendStatus",
     "HarnessExternalAdapterConfig",
     "HarnessExternalBackend",

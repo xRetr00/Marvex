@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -28,6 +29,27 @@ class OpenAIAgentsToolCompatibilityProposal(OpenAIAgentsModel):
     agents_sdk_tool_present: bool = False
     agents_sdk_owns_execution: Literal[False] = False
     marvex_policy_authoritative: Literal[True] = True
+
+    @classmethod
+    def from_installed_sdk_tool(
+        cls,
+        *,
+        schema_version: str,
+        proposal_id: str,
+        trace_id: str,
+        turn_id: str,
+        tool_name: str,
+        tool_schema: dict[str, object],
+    ) -> "OpenAIAgentsToolCompatibilityProposal":
+        return cls(
+            schema_version=schema_version,
+            proposal_id=proposal_id,
+            trace_id=trace_id,
+            turn_id=turn_id,
+            tool_name=tool_name,
+            tool_schema=tool_schema,
+            agents_sdk_tool_present=importlib.util.find_spec("agents") is not None,
+        )
 
     def to_capability_proposal(self) -> CapabilityCallProposal:
         return CapabilityCallProposal(

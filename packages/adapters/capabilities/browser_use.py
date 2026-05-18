@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import importlib.util
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -35,6 +36,33 @@ class BrowserUseAdapterConfig(BrowserUseModel):
             "backend_enabled": self.backend_enabled,
             "blocked_reason": self.blocked_reason,
             "raw_browser_payload_persisted": False,
+        }
+
+
+class BrowserUseBackendProbe(BrowserUseModel):
+    backend_name: Literal["browser-use"] = "browser-use"
+    package_importable: bool
+    sdk_package_importable: bool
+    execution_supported_without_approval: Literal[False] = False
+    playwright_remains_low_level_backend: Literal[True] = True
+    blocked_reason: str = Field(..., min_length=1)
+
+    @classmethod
+    def from_installed_backend(cls) -> "BrowserUseBackendProbe":
+        return cls(
+            package_importable=importlib.util.find_spec("browser_use") is not None,
+            sdk_package_importable=importlib.util.find_spec("browser_use_sdk") is not None,
+            blocked_reason="browser_use_dependency_conflicts_with_current_mcp_openai_pins",
+        )
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "backend_name": self.backend_name,
+            "package_importable": self.package_importable,
+            "sdk_package_importable": self.sdk_package_importable,
+            "execution_supported_without_approval": False,
+            "playwright_remains_low_level_backend": True,
+            "blocked_reason": self.blocked_reason,
         }
 
 

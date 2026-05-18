@@ -76,6 +76,7 @@ REQUIRED_ADAPTER_TERMS = (
     "DisabledSemanticRouterBackend",
     "PromptHarnessGuardrailsAdapter",
     "DisabledGuardrailsBackend",
+    "GuardrailsDependencyBlockedBackend",
     "HarnessExternalBackend",
     "DisabledHarnessLibraryBackend",
 )
@@ -87,8 +88,12 @@ FORBIDDEN_TEXT = (
     "all_memory_allowed: Literal[True]",
     "autonomous_loop_allowed: Literal[True]",
     "automatic_retry_allowed: Literal[True]",
+    "automatic_retries_allowed: Literal[True]",
     "execute_request(",
     "dispatch(",
+    "import langgraph",
+    "import langchain",
+    "import llama_index",
 )
 REQUIRED_DOC_PHRASES = (
     "Intent, Context, and Prompt Harness Foundation",
@@ -170,6 +175,13 @@ def main() -> int:
     checks = RUN_ALL_CHECKS.read_text(encoding="utf-8") if RUN_ALL_CHECKS.is_file() else ""
     if "check_intent_context_prompt_boundaries.py" not in checks:
         failures.append("scripts/run_all_checks.py must run check_intent_context_prompt_boundaries.py")
+
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    if "semantic-router==0.1.14" not in pyproject:
+        failures.append("pyproject.toml must declare semantic-router==0.1.14")
+    for blocked_dependency in ("guardrails-ai", "llama-index", "langgraph", "langchain"):
+        if blocked_dependency in pyproject:
+            failures.append(f"pyproject.toml must not declare deferred or blocked dependency: {blocked_dependency}")
 
     docs = "\n".join(path.read_text(encoding="utf-8") for path in (VALIDATION_GATES, PROJECT_STATUS) if path.is_file())
     for phrase in REQUIRED_DOC_PHRASES:

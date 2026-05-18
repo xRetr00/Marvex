@@ -15,6 +15,7 @@ from packages.adapters.capabilities.browser import (
 )
 from packages.adapters.capabilities.browser_use import (
     BrowserUseAdapterConfig,
+    BrowserUseBackendProbe,
     BrowserUseExecutionRequest,
     BrowserUseTaskProposal,
 )
@@ -173,6 +174,21 @@ def test_browser_use_seam_is_disabled_until_dependency_is_approved_for_execution
     assert request.safe_result_envelope(result_id="browser-use-result-1").status == "denied"
 
 
+def test_browser_use_backend_can_be_imported_but_not_executed_without_policy() -> None:
+    probe = BrowserUseBackendProbe.from_installed_backend()
+    config = BrowserUseAdapterConfig(
+        schema_version="1",
+        adapter_id="browser-use-foundation",
+        backend_enabled=False,
+        blocked_reason="browser_use_dependency_conflicts_with_current_mcp_openai_pins",
+    )
+
+    assert probe.backend_name == "browser-use"
+    assert probe.execution_supported_without_approval is False
+    assert config.safe_projection()["backend_enabled"] is False
+    assert probe.safe_projection()["playwright_remains_low_level_backend"] is True
+
+
 def test_openai_computer_use_seam_requires_approval_and_treats_screen_as_untrusted() -> None:
     config = OpenAIComputerUseHarnessConfig(
         schema_version="1",
@@ -250,3 +266,21 @@ def test_provider_tool_call_adapters_create_proposals_not_execution_permission()
 
     assert all(proposal.execution_mode is CapabilityExecutionMode.PROPOSAL_ONLY for proposal in proposals)
     assert all(proposal.raw_arguments_persisted is False for proposal in proposals)
+
+
+def test_openai_agents_sdk_import_maps_to_marvex_policy_proposal() -> None:
+    agents = OpenAIAgentsToolCompatibilityProposal.from_installed_sdk_tool(
+        schema_version="1",
+        proposal_id="agents-tool-2",
+        trace_id="trace-1",
+        turn_id="turn-1",
+        tool_name="lookup_docs",
+        tool_schema={"type": "object"},
+    )
+
+    proposal = agents.to_capability_proposal()
+
+    assert agents.agents_sdk_tool_present is True
+    assert agents.agents_sdk_owns_execution is False
+    assert agents.marvex_policy_authoritative is True
+    assert proposal.execution_mode is CapabilityExecutionMode.PROPOSAL_ONLY
