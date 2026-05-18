@@ -3,10 +3,15 @@ import { CheckCircle2, Search, ShieldAlert, Trash2 } from "lucide-react";
 import {
   enableSkill,
   fetchApprovalHistory,
+  fetchAutoFetch,
+  fetchConnectors,
   fetchDiagnostics,
   fetchMcpMarketplace,
   fetchMemoryInspect,
+  fetchMemoryTreeScoring,
+  fetchMemoryTreeSearch,
   fetchPolicies,
+  fetchSources,
   fetchSkillsMarketplace,
   fetchTraceSearch,
   forgetMemory,
@@ -90,4 +95,34 @@ export function DiagnosticsView() {
   if (query.isLoading) return <InlineState message="Loading runtime diagnostics..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   return <SafeTable title="Runtime Diagnostics" rows={query.data ? [query.data] : []} empty="No diagnostics available." />;
+}
+
+export function ConnectorListView() {
+  const query = useQuery({ queryKey: ["connectors"], queryFn: fetchConnectors, retry: false });
+  if (query.isLoading) return <InlineState message="Loading connector manifests..." />;
+  if (query.isError) return <InlineState message={query.error.message} />;
+  return <SafeTable title="Connectors" rows={query.data?.connectors ?? []} empty="No connector manifests available." />;
+}
+
+export function MemorySourcesView() {
+  const query = useQuery({ queryKey: ["memory-sources"], queryFn: fetchSources, retry: false });
+  if (query.isLoading) return <InlineState message="Loading memory sources..." />;
+  if (query.isError) return <InlineState message={query.error.message} />;
+  return <SafeTable title="Memory Sources" rows={query.data?.sources ?? []} empty="No memory sources available." />;
+}
+
+export function AutoFetchView() {
+  const query = useQuery({ queryKey: ["autofetch"], queryFn: fetchAutoFetch, retry: false });
+  if (query.isLoading) return <InlineState message="Loading auto-fetch policies..." />;
+  if (query.isError) return <InlineState message={query.error.message} />;
+  return <SafeTable title="Auto-Fetch" rows={query.data?.policies ?? []} empty="No auto-fetch policies available." />;
+}
+
+export function MemoryTreesView() {
+  const search = useQuery({ queryKey: ["memory-tree-search"], queryFn: () => fetchMemoryTreeSearch("evidence"), retry: false });
+  const scoring = useQuery({ queryKey: ["memory-tree-scoring"], queryFn: fetchMemoryTreeScoring, retry: false });
+  if (search.isLoading || scoring.isLoading) return <InlineState message="Loading memory tree projections..." />;
+  if (search.isError) return <InlineState message={search.error.message} />;
+  if (scoring.isError) return <InlineState message={scoring.error.message} />;
+  return <div className="space-y-4"><SafeTable title="Memory Tree Search" rows={search.data?.results ?? []} empty="No memory tree results." /><SafeTable title="Scoring Explanation" rows={scoring.data?.scores ?? []} empty="No scoring summaries." /></div>;
 }

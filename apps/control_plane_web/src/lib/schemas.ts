@@ -95,6 +95,11 @@ export const approvalHistorySchema = z.object({
 });
 
 export const policiesSchema = z.object({ schema_version: z.string(), policies: z.array(safeRecord), raw_payload_persisted: z.literal(false) });
+export const connectorsSchema = z.object({ schema_version: z.string(), connectors: z.array(safeRecord), connector_count: z.number(), raw_token_persisted: z.literal(false) });
+export const sourcesSchema = z.object({ schema_version: z.string(), sources: z.array(safeRecord), source_count: z.number(), raw_credentials_persisted: z.literal(false) });
+export const autoFetchSchema = z.object({ schema_version: z.string(), policies: z.array(safeRecord), policy_count: z.number(), raw_payload_persisted: z.literal(false) });
+export const memoryTreeSearchSchema = z.object({ schema_version: z.string(), query: z.string(), results: z.array(safeRecord), raw_content_persisted: z.literal(false).optional() });
+export const memoryTreeScoringSchema = z.object({ schema_version: z.string(), scores: z.array(safeRecord), score_count: z.number(), raw_content_persisted: z.literal(false) });
 export const diagnosticsSchema = safeRecord;
 
 export type SafeRecord = z.infer<typeof safeRecord>;
@@ -107,3 +112,8 @@ export type SkillsMarketplace = z.infer<typeof skillsMarketplaceSchema>;
 export type MemoryInspect = z.infer<typeof memoryInspectSchema>;
 export type TraceSearch = z.infer<typeof traceSearchSchema>;
 export type ApprovalHistory = z.infer<typeof approvalHistorySchema>;
+export type Connectors = z.infer<typeof connectorsSchema>;
+export type Sources = z.infer<typeof sourcesSchema>;
+export type AutoFetch = z.infer<typeof autoFetchSchema>;
+export type MemoryTreeSearch = z.infer<typeof memoryTreeSearchSchema>;
+export type MemoryTreeScoring = z.infer<typeof memoryTreeScoringSchema>;

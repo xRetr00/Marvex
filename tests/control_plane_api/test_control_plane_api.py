@@ -368,3 +368,97 @@ def test_control_plane_trace_search_history_policies_and_diagnostics_are_safe() 
     serialized = json.dumps({"traces": traces, "history": history, "policies": policies, "diagnostics": diagnostics}).lower()
     assert "secret" not in serialized
     assert "raw_payload\": true" not in serialized
+
+
+def _memory_tree_control_app():
+    from datetime import UTC, datetime
+
+    from packages.connector_runtime import AutoFetchPolicy, ConnectorCategory, ConnectorRef, SourceIngestionPolicy, SourceSyncInterval, SourceSyncMode, default_connector_manifests
+    from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
+    from packages.memory_tree_runtime import (
+        CanonicalSourceMetadata,
+        MemorySourceRef,
+        MemoryTreeRuntime,
+        SourceConnectorKind,
+        SourcePermissionScope,
+        SourceProvenance,
+        SourceTrustLevel,
+        SourceType,
+        canonicalize_source_document,
+        chunk_document,
+        score_memory_chunk,
+    )
+
+    connector_ref = ConnectorRef(connector_id="github-connector", category=ConnectorCategory.GITHUB)
+    source = MemorySourceRef(
+        source_id="source-github",
+        source_type=SourceType.REPOSITORY,
+        connector_kind=SourceConnectorKind.GITHUB,
+        provenance=SourceProvenance.USER_CONNECTED_ACCOUNT,
+        trust_level=SourceTrustLevel.USER_APPROVED,
+        permission_scope=SourcePermissionScope.READ_ONLY_METADATA_AND_CONTENT,
+        ingestion_policy=SourceIngestionPolicy(sync_mode=SourceSyncMode.DISABLED, interval=SourceSyncInterval.MANUAL_ONLY, auto_fetch_enabled=False, human_approved=True),
+        display_name="GitHub Issues",
+    )
+    document = canonicalize_source_document(
+        metadata=CanonicalSourceMetadata(
+            source_id="source-github",
+            external_id="issue-1",
+            uri="github://issues/1",
+            title="Memory Tree Issue",
+            connector_ref=connector_ref,
+            captured_at=datetime(2026, 5, 18, tzinfo=UTC),
+        ),
+        markdown_body="Memory tree search should expose evidence and daily digest summaries.",
+        ingested_at=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    chunks = chunk_document(document, max_chars=80)
+    runtime = MemoryTreeRuntime.with_documents(documents=(document,), chunks=chunks)
+    return create_control_plane_api_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        connector_manifests=default_connector_manifests(),
+        memory_sources=(source,),
+        auto_fetch_policies=(AutoFetchPolicy.default_for_connector(connector_ref),),
+        memory_tree_runtime=runtime,
+        scoring_views=(score_memory_chunk(chunk_id=chunks[0].chunk_id, source_weight=0.9, recency=0.7, interaction=0.5, entity_topic_boost=0.2),),
+    )
+
+
+def test_control_plane_exposes_connectors_sources_autofetch_and_memory_tree_without_secrets():
+    app = _memory_tree_control_app()
+
+    connectors_status, _headers, connectors = _call(app, "/control/connectors")
+    sources_status, _headers, sources = _call(app, "/control/sources")
+    autofetch_status, _headers, autofetch = _call(app, "/control/autofetch")
+    search_status, _headers, search = _call(app, "/control/memory/tree/search?q=evidence")
+    source_tree_status, _headers, source_tree = _call(app, "/control/memory/tree/source/source-github")
+    topic_tree_status, _headers, topic_tree = _call(app, "/control/memory/tree/topic/memory-tree")
+    daily_status, _headers, daily = _call(app, "/control/memory/tree/daily/2026-05-18")
+    scoring_status, _headers, scoring = _call(app, "/control/memory/tree/scoring")
+    forget_status, _headers, forget = _call(app, "/control/sources/source-github/forget", method="POST")
+
+    assert connectors_status == "200 OK"
+    assert any(row["category"] == "github" for row in connectors["connectors"])
+    assert sources_status == "200 OK"
+    assert sources["sources"][0]["raw_credentials_persisted"] is False
+    assert autofetch_status == "200 OK"
+    assert autofetch["policies"][0]["control_state"] == "disabled"
+    assert search_status == "200 OK"
+    assert search["results"][0]["evidence_count"] >= 1
+    assert source_tree_status == "200 OK"
+    assert source_tree["tree"]["source_id"] == "source-github"
+    assert topic_tree_status == "200 OK"
+    assert topic_tree["tree"]["topic_id"] == "memory-tree"
+    assert daily_status == "200 OK"
+    assert daily["daily_digest"]["evidence_count"] == 1
+    assert scoring_status == "200 OK"
+    assert scoring["scores"][0]["policy_owner"] == "MemoryTreeRuntime"
+    assert forget_status == "200 OK"
+    assert forget["delete_started"] is False
+    serialized = json.dumps({"connectors": connectors, "sources": sources, "autofetch": autofetch, "search": search, "scoring": scoring, "forget": forget}).lower()
+    assert "access_token" not in serialized
+    assert "authorization" not in serialized
+    assert "bearer" not in serialized
+    assert "raw_payload\": true" not in serialized

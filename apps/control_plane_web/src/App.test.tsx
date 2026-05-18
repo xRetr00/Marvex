@@ -71,7 +71,12 @@ describe("Control Plane app", () => {
       "/control/traces/search": { schema_version: "1", traces: [{ trace_id: "trace-1", status: "completed", raw_payload_persisted: false }], match_count: 1, truncated: false, raw_payload_persisted: false },
       "/control/approvals/history": { schema_version: "1", decisions: [], decision_count: 0, raw_payload_persisted: false },
       "/control/policies": { schema_version: "1", policies: [{ policy_id: "browser-actions", risk_level: "high", approval_required: true }], raw_payload_persisted: false },
-      "/control/diagnostics": { schema_version: "1", runtime: "control_plane", status: "ok", remote_binding: false, raw_payload_persisted: false }
+      "/control/diagnostics": { schema_version: "1", runtime: "control_plane", status: "ok", remote_binding: false, raw_payload_persisted: false },
+      "/control/connectors": { schema_version: "1", connectors: [{ connector_id: "github-connector", category: "github", account_action_allowed: false, auto_fetch_default_enabled: false }], connector_count: 1, raw_token_persisted: false },
+      "/control/sources": { schema_version: "1", sources: [{ source_id: "source-github", connector_kind: "github", raw_credentials_persisted: false }], source_count: 1, raw_credentials_persisted: false },
+      "/control/autofetch": { schema_version: "1", policies: [{ connector_id: "github-connector", control_state: "disabled", control_plane_toggle_allowed: true }], policy_count: 1, raw_payload_persisted: false },
+      "/control/memory/tree/search": { schema_version: "1", query: "evidence", results: [{ node_id: "node-1", title: "Memory Tree Issue", evidence_count: 1 }], raw_content_persisted: false },
+      "/control/memory/tree/scoring": { schema_version: "1", scores: [{ chunk_id: "chunk-1", importance: 0.7, decision: "keep", policy_owner: "MemoryTreeRuntime" }], score_count: 1, raw_content_persisted: false }
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input), "http://localhost").pathname;
@@ -92,6 +97,15 @@ describe("Control Plane app", () => {
     expect(await screen.findByText("browser-actions")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Runtime Diagnostics/i }));
     expect(await screen.findByText("control_plane")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Connectors/i }));
+    expect(await screen.findByText("github-connector")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Memory Sources/i }));
+    expect(await screen.findByText("source-github")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Auto-Fetch/i }));
+    expect(await screen.findByText("disabled")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: /Memory Trees/i }));
+    expect(await screen.findByText("Memory Tree Issue")).toBeInTheDocument();
+    expect(await screen.findByText("MemoryTreeRuntime")).toBeInTheDocument();
     expect(screen.queryByText(/apikey|Bearer|secret-token|raw prompt/i)).not.toBeInTheDocument();
   });
 

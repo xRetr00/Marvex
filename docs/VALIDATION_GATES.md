@@ -672,3 +672,21 @@ The gate requires classification for provider foundation, assistant turn contrac
 ### God-File And Assistant-Brain Risk Gate
 
 Known risk files have stricter size limits than the default 500-line rule. `packages/capability_runtime/execution.py` must remain a re-export facade after the cleanup split. `packages/assistant_turn_integration/spine.py` must remain composition glue, not a central assistant brain.
+
+## OpenHuman-Style Memory Tree and Connectors Foundation Gate
+
+The OpenHuman-Style Memory Tree and Connectors Foundation gate is enforced by `scripts/check_memory_tree_connector_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+MemoryTreeRuntime owns canonicalization, chunks, scoring, SQLite tree index, source/topic/global/daily trees, evidence links, traversal, and vault projection. ConnectorRuntime owns connector manifests, OAuth metadata, permission decisions, sync request/result envelopes, and auto-fetch policies. Control Plane API and web display safe projections and policy toggles only.
+
+Protected boundaries:
+
+- Memory tree summary nodes require provenance evidence.
+- Auto-fetch exists as a configurable policy surface and remains disabled by default unless explicitly enabled by policy.
+- Connector manifests are read-only ingestion foundations; broad account actions are not implemented.
+- OAuth tokens and credentials are not exposed through safe projections, telemetry, or Control Plane.
+- Control Plane forget/delete and auto-fetch endpoints do not directly start deletion, sync, or account actions.
+- Authlib is isolated behind a connector adapter import proof and cannot own ConnectorRuntime policy.
+- Airbyte, Nango, Meltano/Singer, and Pipedream remain reference/deferred seams until a future backend-specific goal adopts one safely.
+
+Blocked: copied OpenHuman code, paid/cloud-only required connector services, hidden sync, raw token persistence in public metadata, raw email/doc/message body telemetry, raw transcripts/provider/tool payload persistence by default, broad account actions such as sending email or posting Slack messages, remote exposure, voice, desktop, vision, and proactive behavior.

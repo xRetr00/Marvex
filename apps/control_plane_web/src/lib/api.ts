@@ -3,14 +3,19 @@ import {
   approvalDecisionResponseSchema,
   approvalHistorySchema,
   approvalListSchema,
+  autoFetchSchema,
+  connectorsSchema,
   controlSnapshotSchema,
   diagnosticsSchema,
   enablementStateSchema,
   mcpMarketplaceSchema,
   memoryForgetSchema,
   memoryInspectSchema,
+  memoryTreeScoringSchema,
+  memoryTreeSearchSchema,
   policiesSchema,
   skillsMarketplaceSchema,
+  sourcesSchema,
   traceSearchSchema,
   type ApprovalDecisionResponse,
   type ApprovalHistory,
@@ -106,4 +111,24 @@ export async function fetchPolicies() {
 
 export async function fetchDiagnostics() {
   return diagnosticsSchema.parse(await readJson("/diagnostics"));
+}
+
+export async function fetchConnectors() {
+  return connectorsSchema.parse(await readJson("/connectors"));
+}
+
+export async function fetchSources() {
+  return sourcesSchema.parse(await readJson("/sources"));
+}
+
+export async function fetchAutoFetch() {
+  return autoFetchSchema.parse(await readJson("/autofetch"));
+}
+
+export async function fetchMemoryTreeSearch(query = "evidence") {
+  return memoryTreeSearchSchema.parse(await readJson(`/memory/tree/search?q=${encodeURIComponent(query)}`));
+}
+
+export async function fetchMemoryTreeScoring() {
+  return memoryTreeScoringSchema.parse(await readJson("/memory/tree/scoring"));
 }

@@ -34,6 +34,11 @@ def create_control_plane_api_app(
     trace_ids: tuple[str, ...] = (),
     policy_views: tuple[dict[str, Any], ...] = (),
     diagnostics: dict[str, Any] | None = None,
+    connector_manifests: tuple[Any, ...] = (),
+    memory_sources: tuple[Any, ...] = (),
+    auto_fetch_policies: tuple[Any, ...] = (),
+    memory_tree_runtime: Any | None = None,
+    scoring_views: tuple[Any, ...] = (),
 ) -> WsgiApp:
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
@@ -119,6 +124,51 @@ def create_control_plane_api_app(
                 return _json_response(start_response, "404 Not Found", _error("memory_store_not_configured", path))
             result = memory_store.forget(MemoryRef(ref_type="memory", ref_id=memory_id))
             return _json_response(start_response, "200 OK", result.safe_projection())
+        if method == "GET" and path == f"{CONTROL_PREFIX}/connectors":
+            connectors = tuple(_safe_projection(item) for item in connector_manifests)
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "connectors": connectors, "connector_count": len(connectors), "raw_token_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/sources":
+            sources = tuple(_safe_projection(item) for item in memory_sources)
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "sources": sources, "source_count": len(sources), "raw_credentials_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/autofetch":
+            policies = tuple(_safe_projection(item) for item in auto_fetch_policies)
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "policies": policies, "policy_count": len(policies), "raw_payload_persisted": False})
+        if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/autofetch/"):
+            connector_id, action = _autofetch_path(path)
+            if action not in {"enable", "disable", "pause"}:
+                return _json_response(start_response, "404 Not Found", _error("not_found", path))
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "connector_id": connector_id, "requested_state": "enabled" if action == "enable" else action + "d", "sync_started": False, "raw_payload_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/memory/tree/search":
+            query = _first(parse_qs(query_string, keep_blank_values=False), "q") or ""
+            result = memory_tree_runtime.memory_tree_search(query) if memory_tree_runtime is not None else None
+            payload = result.safe_projection() if result is not None else {"query": query, "results": []}
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, **payload})
+        if method == "GET" and path.startswith(f"{CONTROL_PREFIX}/memory/tree/source/"):
+            source_id = path.removeprefix(f"{CONTROL_PREFIX}/memory/tree/source/").strip("/")
+            tree = memory_tree_runtime.memory_get_source_tree(source_id) if memory_tree_runtime is not None else None
+            tree_payload = {"source_id": source_id, "nodes": [node.safe_projection() for node in tree.nodes]} if tree is not None else {"source_id": source_id, "nodes": []}
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "tree": tree_payload, "raw_content_persisted": False})
+        if method == "GET" and path.startswith(f"{CONTROL_PREFIX}/memory/tree/topic/"):
+            topic_id = path.removeprefix(f"{CONTROL_PREFIX}/memory/tree/topic/").strip("/")
+            tree = memory_tree_runtime.memory_get_topic_tree(topic_id) if memory_tree_runtime is not None else None
+            tree_payload = {"topic_id": topic_id, "nodes": [node.safe_projection() for node in tree.nodes]} if tree is not None else {"topic_id": topic_id, "nodes": []}
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "tree": tree_payload, "raw_content_persisted": False})
+        if method == "GET" and path.startswith(f"{CONTROL_PREFIX}/memory/tree/daily/"):
+            digest_id = path.removeprefix(f"{CONTROL_PREFIX}/memory/tree/daily/").strip("/")
+            digest = memory_tree_runtime.memory_get_daily_digest(digest_id) if memory_tree_runtime is not None else None
+            payload = digest.safe_projection() if digest is not None else {"node_id": digest_id, "evidence_count": 0}
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "daily_digest": payload, "raw_content_persisted": False})
+        if method == "GET" and path.startswith(f"{CONTROL_PREFIX}/memory/tree/drill-down/"):
+            chunk_id = path.removeprefix(f"{CONTROL_PREFIX}/memory/tree/drill-down/").strip("/")
+            result = memory_tree_runtime.memory_drill_down(chunk_id) if memory_tree_runtime is not None else None
+            payload = result.safe_projection() if result is not None else {"chunk_id": chunk_id}
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "evidence": payload})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/memory/tree/scoring":
+            scores = tuple(_safe_projection(item) for item in scoring_views)
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "scores": scores, "score_count": len(scores), "raw_content_persisted": False})
+        if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/sources/") and path.endswith("/forget"):
+            source_id = path.removeprefix(f"{CONTROL_PREFIX}/sources/").removesuffix("/forget").strip("/")
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "source_id": source_id, "delete_started": False, "requires_memory_runtime_policy": True, "raw_content_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/traces/search":
             query = _trace_search_query(query_string)
             result = search_traces(trace_reader, query, trace_ids=trace_ids) if trace_reader is not None else None
@@ -141,6 +191,46 @@ def create_control_plane_api_app(
     return app
 
 
+def _autofetch_path(path: str) -> tuple[str, str | None]:
+    tail = path.removeprefix(f"{CONTROL_PREFIX}/autofetch/").strip("/")
+    parts = tail.split("/") if tail else []
+    if len(parts) == 2:
+        return parts[0], parts[1]
+    return "", "invalid"
+
+
+def _safe_projection(value: Any) -> dict[str, Any]:
+    if hasattr(value, "safe_projection"):
+        projected = value.safe_projection()
+    elif hasattr(value, "safe_projection"):
+        projected = value.safe_projection()
+    elif hasattr(value, "model_dump"):
+        projected = value.model_dump(mode="json")
+    else:
+        projected = dict(value)
+    return _safe_nested_mapping(projected)
+
+
+def _safe_nested_mapping(value: Any) -> Any:
+    if isinstance(value, dict):
+        safe: dict[str, Any] = {}
+        for key, item in value.items():
+            key_text = str(key)
+            normalized = key_text.lower().replace("-", "_")
+            if normalized.startswith("raw_") and item is not False:
+                continue
+            if any(part in normalized for part in ("authorization", "bearer", "password", "secret", "token", "api_key", "apikey", "access_token")):
+                continue
+            safe[key_text] = _safe_nested_mapping(item)
+        return safe
+    if isinstance(value, (list, tuple)):
+        return [_safe_nested_mapping(item) for item in value]
+    if isinstance(value, str):
+        lowered = value.lower()
+        return "[redacted]" if any(part in lowered for part in ("authorization", "bearer", "password", "secret", "token", "api_key", "apikey", "access_token")) else value
+    if isinstance(value, int | float | bool) or value is None:
+        return value
+    return str(value)
 def _approval_path(path: str) -> tuple[str, str | None]:
     tail = path.removeprefix(f"{CONTROL_PREFIX}/approvals/").strip("/")
     parts = tail.split("/") if tail else []

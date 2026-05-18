@@ -1,11 +1,11 @@
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Brain, Database, Gauge, History, KeyRound, ListChecks, MonitorCog, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Wrench } from "lucide-react";
+import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MonitorCog, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Wrench } from "lucide-react";
 import { fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
-import { ApprovalHistoryView, DiagnosticsView, McpMarketplaceView, MemoryInspectView, PolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
+import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 
@@ -25,6 +25,10 @@ const views = [
   { id: "skills_marketplace", label: "Skills Marketplace", icon: Store },
   { id: "memory", label: "Memory / Sessions", icon: Database },
   { id: "memory_inspect", label: "Memory Inspect", icon: Database },
+  { id: "connectors", label: "Connectors", icon: Cable },
+  { id: "memory_sources", label: "Memory Sources", icon: Database },
+  { id: "autofetch", label: "Auto-Fetch", icon: Clock3 },
+  { id: "memory_trees", label: "Memory Trees", icon: GitBranch },
   { id: "diagnostics", label: "Runtime Diagnostics", icon: MonitorCog },
   { id: "settings", label: "Settings", icon: Settings }
 ] as const;
@@ -85,6 +89,10 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "skills_marketplace") return <SkillsMarketplaceView />;
   if (active === "memory") return <div className="space-y-4"><SafeTable title="Memory Safe Summaries" rows={snapshot.memory} empty="No memory summaries." /><SafeTable title="Sessions / Conversations" rows={snapshot.sessions} empty="No session refs." /></div>;
   if (active === "memory_inspect") return <MemoryInspectView />;
+  if (active === "connectors") return <ConnectorListView />;
+  if (active === "memory_sources") return <MemorySourcesView />;
+  if (active === "autofetch") return <AutoFetchView />;
+  if (active === "memory_trees") return <MemoryTreesView />;
   if (active === "diagnostics") return <DiagnosticsView />;
   return <SafeTable title="Settings" rows={[snapshot.settings]} empty="No settings exposed." />;
 }

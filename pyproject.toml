@@ -15,6 +15,7 @@ dependencies = [
   "playwright==1.59.0",
   "pydantic>=2,<3",
   "semantic-router==0.1.14",
+  "Authlib==1.7.2",
 ]
 
 [project.optional-dependencies]
