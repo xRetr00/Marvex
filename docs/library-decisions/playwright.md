@@ -4,7 +4,7 @@ library name: playwright
 
 official source: https://playwright.dev/python/ and https://pypi.org/project/playwright/
 
-maintenance status: Active as of May 18, 2026. PyPI latest version observed locally with `python -m pip index versions playwright` as `playwright==1.59.0`.
+maintenance status: Active as of May 18, 2026. PyPI latest version observed locally with `python -m pip index versions playwright` as `playwright==1.60.0`.
 
 why use it: Browser automation is a mature SDK domain and Marvex must not custom-build browser control, page/session abstractions, click/type/read/screenshot primitives, or browser lifecycle machinery from scratch. Playwright is the approved SDK-backed browser adapter dependency for this foundation.
 
@@ -14,7 +14,7 @@ fallback if abandoned: Keep Playwright behind `packages.adapters.capabilities.br
 
 pyproject dependency: playwright
 
-declared dependency: playwright==1.59.0
+declared dependency: playwright==1.60.0
 
 verified date: 2026-05-18
 

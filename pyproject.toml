@@ -8,14 +8,15 @@ version = "0.1.0"
 description = "Marvex v1 contract package"
 requires-python = ">=3.11"
 dependencies = [
-  "litellm==1.84.0",
+  "litellm==1.85.0",
   "mcp==1.27.1",
   "openai==2.37.0",
   "openai-agents==0.17.2",
-  "playwright==1.59.0",
+  "playwright==1.60.0",
   "pydantic>=2,<3",
   "semantic-router==0.1.14",
   "Authlib==1.7.2",
+  "browser-use==0.11.13",
 ]
 
 [project.optional-dependencies]
@@ -29,3 +30,9 @@ include = ["packages*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+
+[dependency-groups]
+dev = [
+    "pip>=26,<27",
+    "pytest>=8,<9",
+]

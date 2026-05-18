@@ -177,3 +177,17 @@ Anthropic/reference seams remain safe projection-only until future adoption.
 `check_assistant_intelligence_tool_runtime_boundaries.py` enforces the Assistant Intelligence and Tool-Using Runtime Integration boundary. It protects the deeper turn spine: Provider tool calls remain proposals, safe browser workflow stays adapter-owned, allowlisted MCP live proof stays SDK-adapter-owned, approval resume state remains CapabilityRuntime/Control Plane safe-projection data, and non-owner packages cannot import browser/MCP/provider tool-call adapter owners directly.
 
 `check_marketplace_memory_control_plane_boundaries.py` enforces the Marketplace, Memory Backend, and Control Plane Expansion boundary so MarketplaceRuntime owns read-only MCP/skill metadata and proposal state, MemoryRuntime owns the local SQLite adapter and safe inspect/forget views, Control Plane exposes safe HTTP/auth/JSON endpoints only, and frontend views cannot execute tools or render raw secrets/payloads.
+
+## uv dependency workflow
+
+When `uv` is available, use it as the preferred dependency and validation path from the repository root:
+
+```powershell
+uv lock
+uv sync
+uv run python -m pip check
+uv run python -m pytest -q
+uv run python scripts/run_all_checks.py
+```
+
+Update dependencies by editing `pyproject.toml` or using `uv add ... --no-sync`, then run `uv lock` and `uv sync`. Do not use one-off `pip install -U` commands for project dependencies, and do not edit `uv.lock` manually. `.venv/` is a local uv environment and is intentionally ignored by repository boundary scans.

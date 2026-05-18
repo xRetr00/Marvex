@@ -8,6 +8,16 @@ Validation gates are mandatory before finishing any task, including a one-line h
 python scripts/run_all_checks.py
 ```
 
+When `uv` is available for a dependency-changing task, run validation through the locked uv environment:
+
+```powershell
+uv lock
+uv sync
+uv run python -m pip check
+uv run python -m pytest -q
+uv run python scripts/run_all_checks.py
+```
+
 ## Gates
 
 ### Docs Accepted Gate
@@ -576,7 +586,7 @@ The Full Tooling and Computer Use Foundation gate is enforced by `scripts/check_
 
 CapabilityRuntime remains authoritative for tool and computer-use risk levels, side-effect levels, human approval requirements, approval prompts, approval decisions, execution modes, permission decisions, execution requests, result envelopes, context delivery, compaction, loop guards, and safe telemetry summaries.
 
-The gate permits Playwright only inside the browser adapter boundary. Browser-use backend remains disabled because its current package resolution conflicts with Marvex's MCP/OpenAI pins; its adapter may expose safe probes and proposals only. OpenAI Computer Use is represented as one adapter backend, not the only Marvex computer-use path. OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, and MCP tools must become CapabilityRuntime proposals before any future execution. OpenAI Agents SDK cannot own the Marvex agent loop, tool dispatch, policy, prompt harness, or RuntimeComposition.
+The gate permits Playwright only inside the browser adapter boundary. Browser-use is a declared dependency for import-backed adapter proof, but the Browser-use backend remains disabled for execution; its adapter may expose safe probes and proposals only. Latest `browser-use==0.12.6` remains blocked because it pins an older OpenAI SDK than Marvex's OpenAI Agents-compatible stack. OpenAI Computer Use is represented as one adapter backend, not the only Marvex computer-use path. OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, and MCP tools must become CapabilityRuntime proposals before any future execution. OpenAI Agents SDK cannot own the Marvex agent loop, tool dispatch, policy, prompt harness, or RuntimeComposition.
 
 Protected boundaries:
 

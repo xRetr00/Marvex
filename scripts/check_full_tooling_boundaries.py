@@ -137,11 +137,11 @@ def main() -> int:
             if not any(imported_module and _matches_prefix(imported_module, (module,)) for imported_module in imported):
                 failures.append(f"{_rel(path)} must import SDK boundary: {module}")
 
-    if "playwright==1.59.0" not in (ROOT / "pyproject.toml").read_text(encoding="utf-8"):
-        failures.append("pyproject.toml must declare playwright==1.59.0")
+    if "playwright==1.60.0" not in (ROOT / "pyproject.toml").read_text(encoding="utf-8"):
+        failures.append("pyproject.toml must declare playwright==1.60.0")
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    if "browser-use" in pyproject:
-        failures.append("pyproject.toml must not declare browser-use while dependency conflict is blocked")
+    if "browser-use==0.11.13" not in pyproject:
+        failures.append("pyproject.toml must declare browser-use==0.11.13 as a disabled adapter backend")
     if "openai-agents==0.17.2" not in pyproject:
         failures.append("pyproject.toml must declare openai-agents==0.17.2")
     if "check_full_tooling_boundaries.py" not in RUN_ALL_CHECKS.read_text(encoding="utf-8"):

@@ -13,6 +13,7 @@ PORT_MAX_LINES = 120
 REGISTRY_FACTORY_MAX_LINES = 250
 PORT_SIZE_JUSTIFICATION = "port size justification"
 REGISTRY_FACTORY_JUSTIFICATION = "registry/factory size justification"
+EXCLUDED_PARTS = {"node_modules", "dist", ".venv"}
 
 CONCRETE_NAME_PATTERNS = [
     r"\blitellm\b",
@@ -99,6 +100,8 @@ def _scan_core_import_direction(failures: list[str]) -> None:
 
 def _scan_registry_factory_sizes(failures: list[str]) -> None:
     for path in ROOT.rglob("*.py"):
+        if any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
+            continue
         name = path.name.lower()
         if "registry" not in name and "factory" not in name:
             continue

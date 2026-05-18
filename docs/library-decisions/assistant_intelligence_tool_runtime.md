@@ -4,7 +4,7 @@ library name: Semantic Router, Playwright Python, MCP Python SDK, OpenAI-compati
 
 official source: https://semantic-router.readthedocs.io/, https://playwright.dev/python/, https://github.com/modelcontextprotocol/python-sdk, https://platform.openai.com/docs/guides/tools, https://lmstudio.ai/docs, https://docs.litellm.ai/
 
-maintenance status: Playwright, MCP Python SDK, OpenAI Python/API tool-call surfaces, LM Studio OpenAI-compatible local API behavior, and LiteLLM remain appropriate maintained surfaces for adapter-backed mechanics. Semantic Router remains maintained but still requires an encoder/embedding decision before Marvex should adopt it as a runtime dependency.
+maintenance status: Playwright, MCP Python SDK, OpenAI Python/API tool-call surfaces, LM Studio OpenAI-compatible local API behavior, and LiteLLM remain appropriate maintained surfaces for adapter-backed mechanics. Semantic Router is adopted behind the intent adapter; Playwright, MCP Python SDK, OpenAI Python/API tool-call surfaces, LM Studio OpenAI-compatible local API behavior, and LiteLLM remain appropriate maintained surfaces for adapter-backed mechanics.
 
 why use it: Browser automation and MCP protocol mechanics are not Marvex inventions and stay behind adapters. Provider tool calls should be translated from maintained provider shapes into Marvex-owned `CapabilityCallProposal` objects instead of becoming direct execution permission. Semantic routing is still represented behind an adapter seam so Marvex can adopt a maintained router later without moving policy into Core.
 
@@ -12,9 +12,9 @@ why not custom code: Custom browser automation, MCP protocol mechanics, provider
 
 fallback if abandoned: Keep deterministic intent routing and provider tool-call mapper tests as safe proof backends. Disable live browser or MCP execution paths by configuration if SDKs become unavailable. Keep provider tool calls as proposals and continue with safe built-in tool execution proof.
 
-pyproject dependency: no new dependency in this checkpoint; existing dependencies remain `playwright==1.59.0`, `mcp==1.27.1`, `openai==2.24.0`, and `litellm==1.83.13`.
+pyproject dependency: existing adapter dependencies include `semantic-router==0.1.14`, `playwright==1.60.0`, `mcp==1.27.1`, `openai==2.37.0`, `openai-agents==0.17.2`, `litellm==1.85.0`, and `browser-use==0.11.13`.
 
-declared dependency: none added
+declared dependency: see individual runtime library decision records
 
 verified date: 2026-05-18
 
@@ -29,6 +29,6 @@ adopt / defer / reject decision:
 - OpenAI-compatible provider tool calls: adapter mapping now, execution deferred to CapabilityRuntime approvals/dispatch.
 - LM Studio tool calls: adapter mapping now through OpenAI-compatible local shapes, no LM Studio-owned execution.
 - LiteLLM tool calls: adapter mapping now, no LiteLLM-owned execution.
-- Semantic Router: backend remains deferred; adapter seam and deterministic proof backend remain because an encoder/vector dependency decision is still required.
+- Semantic Router: adopted behind the intent adapter for no-cloud route definition and scoring proof; IntentRuntime remains policy owner.
 
 risks: Provider tool-call schemas can contain raw arguments, MCP tool outputs can contain raw text, browser extraction can contain page content, and memory records can contain user content. Current mitigation is safe schema/projection mapping, result metadata instead of raw payload persistence, memory safe refs/previews only, allowlists, blocked dangerous MCP tool names, approval pause/resume state, trace-search safe summaries, and boundary gates.

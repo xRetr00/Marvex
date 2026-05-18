@@ -4,7 +4,7 @@ library name: openai-agents
 
 official source: https://openai.github.io/openai-agents-python/ and https://pypi.org/project/openai-agents/
 
-maintenance status: Active as of May 18, 2026. Dependency audit resolved `openai-agents==0.17.2` with `openai==2.37.0`, `litellm==1.84.0`, `mcp==1.27.1`, and `semantic-router==0.1.14`.
+maintenance status: Active as of May 18, 2026. Dependency audit resolved `openai-agents==0.17.2` with `openai==2.37.0`, `litellm==1.85.0`, `mcp==1.27.1`, and `semantic-router==0.1.14`.
 
 why use it: The OpenAI Agents SDK is relevant for future compatibility with OpenAI tool definitions and agent/tool ecosystems. Marvex should understand that shape before inventing incompatible tool wrappers.
 
@@ -24,7 +24,7 @@ scope: Compatibility proposal seam only. `OpenAIAgentsToolCompatibilityProposal.
 
 architecture fit: Narrow adoption. The package fits only as an adapter compatibility layer after upgrading the OpenAI SDK pin through a resolver-tested path. CapabilityRuntime remains authoritative for policy, approvals, and execution requests.
 
-adopt / defer / reject decision: Adopt narrowly. `openai==2.24.0` could not satisfy `openai-agents==0.17.2`; resolver dry-run showed `litellm==1.84.0` accepts `openai>=2.20.0`, allowing `openai==2.37.0` and OpenAI Agents SDK compatibility without breaking `mcp==1.27.1`.
+adopt / defer / reject decision: Adopt narrowly. `openai==2.24.0` could not satisfy `openai-agents==0.17.2`; resolver dry-run showed `litellm==1.85.0` accepts `openai>=2.20.0`, allowing `openai==2.37.0` and OpenAI Agents SDK compatibility without breaking `mcp==1.27.1`.
 
 risks: Direct SDK adoption could bypass Marvex's CapabilityRuntime permission/approval flow, introduce agent loop semantics, and force dependency churn in provider adapters. The current seam represents tools as proposals only.
 

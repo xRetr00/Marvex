@@ -12,3 +12,5 @@ apps/control_plane_web/dist/
 apps/control_plane_web/*.tsbuildinfo
 apps/control_plane_web/vite.config.js
 apps/control_plane_web/vite.config.d.ts
+.venv/
+marvex.egg-info/

@@ -4,7 +4,7 @@ library name: openai
 
 official source: https://github.com/openai/openai-python and https://pypi.org/project/openai/
 
-maintenance status: Active as of May 18, 2026. Resolver audit selected `openai==2.37.0` to satisfy `openai-agents==0.17.2` while remaining compatible with `litellm==1.84.0`, `mcp==1.27.1`, `playwright==1.59.0`, and `semantic-router==0.1.14`.
+maintenance status: Active as of May 18, 2026. Resolver audit selected `openai==2.37.0` to satisfy `openai-agents==0.17.2` while remaining compatible with `litellm==1.85.0`, `mcp==1.27.1`, `playwright==1.60.0`, and `semantic-router==0.1.14`.
 
 why use it: Marvex already uses the maintained OpenAI Python SDK through provider and compatibility adapter boundaries. The SDK is required by LiteLLM and OpenAI Agents SDK compatibility work.
 

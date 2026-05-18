@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_LINES = 500
 JUSTIFICATION = "file size justification"
-EXCLUDED_PARTS = {"node_modules", "dist"}
+EXCLUDED_PARTS = {"node_modules", "dist", ".venv"}
 EXCLUDED_FILENAMES = {"package-lock.json"}
 TEXT_SUFFIXES = {
     ".md",

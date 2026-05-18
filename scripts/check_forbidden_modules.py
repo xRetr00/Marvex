@@ -24,7 +24,7 @@ ALLOWED_BOUNDARY_DIRS = {
     "apps/control_plane_web/src/components/ui",
 }
 EXCLUDED_TOP_LEVEL = {"docs", "templates", "scripts"}
-EXCLUDED_PARTS = {"node_modules", "dist"}
+EXCLUDED_PARTS = {"node_modules", "dist", ".venv"}
 
 
 def main() -> int:

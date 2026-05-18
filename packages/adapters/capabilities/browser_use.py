@@ -52,7 +52,7 @@ class BrowserUseBackendProbe(BrowserUseModel):
         return cls(
             package_importable=importlib.util.find_spec("browser_use") is not None,
             sdk_package_importable=importlib.util.find_spec("browser_use_sdk") is not None,
-            blocked_reason="browser_use_dependency_conflicts_with_current_mcp_openai_pins",
+            blocked_reason="browser_use_backend_installed_but_execution_disabled_by_policy",
         )
 
     def safe_projection(self) -> dict[str, object]:

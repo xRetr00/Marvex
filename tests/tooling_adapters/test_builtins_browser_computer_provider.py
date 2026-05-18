@@ -180,10 +180,12 @@ def test_browser_use_backend_can_be_imported_but_not_executed_without_policy() -
         schema_version="1",
         adapter_id="browser-use-foundation",
         backend_enabled=False,
-        blocked_reason="browser_use_dependency_conflicts_with_current_mcp_openai_pins",
+        blocked_reason="browser_use_backend_installed_but_execution_disabled_by_policy",
     )
 
     assert probe.backend_name == "browser-use"
+    assert probe.package_importable is True
+    assert probe.sdk_package_importable is True
     assert probe.execution_supported_without_approval is False
     assert config.safe_projection()["backend_enabled"] is False
     assert probe.safe_projection()["playwright_remains_low_level_backend"] is True
