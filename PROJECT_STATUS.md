@@ -1,21 +1,50 @@
 # Project Status
 
-current_phase: mcp_adapter_foundation_complete
+current_phase: skills_runtime_foundation_complete
 
-implementation_status: mcp_adapter_foundation_complete
+implementation_status: skills_runtime_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-MCP Adapter Foundation Complete
+Skills Runtime Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from MCP Adapter Foundation:
+Latest full validation baseline from Skills Runtime Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 805 passed, 1 skipped
+- `python -m pytest -q` -> 810 passed, 1 skipped
+
+
+## Skills Runtime Foundation State
+
+Skills Runtime Foundation is complete as a safe representation, validation,
+selection, and context-delivery foundation. Skill is bounded capability context:
+a locally referenced package of instructions, resources, and optional script
+metadata that can contribute bounded context only after validation and
+CapabilityRuntime eligibility/context delivery policy.
+
+`packages.skills_runtime` owns `SkillRef`, `SkillManifest`,
+`SkillValidationResult`, `SkillEligibilityDecision`, `SkillPromptContribution`,
+`SkillResourceRef`, safe skill projections, and a deterministic fake skill
+package for tests only. The capability adapter skill seam now delegates to
+SkillsRuntime instead of owning skill primitives.
+
+CapabilityRuntime remains authoritative for capability refs, manifests,
+eligibility decisions, context delivery policy, compaction policy, and context
+packs. SkillsRuntime can project skills into CapabilityRuntime-owned models, but
+skills cannot override Marvex policy.
+
+Blocked: real script execution, arbitrary skill install, remote skill loading,
+shell/filesystem/browser/desktop/OS access, prompt rewrites, hidden policy
+override, raw prompt/transcript/tool payload persistence by default, Core
+integration, Local API integration, RuntimeComposition integration,
+ProviderRuntime integration, Telemetry ownership, AssistantRuntime integration,
+MemoryRuntime integration, SessionRuntime integration, local service startup
+registration, MCP adapter ownership, UI, voice, desktop, vision, proactive
+behavior, provider routing, and model selection.
 
 
 ## MCP Adapter Foundation State

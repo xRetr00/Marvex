@@ -1,9 +1,6 @@
-from __future__ import annotations
-
-from packages.capability_runtime import CapabilityKind
-from packages.skills_runtime import (
+from packages.skills_runtime.fake import DeterministicFakeSkillPackage
+from packages.skills_runtime.models import (
     SafeSkillProjection,
-    SkillEligibilityDecision,
     SkillManifest,
     SkillPromptContribution,
     SkillRef,
@@ -11,9 +8,10 @@ from packages.skills_runtime import (
     SkillResourceRef,
     SkillValidationResult,
 )
+from packages.skills_runtime.selection import SkillEligibilityDecision, build_skill_context_pack
 
 __all__ = [
-    "CapabilityKind",
+    "DeterministicFakeSkillPackage",
     "SafeSkillProjection",
     "SkillEligibilityDecision",
     "SkillManifest",
@@ -22,4 +20,5 @@ __all__ = [
     "SkillResourceKind",
     "SkillResourceRef",
     "SkillValidationResult",
+    "build_skill_context_pack",
 ]

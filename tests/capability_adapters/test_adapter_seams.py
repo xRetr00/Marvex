@@ -32,7 +32,7 @@ from packages.adapters.capabilities.openai_tools import (
     OpenAIRemoteMcpToolRef,
     OpenAIToolSchemaDelivery,
 )
-from packages.adapters.capabilities.skills import SkillManifest, SkillRef, SkillValidationResult
+from packages.adapters.capabilities.skills import SkillManifest, SkillRef, SkillResourceKind, SkillResourceRef, SkillValidationResult
 from packages.capability_runtime import CapabilityKind, CapabilityRef
 
 
@@ -93,20 +93,25 @@ def test_skill_manifest_cannot_override_policy_or_execute_scripts() -> None:
     manifest = SkillManifest(
         schema_version="1",
         skill_ref=SkillRef(skill_id="summary"),
-        instruction_uri="local://skills/summary/SKILL.md",
-        resource_uris=("local://skills/summary/templates/default.md",),
-        script_uris=("local://skills/summary/scripts/check.py",),
+        display_name="Summary Skill",
+        description="Provides bounded summary guidance.",
+        instruction_ref=SkillResourceRef(kind=SkillResourceKind.INSTRUCTION, uri="local://skills/summary/SKILL.md"),
+        resource_refs=(SkillResourceRef(kind=SkillResourceKind.RESOURCE, uri="local://skills/summary/templates/default.md"),),
+        script_refs=(SkillResourceRef(kind=SkillResourceKind.SCRIPT_METADATA, uri="local://skills/summary/scripts/check.py"),),
         can_override_system_policy=False,
         arbitrary_script_execution_allowed=False,
     )
     validation = SkillValidationResult.from_manifest(manifest)
 
     assert validation.valid is True
+    assert validation.script_execution_allowed is False
     with pytest.raises(ValidationError):
         SkillManifest(
             schema_version="1",
             skill_ref=SkillRef(skill_id="bad"),
-            instruction_uri="local://skills/bad/SKILL.md",
+            display_name="Bad Skill",
+            description="Bad policy override.",
+            instruction_ref=SkillResourceRef(kind=SkillResourceKind.INSTRUCTION, uri="local://skills/bad/SKILL.md"),
             can_override_system_policy=True,
             arbitrary_script_execution_allowed=False,
         )
@@ -140,9 +145,6 @@ def test_plugin_connector_and_integration_manifests_classify_auth_data_and_side_
     assert connector.safe_projection()["secrets_stored_by_default"] is False
     assert plugin.safe_projection()["arbitrary_execution_allowed"] is False
     assert integration.to_capability_ref().kind is CapabilityKind.INTEGRATION
-
-
-
 
 def test_harness_manifest_models_prompt_context_and_verification_hooks() -> None:
     manifest = CapabilityHarnessManifest(

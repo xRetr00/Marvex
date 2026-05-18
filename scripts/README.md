@@ -28,6 +28,7 @@ Scripts:
 - `check_local_service_startup_boundaries.py`
 - `check_assistant_runtime_boundaries.py`
 - `check_mcp_adapter_boundaries.py`
+- `check_skills_runtime_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -61,6 +62,15 @@ bridge terms, and future subsystem behavior. It also blocks other runtime
 owners from directly mentioning AssistantRuntime state primitive names.
 
 `check_mcp_adapter_boundaries.py` enforces the MCP Adapter Foundation boundary so only `packages/adapters/capabilities/mcp.py` may use the official MCP Python SDK, and only for allowlisted SDK session discovery/calls mediated by CapabilityRuntime proposals, execution requests, and safe result envelopes. It blocks arbitrary server launch, registry install, hidden transport ownership, auto-calls, raw payload persistence, and dangerous local tool exposure.
+
+`check_skills_runtime_boundaries.py` enforces the Skills Runtime Foundation
+boundary so `packages/skills_runtime` owns local-only skill manifests,
+validation, safe projections, and bounded prompt contribution delivery through
+CapabilityRuntime context policy. It blocks script execution, arbitrary skill
+install, remote loading, raw prompt persistence, policy override, and ownership
+drift into Core, Local API, RuntimeComposition, ProviderRuntime, Telemetry,
+AssistantRuntime, MemoryRuntime, SessionRuntime, local service startup, and the
+MCP adapter.
 
 `check_provider_structured_output_boundaries.py` enforces the no-network
 provider structured-output adapter boundary so validation stays isolated from

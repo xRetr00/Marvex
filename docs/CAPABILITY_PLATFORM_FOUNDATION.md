@@ -19,12 +19,13 @@ AssistantRuntime may reference safe capability summary counts in lifecycle summa
 - `packages/adapters/capabilities/openai_tools.py`: OpenAI function tool, hosted tool, and remote MCP proposal seam. OpenAI tool calls remain proposals, not execution permission.
 - `packages/adapters/capabilities/litellm_gateway.py`: LiteLLM toolset/gateway metadata seam with Marvex policy authoritative.
 - `packages/adapters/capabilities/lmstudio.py`: LM Studio local tool/MCP host proposal seam with Marvex policy and trace ownership retained.
-- `packages/adapters/capabilities/skills.py`: skill refs, manifest metadata, validation result, eligibility contribution, no policy override, and no untrusted script execution.
+- `packages/skills_runtime`: skill refs, manifests, validation results, eligibility decisions, bounded prompt contributions, safe projections, no policy override, and no untrusted script execution. SkillsRuntime projects into CapabilityRuntime-owned manifests/context packs; it does not own policy.
+- `packages/adapters/capabilities/skills.py`: compatibility adapter seam that delegates to `packages.skills_runtime`.
 - `packages/adapters/capabilities/integrations.py`: plugin, connector, and integration refs/manifests with auth requirement, data access classification, side-effect classification, and no default secret storage.
 
 ## Dependency Decision
 
-The MCP Adapter Foundation now adds `mcp==1.27.1` for official MCP Python SDK protocol mechanics inside `packages.adapters.capabilities.mcp` only. Existing `openai`, `litellm`, and `pydantic` dependency decisions remain valid for their approved boundaries. MCP SDK adoption is narrow: no arbitrary server launch, no registry install, no automatic tool calls, and no runtime turn-flow integration.
+The MCP Adapter Foundation now adds `mcp==1.27.1` for official MCP Python SDK protocol mechanics inside `packages.adapters.capabilities.mcp` only. Existing `openai`, `litellm`, and `pydantic` dependency decisions remain valid for their approved boundaries. The Skills Runtime Foundation adopts no new dependency; no clearly maintained Skills SDK/spec safely fits this local bounded-context foundation without importing installer, execution, registry, or hidden prompt ecosystem behavior. MCP SDK adoption is narrow: no arbitrary server launch, no registry install, no automatic tool calls, and no runtime turn-flow integration.
 
 LangGraph, LangChain, LlamaIndex, Claude Skills, awesome-harness-engineering, and awesome-context-ai informed the context, planning, skill, and harness vocabulary but do not own Marvex runtime behavior.
 

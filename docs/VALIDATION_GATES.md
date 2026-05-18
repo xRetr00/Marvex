@@ -508,4 +508,28 @@ The MCP adapter must keep server/tool allowlists, blocked dangerous tool metadat
 
 Boundary phrase: CapabilityRuntime remains authoritative.
 
+## Skills Runtime Foundation Gate
+
+The Skills Runtime Foundation gate is enforced by `scripts/check_skills_runtime_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+Skill is bounded capability context: a locally referenced package of instructions, resources, and optional script metadata that may contribute bounded context only after validation and CapabilityRuntime eligibility/context delivery policy. A skill is not a tool, MCP tool, plugin, connector, integration, prompt engine, script runner, package installer, assistant brain, or provider router.
+
+The gate requires `packages.skills_runtime` to own `SkillRef`, `SkillManifest`, `SkillValidationResult`, `SkillEligibilityDecision`, `SkillPromptContribution`, `SkillResourceRef`, safe skill projections, local-only resource references, policy-override rejection, and test-only deterministic fake skill packages.
+
+CapabilityRuntime remains authoritative for capability refs, manifests, eligibility decisions, context delivery policy, compaction policy, and context packs. SkillsRuntime may project skills into CapabilityRuntime-owned models, but skills cannot override Marvex policy.
+
+Protected boundaries:
+
+- Core cannot own skills or skill selection.
+- Local API cannot own skills or expose skill runtime behavior.
+- RuntimeComposition cannot become a skill registry or selector.
+- ProviderRuntime cannot own skills, prompts, routing, or model selection.
+- Telemetry cannot own skill content or raw prompt persistence.
+- AssistantRuntime cannot import or dispatch SkillsRuntime.
+- MemoryRuntime and SessionRuntime cannot own skill storage or selection.
+- local_service_startup cannot install, load, or register skills.
+- The MCP adapter cannot own skill manifests or skill prompt contributions.
+
+Blocked: real script execution, arbitrary skill install, remote skill loading, shell/filesystem/browser/desktop/OS access, hidden prompt rewrites, raw prompt/transcript/tool payload persistence by default, and policy/system/developer instruction override.
+
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->
