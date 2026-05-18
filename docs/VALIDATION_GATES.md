@@ -634,3 +634,9 @@ Protected ownership:
 - RuntimeComposition does not become the end-to-end assistant brain.
 
 Blocked: raw prompt/transcript/tool/provider/browser payload persistence by default, direct frontend or Local API tool execution, arbitrary browser/computer actions, shell execution, filesystem write/edit/delete, generic provider routing/model selection, voice, Orb, desktop overlay, vision, and proactive behavior.
+
+### Assistant Intelligence and Tool-Using Runtime Boundary Gate
+
+`check_assistant_intelligence_tool_runtime_boundaries.py` enforces the Assistant Intelligence and Tool-Using Runtime Integration boundary. It checks that the integration spine uses route-specific intent/context/prompt selection, allowlisted MCP live proof through the MCP adapter, approval resume state, safe browser workflow metadata, and provider tool-call proposal mapping without letting provider tool calls become execution permission.
+
+Provider tool calls remain proposals. Browser and MCP adapters own SDK mechanics only after CapabilityRuntime approval. Core, Local API, RuntimeComposition, AssistantRuntime, ProviderRuntime, and Telemetry must not import browser/MCP/provider tool-call adapter owners directly or persist raw tool/browser/MCP/provider payloads by default.

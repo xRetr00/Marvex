@@ -9,6 +9,7 @@ class InMemoryApprovalStore:
     def __init__(self, requests: tuple[CapabilityApprovalRequest, ...] = ()) -> None:
         self._pending = {request.approval_request_id: request for request in requests}
         self._decisions: dict[str, ApprovalDecisionResponse] = {}
+        self._runtime_decisions: dict[str, ApprovalDecision] = {}
 
     @classmethod
     def from_requests(cls, requests: tuple[CapabilityApprovalRequest, ...]) -> InMemoryApprovalStore:
@@ -24,6 +25,15 @@ class InMemoryApprovalStore:
     def read_pending(self, approval_request_id: str) -> ApprovalSummary | None:
         request = self._pending.get(approval_request_id)
         return ApprovalSummary.from_request(request) if request is not None else None
+
+    def read_decision(self, approval_request_id: str) -> ApprovalDecision | None:
+        return self._runtime_decisions.get(approval_request_id)
+
+    def approved_count(self) -> int:
+        return sum(1 for decision in self._decisions.values() if decision.decision == "approved")
+
+    def denied_count(self) -> int:
+        return sum(1 for decision in self._decisions.values() if decision.decision == "denied")
 
     def approve(self, approval_request_id: str, *, reason: str) -> ApprovalDecisionResponse | None:
         return self._decide(approval_request_id, decision="approved", reason=reason)
@@ -55,4 +65,5 @@ class InMemoryApprovalStore:
             reason=reason,
         )
         self._decisions[approval_request_id] = response
+        self._runtime_decisions[approval_request_id] = approval_decision
         return response

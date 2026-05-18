@@ -16,6 +16,8 @@ class IntentKind(str, Enum):
     PROVIDER_SIMPLE_CHAT = "provider_simple_chat"
     BROWSER_COMPUTER_USE = "browser_computer_use"
     MCP_SKILL = "mcp_skill"
+    MCP_NEEDED = "mcp_needed"
+    SKILL_NEEDED = "skill_needed"
     SETTINGS_CONTROL_PLANE = "settings_control_plane"
     CLARIFICATION = "clarification"
     UNSAFE_RISKY = "unsafe_risky"
@@ -180,9 +182,14 @@ def classify_intent(request: IntentClassificationRequest) -> IntentClassificatio
         score = 0.8
         risk = IntentRiskSignal.NONE
         risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("mcp", "skill")):
-        kind = IntentKind.MCP_SKILL
-        score = 0.78
+    elif any(marker in text for marker in ("mcp", "server tool")):
+        kind = IntentKind.MCP_NEEDED
+        score = 0.82
+        risk = IntentRiskSignal.NONE
+        risk_level = ToolRiskLevel.LOW
+    elif any(marker in text for marker in ("skill", "skill package")):
+        kind = IntentKind.SKILL_NEEDED
+        score = 0.8
         risk = IntentRiskSignal.NONE
         risk_level = ToolRiskLevel.LOW
     elif any(marker in text for marker in ("tool", "calculator", "capability")):

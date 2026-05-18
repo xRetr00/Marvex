@@ -33,11 +33,14 @@ REQUIRED_TERMS = (
 )
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
+    "asyncio",
     "dataclasses",
     "typing",
     "pydantic",
     "packages.assistant_turn_integration",
+    "packages.adapters.capabilities.browser",
     "packages.adapters.capabilities.builtins",
+    "packages.adapters.capabilities.mcp",
     "packages.adapters.providers.fake.fake_provider",
     "packages.assistant_runtime",
     "packages.assistant_runtime.provider_stage",
@@ -70,7 +73,9 @@ FORBIDDEN_INTEGRATION_TEXT = (
 FORBIDDEN_OWNER_IMPORTS = (
     "packages.assistant_turn_integration",
     "packages.assistant_turn_integration",
+    "packages.adapters.capabilities.browser",
     "packages.adapters.capabilities.builtins",
+    "packages.adapters.capabilities.mcp",
     "packages.intent_runtime",
     "packages.context_runtime",
     "packages.prompt_harness_runtime",

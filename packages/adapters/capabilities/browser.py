@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import Literal
+from typing import Any, Literal
 
 from playwright.sync_api import Browser, BrowserContext, Page
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -160,10 +160,54 @@ class BrowserResultEnvelope(BrowserAdapterModel):
 
 
 class PlaywrightSdkBoundary(BrowserAdapterModel):
-    browser: Browser | None = None
-    context: BrowserContext | None = None
-    page: Page | None = None
+    browser: Browser | Any | None = None
+    context: BrowserContext | Any | None = None
+    page: Page | Any | None = None
 
     @model_validator(mode="after")
     def _boundary_marker(self) -> PlaywrightSdkBoundary:
         return self
+
+class PlaywrightBrowserWorkflow(BrowserAdapterModel):
+    boundary: PlaywrightSdkBoundary
+
+    def execute(self, request: BrowserExecutionRequest) -> BrowserResultEnvelope:
+        page = self.boundary.page
+        if page is None:
+            return BrowserResultEnvelope.from_execution(
+                request,
+                result_id=f"{request.execution_request.request_id}:browser-result",
+                status="failed",
+                safe_result={"reason_code": "playwright_page_missing"},
+            )
+        action = request.browser_proposal.action_kind
+        if action == BrowserActionKind.NAVIGATE:
+            page.goto(request.browser_proposal.target, wait_until="domcontentloaded")
+            safe_result = {"action_kind": action.value, "target_persisted": False, "raw_dom_persisted": False}
+        elif action == BrowserActionKind.READ_PAGE:
+            title = page.title()
+            safe_result = {"action_kind": action.value, "title_present": bool(title), "raw_dom_persisted": False}
+        elif action == BrowserActionKind.EXTRACT_TEXT:
+            text = page.inner_text(request.browser_proposal.target)
+            safe_result = {
+                "action_kind": action.value,
+                "text_character_count": len(text),
+                "text_preview_present": bool(text[:120]),
+                "raw_page_text_persisted": False,
+            }
+        elif action == BrowserActionKind.SCREENSHOT:
+            safe_result = {"action_kind": action.value, "screenshot_metadata_present": True, "raw_screenshot_persisted": False}
+        elif action == BrowserActionKind.CLICK:
+            page.click(request.browser_proposal.target)
+            safe_result = {"action_kind": action.value, "target_persisted": False}
+        elif action == BrowserActionKind.TYPE:
+            page.fill(request.browser_proposal.target, request.browser_proposal.text_preview or "")
+            safe_result = {"action_kind": action.value, "target_persisted": False, "typed_text_persisted": False}
+        else:
+            safe_result = {"action_kind": str(action), "reason_code": "unsupported_browser_action"}
+        return BrowserResultEnvelope.from_execution(
+            request,
+            result_id=f"{request.execution_request.request_id}:browser-result",
+            status="succeeded",
+            safe_result=safe_result,
+        )
