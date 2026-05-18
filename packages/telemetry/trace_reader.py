@@ -22,6 +22,8 @@ _EVENT_PROJECTION_KEYS = {
     "finish_reason",
     "service_name",
     "service",
+    "tool_status",
+    "approval_status",
 }
 _USAGE_KEY_PARTS = (
     "count",

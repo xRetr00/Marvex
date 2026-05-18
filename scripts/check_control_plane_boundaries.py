@@ -19,8 +19,12 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "packages.contracts",
     "packages.control_plane_api",
     "packages.local_api.auth_policy",
+    "packages.marketplace_runtime",
+    "packages.memory_runtime",
+    "packages.telemetry.search",
     "pydantic",
     "typing",
+    "urllib.parse",
 )
 CONTROL_API_FORBIDDEN_IMPORTS = (
     "apps",
@@ -33,12 +37,9 @@ CONTROL_API_FORBIDDEN_IMPORTS = (
     "packages.adapters",
     "packages.assistant_runtime",
     "packages.core",
-    "packages.memory_runtime",
     "packages.provider_runtime",
     "packages.runtime_composition",
     "packages.session_runtime",
-    "packages.skills_runtime",
-    "packages.telemetry",
     "services",
 )
 CONTROL_API_FORBIDDEN_TEXT = (
@@ -68,6 +69,9 @@ REQUIRED_CONTROL_API_TERMS = (
     "InMemoryApprovalStore",
     "ApprovalSummary",
     "ControlPlaneSnapshot",
+    "McpAllowlistProposal",
+    "MarketplaceEnablementState",
+    "TraceSearchQuery",
     "validate_local_bearer_token",
     "execution_started: Literal[False]",
 )

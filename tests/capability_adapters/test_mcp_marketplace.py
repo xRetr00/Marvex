@@ -1,0 +1,83 @@
+from __future__ import annotations
+
+import pytest
+
+from packages.marketplace_runtime import (
+    McpAllowlistProposal,
+    McpMarketplaceCatalog,
+    McpMarketplaceEntry,
+    McpRegistryToolSummary,
+    MarketplaceEnablementState,
+    validate_mcp_server_manifest,
+)
+
+
+def _entry(tool_name: str = "calculator") -> McpMarketplaceEntry:
+    return McpMarketplaceEntry(
+        schema_version="1",
+        registry_name="official_mcp_registry",
+        server_id="io.github.example/safe-server",
+        display_name="Safe Server",
+        description="Read-only arithmetic helper",
+        homepage_url="https://github.com/example/safe-server",
+        source_url="https://github.com/example/safe-server",
+        registry_url="https://registry.modelcontextprotocol.io/servers/io.github.example/safe-server",
+        tool_summaries=(McpRegistryToolSummary(name=tool_name, description="Safe helper"),),
+        transport_summaries=("stdio",),
+    )
+
+
+def test_mcp_marketplace_catalog_is_read_only_safe_metadata() -> None:
+    catalog = McpMarketplaceCatalog.from_entries((_entry(),))
+
+    rows = catalog.safe_projection()
+
+    assert rows[0]["server_id"] == "io.github.example/safe-server"
+    assert rows[0]["tool_count"] == 1
+    assert rows[0]["read_only_browse"] is True
+    assert rows[0]["install_allowed"] is False
+    assert rows[0]["launch_allowed"] is False
+    assert rows[0]["auto_execution_allowed"] is False
+    assert "install_command" not in rows[0]
+
+
+def test_mcp_manifest_validation_blocks_dangerous_tool_metadata() -> None:
+    result = validate_mcp_server_manifest(_entry("shell_exec"))
+
+    assert result.valid is False
+    assert "blocked_dangerous_tool_name" in result.reason_codes
+    assert result.safe_projection()["arbitrary_server_execution_allowed"] is False
+
+
+def test_mcp_allowlist_proposal_and_enablement_are_metadata_only() -> None:
+    entry = _entry()
+    proposal = McpAllowlistProposal.from_entry(entry, proposal_id="proposal-1", requested_by="control_plane")
+    state = MarketplaceEnablementState.disabled(
+        subject_id=entry.server_id,
+        subject_kind="mcp_server",
+        reason_code="not_allowlisted",
+    )
+
+    assert proposal.server_id == entry.server_id
+    assert proposal.requires_human_approval is True
+    assert proposal.install_started is False
+    assert proposal.launch_started is False
+    assert state.enabled is False
+    assert state.safe_projection()["execution_started"] is False
+
+
+def test_mcp_marketplace_rejects_install_commands_and_raw_payloads() -> None:
+    with pytest.raises(ValueError):
+        McpMarketplaceEntry(
+            schema_version="1",
+            registry_name="official_mcp_registry",
+            server_id="io.github.example/unsafe-server",
+            display_name="Unsafe Server",
+            description="tries to expose install command",
+            homepage_url="https://github.com/example/unsafe-server",
+            source_url="https://github.com/example/unsafe-server",
+            registry_url="https://registry.modelcontextprotocol.io/servers/io.github.example/unsafe-server",
+            tool_summaries=(McpRegistryToolSummary(name="calculator", description="Safe helper"),),
+            transport_summaries=("stdio",),
+            install_command="npm install unsafe",
+        )

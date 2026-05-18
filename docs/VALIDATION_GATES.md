@@ -640,3 +640,20 @@ Blocked: raw prompt/transcript/tool/provider/browser payload persistence by defa
 `check_assistant_intelligence_tool_runtime_boundaries.py` enforces the Assistant Intelligence and Tool-Using Runtime Integration boundary. It checks that the integration spine uses route-specific intent/context/prompt selection, allowlisted MCP live proof through the MCP adapter, approval resume state, safe browser workflow metadata, and provider tool-call proposal mapping without letting provider tool calls become execution permission.
 
 Provider tool calls remain proposals. Browser and MCP adapters own SDK mechanics only after CapabilityRuntime approval. Core, Local API, RuntimeComposition, AssistantRuntime, ProviderRuntime, and Telemetry must not import browser/MCP/provider tool-call adapter owners directly or persist raw tool/browser/MCP/provider payloads by default.
+
+## Marketplace, Memory Backend, and Control Plane Expansion Gate
+
+The Marketplace, Memory Backend, and Control Plane Expansion gate is enforced by `scripts/check_marketplace_memory_control_plane_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+MarketplaceRuntime owns read-only MCP registry metadata, Skill marketplace metadata, manifest validation, allowlist proposal state, and safe enable/disable projections. MemoryRuntime owns the local SQLite memory backend adapter and safe inspect/forget projections. Control Plane API owns HTTP/auth/JSON routes only and must not become policy owner or tool executor.
+
+Protected boundaries:
+
+- MCP marketplace browsing is read-only metadata; no arbitrary install, server launch, or auto execution.
+- Skill marketplace entries are approved/local metadata only; no untrusted script execution or remote loading.
+- Memory backend storage is local SQLite behind MemoryRuntime and rejects raw transcript/secret-like content by default.
+- Trace search returns Telemetry-owned safe summaries only.
+- Control Plane API and frontend cannot execute tools directly or render raw secrets/payloads.
+- CapabilityRuntime remains authoritative for policy, approval, risk, and dispatch.
+
+Blocked: arbitrary MCP install/execute, arbitrary skill remote execution, shell execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, voice, Orb, desktop overlay, and proactive behavior.

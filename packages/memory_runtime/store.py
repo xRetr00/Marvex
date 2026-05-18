@@ -68,6 +68,24 @@ class CurrentProcessMemoryStore:
             max_records=query.max_records,
         )
 
+    def safe_inspect(self, *, max_records: int = 50) -> tuple[dict[str, object], ...]:
+        records = tuple(self._records_by_memory_id.values())[: max(1, max_records)]
+        rows: list[dict[str, object]] = []
+        for record in records:
+            projection = record.safe_projection()
+            rows.append(
+                {
+                    "memory_ref": record.memory_ref.ref_id,
+                    "scope": projection["scope"],
+                    "memory_kind": projection["memory_kind"],
+                    "session_ref": record.session_ref.ref_id if record.session_ref else None,
+                    "conversation_ref": record.conversation_ref.ref_id if record.conversation_ref else None,
+                    "content_preview": projection["content_preview"],
+                    "tag_count": len(record.tags),
+                    "raw_transcript_persisted": False,
+                }
+            )
+        return tuple(rows)
     def forget(self, memory_ref: MemoryRef) -> MemoryForgetResult:
         record = self._records_by_memory_id.pop(memory_ref.ref_id, None)
         if record is not None:

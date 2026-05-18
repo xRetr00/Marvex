@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from packages.capability_runtime import ApprovalDecision, CapabilityApprovalRequest
 
-from .models import ApprovalDecisionResponse, ApprovalListResponse, ApprovalSummary
+from .models import ApprovalDecisionResponse, ApprovalHistoryResponse, ApprovalListResponse, ApprovalSummary
 
 
 class InMemoryApprovalStore:
@@ -25,6 +25,10 @@ class InMemoryApprovalStore:
     def read_pending(self, approval_request_id: str) -> ApprovalSummary | None:
         request = self._pending.get(approval_request_id)
         return ApprovalSummary.from_request(request) if request is not None else None
+
+    def list_history(self) -> ApprovalHistoryResponse:
+        decisions = tuple(self._decisions.values())
+        return ApprovalHistoryResponse(schema_version="1", decisions=decisions, decision_count=len(decisions))
 
     def read_decision(self, approval_request_id: str) -> ApprovalDecision | None:
         return self._runtime_decisions.get(approval_request_id)

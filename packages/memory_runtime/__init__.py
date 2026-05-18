@@ -9,6 +9,7 @@ from .models import (
     MemoryWriteCandidate,
     build_memory_record_from_candidate,
 )
+from .sqlite_backend import SQLiteMemoryStore
 from .store import CurrentProcessMemoryStore
 
 __all__ = [
@@ -21,5 +22,6 @@ __all__ = [
     "MemoryRecord",
     "MemoryRef",
     "MemoryWriteCandidate",
+    "SQLiteMemoryStore",
     "build_memory_record_from_candidate",
 ]

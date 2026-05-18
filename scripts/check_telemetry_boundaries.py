@@ -18,6 +18,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "pathlib",
     "packages.contracts",
     "packages.telemetry",
+    "pydantic",
     "re",
     "typing",
 )

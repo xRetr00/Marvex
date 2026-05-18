@@ -1,27 +1,40 @@
 # Project Status
 
-current_phase: assistant_intelligence_tool_using_runtime_integration_complete
+current_phase: marketplace_memory_control_plane_expansion_complete
 
-implementation_status: assistant_intelligence_tool_using_runtime_integration_complete
+implementation_status: marketplace_memory_control_plane_expansion_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Assistant Intelligence and Tool-Using Runtime Integration Complete
+Marketplace, Memory Backend, and Control Plane Expansion Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Assistant Intelligence and Tool-Using Runtime Integration:
+Latest full validation baseline from Marketplace, Memory Backend, and Control Plane Expansion:
 
 - `python scripts/run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 860 passed, 1 skipped
+- `python -m pytest -q` -> 878 passed, 1 skipped
 - `python -m pip check` -> No broken requirements found.
 - `npm run build` from `apps/control_plane_web` -> built
-- `npm test` from `apps/control_plane_web` -> 2 passed
+- `npm test` from `apps/control_plane_web` -> 3 passed
 
 
 
+## Marketplace, Memory Backend, and Control Plane Expansion State
+
+Marketplace, Memory Backend, and Control Plane Expansion is complete as a safe platform-operations surface on top of the assistant intelligence/tool runtime integration.
+
+Implemented: `packages.marketplace_runtime` provides read-only MCP registry metadata models, MCP manifest validation, allowlist proposal state, Skill marketplace entries, bounded prompt contribution previews, and safe enable/disable projections. `SQLiteMemoryStore` exists behind MemoryRuntime with local-user path scoping, safe write/read/query, safe inspect previews, and forget behavior. Telemetry now exposes safe trace search summaries, and Control Plane API adds protected marketplace, memory inspect/forget, trace search, approval history, policy summary, and diagnostics endpoints.
+
+The Control Plane web app now includes dedicated MCP Marketplace, Skills Marketplace, Memory Inspect, Trace Search, Approval History, Tool Risk Policy, and Runtime Diagnostics views. Marketplace browsing remains read-only by default. MCP allowlisting creates proposal metadata only; no install, launch, auto execution, or arbitrary MCP server execution occurs. Skills remain approved/local metadata only; script execution, arbitrary install, remote loading, and policy override remain blocked.
+
+Memory backend persistence rejects raw transcript/secret-like content by default and exposes previews only. Control Plane remains HTTP/auth/JSON-only and does not own CapabilityRuntime policy or direct tool execution. CapabilityRuntime remains authoritative for risk, approvals, dispatch, and execution policy.
+
+Blocked: arbitrary MCP install/execute, arbitrary skill remote execution, shell execution, credential storage, remote exposure, voice, Orb, desktop overlay, proactive behavior, and raw prompt/transcript/tool/provider/browser payload rendering or persistence by default.
+
+Recommended next: add a local service composition slice that serves the expanded Control Plane API and static web assets on loopback with generated local bearer-token handoff, without remote binding, daemon supervision, or direct tool execution.
 ## Assistant Intelligence and Tool-Using Runtime Integration State
 
 Assistant Intelligence and Tool-Using Runtime Integration is complete as a deeper bounded tool-using assistant turn spine on top of the End-to-End Assistant Turn Integration Foundation.

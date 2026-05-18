@@ -97,6 +97,12 @@ class ApprovalDecisionResponse(ControlPlaneModel):
         )
 
 
+
+class ApprovalHistoryResponse(ControlPlaneModel):
+    schema_version: str = Field(..., min_length=1)
+    decisions: tuple[ApprovalDecisionResponse, ...]
+    decision_count: int = Field(..., ge=0)
+    raw_payload_persisted: Literal[False] = False
 class ProviderStatusView(ControlPlaneModel):
     provider_id: str = Field(..., min_length=1)
     configured: bool

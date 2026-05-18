@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
 
-type Row = Record<string, string | number | boolean | null>;
+type Row = Record<string, unknown>;
 
 export function SafeTable({ title, rows, empty }: { title: string; rows: Row[]; empty: string }) {
   const keys = Array.from(new Set(rows.flatMap((row) => Object.keys(row))));
@@ -20,7 +20,7 @@ export function SafeTable({ title, rows, empty }: { title: string; rows: Row[]; 
               <tbody>
                 {rows.map((row, index) => (
                   <tr className="border-b border-border last:border-0" key={index}>
-                    {keys.map((key) => <td className="px-2 py-2" key={key}>{format(row[key])}</td>)}
+                    {keys.map((key) => <td className="px-2 py-2 align-top" key={key}>{format(row[key])}</td>)}
                   </tr>
                 ))}
               </tbody>
@@ -32,8 +32,9 @@ export function SafeTable({ title, rows, empty }: { title: string; rows: Row[]; 
   );
 }
 
-function format(value: Row[string]) {
+function format(value: unknown) {
   if (typeof value === "boolean") return <Badge tone={value ? "success" : "neutral"}>{String(value)}</Badge>;
   if (value === null || value === undefined) return <span className="text-muted-foreground">none</span>;
+  if (typeof value === "object") return <span>{JSON.stringify(value)}</span>;
   return String(value);
 }
