@@ -31,6 +31,10 @@ REQUIRED_INTEGRATION_TERMS = (
     "mcp_allowlist",
     "resume_approval_request_id",
     "store.approval_store.read_decision",
+    "ProviderToolCallMapper",
+    "PlaywrightBrowserWorkflow",
+    "MemoryReadQuery",
+    "_memory_ref_count",
     "raw_payload_persisted: Literal[False]",
 )
 REQUIRED_ADAPTER_TERMS = (

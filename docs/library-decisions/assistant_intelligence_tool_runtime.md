@@ -20,7 +20,7 @@ verified date: 2026-05-18
 
 verified by: Codex
 
-scope: Deeper runtime integration only. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
+scope: Deeper runtime integration only. This checkpoint includes provider tool-call proposal mapping into Marvex-approved safe execution, safe Playwright read workflow execution, allowlisted MCP proof execution, SQLite memory backend safe-ref participation, and trace-searchable safe runtime summaries. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
 
 adopt / defer / reject decision:
 
@@ -31,4 +31,4 @@ adopt / defer / reject decision:
 - LiteLLM tool calls: adapter mapping now, no LiteLLM-owned execution.
 - Semantic Router: backend remains deferred; adapter seam and deterministic proof backend remain because an encoder/vector dependency decision is still required.
 
-risks: Provider tool-call schemas can contain raw arguments, MCP tool outputs can contain raw text, and browser extraction can contain page content. Current mitigation is safe schema/projection mapping, result metadata instead of raw payload persistence, allowlists, blocked dangerous MCP tool names, approval pause/resume state, and boundary gates.
+risks: Provider tool-call schemas can contain raw arguments, MCP tool outputs can contain raw text, browser extraction can contain page content, and memory records can contain user content. Current mitigation is safe schema/projection mapping, result metadata instead of raw payload persistence, memory safe refs/previews only, allowlists, blocked dangerous MCP tool names, approval pause/resume state, trace-search safe summaries, and boundary gates.

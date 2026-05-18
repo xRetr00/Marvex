@@ -70,16 +70,17 @@ def create_control_plane_api_app(
             return _json_response(start_response, "200 OK", approval.model_dump(mode="json"))
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/approvals/"):
             approval_id, action = _approval_path(path)
-            if action not in {"approve", "deny"}:
+            if action not in {"approve", "deny", "cancel"}:
                 return _json_response(start_response, "404 Not Found", _error("not_found", path))
             decision_input = _parse_decision_input(environ)
             if isinstance(decision_input, ErrorEnvelope):
                 return _json_response(start_response, "400 Bad Request", decision_input.model_dump(mode="json"))
-            decision = (
-                approval_store.approve(approval_id, reason=decision_input.reason)
-                if action == "approve"
-                else approval_store.deny(approval_id, reason=decision_input.reason)
-            )
+            if action == "approve":
+                decision = approval_store.approve(approval_id, reason=decision_input.reason)
+            elif action == "cancel":
+                decision = approval_store.cancel(approval_id, reason=decision_input.reason)
+            else:
+                decision = approval_store.deny(approval_id, reason=decision_input.reason)
             if decision is None:
                 return _json_response(start_response, "404 Not Found", _error("approval_not_found", path))
             return _json_response(start_response, "200 OK", decision.model_dump(mode="json"))

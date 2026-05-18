@@ -45,6 +45,9 @@ class InMemoryApprovalStore:
     def deny(self, approval_request_id: str, *, reason: str) -> ApprovalDecisionResponse | None:
         return self._decide(approval_request_id, decision="denied", reason=reason)
 
+    def cancel(self, approval_request_id: str, *, reason: str) -> ApprovalDecisionResponse | None:
+        return self._decide(approval_request_id, decision="denied", reason=reason)
+
     def _decide(
         self,
         approval_request_id: str,

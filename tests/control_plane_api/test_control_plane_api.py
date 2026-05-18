@@ -160,6 +160,18 @@ def test_approve_and_deny_transition_pending_state_without_execution() -> None:
     assert deny_payload["decision"] == "denied"
     assert deny_payload["execution_started"] is False
 
+    app = _app()
+    cancel_status, _cancel_headers, cancel_payload = _call(
+        app,
+        "/control/approvals/approval-request-1/cancel",
+        method="POST",
+        body={"reason": "user canceled pending action"},
+    )
+
+    assert cancel_status == "200 OK"
+    assert cancel_payload["decision"] == "denied"
+    assert cancel_payload["execution_started"] is False
+
 
 def test_control_plane_snapshot_exposes_safe_views_only() -> None:
     app = _app()

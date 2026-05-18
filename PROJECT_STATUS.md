@@ -1,21 +1,21 @@
 # Project Status
 
-current_phase: marketplace_memory_control_plane_expansion_complete
+current_phase: assistant_intelligence_tool_using_runtime_integration_complete
 
-implementation_status: marketplace_memory_control_plane_expansion_complete
+implementation_status: assistant_intelligence_tool_using_runtime_integration_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Marketplace, Memory Backend, and Control Plane Expansion Complete
+Assistant Intelligence and Tool-Using Runtime Integration Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Marketplace, Memory Backend, and Control Plane Expansion:
+Latest full validation baseline from Assistant Intelligence and Tool-Using Runtime Integration:
 
 - `python scripts/run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 878 passed, 1 skipped
+- `python -m pytest -q` -> 881 passed, 1 skipped
 - `python -m pip check` -> No broken requirements found.
 - `npm run build` from `apps/control_plane_web` -> built
 - `npm test` from `apps/control_plane_web` -> 3 passed
@@ -39,11 +39,11 @@ Recommended next: add a local service composition slice that serves the expanded
 
 Assistant Intelligence and Tool-Using Runtime Integration is complete as a deeper bounded tool-using assistant turn spine on top of the End-to-End Assistant Turn Integration Foundation.
 
-Implemented: IntentRuntime now distinguishes MCP-needed and skill-needed routes, ContextRuntime/PromptHarnessRuntime select bounded route-relevant context and schema projections only, provider tool-call mapping converts OpenAI-compatible, LM Studio, and LiteLLM shapes into CapabilityRuntime proposals without permission transfer, the Playwright browser adapter exposes a safe workflow for navigate/read/extract actions behind approved execution requests, and the integrated turn can run an allowlisted MCP live/proof path through the official MCP SDK adapter.
+Implemented: IntentRuntime now distinguishes MCP-needed and skill-needed routes, ContextRuntime/PromptHarnessRuntime select bounded route-relevant context and schema projections only, provider tool-call mapping converts OpenAI-compatible, LM Studio, and LiteLLM shapes into CapabilityRuntime proposals without permission transfer, the integrated turn can map provider tool proposals into approved safe built-in execution, the Playwright browser adapter exposes a safe workflow for navigate/read/extract actions behind approved execution requests, SQLite memory backend refs can participate in bounded context selection, and the integrated turn can run an allowlisted MCP live/proof path through the official MCP SDK adapter.
 
-Provider tool calls remain proposals, not execution permission. CapabilityRuntime remains authoritative for approval, execution request validation, result envelopes, and policy-gated dispatch. The integration spine can pause risky browser actions, record Control Plane approval decisions, resume to an approved backend readiness state, execute safe built-in calculator and allowlisted MCP proof tools, and produce provider-continuation-ready safe result summaries without raw prompt, provider payload, MCP output, browser DOM, screenshot, credential, or transcript persistence by default.
+Provider tool calls remain proposals, not execution permission. CapabilityRuntime remains authoritative for approval, execution request validation, result envelopes, and policy-gated dispatch. The integration spine can pause risky browser actions, record Control Plane approval/denial/cancel decisions, resume to an approved backend readiness state, execute safe built-in calculator and allowlisted MCP proof tools, and produce provider-continuation-ready safe result summaries without raw prompt, provider payload, MCP output, browser DOM, screenshot, credential, or transcript persistence by default.
 
-Control Plane visibility remains safe projection-only: pending/approved/denied counts, trace summaries, MCP allowlist summaries, browser/tool statuses, and telemetry summaries are visible without direct frontend or control API tool execution. The safe browser workflow and allowlisted MCP live proof are bounded test paths only; arbitrary browser/computer actions, arbitrary MCP servers, registry installs, shell/filesystem execution, credential entry/extraction, purchase/payment, CAPTCHA/anti-bot bypass, voice, Orb, desktop overlay, proactive behavior, and generic provider routing remain blocked.
+Control Plane visibility remains safe projection-only: pending/approved/denied counts, trace summaries, trace-searchable safe status fields, MCP allowlist summaries, memory ref counts/previews, browser/tool statuses, and telemetry summaries are visible without direct frontend or control API tool execution. The safe browser workflow and allowlisted MCP live proof are bounded test paths only; arbitrary browser/computer actions, arbitrary MCP servers, registry installs, shell/filesystem execution, credential entry/extraction, purchase/payment, CAPTCHA/anti-bot bypass, voice, Orb, desktop overlay, proactive behavior, and generic provider routing remain blocked.
 
 Recommended next: add a persisted approval/trace resumption service slice that stores safe refs and decisions across process boundaries while keeping Telemetry as persistence owner and CapabilityRuntime as policy authority.
 ## End-to-End Assistant Turn Integration Foundation State
