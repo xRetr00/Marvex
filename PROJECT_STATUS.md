@@ -1,26 +1,39 @@
 # Project Status
 
-current_phase: control_plane_foundation_complete
+current_phase: intent_context_prompt_harness_foundation_complete
 
-implementation_status: control_plane_foundation_complete
+implementation_status: intent_context_prompt_harness_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
 
-Control Plane Foundation Complete
+Intent, Context, and Prompt Harness Foundation Complete
 
 ## Validation Baseline
 
-Latest full validation baseline from Control Plane Foundation:
+Latest full validation baseline from Intent, Context, and Prompt Harness Foundation:
 
 - `python scripts\run_all_checks.py` -> PASS all validation checks passed
-- `python -m pytest -q` -> 835 passed, 1 skipped
+- `python -m pytest -q` -> 850 passed, 1 skipped
 - `python -m pip check` -> No broken requirements found.
 - `npm run build` from `apps/control_plane_web` -> built
 - `npm test` from `apps/control_plane_web` -> 2 passed
 
 
+## Intent, Context, and Prompt Harness Foundation State
+
+Intent, Context, and Prompt Harness Foundation is complete as a safe routing, context selection, prompt planning, compaction, validation, and telemetry-summary boundary.
+
+Implemented: IntentRuntime exists with intent refs, candidates, classification requests/results, confidence buckets, route decisions, risk signals, ambiguity signals, clarification decisions, and safe intent projections. ContextRuntime/PromptHarness now owns context source refs, candidates, eligibility decisions, context packs, budgets, delivery policy, exclusion reasons, bounded prompt sections, prompt harness plans, prompt assembly requests/results, budget reports, compaction/offload/tool-result-clearing decisions, planning readiness, validation results, and telemetry-safe harness summaries.
+
+CapabilityRuntime remains authoritative for capability policy, permissions, eligibility, dispatch, approvals, execution requests, result envelopes, and loop guards. The harness can select eligible capability/tool/skill/MCP schema projections by intent/context, but it cannot approve execution or bypass policy.
+
+Adapter seams exist for Semantic Router, Guardrails-style validation, LlamaIndex routers/selectors, LangChain/LangGraph context patterns, OpenAI Agents SDK guardrails/context patterns, Anthropic context engineering patterns, and awesome harness/context reference resources. No new runtime dependency was added; unsafe or broad libraries remain disabled/reference-only until a future decision.
+
+Blocked: raw prompt/transcript/provider/tool/browser payload persistence by default, all-tools dumping, all-skills dumping, all-memory dumping, embeddings/vector search without a separate decision, autonomous planners, recursive loops, browser/computer actions, UI, voice, desktop, vision, proactive behavior, and generic provider routing.
+
+Recommended next: add a narrow AssistantRuntime consumption proof for safe `PromptHarnessPlan` projections, without provider-specific prompt ownership, raw prompt persistence, or generic provider routing.
 ## Control Plane Foundation State
 
 Control Plane Foundation is complete as a protected local admin/control foundation. It adds a Human Approval API, safe Control Plane snapshot boundary, isolated web frontend, typed client, and validation gates.

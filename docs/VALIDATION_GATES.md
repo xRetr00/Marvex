@@ -591,3 +591,26 @@ Protected boundaries:
 Blocked: shell execution, file write/edit/delete tools, credential access or entry, purchase/payment/checkout, sensitive form submission without future explicit approval flow, CAPTCHA or anti-bot bypass, stealth/proxy scraping, arbitrary desktop OS control, and raw screenshot/DOM/page/tool/provider payload persistence by default.
 
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->
+
+## Intent, Context, and Prompt Harness Foundation Gate
+
+The Intent, Context, and Prompt Harness Foundation gate is enforced by `scripts/check_intent_context_prompt_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+IntentRuntime exists as the owner for intent refs, candidates, classification requests/results, confidence buckets, route decisions, risk signals, ambiguity signals, clarification decisions, and safe intent projections. ContextRuntime/PromptHarness owns bounded context packs, context delivery policy, prompt sections, prompt harness plans, compaction/offload decisions, planning readiness, validation results, and safe telemetry summaries.
+
+CapabilityRuntime remains authoritative for capability policy, permissions, eligibility, dispatch, approvals, execution requests, result envelopes, and loop guards. The harness may select eligible schema projections by intent/context, but it cannot approve execution or bypass policy.
+
+Protected boundaries:
+
+- Core does not own intent routing or prompt harness assembly.
+- Local API does not assemble prompts.
+- RuntimeComposition does not become the intent/context brain.
+- ProviderRuntime does not own context delivery or generic model routing.
+- Telemetry records safe summaries only and does not own prompt/context models.
+- MemoryRuntime does not assemble prompts.
+- AssistantRuntime may consume safe harness plans in future work but must not dump raw prompts.
+- Adapters cannot own policy, automatic retry loops, autonomous planning loops, or raw prompt access.
+
+Blocked: raw prompt/transcript/provider/tool/browser payload persistence by default, all-tools dumping, all-skills dumping, all-memory dumping, embeddings/vector search without a separate decision, autonomous planners, recursive loops, browser/computer actions, UI, voice, desktop, vision, proactive behavior, and generic provider routing.
+
+Boundary invariant: no all-tools dumping, no all-memory dumping, and no raw prompt persistence by default.

@@ -32,6 +32,7 @@ Scripts:
 - `check_full_tooling_boundaries.py`
 - `check_agent_execution_loop_boundaries.py`
 - `check_control_plane_boundaries.py`
+- `check_intent_context_prompt_boundaries.py`
 - `check_provider_structured_output_boundaries.py`
 - `check_telemetry_boundaries.py`
 - `check_process_runtime_boundaries.py`
@@ -160,3 +161,12 @@ dependency.
 LM Studio Responses provider-native structured-output compatibility. It is
 intentionally excluded from `run_all_checks.py` and must not become a CI
 dependency.
+
+`check_intent_context_prompt_boundaries.py` enforces the Intent, Context, and
+Prompt Harness Foundation boundary so `packages.intent_runtime`,
+`packages.context_runtime`, and `packages.prompt_harness_runtime` own safe
+intent/context/prompt models while Core, Local API, RuntimeComposition,
+ProviderRuntime, Telemetry, MemoryRuntime, SessionRuntime, and Control Plane API
+cannot become prompt assembly or routing-policy owners. It also checks that
+Semantic Router, Guardrails, LlamaIndex, LangChain/LangGraph, OpenAI Agents, and
+Anthropic/reference seams remain safe projection-only until future adoption.
