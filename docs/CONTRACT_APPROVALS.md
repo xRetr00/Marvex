@@ -54,3 +54,31 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 - `approval_status: approved` is invalid without an approver and approval date.
 - `implementation_allowed: yes` is invalid unless approval status is `approved`.
 - Service placeholder folders remain README-only until their matching service contract has `implementation_allowed: yes`.
+
+## Implementation Surface Classification Rule
+
+Existing code is not approval. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
+
+`docs/GOVERNANCE_CLASSIFICATION.md` is the current registry for implemented and future surfaces. The registry distinguishes approved implementation surfaces, bounded foundations, experimental seams, future service contracts, and forbidden product behavior for now.
+
+Existing bounded foundations may be maintained, tested, and safely refactored inside their current boundaries. They must not expand into product behavior unless this approval registry, project status, validation gates, and architecture docs are updated by an explicit future goal.
+
+## Current Surface Summary
+
+- provider foundation: approved implementation surface for provider-foundation scope only.
+- assistant turn contracts: approved implementation surface only for approved assistant envelope contracts.
+- assistant turn integration: bounded foundation; expansion blocked without explicit approval.
+- telemetry: bounded foundation; safe summaries/persistence only.
+- local api: bounded foundation; HTTP/auth/JSON only.
+- control plane api: bounded foundation; safe projections and approval APIs only.
+- control plane web: bounded foundation; isolated local admin dashboard only.
+- capability runtime: bounded foundation; policy/approval/dispatch/result envelopes only.
+- tool execution foundations: bounded foundation; approved safe requests only.
+- mcp adapter/seam: bounded foundation; official SDK and allowlist only.
+- browser/computer-use adapter/seam: experimental seam; product automation blocked.
+- memory runtime: bounded foundation; safe refs/backend only.
+- marketplace runtime: bounded foundation; read-only metadata/proposals only.
+- session runtime: bounded foundation; safe refs only.
+- intent/prompt harness seams: bounded foundation; safe projections and bounded prompt plans only.
+- service placeholders: future service contract; README-only.
+- future voice, desktop agent, shell/orb UI, proactive behavior, and vision: forbidden product behavior for now.

@@ -143,3 +143,11 @@ The agent must stop and report instead of coding if:
 - the task edits unrelated files
 - the current task has uncommitted changes and the agent is asked to start another task
 - branch creation would be needed but the user has not approved creating a branch
+
+## Existing Code Is Not Approval
+
+Existing code is not approval. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
+
+Agents must check `docs/GOVERNANCE_CLASSIFICATION.md` before expanding any bounded foundation. A bounded foundation may be refactored for safety, but it must not become product behavior, a new service, a new dependency surface, or a broader runtime without explicit approval.
+
+For governance cleanup goals, a user-provided goal spec may serve as the task spec when it names goal, allowed files, forbidden files, validation, and success criteria.

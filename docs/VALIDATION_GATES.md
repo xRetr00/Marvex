@@ -657,3 +657,15 @@ Protected boundaries:
 - CapabilityRuntime remains authoritative for policy, approval, risk, and dispatch.
 
 Blocked: arbitrary MCP install/execute, arbitrary skill remote execution, shell execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, voice, Orb, desktop overlay, and proactive behavior.
+
+### Governance Classification Gate
+
+Every major implemented or future surface must be classified in `docs/GOVERNANCE_CLASSIFICATION.md` as one of: approved implementation surface, bounded foundation, experimental seam, future service contract, or forbidden product behavior for now.
+
+This gate enforces the rule that existing code is not approval. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
+
+The gate requires classification for provider foundation, assistant turn contracts, assistant turn integration, telemetry, Local API, Control Plane API, Control Plane web, CapabilityRuntime, tool execution foundations, MCP adapter/seam, browser/computer-use adapter/seam, MemoryRuntime, MarketplaceRuntime, SessionRuntime, intent/prompt harness seams, service placeholders, future voice, future desktop agent, future shell/orb UI, future proactive behavior, and future vision.
+
+### God-File And Assistant-Brain Risk Gate
+
+Known risk files have stricter size limits than the default 500-line rule. `packages/capability_runtime/execution.py` must remain a re-export facade after the cleanup split. `packages/assistant_turn_integration/spine.py` must remain composition glue, not a central assistant brain.

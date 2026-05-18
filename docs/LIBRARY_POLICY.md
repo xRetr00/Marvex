@@ -59,3 +59,7 @@ Every external dependency must have a fallback plan:
 - isolate behind an adapter
 - remove feature if nonessential
 - implement only after an RFC if no maintained option exists
+
+## Frontend Dependency Coverage
+
+Frontend dependencies in isolated app packages may be covered by an explicit grouped frontend stack decision record when the stack is intentionally adopted together. The record must name the package file, maintenance posture, why the stack is used, why custom code is avoided, fallback, isolation boundary, and safety restrictions.

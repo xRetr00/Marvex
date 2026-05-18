@@ -62,3 +62,9 @@ Core does not own:
 - desktop context
 - proactive behavior
 - intent classification
+
+## Current Foundation Ownership Guard
+
+Existing code is not approval. Core remains orchestration-only even when bounded foundations exist elsewhere. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
+
+Core must not absorb CapabilityRuntime policy, assistant turn integration stage logic, memory policy, marketplace metadata, Control Plane behavior, browser/computer-use adapter behavior, MCP mechanics, skills logic, voice, desktop, shell/orb UI, proactive behavior, or vision.

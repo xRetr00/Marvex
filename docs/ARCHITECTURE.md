@@ -392,3 +392,19 @@ decisions.
 - No tool execution in UI.
 - No features before contracts.
 - No custom SDKs when maintained libraries exist.
+
+## Current Bounded Foundation Reality
+
+The original V1 scope remains useful as a safety baseline, but the repository now contains several bounded internal foundations beyond the first provider slice. These foundations are classified in `docs/GOVERNANCE_CLASSIFICATION.md`.
+
+Bounded foundations are not product approval. They may be tested and refactored inside their current ownership boundaries, but expansion requires the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs to agree.
+
+Current high-risk boundaries:
+
+- CapabilityRuntime owns permission, approval, execution request validation, result envelopes, context delivery, and loop guards. It must not import Core, adapters, Local API, ProviderRuntime, Telemetry, MemoryRuntime, SessionRuntime, or RuntimeComposition.
+- Assistant turn integration composes approved runtime layers. It must not become the assistant brain, provider router, memory policy owner, prompt policy owner, tool policy owner, or adapter execution owner.
+- Local API and Control Plane own HTTP/auth/JSON and safe projections only.
+- RuntimeComposition composes explicit approved paths only and must not become a router or policy engine.
+- Core remains orchestration-only and must not absorb tools, memory, marketplace, Control Plane, browser/computer-use, voice, desktop, shell/orb, proactive behavior, or vision.
+
+Existing code is not approval.

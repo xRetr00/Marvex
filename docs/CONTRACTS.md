@@ -293,3 +293,11 @@ Owner: service contract package.
 Can read: all clients and services.
 
 Can write: service being queried.
+
+## Foundation Surface Contracts
+
+Some newer Marvex packages are bounded implementation foundations rather than public JSON contracts. Their existence does not broaden the provider-foundation contracts above and does not approve product expansion.
+
+Classified bounded foundations are tracked in `docs/GOVERNANCE_CLASSIFICATION.md`. Existing code is not approval. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
+
+Provider-foundation contracts must not be silently repurposed as assistant-turn, tool, memory, MCP, browser, marketplace, control-plane, voice, desktop, shell/orb, proactive, or vision product contracts.

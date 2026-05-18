@@ -1,49 +1,48 @@
 # Roadmap
 
-## Phase 0: Planning Only
+Marvex is built as correct Assistant OS infrastructure first. The roadmap is a governance document, not permission to implement.
 
-Create docs, templates, validation scripts, diagrams, and placeholder folders. No product implementation.
+## Current Reality
 
-## Phase 1: V1 Foundation
+Several surfaces that were once future-only now exist as bounded internal foundations. They are not product expansion approval.
 
-After docs are accepted:
+Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, assistant loop primitives, and assistant turn integration.
 
-- contracts only
-- fake provider
-- minimal Core Service
-- telemetry lifecycle
-- LM Studio Responses provider
-- CLI vertical slice
+The current cleanup phase is governance reconciliation, boundary hardening, and foundation cleanup before adding new capability surfaces.
 
-## Phase 2: Process Readiness
+## Phase 1: Approved Provider Foundation
 
-- health and version endpoints
-- subprocess startup and shutdown conventions
-- JSON-RPC-style worker contracts
-- supervisor research and decision
+Approved implementation surfaces remain limited to provider-foundation contracts and explicit provider proof paths. Provider turns are still not the final assistant turn model.
 
-## Phase 3: Future Modules
+## Phase 2: Bounded Internal Foundations
 
-Only after contracts:
+Bounded foundations may exist, be tested, and be safely refactored. They do not authorize product expansion, generic routing, arbitrary tool execution, raw payload persistence, service daemon behavior, UI expansion, voice, desktop, vision, or proactive behavior.
 
-- Intent Worker
-- Tool Worker
-- Memory
-- Desktop Agent
-- Voice Worker
-- UI Shell
-- Vision
-- Proactive behavior
+Every bounded foundation must have:
 
-Frontend surfaces remain future-only until `docs/FRONTEND_BOUNDARY.md` is paired
-with separate approved HTTP/WebSocket contracts and implementation task specs.
-The frontend boundary document is not permission to implement a web UI, native
-orb, presence shell, API server, or WebSocket server.
+- an owning package or adapter boundary
+- safe projection rules
+- validation gates
+- status and architecture documentation
+- explicit blocked behavior
+
+## Phase 3: Process Readiness
+
+Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are approved. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
+
+## Phase 4: Future Product Surfaces
+
+Future product surfaces remain blocked unless separately approved:
+
+- voice worker
+- desktop agent
+- shell/orb UI
+- vision
+- proactive behavior
+- arbitrary browser/computer automation
+- generic provider routing/model selection
+- external marketplace install/execution
 
 ## Rule
 
-The roadmap is not permission to implement. Each phase requires `accepted_docs: true`, approved contracts, real task spec files, and validation.
-
-The provider turn is not the assistant turn. Future modules must pass the
-Assistant Turn Spine gate in `docs/ASSISTANT_TURN_SPINE.md` before
-implementation.
+Existing code is not approval. Future work is allowed only when supported by the current goal spec, docs/CONTRACT_APPROVALS.md, PROJECT_STATUS.md, validation gates, and relevant architecture docs.
