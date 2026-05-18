@@ -4,18 +4,24 @@ import {
   enableSkill,
   fetchApprovalHistory,
   fetchAutoFetch,
+  fetchMemoryDailyDigest,
+  fetchMemoryDrillDown,
   fetchConnectors,
   fetchDiagnostics,
   fetchMcpMarketplace,
   fetchMemoryInspect,
+  fetchMemorySourceTree,
+  fetchMemoryTopicTree,
   fetchMemoryTreeScoring,
   fetchMemoryTreeSearch,
   fetchPolicies,
   fetchSources,
+  forgetSource,
   fetchSkillsMarketplace,
   fetchTraceSearch,
   forgetMemory,
-  proposeMcpAllowlist
+  proposeMcpAllowlist,
+  setAutoFetchState
 } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -105,24 +111,37 @@ export function ConnectorListView() {
 }
 
 export function MemorySourcesView() {
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["memory-sources"], queryFn: fetchSources, retry: false });
+  const mutation = useMutation({ mutationFn: forgetSource, onSuccess: () => queryClient.invalidateQueries({ queryKey: ["memory-sources"] }) });
   if (query.isLoading) return <InlineState message="Loading memory sources..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
-  return <SafeTable title="Memory Sources" rows={query.data?.sources ?? []} empty="No memory sources available." />;
+  const rows = query.data?.sources ?? [];
+  return <div className="space-y-4"><Card><CardHeader><CardTitle>Source Controls</CardTitle></CardHeader><CardContent className="space-y-3">{rows.map((row) => <Button key={String(row.source_id)} variant="outline" onClick={() => mutation.mutate(String(row.source_id))}><Trash2 className="mr-2" size={16} />Forget source {String(row.source_id)}</Button>)}{mutation.data && <p className="text-sm">Forget requested: {mutation.data.source_id}</p>}</CardContent></Card><SafeTable title="Memory Sources" rows={rows} empty="No memory sources available." /></div>;
 }
 
 export function AutoFetchView() {
+  const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["autofetch"], queryFn: fetchAutoFetch, retry: false });
+  const mutation = useMutation({ mutationFn: ({ connectorId, action }: { connectorId: string; action: "enable" | "disable" | "pause" }) => setAutoFetchState(connectorId, action), onSuccess: () => queryClient.invalidateQueries({ queryKey: ["autofetch"] }) });
   if (query.isLoading) return <InlineState message="Loading auto-fetch policies..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
-  return <SafeTable title="Auto-Fetch" rows={query.data?.policies ?? []} empty="No auto-fetch policies available." />;
+  const rows = query.data?.policies ?? [];
+  return <div className="space-y-4"><Card><CardHeader><CardTitle>Auto-Fetch Controls</CardTitle></CardHeader><CardContent className="flex flex-wrap gap-2">{rows.map((row) => <div key={String(row.connector_id)} className="flex gap-2"><Button variant="outline" onClick={() => mutation.mutate({ connectorId: String(row.connector_id), action: "enable" })}>Enable {String(row.connector_id)}</Button><Button variant="outline" onClick={() => mutation.mutate({ connectorId: String(row.connector_id), action: "pause" })}>Pause</Button><Button variant="outline" onClick={() => mutation.mutate({ connectorId: String(row.connector_id), action: "disable" })}>Disable</Button></div>)}</CardContent></Card><SafeTable title="Auto-Fetch" rows={rows} empty="No auto-fetch policies available." /></div>;
 }
 
 export function MemoryTreesView() {
   const search = useQuery({ queryKey: ["memory-tree-search"], queryFn: () => fetchMemoryTreeSearch("evidence"), retry: false });
+  const sourceTree = useQuery({ queryKey: ["memory-source-tree"], queryFn: () => fetchMemorySourceTree("source-github"), retry: false });
+  const topicTree = useQuery({ queryKey: ["memory-topic-tree"], queryFn: () => fetchMemoryTopicTree("memory-tree"), retry: false });
+  const daily = useQuery({ queryKey: ["memory-daily-digest"], queryFn: () => fetchMemoryDailyDigest("2026-05-18"), retry: false });
+  const drillDown = useQuery({ queryKey: ["memory-drill-down"], queryFn: () => fetchMemoryDrillDown("chunk-1"), retry: false });
   const scoring = useQuery({ queryKey: ["memory-tree-scoring"], queryFn: fetchMemoryTreeScoring, retry: false });
-  if (search.isLoading || scoring.isLoading) return <InlineState message="Loading memory tree projections..." />;
-  if (search.isError) return <InlineState message={search.error.message} />;
-  if (scoring.isError) return <InlineState message={scoring.error.message} />;
-  return <div className="space-y-4"><SafeTable title="Memory Tree Search" rows={search.data?.results ?? []} empty="No memory tree results." /><SafeTable title="Scoring Explanation" rows={scoring.data?.scores ?? []} empty="No scoring summaries." /></div>;
+  if (search.isLoading || sourceTree.isLoading || topicTree.isLoading || daily.isLoading || drillDown.isLoading || scoring.isLoading) return <InlineState message="Loading memory tree projections..." />;
+  for (const query of [search, sourceTree, topicTree, daily, drillDown, scoring]) {
+    if (query.isError) return <InlineState message={query.error.message} />;
+  }
+  const sourceNodes = Array.isArray(sourceTree.data?.tree.nodes) ? sourceTree.data.tree.nodes as Record<string, unknown>[] : [];
+  const topicNodes = Array.isArray(topicTree.data?.tree.nodes) ? topicTree.data.tree.nodes as Record<string, unknown>[] : [];
+  return <div className="space-y-4"><SafeTable title="Memory Tree Search" rows={search.data?.results ?? []} empty="No memory tree results." /><SafeTable title="Source Tree" rows={sourceNodes} empty="No source tree nodes." /><SafeTable title="Topic Tree" rows={topicNodes} empty="No topic tree nodes." /><SafeTable title="Daily Digest" rows={daily.data ? [daily.data.daily_digest] : []} empty="No daily digest." /><SafeTable title="Evidence Drill-Down" rows={drillDown.data ? [drillDown.data.evidence] : []} empty="No evidence drill-down." /><SafeTable title="Scoring Explanation" rows={scoring.data?.scores ?? []} empty="No scoring summaries." /></div>;
 }

@@ -3,6 +3,7 @@ import {
   approvalDecisionResponseSchema,
   approvalHistorySchema,
   approvalListSchema,
+  autoFetchActionSchema,
   autoFetchSchema,
   connectorsSchema,
   controlSnapshotSchema,
@@ -11,10 +12,15 @@ import {
   mcpMarketplaceSchema,
   memoryForgetSchema,
   memoryInspectSchema,
+  memoryTreeDailySchema,
+  memoryTreeDrillDownSchema,
   memoryTreeScoringSchema,
+  memoryTreeSourceSchema,
+  memoryTreeTopicSchema,
   memoryTreeSearchSchema,
   policiesSchema,
   skillsMarketplaceSchema,
+  sourceForgetSchema,
   sourcesSchema,
   traceSearchSchema,
   type ApprovalDecisionResponse,
@@ -131,4 +137,27 @@ export async function fetchMemoryTreeSearch(query = "evidence") {
 
 export async function fetchMemoryTreeScoring() {
   return memoryTreeScoringSchema.parse(await readJson("/memory/tree/scoring"));
+}
+export async function setAutoFetchState(connectorId: string, action: "enable" | "disable" | "pause") {
+  return autoFetchActionSchema.parse(await readJson(`/autofetch/${encodeURIComponent(connectorId)}/${action}`, { method: "POST" }));
+}
+
+export async function forgetSource(sourceId: string) {
+  return sourceForgetSchema.parse(await readJson(`/sources/${encodeURIComponent(sourceId)}/forget`, { method: "POST" }));
+}
+
+export async function fetchMemorySourceTree(sourceId = "source-github") {
+  return memoryTreeSourceSchema.parse(await readJson(`/memory/tree/source/${encodeURIComponent(sourceId)}`));
+}
+
+export async function fetchMemoryTopicTree(topicId = "memory-tree") {
+  return memoryTreeTopicSchema.parse(await readJson(`/memory/tree/topic/${encodeURIComponent(topicId)}`));
+}
+
+export async function fetchMemoryDailyDigest(date = "2026-05-18") {
+  return memoryTreeDailySchema.parse(await readJson(`/memory/tree/daily/${encodeURIComponent(date)}`));
+}
+
+export async function fetchMemoryDrillDown(chunkId = "chunk-1") {
+  return memoryTreeDrillDownSchema.parse(await readJson(`/memory/tree/drill-down/${encodeURIComponent(chunkId)}`));
 }

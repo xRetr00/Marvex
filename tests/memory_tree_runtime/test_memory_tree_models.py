@@ -109,6 +109,10 @@ def test_scoring_explains_keep_drop_without_external_policy_ownership():
 
     assert score.importance.value == 0.62
     assert score.keep_drop_decision.decision == "keep"
+    projection = score.safe_projection()
+    assert projection["source_weight"] == 0.8
+    assert projection["recency"] == 0.6
+    assert projection["raw_content_persisted"] is False
     assert score.explanation.policy_owner == "MemoryTreeRuntime"
 
 
@@ -128,7 +132,9 @@ def test_memory_trees_require_evidence_and_traversal_returns_safe_results():
 
     assert isinstance(result, TreeTraversalResult)
     assert result.nodes[0].evidence_links[0].chunk_id == "chunk:abc:0"
-    assert result.safe_projection()["nodes"][0]["evidence_count"] == 1
+    node_projection = result.safe_projection()["nodes"][0]
+    assert node_projection["evidence_count"] == 1
+    assert node_projection["evidence_links"][0]["source_id"] == "source-github"
 
     with pytest_raises_validation():
         MemoryTreeNode.summary_node(node_id="node-empty", title="Bad", summary="No provenance", evidence_links=())
@@ -142,3 +148,20 @@ class pytest_raises_validation:
         if exc_type is None:
             raise AssertionError("expected validation error")
         return issubclass(exc_type, ValidationError)
+
+def test_memory_tree_telemetry_summary_is_counts_only():
+    from packages.memory_tree_runtime import MemoryTreeTelemetrySummary
+
+    summary = MemoryTreeTelemetrySummary(
+        event_kind="tree_updated",
+        documents_canonicalized=1,
+        chunks_created=2,
+        scores_created=2,
+        tree_nodes_updated=3,
+        traversal_results=0,
+    )
+
+    projection = summary.safe_projection()
+    assert projection["tree_nodes_updated"] == 3
+    assert projection["raw_content_persisted"] is False
+    assert "markdown" not in repr(projection).lower()

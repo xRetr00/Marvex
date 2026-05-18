@@ -75,7 +75,11 @@ describe("Control Plane app", () => {
       "/control/connectors": { schema_version: "1", connectors: [{ connector_id: "github-connector", category: "github", account_action_allowed: false, auto_fetch_default_enabled: false }], connector_count: 1, raw_token_persisted: false },
       "/control/sources": { schema_version: "1", sources: [{ source_id: "source-github", connector_kind: "github", raw_credentials_persisted: false }], source_count: 1, raw_credentials_persisted: false },
       "/control/autofetch": { schema_version: "1", policies: [{ connector_id: "github-connector", control_state: "disabled", control_plane_toggle_allowed: true }], policy_count: 1, raw_payload_persisted: false },
-      "/control/memory/tree/search": { schema_version: "1", query: "evidence", results: [{ node_id: "node-1", title: "Memory Tree Issue", evidence_count: 1 }], raw_content_persisted: false },
+      "/control/memory/tree/search": { schema_version: "1", query: "evidence", results: [{ node_id: "node-1", title: "Memory Tree Issue", evidence_count: 1, evidence_links: [{ chunk_id: "chunk-1", source_id: "source-github" }] }], raw_content_persisted: false },
+      "/control/memory/tree/source/source-github": { schema_version: "1", tree: { source_id: "source-github", nodes: [{ node_id: "source-node-1", title: "GitHub Source", evidence_count: 1 }] }, raw_content_persisted: false },
+      "/control/memory/tree/topic/memory-tree": { schema_version: "1", tree: { topic_id: "memory-tree", nodes: [{ node_id: "topic-node-1", title: "Memory Topic", evidence_count: 1 }] }, raw_content_persisted: false },
+      "/control/memory/tree/daily/2026-05-18": { schema_version: "1", daily_digest: { node_id: "daily-2026-05-18", title: "Daily Digest", evidence_count: 1 }, raw_content_persisted: false },
+      "/control/memory/tree/drill-down/chunk-1": { schema_version: "1", evidence: { chunk_id: "chunk-1", source_id: "source-github", quote_preview: "bounded evidence preview" } },
       "/control/memory/tree/scoring": { schema_version: "1", scores: [{ chunk_id: "chunk-1", importance: 0.7, decision: "keep", policy_owner: "MemoryTreeRuntime" }], score_count: 1, raw_content_persisted: false }
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
@@ -105,6 +109,10 @@ describe("Control Plane app", () => {
     expect(await screen.findByText("disabled")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Memory Trees/i }));
     expect(await screen.findByText("Memory Tree Issue")).toBeInTheDocument();
+    expect(await screen.findByText("GitHub Source")).toBeInTheDocument();
+    expect(await screen.findByText("Memory Topic")).toBeInTheDocument();
+    expect((await screen.findAllByText("Daily Digest")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("bounded evidence preview")).toBeInTheDocument();
     expect(await screen.findByText("MemoryTreeRuntime")).toBeInTheDocument();
     expect(screen.queryByText(/apikey|Bearer|secret-token|raw prompt/i)).not.toBeInTheDocument();
   });

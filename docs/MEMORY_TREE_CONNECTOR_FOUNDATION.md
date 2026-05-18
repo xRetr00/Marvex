@@ -38,3 +38,11 @@ Marvex now has an OpenHuman-style memory design concept implemented with Marvex-
 
 - Targeted tests cover connector models, Authlib import proof, auto-fetch policy, canonicalization, chunking, scoring, SQLite tree index, tree traversal, Control Plane endpoints, and Control Plane web views.
 - `scripts/check_memory_tree_connector_boundaries.py` enforces owner boundaries, required surfaces, endpoint/view presence, no direct account actions, and no default token/credential persistence.
+## Completion audit - 2026-05-18
+
+Status after dependency/uv follow-up audit:
+
+- Complete: source refs and ingestion policies, connector/OAuth metadata, disabled-by-default auto-fetch policy, canonicalization, bounded chunking, content hashes, scoring explanations, source/topic/global/daily tree models, evidence links, traversal/search methods, Authlib OAuth import seam, and safe Control Plane connector/source/autofetch/tree/scoring views.
+- Completed in this audit: `MemoryTreeNode.safe_projection()` now carries bounded evidence links, `ScoringExplanation.safe_projection()` exposes component scores, `SQLiteMemoryTreeIndex` reads back evidence metadata and component scores, `SQLiteMemoryTreeIndex.forget_source()` deletes source documents/chunks/scores/evidence-backed nodes, and Control Plane web now shows source tree, topic tree, daily digest, evidence drill-down, source forget controls, and auto-fetch state controls.
+- Partial by design: live OAuth sync, connector ETL, background scheduled loops, remote connector services, raw account payload ingestion, and broad account actions remain unimplemented until a backend-specific connector goal approves them.
+- Safety invariant: telemetry/control-plane outputs remain count/status/evidence summaries only; OAuth tokens, credentials, raw provider/tool payloads, raw transcripts, and raw account bodies are not exposed by default.

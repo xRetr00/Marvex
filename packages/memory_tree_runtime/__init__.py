@@ -42,6 +42,7 @@ from .models import (
     traverse_tree,
 )
 from .runtime import MemoryTreeRuntime
+from .summaries import MemoryTreeForgetSummary, MemoryTreeTelemetrySummary
 from .sqlite_index import SQLiteMemoryTreeIndex
 from .vault import project_document_to_vault_markdown
 
@@ -64,7 +65,9 @@ __all__ = [
     "MemoryChunk",
     "MemoryImportanceScore",
     "MemorySourceRef",
+    "MemoryTreeForgetSummary",
     "MemoryTreeNode",
+    "MemoryTreeTelemetrySummary",
     "MemoryTreeRuntime",
     "RecencyScore",
     "SafeEntityProjection",

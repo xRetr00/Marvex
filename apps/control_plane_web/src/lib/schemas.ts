@@ -34,7 +34,7 @@ export const approvalDecisionResponseSchema = z.object({
   raw_payload_persisted: z.literal(false)
 });
 
-const safeRecord = z.record(z.string(), z.union([z.string(), z.number(), z.boolean(), z.null()]));
+const safeRecord = z.record(z.string(), z.unknown());
 
 export const controlSnapshotSchema = z.object({
   schema_version: z.string(),
@@ -100,6 +100,12 @@ export const sourcesSchema = z.object({ schema_version: z.string(), sources: z.a
 export const autoFetchSchema = z.object({ schema_version: z.string(), policies: z.array(safeRecord), policy_count: z.number(), raw_payload_persisted: z.literal(false) });
 export const memoryTreeSearchSchema = z.object({ schema_version: z.string(), query: z.string(), results: z.array(safeRecord), raw_content_persisted: z.literal(false).optional() });
 export const memoryTreeScoringSchema = z.object({ schema_version: z.string(), scores: z.array(safeRecord), score_count: z.number(), raw_content_persisted: z.literal(false) });
+export const memoryTreeSourceSchema = z.object({ schema_version: z.string(), tree: safeRecord, raw_content_persisted: z.literal(false) });
+export const memoryTreeTopicSchema = z.object({ schema_version: z.string(), tree: safeRecord, raw_content_persisted: z.literal(false) });
+export const memoryTreeDailySchema = z.object({ schema_version: z.string(), daily_digest: safeRecord, raw_content_persisted: z.literal(false) });
+export const memoryTreeDrillDownSchema = z.object({ schema_version: z.string(), evidence: safeRecord });
+export const autoFetchActionSchema = z.object({ schema_version: z.string(), connector_id: z.string(), requested_state: z.string(), sync_started: z.literal(false), raw_payload_persisted: z.literal(false) });
+export const sourceForgetSchema = z.object({ schema_version: z.string(), source_id: z.string(), delete_started: z.literal(false), requires_memory_runtime_policy: z.literal(true), raw_content_persisted: z.literal(false) });
 export const diagnosticsSchema = safeRecord;
 
 export type SafeRecord = z.infer<typeof safeRecord>;
@@ -117,3 +123,7 @@ export type Sources = z.infer<typeof sourcesSchema>;
 export type AutoFetch = z.infer<typeof autoFetchSchema>;
 export type MemoryTreeSearch = z.infer<typeof memoryTreeSearchSchema>;
 export type MemoryTreeScoring = z.infer<typeof memoryTreeScoringSchema>;
+export type MemoryTreeSource = z.infer<typeof memoryTreeSourceSchema>;
+export type MemoryTreeTopic = z.infer<typeof memoryTreeTopicSchema>;
+export type MemoryTreeDaily = z.infer<typeof memoryTreeDailySchema>;
+export type MemoryTreeDrillDown = z.infer<typeof memoryTreeDrillDownSchema>;

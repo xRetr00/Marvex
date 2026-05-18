@@ -217,9 +217,15 @@ class ScoringExplanation(MemoryTreeModel):
     def safe_projection(self) -> dict[str, object]:
         return {
             "chunk_id": self.chunk_id,
+            "source_weight": self.source_weight.value,
+            "recency": self.recency.value,
+            "interaction": self.interaction.value,
+            "entity_topic_boost": self.entity_topic_boost.value,
             "importance": self.importance.value,
             "decision": self.keep_drop_decision.decision,
+            "threshold": self.keep_drop_decision.threshold,
             "policy_owner": self.policy_owner,
+            "raw_content_persisted": False,
         }
 
 
@@ -308,6 +314,7 @@ class MemoryTreeNode(MemoryTreeModel):
             "parent_node_id": self.parent_node_id,
             "child_node_count": len(self.child_node_ids),
             "evidence_count": len(self.evidence_links),
+            "evidence_links": [link.safe_projection() for link in self.evidence_links],
         }
 
 
@@ -459,4 +466,3 @@ def _validate_safe_id(value: str, field_name: str) -> str:
 
 def _safe_text(value: str) -> str:
     return "[redacted]" if any(part in value.lower() for part in _SECRET_TERMS) else value
-

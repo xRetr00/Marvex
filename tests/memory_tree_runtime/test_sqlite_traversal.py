@@ -43,7 +43,15 @@ def test_sqlite_memory_tree_index_persists_sources_documents_chunks_scores_and_n
     assert index.safe_documents()[0]["title"] == "Memory Tree Issue"
     assert index.safe_chunks()[0]["document_id"] == document.document_id
     assert index.safe_scores()[0]["decision"] == "keep"
-    assert index.safe_tree_nodes(tree_kind="source", tree_key="source-github")[0]["evidence_count"] == 1
+    assert index.safe_scores()[0]["source_weight"] == 0.9
+    tree_node = index.safe_tree_nodes(tree_kind="source", tree_key="source-github")[0]
+    assert tree_node["evidence_count"] == 1
+    assert tree_node["evidence_links"][0]["chunk_id"] == chunks[0].chunk_id
+    forget = index.forget_source("source-github")
+    assert forget.safe_projection()["documents_deleted"] == 1
+    assert forget.safe_projection()["chunks_deleted"] == len(chunks)
+    assert index.safe_sources() == ()
+    assert index.safe_tree_nodes(tree_kind="source", tree_key="source-github") == ()
 
 
 def test_memory_traversal_tools_return_source_grounded_evidence():
@@ -60,6 +68,7 @@ def test_memory_traversal_tools_return_source_grounded_evidence():
     drill = runtime.memory_drill_down(chunks[0].chunk_id)
 
     assert search.results[0].evidence_links
+    assert search.safe_projection()["results"][0]["evidence_links"][0]["source_id"] == "source-github"
     assert query.results[0].evidence_links[0].source_id == "source-github"
     assert source_tree.root.evidence_links
     assert digest.evidence_links
