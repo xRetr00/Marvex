@@ -67,6 +67,11 @@ def test_control_plane_voice_selectors_and_toggles_do_not_execute_engines() -> N
     stt_status, _headers, stt = _call(app, "/control/voice/stt/select", method="POST", body={"main_backend_id": "moonshine-v2", "fallback_backend_id": "sensevoice-small"})
     tts_status, _headers, tts = _call(app, "/control/voice/tts/select", method="POST", body={"main_backend_id": "kokoro-onnx", "fallback_backend_id": "piper-tts", "active_voice_id": "af_heart"})
     wake_status, _headers, wake = _call(app, "/control/voice/wakeword", method="POST", body={"always_listening_enabled": True})
+    vad_status, _vad_headers, vad = _call(app, "/control/voice/vad", method="POST", body={"aggressiveness": 3, "noisy_room_handling_enabled": True})
+    barge_status, _barge_headers, barge = _call(app, "/control/voice/barge-in", method="POST", body={"enabled": True, "cancel_queued_tts": True})
+    early_status, _early_headers, early = _call(app, "/control/voice/early-speech", method="POST", body={"enabled": True, "min_interval_ms": 9000})
+    personality_status, _personality_headers, personality = _call(app, "/control/voice/personality", method="POST", body={"auto_speak_enabled": False, "speak_confirmations": False})
+    retention_status, _retention_headers, retention = _call(app, "/control/voice/retention", method="POST", body={"raw_audio_persistence_allowed": False, "transcript_persistence_allowed": False, "generated_audio_persistence_allowed": False})
 
     assert stt_status == "200 OK"
     assert stt["execution_started"] is False
@@ -76,6 +81,17 @@ def test_control_plane_voice_selectors_and_toggles_do_not_execute_engines() -> N
     assert wake_status == "200 OK"
     assert wake["wakeword"]["always_listening_enabled"] is True
     assert wake["wakeword"]["visible_control_required"] is True
+    assert vad_status == "200 OK"
+    assert vad["vad"]["backend"]["aggressiveness"] == 3
+    assert barge_status == "200 OK"
+    assert barge["queued_chunks_canceled"] == 0
+    assert early_status == "200 OK"
+    assert early["claims_facts_without_evidence"] is False
+    assert personality_status == "200 OK"
+    assert personality["personality"]["auto_speak_enabled"] is False
+    assert personality["personality"]["speak_confirmations"] is False
+    assert retention_status == "200 OK"
+    assert retention["audio_retention"]["raw_audio_persistence_allowed"] is False
 
 
 def test_control_plane_voice_model_download_and_voice_tests_are_explicit_and_safe() -> None:

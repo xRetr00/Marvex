@@ -55,6 +55,11 @@ CONTROL_TERMS = (
     "select_stt",
     "select_tts",
     "update_wakeword",
+    "update_vad",
+    "update_barge_in",
+    "update_early_speech",
+    "update_personality",
+    "update_retention",
     "download",
     "remove",
 )

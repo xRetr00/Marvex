@@ -32,7 +32,7 @@ VoiceRuntime does not own intent routing, tools, memory, provider routing, capab
 
 ## Control Plane
 
-Protected Control Plane APIs and web views expose status, backend health, STT/TTS selectors, wakeword settings, VAD/barge-in/early speech/personality settings, model or voice download requests, STT/TTS tests, audio retention policy, and telemetry summaries. The frontend does not run audio engines directly.
+Protected Control Plane APIs and web views expose status, backend health, STT/TTS selectors, wakeword settings, VAD/barge-in/early speech/personality settings, model or voice download/remove requests, STT/TTS tests, audio retention policy, and telemetry summaries. The frontend does not run audio engines directly.
 
 ## Still Outside This Foundation
 

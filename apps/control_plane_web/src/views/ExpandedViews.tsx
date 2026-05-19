@@ -35,6 +35,11 @@ import {
   setAutoFetchState,
   testVoiceStt,
   testVoiceTts,
+  updateVoiceBargeIn,
+  updateVoiceEarlySpeech,
+  updateVoicePersonality,
+  updateVoiceRetention,
+  updateVoiceVad,
   updateWakeword
 } from "../lib/api";
 import { Button } from "../components/ui/button";
@@ -242,6 +247,11 @@ export function VoiceRuntimeView() {
   const stt = useMutation({ mutationFn: () => selectVoiceStt({ main_backend_id: "moonshine-v2", fallback_backend_id: "sensevoice-small" }), onSuccess: refresh });
   const tts = useMutation({ mutationFn: () => selectVoiceTts({ main_backend_id: "kokoro-onnx", fallback_backend_id: "piper-tts", active_voice_id: "af_heart" }), onSuccess: refresh });
   const wakeword = useMutation({ mutationFn: () => updateWakeword(true), onSuccess: refresh });
+  const vad = useMutation({ mutationFn: updateVoiceVad, onSuccess: refresh });
+  const bargeIn = useMutation({ mutationFn: updateVoiceBargeIn, onSuccess: refresh });
+  const earlySpeech = useMutation({ mutationFn: updateVoiceEarlySpeech, onSuccess: refresh });
+  const personality = useMutation({ mutationFn: updateVoicePersonality, onSuccess: refresh });
+  const retention = useMutation({ mutationFn: updateVoiceRetention, onSuccess: refresh });
   const download = useMutation({ mutationFn: () => downloadVoiceModel({ model_id: "af_heart", backend_id: "kokoro-onnx", model_kind: "tts_voice", source_uri: "local://voices/af_heart" }), onSuccess: refresh });
   const remove = useMutation({ mutationFn: () => removeVoiceModel({ model_id: "af_heart", model_kind: "tts_voice" }), onSuccess: refresh });
   const sttTest = useMutation({ mutationFn: testVoiceStt });
@@ -262,6 +272,11 @@ export function VoiceRuntimeView() {
           <Button variant="outline" onClick={() => stt.mutate()}><Mic className="mr-2" size={16} />Use Moonshine / SenseVoice</Button>
           <Button variant="outline" onClick={() => tts.mutate()}><Volume2 className="mr-2" size={16} />Use Kokoro / Piper</Button>
           <Button variant="outline" onClick={() => wakeword.mutate()}><Mic className="mr-2" size={16} />Enable Hey Marvex</Button>
+          <Button variant="outline" onClick={() => vad.mutate()}>Set VAD</Button>
+          <Button variant="outline" onClick={() => bargeIn.mutate()}>Set Barge-In</Button>
+          <Button variant="outline" onClick={() => earlySpeech.mutate()}>Set Early Speech</Button>
+          <Button variant="outline" onClick={() => personality.mutate()}>Set Personality</Button>
+          <Button variant="outline" onClick={() => retention.mutate()}>Set Retention</Button>
           <Button variant="outline" onClick={() => download.mutate()}>Install af_heart</Button>
           <Button variant="outline" onClick={() => remove.mutate()}><Trash2 className="mr-2" size={16} />Remove af_heart</Button>
           <Button variant="outline" onClick={() => sttTest.mutate()}>Test STT</Button>
@@ -272,7 +287,7 @@ export function VoiceRuntimeView() {
       <SafeTable title="STT / TTS / Wakeword / VAD Backends" rows={backendRows} empty="No backend health." />
       <SafeTable title="Wakeword / VAD / Barge-In / Early Speech / Personality" rows={[settings]} empty="No voice settings." />
       <SafeTable title="Voice Telemetry Summary" rows={[telemetry]} empty="No voice telemetry." />
-      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, download.data, remove.data, sttTest.data, ttsTest.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
+      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
     </div>
   );
 }

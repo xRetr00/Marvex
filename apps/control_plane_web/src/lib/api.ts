@@ -209,6 +209,26 @@ export async function updateWakeword(always_listening_enabled: boolean) {
   return voiceActionSchema.parse(await readJson("/voice/wakeword", { method: "POST", body: JSON.stringify({ always_listening_enabled }) }));
 }
 
+export async function updateVoiceVad() {
+  return voiceActionSchema.parse(await readJson("/voice/vad", { method: "POST", body: JSON.stringify({ aggressiveness: 2, noisy_room_handling_enabled: true }) }));
+}
+
+export async function updateVoiceBargeIn() {
+  return voiceActionSchema.parse(await readJson("/voice/barge-in", { method: "POST", body: JSON.stringify({ enabled: true, cancel_queued_tts: true }) }));
+}
+
+export async function updateVoiceEarlySpeech() {
+  return voiceActionSchema.parse(await readJson("/voice/early-speech", { method: "POST", body: JSON.stringify({ enabled: true, min_interval_ms: 8000 }) }));
+}
+
+export async function updateVoicePersonality() {
+  return voiceActionSchema.parse(await readJson("/voice/personality", { method: "POST", body: JSON.stringify({ filler_frequency: "medium", confirmation_style: "short", sensitive_content_policy: "ask", auto_speak_enabled: true, speak_confirmations: true }) }));
+}
+
+export async function updateVoiceRetention() {
+  return voiceActionSchema.parse(await readJson("/voice/retention", { method: "POST", body: JSON.stringify({ raw_audio_persistence_allowed: false, transcript_persistence_allowed: false, generated_audio_persistence_allowed: false }) }));
+}
+
 export async function downloadVoiceModel(payload: { model_id: string; backend_id: string; model_kind: string; source_uri: string }) {
   return voiceActionSchema.parse(await readJson("/voice/models/download", { method: "POST", body: JSON.stringify(payload) }));
 }

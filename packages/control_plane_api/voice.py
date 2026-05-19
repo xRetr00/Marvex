@@ -22,6 +22,16 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
         return "200 OK", voice_control.select_tts(_read_json(environ))
     if method == "POST" and path == "/control/voice/wakeword":
         return "200 OK", voice_control.update_wakeword(_read_json(environ))
+    if method == "POST" and path == "/control/voice/vad":
+        return "200 OK", voice_control.update_vad(_read_json(environ))
+    if method == "POST" and path == "/control/voice/barge-in":
+        return "200 OK", voice_control.update_barge_in(_read_json(environ))
+    if method == "POST" and path == "/control/voice/early-speech":
+        return "200 OK", voice_control.update_early_speech(_read_json(environ))
+    if method == "POST" and path == "/control/voice/personality":
+        return "200 OK", voice_control.update_personality(_read_json(environ))
+    if method == "POST" and path == "/control/voice/retention":
+        return "200 OK", voice_control.update_retention(_read_json(environ))
     if method == "POST" and path == "/control/voice/models/download":
         return "200 OK", voice_control.download(_read_json(environ))
     if method == "POST" and path == "/control/voice/models/remove":

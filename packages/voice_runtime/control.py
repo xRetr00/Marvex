@@ -4,7 +4,7 @@ from typing import Any
 
 from packages.voice_runtime.assets import STTModelRegistry, TTSVoiceRegistry, VoiceDownloadRequest, VoiceTestRequest, VoiceTestResult, WakeWordModelRegistry
 from packages.voice_runtime.base import safe_mapping
-from packages.voice_runtime.config import VoiceRuntimeConfig
+from packages.voice_runtime.config import VoicePersonalityProfile, VoiceRuntimeConfig
 from packages.voice_runtime.turn import VoiceRuntime
 
 
@@ -58,6 +58,48 @@ class VoiceControlPlaneFacade:
         policy = self.runtime.config.wakeword_policy.model_copy(update={"always_listening_enabled": enabled})
         self.runtime.config = self.runtime.config.model_copy(update={"wakeword": wakeword, "wakeword_policy": policy})
         return {"schema_version": "1", "wakeword": wakeword.model_dump(mode="json"), "execution_started": False, "raw_audio_persisted": False}
+
+    def update_vad(self, payload: dict[str, Any]) -> dict[str, object]:
+        backend = self.runtime.config.vad.backend.model_copy(update={
+            "aggressiveness": int(payload.get("aggressiveness", self.runtime.config.vad.backend.aggressiveness)),
+        })
+        vad = self.runtime.config.vad.model_copy(update={
+            "backend": backend,
+            "noisy_room_handling_enabled": bool(payload.get("noisy_room_handling_enabled", self.runtime.config.vad.noisy_room_handling_enabled)),
+        })
+        self.runtime.config = self.runtime.config.model_copy(update={"vad": vad})
+        return {"schema_version": "1", "vad": vad.model_dump(mode="json"), "execution_started": False, "raw_audio_persisted": False}
+
+    def update_barge_in(self, payload: dict[str, Any]) -> dict[str, object]:
+        barge_in = self.runtime.config.barge_in.model_copy(update={
+            "enabled": bool(payload.get("enabled", self.runtime.config.barge_in.enabled)),
+            "cancel_queued_tts": bool(payload.get("cancel_queued_tts", self.runtime.config.barge_in.cancel_queued_tts)),
+        })
+        self.runtime.config = self.runtime.config.model_copy(update={"barge_in": barge_in})
+        return {"schema_version": "1", "barge_in": barge_in.model_dump(mode="json"), "execution_started": False, "queued_chunks_canceled": 0}
+
+    def update_early_speech(self, payload: dict[str, Any]) -> dict[str, object]:
+        early_speech = self.runtime.config.early_speech.model_copy(update={
+            "enabled": bool(payload.get("enabled", self.runtime.config.early_speech.enabled)),
+            "min_interval_ms": int(payload.get("min_interval_ms", self.runtime.config.early_speech.min_interval_ms)),
+        })
+        self.runtime.config = self.runtime.config.model_copy(update={"early_speech": early_speech})
+        return {"schema_version": "1", "early_speech": early_speech.model_dump(mode="json"), "execution_started": False, "claims_facts_without_evidence": False}
+
+    def update_personality(self, payload: dict[str, Any]) -> dict[str, object]:
+        allowed = {key: value for key, value in payload.items() if key in {"profile_id", "filler_frequency", "confirmation_style", "sensitive_content_policy", "active_voice_id", "auto_speak_enabled", "speak_confirmations"}}
+        personality = VoicePersonalityProfile.model_validate({**self.runtime.config.personality.model_dump(mode="json"), **allowed})
+        self.runtime.config = self.runtime.config.model_copy(update={"personality": personality})
+        return {"schema_version": "1", "personality": personality.safe_projection(), "execution_started": False, "raw_transcript_persisted": False}
+
+    def update_retention(self, payload: dict[str, Any]) -> dict[str, object]:
+        retention = self.runtime.config.audio_retention.model_copy(update={
+            "raw_audio_persistence_allowed": bool(payload.get("raw_audio_persistence_allowed", self.runtime.config.audio_retention.raw_audio_persistence_allowed)),
+            "transcript_persistence_allowed": bool(payload.get("transcript_persistence_allowed", self.runtime.config.audio_retention.transcript_persistence_allowed)),
+            "generated_audio_persistence_allowed": bool(payload.get("generated_audio_persistence_allowed", self.runtime.config.audio_retention.generated_audio_persistence_allowed)),
+        })
+        self.runtime.config = self.runtime.config.model_copy(update={"audio_retention": retention})
+        return {"schema_version": "1", "audio_retention": retention.model_dump(mode="json"), "execution_started": False}
 
     def download(self, payload: dict[str, Any]) -> dict[str, object]:
         request = VoiceDownloadRequest.model_validate(payload)
