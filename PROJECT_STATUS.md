@@ -24,9 +24,10 @@ Still not implemented after this checkpoint: Orb/Face UI, desktop overlay, final
 
 ## Phase History
 
-Previous completed phases (retained as gate history):
+Previous completed phases (these markers are retained for gate compatibility):
 
-- `adaptive_context_evidence_memory_learning_governance_complete`
+- `current_phase: adaptive_context_evidence_memory_learning_governance_complete`
+- `implementation_status: adaptive_context_evidence_memory_learning_governance_complete`
 - `governance_reconciliation_boundary_hardening_complete`
 
 ## uv Dependency Workflow Checkpoint

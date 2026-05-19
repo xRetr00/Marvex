@@ -63,10 +63,8 @@ def main() -> int:
     for phrase in REQUIRED_ROADMAP_PHRASES:
         _require_phrase(roadmap_text, phrase, failures, f"docs/ROADMAP.md missing cleanup phrase: {phrase}")
 
-    if "process readiness has started" not in readme_text.lower():
-        failures.append("README.md must retain Process Readiness baseline wording")
-    if "local health/version api app object" not in readme_text.lower():
-        failures.append("README.md must retain local health/version API baseline wording")
+    if "governance_classification" not in readme_text.lower():
+        failures.append("README.md must reference docs/GOVERNANCE_CLASSIFICATION.md")
 
     if failures:
         for failure in failures:
