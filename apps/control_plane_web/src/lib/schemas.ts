@@ -106,6 +106,8 @@ export const memoryTreeDailySchema = z.object({ schema_version: z.string(), dail
 export const memoryTreeDrillDownSchema = z.object({ schema_version: z.string(), evidence: safeRecord });
 export const autoFetchActionSchema = z.object({ schema_version: z.string(), connector_id: z.string(), requested_state: z.string(), sync_started: z.literal(false), raw_payload_persisted: z.literal(false) });
 export const sourceForgetSchema = z.object({ schema_version: z.string(), source_id: z.string(), delete_started: z.literal(false), requires_memory_runtime_policy: z.literal(true), raw_content_persisted: z.literal(false) });
+export const runtimePolicySchema = z.object({ schema_version: z.string(), mode: z.string(), matrix: z.record(z.string(), z.string()), audit_records: z.array(safeRecord), hard_block_blacklist_only: z.literal(true), read_list_search_allowed_by_default: z.literal(true), side_effects_policy_controlled: z.literal(true), raw_payload_persisted: z.literal(false) }).passthrough();
+export const runtimePolicyAuditSchema = z.object({ schema_version: z.string(), audit_records: z.array(safeRecord), audit_count: z.number(), raw_payload_persisted: z.literal(false) });
 export const diagnosticsSchema = safeRecord;
 
 export type SafeRecord = z.infer<typeof safeRecord>;
@@ -127,3 +129,5 @@ export type MemoryTreeSource = z.infer<typeof memoryTreeSourceSchema>;
 export type MemoryTreeTopic = z.infer<typeof memoryTreeTopicSchema>;
 export type MemoryTreeDaily = z.infer<typeof memoryTreeDailySchema>;
 export type MemoryTreeDrillDown = z.infer<typeof memoryTreeDrillDownSchema>;
+export type RuntimePolicy = z.infer<typeof runtimePolicySchema>;
+export type RuntimePolicyAudit = z.infer<typeof runtimePolicyAuditSchema>;

@@ -7,9 +7,11 @@ This registry classifies existing and future Marvex surfaces so green tests cann
 ## Classification Labels
 
 - approved implementation surface: implementation is accepted for the explicitly described scope.
-- bounded foundation: implementation exists, but expansion is blocked without explicit approval.
+- bounded foundation: implementation exists, but expansion is policy-controlled or requires explicit goal approval for new behavior.
 - experimental seam: adapter or proof code exists for evaluation and must not become product behavior.
 - future service contract: draft/no implementation permission.
+- policy-controlled: normal assistant capability controlled by AutonomyPolicy mode/matrix and audit records.
+- hard-blocked blacklist only: malware, credential theft/extraction, data exfiltration, prompt-injection exploitation, command-injection exploitation, CAPTCHA/anti-bot bypass, stealth abuse, unauthorized account access, illegal destructive abuse, and payment/checkout without explicit enabled policy and approval path.
 - forbidden product behavior for now: must not be implemented or enabled in product paths.
 
 ## Surface Registry
@@ -33,7 +35,8 @@ This registry classifies existing and future Marvex surfaces so green tests cann
 | session runtime | bounded foundation: implementation exists, but expansion is blocked without explicit approval | packages.session_runtime | Safe session/conversation refs only; no hidden transcript store or global history. |
 | intent/prompt harness seams | bounded foundation: implementation exists, but expansion is blocked without explicit approval | packages.intent_runtime, packages.context_runtime, packages.prompt_harness_runtime | Intent/context/prompt plans from safe projections only; no all-tools/all-memory prompt dumping. |
 | hybrid intent, web search, grounded evidence, and risk governance | bounded foundation: implementation exists, but expansion is blocked without explicit approval | packages.intent_runtime, packages.web_search_runtime, packages.grounded_answer_runtime, packages.capability_runtime | Safe read/list/search and public web grounding are allowed by default; write/delete/send/execute/risky actions require approval; abuse categories hard-block. No arbitrary tool execution, browser side effects, account access, raw payload persistence, or Voice runtime. |
-| adaptive context, semantic memory search, learning, and granular governance | bounded foundation: implementation exists, but expansion is blocked without explicit approval | packages.prompt_harness_runtime, packages.memory_tree_runtime, packages.learning_runtime, packages.capability_runtime | Evidence/memory/tool/skill blocks are route-adaptive and safe-projection only; learning creates reviewable candidates only; governance decisions are audited and reason-coded. No Voice runtime, silent mutation, arbitrary execution, hidden sync, or raw payload persistence. |
+| adaptive context, semantic memory search, learning, and granular governance | bounded foundation: implementation exists, but expansion is policy-controlled or requires explicit goal approval for new behavior | packages.prompt_harness_runtime, packages.memory_tree_runtime, packages.learning_runtime, packages.capability_runtime | Evidence/memory/tool/skill blocks are route-adaptive and safe-projection only; learning creates reviewable candidates only; governance decisions are audited and reason-coded. No Voice runtime or raw payload persistence. |
+| autonomy modes and runtime policy control plane | policy-controlled | packages.capability_runtime.autonomy and Control Plane API/web | Locked Down, Ask Before Risky, Auto Marvex, and Custom modes expose a capability permission matrix. Read/list/search/web/page-read/MCP-list/memory-search are allowed by default. Side effects, sync, auto-fetch, memory/profile writes, skills, MCP execute, browser/computer actions, file operations, retry/fallback, and learning mutation candidates are allow/ask/deny/quarantine policy decisions with audit records. Hard-block is hard-blocked blacklist only. |
 | service placeholders | future service contract: draft/no implementation permission | services/* README-only placeholders | README-only until matching service contract is approved for implementation. |
 | future voice | forbidden product behavior for now | future voice worker | No voice capture, STT/TTS runtime, or voice UI. |
 | future desktop agent | forbidden product behavior for now | future desktop agent | No desktop control, OS automation, credential extraction, or overlay behavior. |
@@ -43,4 +46,4 @@ This registry classifies existing and future Marvex surfaces so green tests cann
 
 ## Hard Rule
 
-Existing code is not approval. A future goal must update this registry, docs/CONTRACT_APPROVALS.md, PROJECT_STATUS.md, validation gates, and relevant architecture docs before expanding any bounded foundation into product behavior.
+Existing code is not approval. Normal assistant capabilities must be implemented, policy-controlled, not implemented, proof-only, or hard-blocked blacklist only. A future goal must update this registry, docs/CONTRACT_APPROVALS.md, PROJECT_STATUS.md, validation gates, and relevant architecture docs before expanding any bounded foundation into product behavior.

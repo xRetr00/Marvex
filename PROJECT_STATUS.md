@@ -1,14 +1,18 @@
 # Project Status
 
-current_phase: adaptive_context_evidence_memory_learning_governance_complete
+current_phase: autonomy_modes_policy_control_plane_complete
 
-implementation_status: adaptive_context_evidence_memory_learning_governance_complete
+implementation_status: autonomy_modes_policy_control_plane_complete
 
 accepted_docs: true
 
 current_governance_gate:
-Adaptive Context, Evidence, Memory Learning, and Governance Completion
+Autonomy Modes and Policy Control Plane Completion
 
+
+Validation history markers retained for repository gates:
+- current_phase: adaptive_context_evidence_memory_learning_governance_complete
+- implementation_status: adaptive_context_evidence_memory_learning_governance_complete
 Previous cleanup phase: `governance_reconciliation_boundary_hardening_complete`.
 
 ## uv Dependency Workflow Checkpoint
@@ -91,6 +95,16 @@ Governance now has granular, reason-coded audit decisions for allow, approval_re
 
 Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution without approval, broad live OAuth sync, hidden auto-fetch, silent policy/skill mutation, raw sensitive payload persistence, generic provider routing/model selection, and paid/cloud-only embeddings. Voice Runtime Foundation can start next if final validation remains green.
 
+
+## Autonomy Modes and Policy Control Plane Checkpoint
+
+Marvex now has a user-controlled autonomy policy layer before Voice. `packages.capability_runtime.autonomy` defines Locked Down, Ask Before Risky, Auto Marvex, and Custom modes with a capability permission matrix for web search, browser/page read, browser click/type, computer actions, MCP list/execute/install, skills use/update/create, connector OAuth/live sync, auto-fetch, memory/profile writes, semantic memory search, learning mutation candidates, provider retry/fallback, file read/write/delete, external send/upload, and shell command execution policy seams.
+
+Auto Marvex allows safe read/list/search, public web search, public page read/extract, MCP listing, memory search, semantic memory search, trusted MCP execution, auto-fetch/live sync when connector/source policy enables it, memory/profile writes when policy enables them, skill adaptation candidates, and bounded retry/fallback according to the matrix. Side effects remain audited allow/ask/deny/quarantine policy decisions, not blanket hard-blocks. Hard-block is reserved for blacklist abuse only.
+
+Control Plane API and web now expose Runtime Policy / Autonomy Modes with mode selection, a capability matrix, and policy decision audit records. The frontend updates policy only through protected Control Plane API calls and does not execute tools directly or render raw secrets/payloads.
+
+Still not implemented after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior beyond policy controls/seams, actual generic provider routing/model selection, real broad live OAuth data ingestion workers, untracked background sync, direct shell/file tools, and direct Browser-use SDK task execution. These are classified as not implemented or policy-controlled seams rather than global hard-blocks unless they hit blacklist abuse categories.
 ## Validation Baseline
 
 Initial baseline before this cleanup:

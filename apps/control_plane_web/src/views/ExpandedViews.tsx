@@ -15,12 +15,15 @@ import {
   fetchMemoryTreeScoring,
   fetchMemoryTreeSearch,
   fetchPolicies,
+  fetchRuntimePolicy,
+  fetchRuntimePolicyAudit,
   fetchSources,
   forgetSource,
   fetchSkillsMarketplace,
   fetchTraceSearch,
   forgetMemory,
   proposeMcpAllowlist,
+  setRuntimePolicyMode,
   setAutoFetchState
 } from "../lib/api";
 import { Button } from "../components/ui/button";
@@ -144,4 +147,45 @@ export function MemoryTreesView() {
   const sourceNodes = Array.isArray(sourceTree.data?.tree.nodes) ? sourceTree.data.tree.nodes as Record<string, unknown>[] : [];
   const topicNodes = Array.isArray(topicTree.data?.tree.nodes) ? topicTree.data.tree.nodes as Record<string, unknown>[] : [];
   return <div className="space-y-4"><SafeTable title="Memory Tree Search" rows={search.data?.results ?? []} empty="No memory tree results." /><SafeTable title="Source Tree" rows={sourceNodes} empty="No source tree nodes." /><SafeTable title="Topic Tree" rows={topicNodes} empty="No topic tree nodes." /><SafeTable title="Daily Digest" rows={daily.data ? [daily.data.daily_digest] : []} empty="No daily digest." /><SafeTable title="Evidence Drill-Down" rows={drillDown.data ? [drillDown.data.evidence] : []} empty="No evidence drill-down." /><SafeTable title="Scoring Explanation" rows={scoring.data?.scores ?? []} empty="No scoring summaries." /></div>;
+}
+
+export function RuntimePolicyView() {
+  const queryClient = useQueryClient();
+  const policy = useQuery({ queryKey: ["runtime-policy"], queryFn: fetchRuntimePolicy, retry: false });
+  const audit = useQuery({ queryKey: ["runtime-policy-audit"], queryFn: fetchRuntimePolicyAudit, retry: false });
+  const mutation = useMutation({
+    mutationFn: setRuntimePolicyMode,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["runtime-policy"] });
+      queryClient.invalidateQueries({ queryKey: ["runtime-policy-audit"] });
+    }
+  });
+  if (policy.isLoading || audit.isLoading) return <InlineState message="Loading runtime policy controls..." />;
+  if (policy.isError) return <InlineState message={policy.error.message} />;
+  if (audit.isError) return <InlineState message={audit.error.message} />;
+  const matrixRows = Object.entries(policy.data?.matrix ?? {}).map(([capability, permission]) => ({ capability, permission, policy_controlled: true }));
+  const auditRows = (audit.data?.audit_records?.length ? audit.data.audit_records : policy.data?.audit_records) ?? [];
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>Runtime Policy / Autonomy Modes</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-[260px_1fr]">
+          <label className="grid gap-1 text-sm font-medium" htmlFor="autonomy-mode">
+            Autonomy mode
+            <select id="autonomy-mode" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={String(policy.data?.mode ?? "ask_before_risky")} onChange={(event) => mutation.mutate(event.target.value)}>
+              <option value="locked_down">Locked Down</option>
+              <option value="ask_before_risky">Ask Before Risky</option>
+              <option value="auto_marvex">Auto Marvex</option>
+              <option value="custom">Custom</option>
+            </select>
+          </label>
+          <div className="text-sm text-muted-foreground">
+            Hard-block is reserved for blacklist abuse only. Normal assistant actions are allow, ask, deny, or quarantine through backend policy.
+          </div>
+        </CardContent>
+      </Card>
+      <SafeTable title="Capability Permission Matrix" rows={matrixRows} empty="No runtime policy matrix available." />
+      <SafeTable title="Policy Decision Audit" rows={auditRows} empty="No policy decisions recorded." />
+    </div>
+  );
 }

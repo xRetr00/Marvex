@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 
 from packages.contracts import ErrorCode, ErrorEnvelope
 from packages.local_api.auth_policy import validate_local_bearer_token
+from packages.capability_runtime import AutonomyMode, AutonomyPolicy, PolicyDecisionAuditRecord
 from packages.marketplace_runtime import McpAllowlistProposal, MarketplaceEnablementState
 from packages.memory_runtime import MemoryRef
 from packages.telemetry.search import TraceSearchQuery, search_traces
@@ -39,8 +40,13 @@ def create_control_plane_api_app(
     auto_fetch_policies: tuple[Any, ...] = (),
     memory_tree_runtime: Any | None = None,
     scoring_views: tuple[Any, ...] = (),
+    autonomy_policy: AutonomyPolicy | None = None,
+    policy_audit_records: tuple[PolicyDecisionAuditRecord, ...] = (),
 ) -> WsgiApp:
+    runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
+
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
+        nonlocal runtime_policy
         method = str(environ.get("REQUEST_METHOD", "GET")).upper()
         raw_path = str(environ.get("PATH_INFO", "/"))
         path, _separator, inline_query = raw_path.partition("?")
@@ -179,6 +185,20 @@ def create_control_plane_api_app(
             return _json_response(start_response, "200 OK", payload)
         if method == "GET" and path == f"{CONTROL_PREFIX}/policies":
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "policies": tuple(_safe_mapping(policy) for policy in policy_views), "raw_payload_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/runtime-policy":
+            projection = runtime_policy.safe_projection(recent_audit=policy_audit_records)
+            return _json_response(start_response, "200 OK", projection.model_dump(mode="json"))
+        if method == "GET" and path == f"{CONTROL_PREFIX}/runtime-policy/audit":
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "audit_records": [_safe_nested_mapping(record.safe_projection()) for record in policy_audit_records], "audit_count": len(policy_audit_records), "raw_payload_persisted": False})
+        if method == "POST" and path == f"{CONTROL_PREFIX}/runtime-policy":
+            mode = _parse_runtime_policy_mode(environ)
+            if mode is None:
+                return _json_response(start_response, "400 Bad Request", _error("invalid_runtime_policy_mode", path))
+            runtime_policy = AutonomyPolicy.for_mode(mode)
+            payload = runtime_policy.safe_projection(recent_audit=policy_audit_records).model_dump(mode="json")
+            payload["policy_update_started"] = True
+            payload["execution_started"] = False
+            return _json_response(start_response, "200 OK", payload)
         if method == "GET" and path == f"{CONTROL_PREFIX}/diagnostics":
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, **_safe_mapping(diagnostics or {}), "raw_payload_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/snapshot":
@@ -194,6 +214,14 @@ def create_control_plane_api_app(
     return app
 
 
+
+def _parse_runtime_policy_mode(environ: dict[str, Any]) -> AutonomyMode | None:
+    try:
+        payload = json.loads(_read_request_body(environ))
+        value = str(payload.get("mode", "")).strip()
+        return AutonomyMode(value)
+    except Exception:
+        return None
 
 def _runtime_execution_payload(snapshot: ControlPlaneSnapshot, approval_store: InMemoryApprovalStore) -> dict[str, Any]:
     loop = snapshot.agent_loops[0] if snapshot.agent_loops else {}

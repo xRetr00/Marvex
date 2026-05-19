@@ -151,3 +151,70 @@ describe("Control Plane runtime execution view", () => {
     expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();
   });
 });
+
+describe("Control Plane runtime policy view", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders autonomy mode selector, policy matrix, and audit records without executing tools", async () => {
+    const policy = {
+      schema_version: "1",
+      mode: "auto_marvex",
+      matrix: {
+        web_search: "allow",
+        browser_read_extract: "allow",
+        browser_click_type: "ask",
+        mcp_list: "allow",
+        mcp_execute: "allow",
+        mcp_install_launch: "ask",
+        skills_use: "allow",
+        skills_update_create: "allow",
+        connectors_oauth: "ask",
+        live_oauth_sync: "allow",
+        auto_fetch: "allow",
+        memory_auto_write: "allow",
+        profile_write: "allow",
+        semantic_memory_search: "allow",
+        learning_mutation_candidates: "allow",
+        provider_retry_fallback: "allow",
+        file_read: "allow",
+        file_write: "ask",
+        file_delete: "ask",
+        external_upload_send: "ask",
+        shell_command_execution: "ask"
+      },
+      audit_records: [{ decision_id: "policy.auto.1", autonomy_mode: "auto_marvex", decision: "allow", action: "scheduled connector sync", resource_type: "connector", capability: "auto_fetch", reason_codes: ["policy.matrix.allow"], user_approval_state: "not_required", policy_source: "capability_runtime.autonomy", raw_payload_persisted: false }],
+      hard_block_blacklist_only: true,
+      read_list_search_allowed_by_default: true,
+      side_effects_policy_controlled: true,
+      raw_payload_persisted: false
+    };
+    const responses: Record<string, unknown> = {
+      "/control/snapshot": snapshot,
+      "/control/runtime-policy": policy,
+      "/control/runtime-policy/audit": { schema_version: "1", audit_records: policy.audit_records, audit_count: 1, raw_payload_persisted: false }
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (init?.method === "POST") return new Response(JSON.stringify({ ...policy, mode: "ask_before_risky", policy_update_started: true, execution_started: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify(responses[path]), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Runtime Policy/i }));
+    expect(await screen.findByText("Runtime Policy / Autonomy Modes")).toBeInTheDocument();
+    expect(screen.getByLabelText("Autonomy mode")).toHaveValue("auto_marvex");
+    expect(await screen.findByText("web_search")).toBeInTheDocument();
+    expect((await screen.findAllByText("auto_fetch")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("mcp_execute")).toBeInTheDocument();
+    expect(await screen.findByText("scheduled connector sync")).toBeInTheDocument();
+    await userEvent.selectOptions(screen.getByLabelText("Autonomy mode"), "ask_before_risky");
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/runtime-policy"), expect.objectContaining({ method: "POST" }));
+    expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();
+  });
+});

@@ -738,3 +738,11 @@ Protected boundaries:
 - Airbyte, Nango, Meltano/Singer, and Pipedream remain reference/deferred seams until a future backend-specific goal adopts one safely.
 
 Blocked: copied OpenHuman code, paid/cloud-only required connector services, hidden sync, raw token persistence in public metadata, raw email/doc/message body telemetry, raw transcripts/provider/tool payload persistence by default, broad account actions such as sending email or posting Slack messages, remote exposure, voice, desktop, vision, and proactive behavior.
+
+## Autonomy Modes and Runtime Policy Control Plane Gate
+
+The Autonomy Modes gate is enforced by `scripts/check_autonomy_policy_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+Marvex runtime policy is mode controlled through `AutonomyPolicy` and Control Plane safe projections. `locked_down`, `ask_before_risky`, `auto_marvex`, and `custom` modes expose a capability permission matrix. Safe read/list/search, public web search, public page read/extract, MCP listing, memory search, and semantic memory search cannot be globally hard-blocked. Normal assistant capabilities such as MCP execute, skills use/update/create, connector OAuth/live sync, auto-fetch, memory/profile writes, browser/computer actions, file write/delete, external send/upload, retry/fallback, and learning mutation candidates must be policy-controlled as allow/ask/deny/quarantine decisions or clearly not implemented.
+
+Hard-block is reserved for blacklist abuse categories only: malware, credential theft/extraction, data exfiltration, prompt-injection exploitation, command-injection exploitation, CAPTCHA/anti-bot bypass, stealth abuse, unauthorized account access, illegal destructive abuse, and payment/checkout without explicit enabled policy and approval path. Every deny, quarantine, or hard-block decision must include reason codes and a safe audit projection. Control Plane can update policy mode and display audit records, but it must not execute tools directly or render raw secrets/payloads.

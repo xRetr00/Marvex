@@ -19,6 +19,8 @@ import {
   memoryTreeTopicSchema,
   memoryTreeSearchSchema,
   policiesSchema,
+  runtimePolicyAuditSchema,
+  runtimePolicySchema,
   skillsMarketplaceSchema,
   sourceForgetSchema,
   sourcesSchema,
@@ -113,6 +115,18 @@ export async function fetchApprovalHistory(): Promise<ApprovalHistory> {
 
 export async function fetchPolicies() {
   return policiesSchema.parse(await readJson("/policies"));
+}
+
+export async function fetchRuntimePolicy() {
+  return runtimePolicySchema.parse(await readJson("/runtime-policy"));
+}
+
+export async function fetchRuntimePolicyAudit() {
+  return runtimePolicyAuditSchema.parse(await readJson("/runtime-policy/audit"));
+}
+
+export async function setRuntimePolicyMode(mode: string) {
+  return runtimePolicySchema.parse(await readJson("/runtime-policy", { method: "POST", body: JSON.stringify({ mode }) }));
 }
 
 export async function fetchDiagnostics() {

@@ -5,7 +5,7 @@ import { fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
-import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
+import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 
@@ -20,6 +20,7 @@ const views = [
   { id: "providers", label: "Providers", icon: Server },
   { id: "capabilities", label: "Capabilities / Tools", icon: Wrench },
   { id: "tool_policy", label: "Tool Risk Policy", icon: ShieldAlert },
+  { id: "runtime_policy", label: "Runtime Policy", icon: ShieldCheck },
   { id: "mcp", label: "MCP", icon: ListChecks },
   { id: "mcp_marketplace", label: "MCP Marketplace", icon: Store },
   { id: "skills", label: "Skills", icon: Brain },
@@ -85,6 +86,7 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "providers") return <SafeTable title="Providers" rows={snapshot.providers} empty="No providers registered." />;
   if (active === "capabilities") return <div className="space-y-4"><SafeTable title="Capability Registry" rows={snapshot.capabilities} empty="No capabilities eligible." /><SafeTable title="Tools" rows={snapshot.tools} empty="No tools available." /></div>;
   if (active === "tool_policy") return <PolicyView />;
+  if (active === "runtime_policy") return <RuntimePolicyView />;
   if (active === "mcp") return <SafeTable title="MCP Servers / Tools" rows={snapshot.mcp_servers} empty="No allowlisted MCP servers." />;
   if (active === "mcp_marketplace") return <McpMarketplaceView />;
   if (active === "skills") return <SafeTable title="Skills" rows={snapshot.skills} empty="No validated skills." />;
