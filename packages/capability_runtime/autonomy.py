@@ -239,7 +239,18 @@ class AutonomyPolicy(CapabilityRuntimeModel):
         if mode == AutonomyMode.LOCKED_DOWN:
             return cls(mode=mode, matrix=_locked_down_matrix())
         if mode == AutonomyMode.AUTO_MARVEX:
-            return cls(mode=mode, matrix=_auto_marvex_matrix(), auto_fetch_binding=AutoFetchPolicyBinding(global_auto_fetch=ActionPermission.ALLOW), memory_auto_write=MemoryAutoWritePolicy(memory_auto_write=ActionPermission.ALLOW), profile_write=ProfileWritePolicy(profile_write=ActionPermission.ALLOW), connector_sync=ConnectorSyncPolicy(oauth_connect=ActionPermission.ASK, live_sync=ActionPermission.ALLOW, auto_fetch=ActionPermission.ALLOW), mcp_execution=MCPExecutionPolicy(execute_tool=ActionPermission.ALLOW), learning_mutation=LearningMutationPolicy(candidate_apply=ActionPermission.ALLOW, skill_candidate_apply=ActionPermission.ALLOW, preference_candidate_apply=ActionPermission.ALLOW))
+            return cls(
+                mode=mode,
+                matrix=_auto_marvex_matrix(),
+                auto_fetch_binding=AutoFetchPolicyBinding(global_auto_fetch=ActionPermission.ALLOW),
+                memory_auto_write=MemoryAutoWritePolicy(memory_auto_write=ActionPermission.ALLOW),
+                profile_write=ProfileWritePolicy(profile_write=ActionPermission.ALLOW),
+                connector_sync=ConnectorSyncPolicy(oauth_connect=ActionPermission.ASK, live_sync=ActionPermission.ALLOW, auto_fetch=ActionPermission.ALLOW),
+                mcp_execution=MCPExecutionPolicy(execute_tool=ActionPermission.ALLOW),
+                skill_execution=SkillExecutionPolicy(update_or_create_skill=ActionPermission.ALLOW),
+                provider_fallback=ProviderFallbackPolicy(provider_retry=ActionPermission.ALLOW, provider_fallback=ActionPermission.ALLOW),
+                learning_mutation=LearningMutationPolicy(candidate_apply=ActionPermission.ALLOW, skill_candidate_apply=ActionPermission.ALLOW, preference_candidate_apply=ActionPermission.ALLOW),
+            )
         if mode == AutonomyMode.CUSTOM:
             return cls.custom()
         return cls(mode=mode, matrix=_ask_before_risky_matrix())

@@ -84,3 +84,55 @@ def test_locked_down_still_allows_read_list_search_by_default() -> None:
     for capability in ("read", "list", "search", "web_search"):
         audit = evaluate_autonomy_action(policy, AutonomyAction(action=capability, resource_type="public", capability=capability))
         assert audit.decision == PolicyDecision.ALLOW
+
+
+def test_named_policy_objects_match_auto_marvex_matrix() -> None:
+    policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
+
+    assert policy.auto_fetch_binding.global_auto_fetch == policy.matrix.auto_fetch == ActionPermission.ALLOW
+    assert policy.connector_sync.live_sync == policy.matrix.live_oauth_sync == ActionPermission.ALLOW
+    assert policy.connector_sync.auto_fetch == policy.matrix.auto_fetch == ActionPermission.ALLOW
+    assert policy.memory_auto_write.memory_auto_write == policy.matrix.memory_auto_write == ActionPermission.ALLOW
+    assert policy.profile_write.profile_write == policy.matrix.profile_write == ActionPermission.ALLOW
+    assert policy.mcp_execution.execute_tool == policy.matrix.mcp_execute == ActionPermission.ALLOW
+    assert policy.skill_execution.update_or_create_skill == policy.matrix.skills_update_create == ActionPermission.ALLOW
+    assert policy.browser_computer.click_type == policy.matrix.browser_click_type == ActionPermission.ASK
+    assert policy.file_operations.delete_file == policy.matrix.file_delete == ActionPermission.ASK
+    assert policy.provider_fallback.provider_retry == policy.matrix.provider_retry_fallback == ActionPermission.ALLOW
+    assert policy.learning_mutation.candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
+    assert policy.learning_mutation.skill_candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
+    assert policy.learning_mutation.preference_candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
+
+
+def test_policy_decision_audit_contains_required_traceable_fields() -> None:
+    policy = AutonomyPolicy.custom().with_permissions(file_delete=ActionPermission.QUARANTINE)
+    audit = evaluate_autonomy_action(
+        policy,
+        AutonomyAction(
+            action="delete generated artifact",
+            resource_type="file",
+            capability="file_delete",
+            connector_id="local-files",
+            source_id="workspace",
+            safe_trace_ref="trace-policy-1",
+            user_approval_state="pending",
+            timestamp="2026-05-19T00:00:00Z",
+        ),
+    )
+
+    projection = audit.safe_projection()
+
+    assert projection["decision_id"]
+    assert projection["autonomy_mode"] == "custom"
+    assert projection["action"] == "delete generated artifact"
+    assert projection["resource_type"] == "file"
+    assert projection["capability"] == "file_delete"
+    assert projection["connector_id"] == "local-files"
+    assert projection["source_id"] == "workspace"
+    assert projection["risk_level"] == "critical"
+    assert projection["reason_codes"] == ["policy.matrix.quarantine"]
+    assert projection["user_approval_state"] == "pending"
+    assert projection["policy_source"] == "packages.capability_runtime.autonomy"
+    assert projection["timestamp"] == "2026-05-19T00:00:00Z"
+    assert projection["safe_trace_ref"] == "trace-policy-1"
+    assert projection["raw_payload_persisted"] is False

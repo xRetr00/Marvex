@@ -48,13 +48,13 @@ Nango, Airbyte CDK, Meltano/Singer, Pipedream, Markdown/frontmatter parsers rema
 
 ## Memory Tree Completion Audit Checkpoint
 
-The memory tree follow-up audit closed in-boundary gaps without adding live connector sync. Evidence links now flow through safe tree projections, scoring projections include component explanations, SQLite tree index readbacks include evidence metadata, source forget deletes indexed documents/chunks/scores/tree nodes, and Control Plane web exposes source tree, topic tree, daily digest, evidence drill-down, source forget, and auto-fetch controls. Live OAuth sync, background schedules, and broad account actions remain blocked future work.
+The memory tree follow-up audit closed in-boundary gaps without adding live connector sync. Evidence links now flow through safe tree projections, scoring projections include component explanations, SQLite tree index readbacks include evidence metadata, source forget deletes indexed documents/chunks/scores/tree nodes, and Control Plane web exposes source tree, topic tree, daily digest, evidence drill-down, source forget, and auto-fetch controls. Live OAuth sync, background schedules, and broad account actions were still future work at this checkpoint and are now represented by the later autonomy policy layer.
 
 ## Assistant Intelligence and Tool-Using Runtime Integration Checkpoint
 
 Marvex now has a bounded deeper tool-using assistant turn path. IntentRuntime can use deterministic routing or an injected semantic-router-backed adapter result while still owning Marvex intent decisions. ContextRuntime and PromptHarnessRuntime select only route-relevant safe context, including Memory Tree evidence refs/counts for memory-tree-needed turns. Provider tool calls remain proposals; CapabilityRuntime remains the only owner of approval, execution requests, result envelopes, and dispatch policy. The integration includes the safe browser workflow, allowlisted MCP live proof path, approval resume/deny/cancel state, provider continuation readiness, trace-searchable safe telemetry summaries, and Control Plane-safe counts/status projections.
 
-Still blocked: generic provider routing/model selection, retry/fallback policy, direct browser-use execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior.
+Checkpoint limitation: generic provider routing/model selection, retry/fallback behavior, direct browser-use execution, broad browser/computer actions, MCP server launch/install, shell/filesystem tools, live OAuth/account sync, auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior were not implemented or required later policy controls.
 
 
 ## Provider Tool Continuation and Live Execution Hardening Checkpoint
@@ -69,7 +69,7 @@ Marvex now has a narrow real provider continuation handoff path: provider tool c
 
 Browser-use moved beyond import-only to a controlled adapter proof that exposes allowed browser-agent categories and the exact direct-execution blocker, while Playwright remains the real low-level SDK-backed browser path. Control Plane now exposes a Runtime Execution view and `/control/runtime/execution` safe projection for provider proposals, pending approvals, tool/browser/MCP status, provider continuation, final response readiness, bounded loop guards, risk level, and safe trace refs. Frontend views display and approval-state data only; they do not execute tools.
 
-Still blocked after this checkpoint: live provider credential smoke as a required automated test, generic provider routing/model selection, retry/fallback policy, direct Browser-use SDK execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior. The next recommended goal is Voice Runtime Foundation because the remaining proof-only runtime/tooling items are bounded adapter limitations, not blockers for voice contracts.
+Checkpoint limitation after this checkpoint: live provider credential smoke as a required automated test, generic provider routing/model selection, retry/fallback behavior, direct Browser-use SDK execution, broad browser/computer actions, MCP server launch/install, shell/filesystem tools, live OAuth/account sync, auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior were not implemented or required later policy controls.
 
 
 ## Hybrid Intent, Web Search, Grounded Evidence, and Risk-Based Governance Checkpoint
@@ -80,7 +80,7 @@ Marvex now has a real hybrid intent path for pre-Voice runtime use. `semantic-ro
 
 Risk governance now allows read/list/search/inspect/summarize by default, requires approval for write/delete/send/upload/install/run/connect/private-account actions, and reserves hard-block for malware, credential theft, injection exploitation, exfiltration, unauthorized account abuse, CAPTCHA/anti-bot bypass, stealth abuse, destructive/payment actions without consent, and policy override attempts.
 
-Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution, arbitrary MCP install/execute, broad OAuth sync, hidden auto-fetch, raw provider/tool/browser/search payload persistence, browser side effects without approval, and generic provider routing/model selection. Voice Runtime Foundation can start next if final validation stays green because the remaining search/governance boundaries are bounded and tested.
+Checkpoint limitation after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, tool execution, MCP install/execute, broad OAuth sync, auto-fetch, browser side effects, and generic provider routing/model selection were either not implemented or required approval/policy control; raw provider/tool/browser/search payload persistence stayed denied by default.
 
 
 ## Adaptive Context, Evidence, Memory Learning, and Governance Checkpoint
@@ -93,7 +93,7 @@ LearningRuntime now records safe feedback events and produces review-required me
 
 Governance now has granular, reason-coded audit decisions for allow, approval_required, deny, quarantine, and hard_block. MCP allowlist state can be projected from runtime/config/control-plane policy and changes are review-required proposals, not silent source-only mutation.
 
-Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution without approval, broad live OAuth sync, hidden auto-fetch, silent policy/skill mutation, raw sensitive payload persistence, generic provider routing/model selection, and paid/cloud-only embeddings. Voice Runtime Foundation can start next if final validation remains green.
+Checkpoint limitation after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, broad live OAuth sync, auto-fetch, policy/skill mutation, generic provider routing/model selection, and paid/cloud-only embeddings were not implemented or required later policy control; arbitrary tool execution required approval and raw sensitive payload persistence stayed denied by default.
 
 
 ## Autonomy Modes and Policy Control Plane Checkpoint

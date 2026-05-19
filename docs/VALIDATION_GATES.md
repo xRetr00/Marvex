@@ -620,7 +620,7 @@ This gate protects the pre-Voice adaptive runtime surface:
 
 Semantic memory search uses local deterministic token-vector scoring plus filters for trust, recency, entity, topic, source, source type, hotness, and evidence availability. It does not add a paid/cloud embedding dependency.
 
-Blocked: Voice, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution without approval, broad OAuth sync, hidden auto-fetch, silent policy/skill mutation, and raw sensitive payload persistence by default.
+Policy state: Voice, Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, OAuth sync, auto-fetch, and policy/skill mutation are governed by the autonomy policy layer or review-required candidates; raw sensitive payload persistence remains denied by default.
 
 ## Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance Gate
 
@@ -638,7 +638,7 @@ The gate protects these invariants:
 - Grounded answer citations must map to provided evidence refs.
 - PromptHarnessRuntime may receive bounded evidence sections only; no all-tools, all-memory, raw transcript, raw provider payload, raw browser DOM, or raw screenshot dumping.
 
-Blocked: Voice, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution, arbitrary MCP install/execute, broad OAuth sync, hidden auto-fetch, and raw payload persistence by default.
+Policy state: Voice, Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, MCP install/execute, OAuth sync, and auto-fetch are governed by autonomy policy and approval state; raw payload persistence remains denied by default.
 
 ## Intent, Context, and Prompt Harness Foundation Gate
 
@@ -707,7 +707,7 @@ Protected boundaries:
 - Control Plane API and frontend cannot execute tools directly or render raw secrets/payloads.
 - CapabilityRuntime remains authoritative for policy, approval, risk, and dispatch.
 
-Blocked: arbitrary MCP install/execute, arbitrary skill remote execution, shell execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, voice, Orb, desktop overlay, and proactive behavior.
+Policy state: MCP install/execute, skill update/create, and shell execution are governed by the autonomy policy layer and approval state. Arbitrary skill remote execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, voice, Orb, desktop overlay, and proactive behavior remain not implemented or denied.
 
 ### Governance Classification Gate
 

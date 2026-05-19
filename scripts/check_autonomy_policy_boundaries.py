@@ -49,6 +49,23 @@ def main() -> int:
     docs_text = (ROOT / "docs" / "GOVERNANCE_CLASSIFICATION.md").read_text(encoding="utf-8")
     if "policy-controlled" not in docs_text or "hard-blocked blacklist only" not in docs_text:
         failures.append("governance docs must distinguish policy-controlled from hard-blocked blacklist only")
+    blanket_block_terms = (
+        "broad oauth sync",
+        "hidden auto-fetch",
+        "retry/fallback policy",
+        "arbitrary mcp install/execute",
+        "arbitrary tool execution without approval",
+        "silent policy/skill mutation",
+    )
+    for rel_path in ("PROJECT_STATUS.md", "docs/VALIDATION_GATES.md"):
+        text = (ROOT / rel_path).read_text(encoding="utf-8")
+        for line in text.splitlines():
+            normalized = line.strip().lower()
+            if not normalized.startswith("blocked:") and not normalized.startswith("still blocked"):
+                continue
+            for term in blanket_block_terms:
+                if term in normalized:
+                    failures.append(f"{rel_path} keeps blanket blocked language for policy-controlled capability: {term}")
     run_all = (ROOT / "scripts" / "run_all_checks.py").read_text(encoding="utf-8")
     if "check_autonomy_policy_boundaries.py" not in run_all:
         failures.append("scripts/run_all_checks.py must run check_autonomy_policy_boundaries.py")

@@ -73,3 +73,22 @@ def test_control_plane_runtime_policy_mode_update_changes_policy_without_executi
     assert read_status == "200 OK"
     assert read_payload["mode"] == "ask_before_risky"
     assert read_payload["matrix"]["file_delete"] == "ask"
+
+
+def test_control_plane_runtime_policy_update_rejects_permission_matrix_payloads() -> None:
+    app = create_control_plane_api_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        autonomy_policy=AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY),
+    )
+
+    status, _headers, payload = _call(
+        app,
+        "/control/runtime-policy",
+        method="POST",
+        body={"mode": "custom", "matrix": {"shell_command_execution": "allow"}},
+    )
+
+    assert status == "400 Bad Request"
+    assert payload["details"]["reason"] == "invalid_runtime_policy_mode"

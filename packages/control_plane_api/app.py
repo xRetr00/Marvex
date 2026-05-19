@@ -218,6 +218,8 @@ def create_control_plane_api_app(
 def _parse_runtime_policy_mode(environ: dict[str, Any]) -> AutonomyMode | None:
     try:
         payload = json.loads(_read_request_body(environ))
+        if set(payload) != {"mode"}:
+            return None
         value = str(payload.get("mode", "")).strip()
         return AutonomyMode(value)
     except Exception:
