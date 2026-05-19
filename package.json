@@ -1,0 +1,8 @@
+{
+  "name": "marvex-workspace",
+  "private": true,
+  "scripts": {
+    "test": "npm --prefix apps/control_plane_web test",
+    "build": "npm --prefix apps/control_plane_web run build"
+  }
+}

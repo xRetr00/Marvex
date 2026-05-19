@@ -3,12 +3,86 @@ from __future__ import annotations
 from collections.abc import Callable
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
-from typing import Any
+from typing import Any, Literal
 
 from packages.voice_runtime import AudioFrame, SpeechSynthesisRequest, SpeechSynthesisResult, TranscriptionRequest, TranscriptionResult, WakeWordDetectionResult
+from packages.voice_runtime.base import VoiceRuntimeModel
 from packages.voice_runtime.errors import VoiceErrorEnvelope
 
 from .assets import VoiceAssetManager, VoiceModelInstallResult
+
+
+class VoiceWorkerAudioRef(VoiceRuntimeModel):
+    audio_ref_id: str
+    frame_count: int
+    duration_ms: int
+    byte_count: int
+    sample_rate: int | None = None
+    channel_count: int | None = None
+    raw_audio_persisted: Literal[False] = False
+
+    def safe_projection(self) -> dict[str, object]:
+        return self.model_dump(mode="json")
+
+
+class VoiceWorkerGeneratedAudioRef(VoiceRuntimeModel):
+    audio_ref_id: str
+    voice_id: str
+    sample_rate: int
+    byte_count: int
+    raw_audio_persisted: Literal[False] = False
+    raw_generated_audio_persisted: Literal[False] = False
+
+    def safe_projection(self) -> dict[str, object]:
+        return self.model_dump(mode="json")
+
+
+class VoiceWorkerAudioRefStore:
+    def __init__(self) -> None:
+        self._frames: dict[str, tuple[AudioFrame, ...]] = {}
+        self._refs: dict[str, VoiceWorkerAudioRef] = {}
+
+    def remember_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
+        audio_ref_id = f"memory://voice/captured/{trace_id}"
+        duration_ms = sum(frame.duration_ms for frame in frames)
+        byte_count = sum(len(frame.pcm) for frame in frames)
+        sample_rate = frames[0].sample_rate if frames else None
+        channel_count = frames[0].channel_count if frames else None
+        ref = VoiceWorkerAudioRef(audio_ref_id=audio_ref_id, frame_count=len(frames), duration_ms=duration_ms, byte_count=byte_count, sample_rate=sample_rate, channel_count=channel_count)
+        self._frames[audio_ref_id] = frames
+        self._refs[audio_ref_id] = ref
+        return ref
+
+    def resolve(self, audio_ref_id: str) -> tuple[AudioFrame, ...]:
+        return self._frames.get(audio_ref_id, ())
+
+    def safe_projection(self, audio_ref_id: str) -> dict[str, object]:
+        ref = self._refs.get(audio_ref_id)
+        if ref is None:
+            return {"audio_ref_id": audio_ref_id, "frame_count": 0, "duration_ms": 0, "byte_count": 0, "raw_audio_persisted": False}
+        return ref.safe_projection()
+
+
+class VoiceWorkerGeneratedAudioSink:
+    def __init__(self) -> None:
+        self._audio: dict[str, bytes] = {}
+        self._refs: dict[str, VoiceWorkerGeneratedAudioRef] = {}
+
+    def remember_audio(self, *, trace_id: str, voice_id: str, pcm: bytes, sample_rate: int) -> VoiceWorkerGeneratedAudioRef:
+        audio_ref_id = f"memory://voice/generated/{trace_id}/{voice_id}"
+        ref = VoiceWorkerGeneratedAudioRef(audio_ref_id=audio_ref_id, voice_id=voice_id, sample_rate=sample_rate, byte_count=len(pcm))
+        self._audio[audio_ref_id] = pcm
+        self._refs[audio_ref_id] = ref
+        return ref
+
+    def resolve(self, audio_ref_id: str) -> bytes:
+        return self._audio.get(audio_ref_id, b"")
+
+    def safe_projection(self, audio_ref_id: str) -> dict[str, object]:
+        ref = self._refs.get(audio_ref_id)
+        if ref is None:
+            return {"audio_ref_id": audio_ref_id, "byte_count": 0, "raw_audio_persisted": False, "raw_generated_audio_persisted": False}
+        return ref.safe_projection()
 
 
 SttRunner = Callable[[TranscriptionRequest, VoiceModelInstallResult], TranscriptionResult]
@@ -39,11 +113,21 @@ class VoiceWorkerBackendRuntime:
         stt_runner: SttRunner | None = None,
         tts_runner: TtsRunner | None = None,
         wakeword_runner: WakewordRunner | None = None,
+        audio_refs: VoiceWorkerAudioRefStore | None = None,
+        generated_audio: VoiceWorkerGeneratedAudioSink | None = None,
     ) -> None:
         self.asset_manager = asset_manager
+        self.audio_refs = audio_refs or VoiceWorkerAudioRefStore()
+        self.generated_audio = generated_audio or VoiceWorkerGeneratedAudioSink()
         self._stt_runner = stt_runner or self._default_stt_runner
         self._tts_runner = tts_runner or self._default_tts_runner
         self._wakeword_runner = wakeword_runner
+
+    def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
+        return self.audio_refs.remember_frames(trace_id=trace_id, frames=frames)
+
+    def remember_captured_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> str:
+        return self.remember_audio_frames(trace_id=trace_id, frames=frames).audio_ref_id
 
     def stt_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_STT_MODELS, backend_id, default_model=backend_id)
@@ -136,11 +220,20 @@ class VoiceWorkerBackendRuntime:
 
     def _default_stt_runner(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
         del asset
+        backend_id = request.backend_id or "unknown-stt"
+        frames = self.audio_refs.resolve(request.audio_ref_id)
+        if not frames:
+            return TranscriptionResult.failed(
+                trace_id=request.trace_id,
+                backend_id=backend_id,
+                duration_ms=request.duration_ms,
+                error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=backend_id, reason_code="stt_audio_ref_not_available"),
+            )
         return TranscriptionResult.failed(
             trace_id=request.trace_id,
-            backend_id=request.backend_id or "unknown-stt",
-            duration_ms=request.duration_ms,
-            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=request.backend_id or "unknown-stt", reason_code="stt_backend_runner_requires_audio_ref_resolver"),
+            backend_id=backend_id,
+            duration_ms=sum(frame.duration_ms for frame in frames),
+            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=backend_id, reason_code="stt_backend_runner_requires_model_inference_adapter"),
         )
 
     def _default_tts_runner(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
@@ -149,7 +242,7 @@ class VoiceWorkerBackendRuntime:
             trace_id=request.trace_id,
             backend_id=request.backend_id or "unknown-tts",
             voice_id=request.voice_id,
-            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=request.backend_id or "unknown-tts", reason_code="tts_backend_runner_requires_audio_sink"),
+            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=request.backend_id or "unknown-tts", reason_code="tts_backend_runner_requires_model_inference_adapter"),
         )
 
 

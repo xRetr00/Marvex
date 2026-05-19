@@ -299,17 +299,28 @@ class VoiceWorkerController:
         return self._record(VoiceWorkerEventType.WAKEWORD_DETECTED, trace_id=command.command_id, summary={**detection.safe_projection(), "wakeword_ready": True})
 
     def _handle_test_stt(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        audio_ref_id = command.payload.get("audio_ref_id")
+        if audio_ref_id is None:
+            frames = tuple(
+                self.audio.capture_frames(
+                    device_id=self.config.audio.input_device_id,
+                    sample_rate=self.config.audio.sample_rate,
+                    channel_count=self.config.audio.channel_count,
+                    frame_count=4,
+                )
+            )
+            audio_ref_id = self.backend_runtime.remember_captured_frames(trace_id=command.command_id, frames=frames)
         result = self.backend_runtime.test_stt(
             trace_id=command.command_id,
             backend_id=str(command.payload.get("backend_id") or self.config.active_stt_backend_id),
-            audio_ref_id=str(command.payload.get("audio_ref_id") or "memory://voice/test/stt"),
+            audio_ref_id=str(audio_ref_id),
         )
         if result.status == "failed" and result.safe_error is not None:
             reason = result.safe_error.details.get("reason_code", "stt_backend_not_ready")
             self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=reason, message="STT backend test did not complete.")
         else:
             self._error = None
-        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=command.command_id, summary=_transcription_summary(result))
+        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=command.command_id, summary={**_transcription_summary(result), "audio_ref_present": True})
 
     def _handle_test_tts(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.backend_runtime.test_tts(

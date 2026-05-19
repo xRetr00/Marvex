@@ -44,8 +44,10 @@ REQUIRED_MARKERS = (
     "prevents_runaway_recording",
     "VoiceWorkerBackendRuntime",
     "backend_package_not_available",
-    "stt_backend_runner_requires_audio_ref_resolver",
-    "tts_backend_runner_requires_audio_sink",
+    "stt_backend_runner_requires_model_inference_adapter",
+    "tts_backend_runner_requires_model_inference_adapter",
+    "VoiceWorkerAudioRefStore",
+    "VoiceWorkerGeneratedAudioSink",
 )
 CONTROL_TERMS = (
     "/control/voice/worker",
