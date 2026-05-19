@@ -44,10 +44,17 @@ def _handle_calculator_turn(turn_input: AssistantTurnInput, *, model: str, instr
     return assistant_result, state.safe_projection(), lifecycle.safe_projection()
 
 
-def _handle_provider_tool_call_turn(turn_input: AssistantTurnInput, *, model: str, instructions: str | None, previous_response_id: str | None, telemetry_sink: TelemetrySink, raw_tool_call: dict[str, Any], source: ProviderToolCallSource, memory_tree_evidence_ref_count: int = 0) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
+def _handle_provider_tool_call_turn(turn_input: AssistantTurnInput, *, model: str, instructions: str | None, previous_response_id: str | None, telemetry_sink: TelemetrySink, raw_tool_call: dict[str, Any], source: ProviderToolCallSource, memory_tree_evidence_ref_count: int = 0, provider_continuation_provider: Any | None = None) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
     mapper = ProviderToolCallMapper(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id)
     mapped = mapper.from_litellm(raw_tool_call) if source is ProviderToolCallSource.LITELLM else mapper.from_openai_compatible(raw_tool_call, source=source)
     provider_proposal = mapped.to_capability_proposal()
+    tool_name_status = str(getattr(mapped, "tool_name_status", "safe"))
+    if tool_name_status == "unsafe":
+        result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"provider-tool-denied.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=provider_proposal.capability_ref, status="denied", safe_result={"reason_code": "unsafe_provider_tool_name"}, raw_input_persisted=False, raw_output_persisted=False)
+        continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
+        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": True, "provider_continuation_input_ready": True, "provider_continuation_input": continuation_input, "provider_final_response_status": "completed", "final_response_ready": True, "result_status": result.status, "provider_tool_name_status": "unsafe", "safe_result_reason_code": "unsafe_provider_tool_name", "provider_tool_call_source": source.value, "provider_tool_proposal_id": provider_proposal.proposal_id, "raw_payload_persisted": False}
+        assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Provider tool proposal name was rejected by Marvex policy.", metadata={"integration_summary": {"raw_payload_persisted": False}})
+        return assistant_result, tool_projection, {"tool_result_delivery_ready": True, "provider_continuation_input_ready": True, "raw_payload_persisted": False}
     if provider_proposal.proposed_action != "calculator":
         result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"provider-tool-denied.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=provider_proposal.capability_ref, status="denied", safe_result={"reason_code": "unsupported_provider_tool"}, raw_input_persisted=False, raw_output_persisted=False)
         continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
@@ -72,16 +79,21 @@ def _handle_provider_tool_call_turn(turn_input: AssistantTurnInput, *, model: st
     lifecycle = build_tool_orchestrated_lifecycle_summary(turn_input, state)
     continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
     final_text = _provider_final_text(result)
-    provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text=final_text)), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={"tool_continuation_ready": True, "raw_tool_output_persisted": False}, telemetry_sink=telemetry_sink)
+    continuation_backend = "provider_port" if provider_continuation_provider is not None else "fake_provider_proof"
+    continuation_provider = provider_continuation_provider or FakeProvider(FakeProviderConfig(output_text=final_text))
+    provider_options = {"tool_continuation_ready": True, "provider_continuation_input": continuation_input, "provider_continuation_backend": continuation_backend, "raw_tool_output_persisted": False, "raw_provider_payload_persisted": False}
+    provider_result = run_provider_stage_turn(turn_input, provider=continuation_provider, model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options=provider_options, telemetry_sink=telemetry_sink)
     projection = state.safe_projection()
     projection["provider_tool_call_source"] = source.value
     projection["provider_tool_proposal_id"] = provider_proposal.proposal_id
     projection["provider_tool_capability_ref"] = provider_proposal.capability_ref.identifier
     projection["provider_tool_argument_status"] = argument_status
+    projection["provider_tool_name_status"] = tool_name_status
+    projection["provider_continuation_backend"] = continuation_backend
     projection["provider_continuation_input_ready"] = True
     projection["provider_continuation_input"] = continuation_input
     projection["provider_final_response_status"] = "completed" if provider_result.assistant_final_response is not None else "failed"
-    assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "provider_tool_call_source": source.value, "provider_continuation_input_ready": True}}})
+    assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "provider_tool_call_source": source.value, "provider_continuation_input_ready": True, "provider_continuation_backend": continuation_backend}}})
     lifecycle_projection = lifecycle.safe_projection()
     lifecycle_projection["provider_continuation_input_ready"] = True
     return assistant_result, projection, lifecycle_projection

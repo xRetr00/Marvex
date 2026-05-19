@@ -34,6 +34,8 @@ REQUIRED_INTEGRATION_TERMS = (
     "ProviderToolCallMapper",
     "provider_continuation_input",
     "provider_final_response_status",
+    "provider_continuation_backend",
+    "unsafe_provider_tool_name",
     "malformed_provider_tool_arguments",
     "PlaywrightBrowserWorkflow",
     "MemoryReadQuery",
@@ -48,6 +50,7 @@ REQUIRED_ADAPTER_TERMS = (
     "raw_page_text_persisted",
     "ProviderToolCallMapper",
     "ProviderToolCallSource",
+    "_is_safe_tool_name",
     "raw_provider_payload_persisted: Literal[False]",
 )
 FORBIDDEN_TEXT = (
@@ -74,6 +77,9 @@ REQUIRED_DOC_PHRASES = (
     "Memory Tree evidence refs",
     "provider continuation input summaries",
     "malformed provider argument rejection",
+    "Real Tool-Using Assistant Runtime Completion",
+    "unsafe tool names",
+    "Runtime Execution view",
 )
 
 

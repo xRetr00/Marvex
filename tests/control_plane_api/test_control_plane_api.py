@@ -89,7 +89,7 @@ def _app():
             {"session_id": "session-1", "conversation_count": 1},
         ),
         agent_loops=(
-            {"loop_id": "loop-1", "step_count": 1, "stop_reason": "waiting_for_human_approval"},
+            {"loop_id": "loop-1", "step_count": 1, "stop_reason": "waiting_for_human_approval", "provider_tool_proposal_id": "proposal-1", "pending_approval_count": 1, "provider_continuation_ready": False, "final_response_ready": False, "result_status": "requires_human_approval", "browser_action_count": 1, "browser_action_kind": "click", "mcp_tool_count": 0, "risk_level": "high", "safe_trace_ref": "trace-1", "raw_payload_persisted": False},
         ),
         telemetry={"trace_count": 1, "raw_payload_persisted": False},
         settings={"browser_tools_enabled": False, "computer_use_enabled": False},
@@ -461,4 +461,27 @@ def test_control_plane_exposes_connectors_sources_autofetch_and_memory_tree_with
     assert "access_token" not in serialized
     assert "authorization" not in serialized
     assert "bearer" not in serialized
+    assert "raw_payload\": true" not in serialized
+
+
+def test_control_plane_runtime_execution_endpoint_exposes_safe_execution_projection() -> None:
+    app = _app()
+
+    status, _headers, payload = _call(app, "/control/runtime/execution")
+
+    assert status == "200 OK"
+    assert payload["schema_version"] == "1"
+    assert payload["current_turn"]["status"] == "waiting_for_human_approval"
+    assert payload["provider_tool_proposals"][0]["status"] == "pending_approval"
+    assert payload["approvals"][0]["state"] == "pending"
+    assert payload["executed_tools"][0]["tool_id"] == "builtin.calculator"
+    assert payload["browser_actions"][0]["approval_state"] == "pending"
+    assert payload["mcp_calls"][0]["status"] == "not_started"
+    assert payload["provider_continuation"]["status"] == "not_ready"
+    assert payload["final_response"]["status"] == "not_ready"
+    assert payload["loop_guard"]["status"] == "bounded"
+    assert payload["raw_payload_persisted"] is False
+    serialized = json.dumps(payload).lower()
+    assert "authorization" not in serialized
+    assert "secret" not in serialized
     assert "raw_payload\": true" not in serialized

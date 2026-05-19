@@ -11,7 +11,7 @@ from packages.adapters.capabilities.mcp import McpAllowlist, McpServerRef, McpTr
 from packages.assistant_runtime import build_text_input_event, build_turn_input_from_event
 from packages.assistant_turn_integration import EndToEndTurnStateStore, run_end_to_end_assistant_turn
 from packages.capability_runtime import CapabilityExecutionMode
-from packages.contracts import ConversationRef, SessionRef, TraceStage
+from packages.contracts import ConversationRef, FinishReason, ProviderResponse, SessionRef, TraceStage
 from packages.intent_runtime import IntentKind
 from packages.memory_runtime import MemoryRecord, MemoryRef, SQLiteMemoryStore
 from packages.telemetry.search import TraceSearchQuery, search_traces
@@ -59,6 +59,30 @@ class FakeBrowserPage:
 
     def fill(self, target: str, value: str) -> None:
         self.typed.append((target, value))
+
+class RecordingContinuationProvider:
+    def __init__(self) -> None:
+        self.requests = []
+
+    def send(self, request):
+        self.requests.append(request)
+        continuation = request.provider_options.get("provider_continuation_input", {})
+        assert continuation.get("result_status") == "succeeded"
+        assert continuation.get("raw_tool_output_persisted") is False
+        assert "expression" not in str(request.provider_options).lower()
+        return ProviderResponse(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            provider_name="recording-openai-compatible",
+            response_id="real-continuation-response-1",
+            output_text="Real continuation consumed the safe calculator result.",
+            finish_reason=FinishReason.STOP,
+            usage={},
+            raw_metadata={"raw_payload_persisted": False},
+            error=None,
+        )
+
 
 def _turn_input(text: str):
     event = build_text_input_event(
@@ -432,3 +456,43 @@ def test_approved_browser_navigation_executes_through_playwright_workflow_after_
     assert resumed.tool_state_projection["provider_continuation_ready"] is True
     assert resumed.lifecycle_projection["tool_result_delivery_ready"] is True
     assert "https://example.test/page" not in resumed.model_dump_json()
+
+
+def test_provider_tool_call_can_continue_through_injected_real_provider_port() -> None:
+    provider = RecordingContinuationProvider()
+
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use the calculator tool"),
+        model="real-compatible-model",
+        provider_tool_call={"id": "call_calc", "function": {"name": "calculator", "arguments": "{\"expression\": \"9 + 10\"}"}},
+        provider_tool_call_source=ProviderToolCallSource.OPENAI_COMPATIBLE,
+        provider_continuation_provider=provider,
+    )
+
+    assert len(provider.requests) == 1
+    request = provider.requests[0]
+    assert request.model == "real-compatible-model"
+    assert request.provider_options["provider_continuation_input"]["result_status"] == "succeeded"
+    assert request.provider_options["provider_continuation_backend"] == "provider_port"
+    assert result.tool_state_projection["provider_continuation_backend"] == "provider_port"
+    assert result.tool_state_projection["provider_final_response_status"] == "completed"
+    assert result.assistant_result.assistant_final_response is not None
+    assert result.assistant_result.assistant_final_response.text == "Real continuation consumed the safe calculator result."
+    serialized = result.model_dump_json().lower()
+    assert "9 + 10" not in serialized
+    assert "raw_payload\": true" not in serialized
+
+
+def test_unsafe_provider_tool_name_is_rejected_instead_of_normalized_to_execution() -> None:
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use the calculator tool"),
+        model="fake-model",
+        provider_tool_call={"id": "call_unsafe", "function": {"name": "calculator;send_email", "arguments": "{\"expression\": \"1 + 1\"}"}},
+        provider_tool_call_source=ProviderToolCallSource.OPENAI_COMPATIBLE,
+    )
+
+    assert result.tool_state_projection["result_status"] == "denied"
+    assert result.tool_state_projection["safe_result_reason_code"] == "unsafe_provider_tool_name"
+    assert result.tool_state_projection["provider_tool_name_status"] == "unsafe"
+    assert result.tool_state_projection["provider_final_response_status"] == "completed"
+    assert "send_email" not in result.model_dump_json().lower()

@@ -169,6 +169,9 @@ def create_control_plane_api_app(
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/sources/") and path.endswith("/forget"):
             source_id = path.removeprefix(f"{CONTROL_PREFIX}/sources/").removesuffix("/forget").strip("/")
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "source_id": source_id, "delete_started": False, "requires_memory_runtime_policy": True, "raw_content_persisted": False})
+
+        if method == "GET" and path == f"{CONTROL_PREFIX}/runtime/execution":
+            return _json_response(start_response, "200 OK", _runtime_execution_payload(snapshot, approval_store))
         if method == "GET" and path == f"{CONTROL_PREFIX}/traces/search":
             query = _trace_search_query(query_string)
             result = search_traces(trace_reader, query, trace_ids=trace_ids) if trace_reader is not None else None
@@ -190,6 +193,32 @@ def create_control_plane_api_app(
 
     return app
 
+
+
+def _runtime_execution_payload(snapshot: ControlPlaneSnapshot, approval_store: InMemoryApprovalStore) -> dict[str, Any]:
+    loop = snapshot.agent_loops[0] if snapshot.agent_loops else {}
+    status = str(loop.get("stop_reason") or loop.get("result_status") or "idle")
+    proposal_id = str(loop.get("provider_tool_proposal_id") or "none")
+    approval_state = "pending" if int(loop.get("pending_approval_count", 0) or 0) else "none"
+    result_status = str(loop.get("result_status") or "not_started")
+    continuation_status = "ready" if bool(loop.get("provider_continuation_ready", False)) else "not_ready"
+    final_status = "ready" if bool(loop.get("final_response_ready", False)) else "not_ready"
+    trace_ref = str(loop.get("safe_trace_ref") or loop.get("trace_id") or "none")
+    runtime = {
+        "schema_version": SCHEMA_VERSION,
+        "current_turn": {"status": status, "trace_ref": trace_ref},
+        "provider_tool_proposals": ({"proposal_id": proposal_id, "status": "pending_approval" if approval_state == "pending" else result_status, "risk_level": str(loop.get("risk_level") or "safe"), "raw_provider_payload_persisted": False},),
+        "approvals": tuple({"approval_request_id": item.approval_request_id, "state": "pending", "risk_level": item.risk_level.value, "execution_started": False} for item in approval_store.list_pending().approvals),
+        "executed_tools": ({"tool_id": "builtin.calculator", "status": result_status, "raw_tool_output_persisted": False},),
+        "browser_actions": ({"action_kind": str(loop.get("browser_action_kind") or "none"), "approval_state": approval_state, "status": result_status, "raw_dom_persisted": False, "raw_screenshot_persisted": False},),
+        "mcp_calls": ({"status": "succeeded" if int(loop.get("mcp_tool_count", 0) or 0) else "not_started", "tool_count": int(loop.get("mcp_tool_count", 0) or 0), "raw_mcp_payload_persisted": False},),
+        "provider_continuation": {"status": continuation_status, "input_ready": bool(loop.get("provider_continuation_input_ready", False)), "backend": str(loop.get("provider_continuation_backend") or "not_selected"), "raw_provider_payload_persisted": False},
+        "final_response": {"status": final_status, "raw_transcript_persisted": False},
+        "loop_guard": {"status": "bounded", "generic_provider_routing_enabled": False, "retry_fallback_enabled": False},
+        "trace_refs": ({"trace_ref": trace_ref},) if trace_ref != "none" else (),
+        "raw_payload_persisted": False,
+    }
+    return _safe_nested_mapping(runtime)
 
 def _autofetch_path(path: str) -> tuple[str, str | None]:
     tail = path.removeprefix(f"{CONTROL_PREFIX}/autofetch/").strip("/")

@@ -12,6 +12,7 @@ import { Card, CardContent } from "./components/ui/card";
 const views = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
   { id: "approvals", label: "Approvals", icon: ShieldCheck },
+  { id: "runtime_execution", label: "Runtime Execution", icon: MonitorCog },
   { id: "approval_history", label: "Approval History", icon: History },
   { id: "traces", label: "Traces", icon: Activity },
   { id: "trace_search", label: "Trace Search", icon: Search },
@@ -76,6 +77,7 @@ export function App() {
 function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/schemas").ControlSnapshot }) {
   if (active === "dashboard") return <Dashboard snapshot={snapshot} />;
   if (active === "approvals") return <Approvals approvals={snapshot.approvals?.approvals ?? []} />;
+  if (active === "runtime_execution") return <RuntimeExecutionView snapshot={snapshot} />;
   if (active === "approval_history") return <ApprovalHistoryView />;
   if (active === "traces") return <SafeTable title="Traces" rows={snapshot.traces} empty="No safe trace projections available." />;
   if (active === "trace_search") return <TraceSearchView />;
@@ -103,4 +105,23 @@ function LoadingState() {
 
 function ErrorState({ message }: { message: string }) {
   return <Card><CardContent className="p-6"><div className="font-medium">Control Plane unavailable</div><p className="mt-1 text-sm text-muted-foreground">{message}</p></CardContent></Card>;
+}
+
+
+function RuntimeExecutionView({ snapshot }: { snapshot: import("./lib/schemas").ControlSnapshot }) {
+  const loop = snapshot.agent_loops[0] ?? {};
+  const approvalState = Number(loop.pending_approval_count ?? 0) > 0 ? "pending" : "none";
+  const resultStatus = String(loop.result_status ?? "not_started");
+  const continuationStatus = loop.provider_continuation_ready ? "ready" : "not_ready";
+  const finalStatus = loop.final_response_ready ? "ready" : "not_ready";
+  const riskLevel = String(loop.risk_level ?? "safe");
+  const traceRef = String(loop.safe_trace_ref ?? loop.trace_id ?? "none");
+  const proposalStatus = approvalState === "pending" ? "pending_approval" : resultStatus;
+  const proposalRows = [{ proposal_id: String(loop.provider_tool_proposal_id ?? "none"), status: proposalStatus, risk_level: riskLevel, trace_ref: traceRef, raw_provider_payload_persisted: false }];
+  const browserRows = [{ action_kind: String(loop.browser_action_kind ?? "none"), approval_state: approvalState, status: resultStatus, raw_dom_persisted: false, raw_screenshot_persisted: false }];
+  const mcpRows = [{ status: Number(loop.mcp_tool_count ?? 0) > 0 ? "succeeded" : "not_started", tool_count: Number(loop.mcp_tool_count ?? 0), raw_mcp_payload_persisted: false }];
+  const continuationRows = [{ status: continuationStatus, backend: String(loop.provider_continuation_backend ?? "not_selected"), input_ready: Boolean(loop.provider_continuation_input_ready), raw_provider_payload_persisted: false }];
+  const finalRows = [{ status: finalStatus, raw_transcript_persisted: false }];
+  const approvalRows = snapshot.approvals?.approvals.map((approval) => ({ approval_request_id: approval.approval_request_id, state: approval.status, risk_level: approval.risk_level, execution_started: false })) ?? [];
+  return <div className="space-y-4"><SafeTable title="Tool Calls / Provider Proposals" rows={proposalRows} empty="No provider proposals." /><SafeTable title="Approval Resume / Deny / Cancel" rows={approvalRows} empty="No pending approval state." /><SafeTable title="Browser Actions" rows={browserRows} empty="No browser actions." /><SafeTable title="MCP Calls" rows={mcpRows} empty="No MCP calls." /><SafeTable title="Provider Continuation" rows={continuationRows} empty="No provider continuation state." /><SafeTable title="Final Response" rows={finalRows} empty="No final response state." /><SafeTable title="Trace Links" rows={traceRef === "none" ? [] : [{ trace_ref: traceRef }]} empty="No trace refs." /></div>;
 }

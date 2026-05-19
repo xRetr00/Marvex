@@ -37,7 +37,9 @@ class ProviderToolCallMapper(ProviderToolCallMapperModel):
     ) -> OpenAIFunctionToolProposal | LMStudioLocalToolProposal:
         function = raw_tool_call.get("function") if isinstance(raw_tool_call, dict) else None
         function = function if isinstance(function, dict) else {}
-        name = _safe_tool_name(str(function.get("name") or raw_tool_call.get("name") or "tool"))
+        raw_name = str(function.get("name") or raw_tool_call.get("name") or "tool")
+        name_status = "safe" if _is_safe_tool_name(raw_name) else "unsafe"
+        name = _safe_tool_name(raw_name) if name_status == "safe" else "blocked_provider_tool"
         proposal_id = _safe_tool_name(str(raw_tool_call.get("id") or f"{source.value}.{name}"))
         arguments_schema = _schema_from_arguments(function.get("arguments"))
         if source is ProviderToolCallSource.LMSTUDIO:
@@ -47,6 +49,7 @@ class ProviderToolCallMapper(ProviderToolCallMapperModel):
                 trace_id=self.trace_id,
                 turn_id=self.turn_id,
                 tool_name=name,
+                tool_name_status=name_status,
                 marvex_policy_authoritative=True,
             )
         return OpenAIFunctionToolProposal(
@@ -55,11 +58,14 @@ class ProviderToolCallMapper(ProviderToolCallMapperModel):
             trace_id=self.trace_id,
             turn_id=self.turn_id,
             function_name=name,
+            tool_name_status=name_status,
             json_schema=arguments_schema,
         )
 
     def from_litellm(self, raw_tool_call: dict[str, Any]) -> LiteLLMToolCallProposal:
-        name = _safe_tool_name(str(raw_tool_call.get("name") or _nested_name(raw_tool_call) or "tool"))
+        raw_name = str(raw_tool_call.get("name") or _nested_name(raw_tool_call) or "tool")
+        name_status = "safe" if _is_safe_tool_name(raw_name) else "unsafe"
+        name = _safe_tool_name(raw_name) if name_status == "safe" else "blocked_provider_tool"
         proposal_id = _safe_tool_name(str(raw_tool_call.get("id") or f"litellm.{name}"))
         return LiteLLMToolCallProposal(
             schema_version=self.schema_version,
@@ -67,6 +73,7 @@ class ProviderToolCallMapper(ProviderToolCallMapperModel):
             trace_id=self.trace_id,
             turn_id=self.turn_id,
             tool_name=name,
+            tool_name_status=name_status,
             toolset_ref=LiteLLMToolsetRef(toolset_id="provider_tool_calls", external_permission_source="marvex"),
         )
 
@@ -115,3 +122,13 @@ def _safe_tool_name(value: str) -> str:
     safe = safe.strip("._-:")
     return safe or "tool"
 
+
+
+def _is_safe_tool_name(value: str) -> bool:
+    stripped = value.strip()
+    lowered = stripped.lower()
+    if not stripped or stripped != value:
+        return False
+    if any(character not in _SAFE_TOOL_CHARS for character in stripped):
+        return False
+    return not any(part in lowered for part in ("authorization", "bearer", "password", "secret", "token", "raw", "prompt", "transcript"))

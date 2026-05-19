@@ -20,12 +20,14 @@ verified date: 2026-05-18
 
 verified by: Codex
 
-scope: Main-environment dependency import proof only. `BrowserUseBackendProbe` verifies `browser_use` and `browser_use_sdk` importability, but `BrowserUseTaskProposal`, `BrowserUseExecutionRequest`, and safe result envelopes keep backend execution disabled.
+scope: Main-environment dependency import proof plus controlled adapter proof. `BrowserUseBackendProbe` verifies `browser_use` and `browser_use_sdk` importability. `BrowserUseControlledBackend` exposes safe allowed action categories and an exact blocker for direct SDK execution. `BrowserUseTaskProposal`, `BrowserUseExecutionRequest`, and safe result envelopes keep backend execution disabled unless a future worker/MCP boundary is explicitly approved.
 
-architecture fit: Conditional. The dependency is supported behind the adapter, but execution remains blocked until a future task approves a policy-controlled backend path. Playwright remains the low-level browser SDK path.
+architecture fit: Conditional. The dependency is supported behind the adapter with a controlled proof backend, but direct SDK execution remains blocked until a future task approves a policy-controlled worker or MCP boundary. Playwright remains the low-level browser SDK path.
 
-adopt / defer / reject decision: Adopt `browser-use==0.11.13` as a declared dependency for compatibility/import proof. Defer Browser-use execution. Latest `browser-use==0.12.6` is blocked by an exact `openai==2.16.0` pin and must not downgrade Marvex's OpenAI stack.
+adopt / defer / reject decision: Adopt `browser-use==0.11.13` as a declared dependency for compatibility/import proof and controlled adapter proof. Defer direct Browser-use SDK execution. Latest `browser-use==0.12.6` is blocked by an exact `openai==2.16.0` pin and must not downgrade Marvex's OpenAI stack.
 
-risks: Browser-use can combine model planning with browser actions, which risks hidden tool loops, prompt injection through page content, credential entry, form submission, raw page persistence, and execution outside Marvex approval policy. Current mitigation is a disabled backend with explicit approval-required proposals and denial envelopes.
+risks: Browser-use can combine model planning with browser actions, which risks hidden tool loops, prompt injection through page content, credential entry, form submission, raw page persistence, and execution outside Marvex approval policy. Current mitigation is a disabled direct backend with explicit approval-required proposals, denial envelopes, and `browser_use_direct_execution_blocked_until_policy_worker_boundary` as the tested blocker.
 
 comparison to custom routing: Browser-use is not Marvex's planner, assistant loop, browser policy owner, or provider router. If execution is adopted later, it must stay behind CapabilityRuntime-approved requests and safe result envelopes.
+
+Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.

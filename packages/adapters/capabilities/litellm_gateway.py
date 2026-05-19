@@ -46,6 +46,8 @@ class LiteLLMToolCallProposal(LiteLLMGatewayAdapterModel):
     trace_id: str = Field(..., min_length=1)
     turn_id: str = Field(..., min_length=1)
     tool_name: str = Field(..., min_length=1)
+    tool_name_status: Literal["safe", "unsafe"] = "safe"
+    original_tool_name_persisted: Literal[False] = False
     toolset_ref: LiteLLMToolsetRef
     litellm_owns_execution: Literal[False] = False
     marvex_policy_authoritative: Literal[True] = True
@@ -57,7 +59,7 @@ class LiteLLMToolCallProposal(LiteLLMGatewayAdapterModel):
             trace_id=self.trace_id,
             turn_id=self.turn_id,
             capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier=f"litellm.{self.tool_name}"),
-            proposed_action=self.tool_name,
+            proposed_action="blocked_provider_tool" if self.tool_name_status == "unsafe" else self.tool_name,
             risk_level=ToolRiskLevel.MEDIUM,
             side_effect_level=ToolSideEffectLevel.READ_ONLY,
             execution_mode=CapabilityExecutionMode.PROPOSAL_ONLY,

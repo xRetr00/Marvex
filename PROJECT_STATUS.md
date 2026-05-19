@@ -48,14 +48,24 @@ The memory tree follow-up audit closed in-boundary gaps without adding live conn
 
 Marvex now has a bounded deeper tool-using assistant turn path. IntentRuntime can use deterministic routing or an injected semantic-router-backed adapter result while still owning Marvex intent decisions. ContextRuntime and PromptHarnessRuntime select only route-relevant safe context, including Memory Tree evidence refs/counts for memory-tree-needed turns. Provider tool calls remain proposals; CapabilityRuntime remains the only owner of approval, execution requests, result envelopes, and dispatch policy. The integration includes the safe browser workflow, allowlisted MCP live proof path, approval resume/deny/cancel state, provider continuation readiness, trace-searchable safe telemetry summaries, and Control Plane-safe counts/status projections.
 
-Still blocked: generic provider routing/model selection, retry/fallback policy, browser-use execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior.
+Still blocked: generic provider routing/model selection, retry/fallback policy, direct browser-use execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior.
 
 
 ## Provider Tool Continuation and Live Execution Hardening Checkpoint
 
 Marvex now has a bounded provider tool continuation path for safe built-in execution. LM Studio/OpenAI-compatible provider tool calls are normalized as proposals, malformed arguments are denied without fallback execution, safe calculator results become provider continuation input summaries, and final fake-provider continuation responses are represented without persisting raw provider payloads or raw tool arguments.
 
-Approval resume now distinguishes approved, denied, and cancelled outcomes in safe projections. Approved Playwright-backed browser navigation can execute after CapabilityRuntime approval when a page boundary is supplied; click/type remain approval-gated and no browser-use execution was promoted. Trace search and Control Plane summaries expose only counts/status booleans for proposal, approval, execution, continuation, and final response state.`r`n`r`n## Validation Baseline
+Approval resume now distinguishes approved, denied, and cancelled outcomes in safe projections. Approved Playwright-backed browser navigation can execute after CapabilityRuntime approval when a page boundary is supplied; click/type remain approval-gated and no browser-use execution was promoted. Trace search and Control Plane summaries expose only counts/status booleans for proposal, approval, execution, continuation, and final response state.
+
+## Real Tool-Using Assistant Runtime Completion Checkpoint
+
+Marvex now has a narrow real provider continuation handoff path: provider tool calls from OpenAI-compatible, LM Studio, or LiteLLM-shaped payloads map into Marvex-owned proposals, unsafe tool names are denied instead of normalized into executable actions, safe built-in execution remains CapabilityRuntime-owned, and an injected ProviderPort-compatible continuation adapter receives only safe continuation summaries before producing the final assistant response. The default no-provider test path remains an explicit fake-provider proof rather than generic provider routing.
+
+Browser-use moved beyond import-only to a controlled adapter proof that exposes allowed browser-agent categories and the exact direct-execution blocker, while Playwright remains the real low-level SDK-backed browser path. Control Plane now exposes a Runtime Execution view and `/control/runtime/execution` safe projection for provider proposals, pending approvals, tool/browser/MCP status, provider continuation, final response readiness, bounded loop guards, risk level, and safe trace refs. Frontend views display and approval-state data only; they do not execute tools.
+
+Still blocked after this checkpoint: live provider credential smoke as a required automated test, generic provider routing/model selection, retry/fallback policy, direct Browser-use SDK execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior. The next recommended goal is Voice Runtime Foundation because the remaining proof-only runtime/tooling items are bounded adapter limitations, not blockers for voice contracts.
+
+## Validation Baseline
 
 Initial baseline before this cleanup:
 
@@ -94,3 +104,5 @@ Blocked without explicit future approval: new product features, new dependencies
 ## Next Recommended Goal
 
 Foundation cleanup checkpoint: continue reducing large-file and central-brain risk inside bounded foundations without adding product features. Start with focused ownership splits, boundary tests, and docs/gates updates for any remaining files that approach god-object size or mix policy with adapter mechanics.
+
+Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.

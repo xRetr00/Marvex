@@ -12,6 +12,7 @@ from packages.adapters.providers.tool_calls import (
     ProviderToolCallMapper,
     ProviderToolCallSource,
 )
+from packages.adapters.capabilities.browser_use import BrowserUseBackendProbe, BrowserUseControlledBackend, BrowserUseTaskProposal
 from packages.capability_runtime import (
     ApprovalDecision,
     CapabilityPermissionDecision,
@@ -138,3 +139,41 @@ def test_provider_tool_call_mapper_turns_supported_provider_shapes_into_policy_p
     assert all(proposal.raw_arguments_persisted is False for proposal in proposals)
     assert all("expression" not in proposal.model_dump_json() for proposal in proposals)
 
+
+
+def test_provider_tool_call_mapper_marks_unsafe_tool_name_without_silent_normalization() -> None:
+    mapper = ProviderToolCallMapper(schema_version="1", trace_id="trace-provider-tools-1", turn_id="turn-provider-tools-1")
+
+    proposal = mapper.from_openai_compatible(
+        {"id": "call_unsafe", "function": {"name": "calculator;send_email", "arguments": "{}"}},
+        source=ProviderToolCallSource.OPENAI_COMPATIBLE,
+    )
+
+    assert proposal.tool_name_status == "unsafe"
+    assert proposal.original_tool_name_persisted is False
+    assert proposal.to_capability_proposal().proposed_action == "blocked_provider_tool"
+    assert "send_email" not in proposal.model_dump_json().lower()
+
+
+def test_browser_use_controlled_backend_reports_policy_gated_status_without_sdk_execution() -> None:
+    probe = BrowserUseBackendProbe.from_installed_backend()
+    proposal = BrowserUseTaskProposal(
+        schema_version="1",
+        proposal_id="browser-use-proof-1",
+        trace_id="trace-browser-use-1",
+        turn_id="turn-browser-use-1",
+        task_summary="Navigate to a public page and read text",
+    )
+
+    backend = BrowserUseControlledBackend.from_probe(probe)
+    projection = backend.safe_projection()
+    result = backend.preview_allowed_task(proposal)
+
+    assert projection["execution_mode"] == "controlled_adapter_proof"
+    assert projection["requires_capability_runtime_approval"] is True
+    assert projection["direct_sdk_execution_enabled"] is False
+    assert result.status == "denied"
+    assert result.safe_result["blocked_reason"] == "browser_use_direct_execution_blocked_until_policy_worker_boundary"
+    assert result.safe_result["allowed_actions"] == ("navigate", "read_page", "extract_text", "screenshot_metadata")
+    assert result.raw_input_persisted is False
+    assert result.raw_output_persisted is False

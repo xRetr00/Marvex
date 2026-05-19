@@ -14,7 +14,7 @@ const snapshot = {
   traces: [{ trace_id: "trace-1", event_count: 2, raw_payload_persisted: false }],
   memory: [{ memory_ref: "memory:1", record_count: 1 }],
   sessions: [{ session_id: "session-1", conversation_count: 1 }],
-  agent_loops: [{ loop_id: "loop-1", step_count: 1, stop_reason: "waiting_for_human_approval" }],
+  agent_loops: [{ loop_id: "loop-1", step_count: 1, stop_reason: "waiting_for_human_approval", provider_tool_proposal_id: "proposal-1", pending_approval_count: 1, provider_continuation_ready: false, final_response_ready: false, result_status: "requires_human_approval", browser_action_count: 1, browser_action_kind: "click", mcp_tool_count: 0, risk_level: "high", safe_trace_ref: "trace-1", raw_payload_persisted: false }],
   telemetry: { trace_count: 1, raw_payload_persisted: false },
   settings: { browser_tools_enabled: false, computer_use_enabled: false },
   raw_payload_persisted: false,
@@ -124,5 +124,30 @@ describe("Control Plane app", () => {
 
     await waitFor(() => expect(screen.getByText("Control Plane unavailable")).toBeInTheDocument());
     expect(screen.queryByText(/Bearer/i)).not.toBeInTheDocument();
+  });
+});
+
+
+describe("Control Plane runtime execution view", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders runtime execution panels from safe snapshot data without direct execution controls", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify(snapshot), { status: 200, headers: { "Content-Type": "application/json" } })));
+
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Runtime Execution/i }));
+    expect(await screen.findByText("Tool Calls / Provider Proposals")).toBeInTheDocument();
+    expect(await screen.findByText("Browser Actions")).toBeInTheDocument();
+    expect(await screen.findByText("MCP Calls")).toBeInTheDocument();
+    expect(await screen.findByText("Provider Continuation")).toBeInTheDocument();
+    expect(await screen.findByText("Final Response")).toBeInTheDocument();
+    expect(await screen.findByText("pending_approval")).toBeInTheDocument();
+    expect((await screen.findAllByText("not_ready")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();
   });
 });

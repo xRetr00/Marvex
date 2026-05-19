@@ -145,3 +145,48 @@ class BrowserUseExecutionRequest(BrowserUseModel):
             raw_input_persisted=False,
             raw_output_persisted=False,
         )
+
+
+class BrowserUseControlledBackend(BrowserUseModel):
+    probe: BrowserUseBackendProbe
+    execution_mode: Literal["controlled_adapter_proof"] = "controlled_adapter_proof"
+    requires_capability_runtime_approval: Literal[True] = True
+    direct_sdk_execution_enabled: Literal[False] = False
+    allowed_actions: tuple[str, ...] = ("navigate", "read_page", "extract_text", "screenshot_metadata")
+    blocked_reason: Literal["browser_use_direct_execution_blocked_until_policy_worker_boundary"] = "browser_use_direct_execution_blocked_until_policy_worker_boundary"
+
+    @classmethod
+    def from_probe(cls, probe: BrowserUseBackendProbe) -> "BrowserUseControlledBackend":
+        return cls(probe=probe)
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "backend_name": self.probe.backend_name,
+            "package_importable": self.probe.package_importable,
+            "sdk_package_importable": self.probe.sdk_package_importable,
+            "execution_mode": self.execution_mode,
+            "requires_capability_runtime_approval": True,
+            "direct_sdk_execution_enabled": False,
+            "playwright_remains_low_level_backend": True,
+            "allowed_actions": self.allowed_actions,
+            "blocked_reason": self.blocked_reason,
+            "raw_browser_payload_persisted": False,
+        }
+
+    def preview_allowed_task(self, proposal: BrowserUseTaskProposal) -> CapabilityResultEnvelope:
+        return CapabilityResultEnvelope(
+            schema_version=proposal.schema_version,
+            result_id=f"{proposal.proposal_id}:browser-use-controlled-proof",
+            trace_id=proposal.trace_id,
+            turn_id=proposal.turn_id,
+            capability_ref=proposal.to_capability_proposal().capability_ref,
+            status="denied",
+            safe_result={
+                "backend_enabled": False,
+                "controlled_backend_available": True,
+                "allowed_actions": self.allowed_actions,
+                "blocked_reason": self.blocked_reason,
+            },
+            raw_input_persisted=False,
+            raw_output_persisted=False,
+        )

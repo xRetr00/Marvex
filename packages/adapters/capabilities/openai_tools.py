@@ -34,6 +34,8 @@ class OpenAIFunctionToolProposal(OpenAIToolAdapterModel):
     trace_id: str = Field(..., min_length=1)
     turn_id: str = Field(..., min_length=1)
     function_name: str = Field(..., min_length=1)
+    tool_name_status: Literal["safe", "unsafe"] = "safe"
+    original_tool_name_persisted: Literal[False] = False
     json_schema: dict[str, object]
     hosted_tool_ref: OpenAIHostedToolRef | None = None
     remote_mcp_tool_ref: OpenAIRemoteMcpToolRef | None = None
@@ -46,7 +48,7 @@ class OpenAIFunctionToolProposal(OpenAIToolAdapterModel):
             trace_id=self.trace_id,
             turn_id=self.turn_id,
             capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier=f"openai.{self.function_name}"),
-            proposed_action=self.function_name,
+            proposed_action="blocked_provider_tool" if self.tool_name_status == "unsafe" else self.function_name,
             risk_level=ToolRiskLevel.MEDIUM,
             side_effect_level=ToolSideEffectLevel.READ_ONLY,
             execution_mode=CapabilityExecutionMode.PROPOSAL_ONLY,

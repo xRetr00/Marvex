@@ -50,6 +50,7 @@ def run_end_to_end_assistant_turn(
     browser_page: Any | None = None,
     intent_classifier: Any | None = None,
     memory_tree_runtime: Any | None = None,
+    provider_continuation_provider: Any | None = None,
 ) -> EndToEndAssistantTurnResult:
     store = state_store or EndToEndTurnStateStore()
     telemetry_sink: TelemetrySink = store.trace_reader
@@ -68,7 +69,7 @@ def run_end_to_end_assistant_turn(
     planning = PlanningNeedDecision.from_intent(intent.selected_intent, context_candidate_count=len(context_pack.included) + len(context_pack.excluded))
 
     if provider_tool_call is not None:
-        assistant_result, tool_projection, lifecycle_projection = _handle_provider_tool_call_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink, raw_tool_call=provider_tool_call, source=provider_tool_call_source, memory_tree_evidence_ref_count=_memory_tree_evidence_ref_count(context_pack))
+        assistant_result, tool_projection, lifecycle_projection = _handle_provider_tool_call_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink, raw_tool_call=provider_tool_call, source=provider_tool_call_source, memory_tree_evidence_ref_count=_memory_tree_evidence_ref_count(context_pack), provider_continuation_provider=provider_continuation_provider)
     elif intent.selected_intent.intent_kind == IntentKind.BROWSER_COMPUTER_USE:
         assistant_result, tool_projection, lifecycle_projection = _handle_browser_turn(turn_input, store, resume_approval_request_id, browser_page=browser_page)
     elif intent.selected_intent.intent_kind == IntentKind.MCP_NEEDED and mcp_session and mcp_server_ref and mcp_allowlist:
