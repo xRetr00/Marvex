@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 from packages.voice_runtime import DeterministicSttAdapter, DeterministicTtsAdapter, VoicePolicyDecision, VoiceRuntime
 from packages.voice_worker_runtime import (
@@ -98,3 +99,44 @@ def test_worker_barge_in_interrupts_playback_and_routes_new_user_speech_event() 
     assert result.event.event_type == VoiceWorkerEventType.BARGE_IN_DETECTED
     assert result.status.playback_status == "interrupted"
     assert result.status.safe_projection()["queued_tts_count"] == 0
+
+
+def test_sounddevice_adapter_uses_real_runtime_api_shape(monkeypatch) -> None:
+    calls: list[tuple[str, object]] = []
+
+    class _FakeRecording:
+        def __init__(self) -> None:
+            self.size = 4
+
+        def max(self) -> float:
+            return 0.5
+
+        def mean(self) -> float:
+            return 0.25
+
+        def tobytes(self) -> bytes:
+            return b"\x01\x00\x02\x00"
+
+    fake_sd = SimpleNamespace(
+        query_devices=lambda: ({"name": "Mic", "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 16000}, {"name": "Speaker", "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 24000}),
+        rec=lambda frames, samplerate, channels, dtype, device=None: calls.append(("rec", (frames, samplerate, channels, dtype, device))) or _FakeRecording(),
+        wait=lambda: calls.append(("wait", True)),
+        play=lambda data, samplerate, device=None: calls.append(("play", (data, samplerate, device))),
+        stop=lambda: calls.append(("stop", True)),
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", fake_sd)
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    adapter = SoundDeviceAudioAdapter()
+    assert adapter.list_input_devices()[0].label == "Mic"
+    assert adapter.test_mic_level(device_id="0", duration_ms=100).peak_level == 0.5
+    frames = tuple(adapter.capture_frames(device_id="0", sample_rate=16_000, channel_count=1, frame_count=1))
+    playing = adapter.play_audio(device_id="1", audio_ref="memory://voice/generated/test", sample_rate=24_000)
+    interrupted = adapter.interrupt_playback(reason_code="barge_in.user_speech_detected")
+
+    assert frames[0].raw_audio_persisted is False
+    assert frames[0].pcm == b"\x01\x00\x02\x00"
+    assert playing.status == "playing"
+    assert interrupted.status == "interrupted"
+    assert [call[0] for call in calls] == ["rec", "wait", "rec", "wait", "play", "stop"]

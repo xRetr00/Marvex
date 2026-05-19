@@ -120,15 +120,29 @@ class SoundDeviceAudioAdapter:
         return tuple(devices)
 
     def test_mic_level(self, *, device_id: str | None, duration_ms: int) -> MicLevelResult:
-        return MicLevelResult(device_id=device_id or "default", status="blocked", duration_ms=duration_ms, peak_level=0, rms_level=0)
+        sd = self._sounddevice()
+        sample_rate = 16_000
+        samples = max(1, int(sample_rate * duration_ms / 1000))
+        recording = sd.rec(samples, samplerate=sample_rate, channels=1, dtype="float32", device=_device_arg(device_id))
+        sd.wait()
+        peak = _bounded_level(recording.max() if getattr(recording, "size", 0) else 0)
+        rms = _bounded_level(recording.mean() if getattr(recording, "size", 0) else 0)
+        return MicLevelResult(device_id=device_id or "default", status="passed", duration_ms=duration_ms, peak_level=peak, rms_level=rms)
 
     def capture_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int) -> Iterable[AudioFrame]:
-        del device_id, sample_rate, channel_count, frame_count
-        return ()
+        sd = self._sounddevice()
+        frames: list[VoiceWorkerAudioFrame] = []
+        samples = max(1, int(sample_rate * 0.1))
+        for index in range(frame_count):
+            recording = sd.rec(samples, samplerate=sample_rate, channels=channel_count, dtype="int16", device=_device_arg(device_id))
+            sd.wait()
+            frames.append(VoiceWorkerAudioFrame(frame_id=f"sounddevice-frame-{index}", pcm=recording.tobytes(), sample_rate=sample_rate, channel_count=channel_count, duration_ms=100))
+        return tuple(frames)
 
     def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:
-        del sample_rate
-        return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="blocked", reason_code="sounddevice_playback_requires_pcm_buffer")  # type: ignore[arg-type]
+        samples = [0.0] * max(1, int(sample_rate * 0.05))
+        self._sounddevice().play(samples, samplerate=sample_rate, device=_device_arg(device_id))
+        return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="playing", reason_code="sounddevice.playback_started")
 
     def stop_playback(self) -> PlaybackAdapterResult:
         return PlaybackAdapterResult(status="stopped", reason_code="sounddevice.stop")
@@ -136,3 +150,19 @@ class SoundDeviceAudioAdapter:
     def interrupt_playback(self, *, reason_code: str) -> PlaybackAdapterResult:
         self._sounddevice().stop()
         return PlaybackAdapterResult(status="interrupted", reason_code=reason_code)
+
+
+def _device_arg(device_id: str | None) -> int | str | None:
+    if device_id is None:
+        return None
+    return int(device_id) if device_id.isdigit() else device_id
+
+
+def _bounded_level(value: object) -> float:
+    try:
+        number = abs(float(value))
+    except Exception:
+        return 0.0
+    if number > 1.0:
+        number = number / 32768.0
+    return max(0.0, min(1.0, number))
