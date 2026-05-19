@@ -12,6 +12,8 @@ _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 
 class IntentKind(str, Enum):
     CAPABILITY_TOOL = "capability_tool"
+    WEB_SEARCH = "web_search"
+    GROUNDED_ANSWER = "grounded_answer"
     MEMORY = "memory"
     MEMORY_TREE_NEEDED = "memory_tree_needed"
     PROVIDER_SIMPLE_CHAT = "provider_simple_chat"
@@ -20,7 +22,11 @@ class IntentKind(str, Enum):
     MCP_NEEDED = "mcp_needed"
     SKILL_NEEDED = "skill_needed"
     SETTINGS_CONTROL_PLANE = "settings_control_plane"
+    CONNECTOR_ACCOUNT = "connector_account"
+    FILE_READ_LIST_SEARCH = "file_read_list_search"
+    RISKY_ACTION = "risky_action"
     CLARIFICATION = "clarification"
+    UNSAFE_OR_INJECTION_SUSPECTED = "unsafe_or_injection_suspected"
     UNSAFE_RISKY = "unsafe_risky"
 
 
@@ -140,6 +146,9 @@ class IntentClassificationResult(CapabilityRuntimeModel):
     risk_signal: IntentRiskSignal = IntentRiskSignal.NONE
     ambiguity_signal: IntentAmbiguitySignal
     clarification: ClarificationNeededDecision
+    backend_name: str = "deterministic"
+    library_owns_policy: Literal[False] = False
+    hybrid_details: dict[str, object] = Field(default_factory=dict)
     raw_input_persisted: Literal[False] = False
 
     @model_validator(mode="after")
@@ -162,59 +171,63 @@ class IntentClassificationResult(CapabilityRuntimeModel):
 
 
 def classify_intent(request: IntentClassificationRequest) -> IntentClassificationResult:
-    text = request.user_input_summary.lower()
-    if any(marker in text for marker in ("delete all", "steal", "bypass", "credential", "password")):
-        kind = IntentKind.UNSAFE_RISKY
-        score = 0.88
-        risk = IntentRiskSignal.UNSAFE_REQUEST
-        risk_level = ToolRiskLevel.CRITICAL
-    elif any(marker in text for marker in ("click", "browser", "checkout", "computer", "desktop")):
-        kind = IntentKind.BROWSER_COMPUTER_USE
-        score = 0.82
-        risk = IntentRiskSignal.RISKY_ACTION_REQUESTED
-        risk_level = ToolRiskLevel.HIGH
-    elif any(marker in text for marker in ("memory tree", "source grounded", "evidence")):
-        kind = IntentKind.MEMORY_TREE_NEEDED
-        score = 0.83
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("remember", "memory", "preference")):
-        kind = IntentKind.MEMORY
-        score = 0.81
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("control plane", "settings", "approval", "telemetry")):
-        kind = IntentKind.SETTINGS_CONTROL_PLANE
-        score = 0.8
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("mcp", "server tool")):
-        kind = IntentKind.MCP_NEEDED
-        score = 0.82
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("skill", "skill package")):
-        kind = IntentKind.SKILL_NEEDED
-        score = 0.8
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("tool", "calculator", "capability")):
-        kind = IntentKind.CAPABILITY_TOOL
-        score = 0.84
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.LOW
-    elif any(marker in text for marker in ("that thing", "before", "it")):
-        kind = IntentKind.CLARIFICATION
-        score = 0.32
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.SAFE
-    else:
-        kind = IntentKind.PROVIDER_SIMPLE_CHAT
-        score = 0.7
-        risk = IntentRiskSignal.NONE
-        risk_level = ToolRiskLevel.SAFE
-    return classification_from_kind(request, kind=kind, score=score, risk_signal=risk, risk_level=risk_level, reason_code="intent.deterministic_foundation")
+    try:
+        from packages.intent_runtime.hybrid import HybridIntentRuntime
 
+        return HybridIntentRuntime.default().classify(request)
+    except Exception:
+        text = request.user_input_summary.lower()
+        if any(marker in text for marker in ("delete all", "steal", "bypass", "credential", "password")):
+            kind = IntentKind.UNSAFE_OR_INJECTION_SUSPECTED
+            score = 0.88
+            risk = IntentRiskSignal.UNSAFE_REQUEST
+            risk_level = ToolRiskLevel.CRITICAL
+        elif any(marker in text for marker in ("click", "browser", "checkout", "computer", "desktop")):
+            kind = IntentKind.BROWSER_COMPUTER_USE
+            score = 0.82
+            risk = IntentRiskSignal.RISKY_ACTION_REQUESTED
+            risk_level = ToolRiskLevel.HIGH
+        elif any(marker in text for marker in ("memory tree", "source grounded", "evidence")):
+            kind = IntentKind.MEMORY_TREE_NEEDED
+            score = 0.83
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("remember", "memory", "preference")):
+            kind = IntentKind.MEMORY
+            score = 0.81
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("control plane", "settings", "approval", "telemetry")):
+            kind = IntentKind.SETTINGS_CONTROL_PLANE
+            score = 0.8
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("mcp", "server tool")):
+            kind = IntentKind.MCP_NEEDED
+            score = 0.82
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("skill", "skill package")):
+            kind = IntentKind.SKILL_NEEDED
+            score = 0.8
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("tool", "calculator", "capability")):
+            kind = IntentKind.CAPABILITY_TOOL
+            score = 0.84
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.LOW
+        elif any(marker in text for marker in ("that thing", "before", "it")):
+            kind = IntentKind.CLARIFICATION
+            score = 0.32
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.SAFE
+        else:
+            kind = IntentKind.PROVIDER_SIMPLE_CHAT
+            score = 0.7
+            risk = IntentRiskSignal.NONE
+            risk_level = ToolRiskLevel.SAFE
+        return classification_from_kind(request, kind=kind, score=score, risk_signal=risk, risk_level=risk_level, reason_code="intent.deterministic_foundation")
 
 def classification_from_kind(
     request: IntentClassificationRequest,
@@ -224,6 +237,8 @@ def classification_from_kind(
     risk_signal: IntentRiskSignal = IntentRiskSignal.NONE,
     risk_level: ToolRiskLevel = ToolRiskLevel.SAFE,
     reason_code: str = "intent.adapter_route",
+    backend_name: str = "deterministic",
+    hybrid_details: dict[str, object] | None = None,
 ) -> IntentClassificationResult:
     confidence = IntentConfidence.from_score(score)
     if confidence.bucket == IntentConfidenceBucket.LOW:
@@ -243,6 +258,8 @@ def classification_from_kind(
         risk_signal=risk_signal,
         ambiguity_signal=IntentAmbiguitySignal(ambiguous=ambiguous, reason_code="intent.low_confidence" if ambiguous else "intent.clear", candidate_count=1),
         clarification=clarification,
+        backend_name=backend_name,
+        hybrid_details=hybrid_details or {},
     )
 
 

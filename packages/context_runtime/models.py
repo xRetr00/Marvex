@@ -23,6 +23,7 @@ class ContextSourceKind(str, Enum):
     PROVIDER_STATE = "provider_state"
     USER_INPUT_SUMMARY = "user_input_summary"
     TOOL_RESULT = "tool_result"
+    WEB_SEARCH_EVIDENCE = "web_search_evidence"
 
 
 class ContextSourceTrustLevel(str, Enum):
@@ -60,7 +61,7 @@ class ContextBudget(CapabilityRuntimeModel):
 
 class ContextDeliveryPolicy(CapabilityRuntimeModel):
     max_candidates: int = Field(..., ge=0, le=100)
-    allowed_source_kinds: tuple[ContextSourceKind, ...]
+    allowed_source_kinds: tuple[ContextSourceKind, ...] = (ContextSourceKind.USER_INPUT_SUMMARY, ContextSourceKind.CAPABILITY_SCHEMA, ContextSourceKind.MCP_TOOL_SCHEMA, ContextSourceKind.MEMORY_PROJECTION, ContextSourceKind.SKILL_PROMPT_CONTRIBUTION, ContextSourceKind.TOOL_RESULT, ContextSourceKind.WEB_SEARCH_EVIDENCE)
     include_excluded_reasons: bool = False
     browser_computer_default_excluded: bool = True
     all_tools_allowed: Literal[False] = False

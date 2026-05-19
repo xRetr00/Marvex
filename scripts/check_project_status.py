@@ -10,8 +10,8 @@ GOVERNANCE_CLASSIFICATION = ROOT / "docs" / "GOVERNANCE_CLASSIFICATION.md"
 ROADMAP = ROOT / "docs" / "ROADMAP.md"
 
 REQUIRED_STATUS_PHRASES = (
-    "current_phase: governance_reconciliation_boundary_hardening_complete",
-    "implementation_status: governance_reconciliation_boundary_hardening_complete",
+    "current_phase: hybrid_intent_web_search_governance_complete",
+    "implementation_status: hybrid_intent_web_search_governance_complete",
     "accepted_docs: true",
     "Existing foundations are now classified",
     "CapabilityRuntime remains authoritative",

@@ -14,6 +14,7 @@ from packages.intent_runtime.models import (
     classification_from_kind,
     classify_intent,
 )
+from .hybrid import CapabilityAvailability, HybridIntentRuntime, IntentPlan, IntentStep
 
 __all__ = [
     "ClarificationNeededDecision",
@@ -30,4 +31,8 @@ __all__ = [
     "SafeIntentProjection",
     "classification_from_kind",
     "classify_intent",
+    "CapabilityAvailability",
+    "HybridIntentRuntime",
+    "IntentPlan",
+    "IntentStep",
 ]

@@ -602,6 +602,24 @@ Blocked: shell execution, file write/edit/delete tools, credential access or ent
 
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->
 
+## Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance Gate
+
+The Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance gate is enforced by `scripts/check_hybrid_intent_web_search_governance.py` and is part of `scripts/run_all_checks.py`.
+
+This gate requires real runtime dependencies and paths for `semantic-router`, `llama-index-core`, DDGS, SearXNG adapter support, web search models, grounded citation validation, and risk-based governance. It proves required intent examples route through `hybrid_intent_runtime`, not keyword-only deterministic fallback.
+
+The gate protects these invariants:
+
+- Semantic Router and LlamaIndex are route/selector components only; IntentRuntime owns policy and route decisions.
+- SearXNG and DDGS are web search adapters only; they do not own browser actions, account access, downloads, or policy.
+- Read/list/search/inspect/summarize and safe public web search are not hard-blocked by default.
+- Write/delete/send/upload/install/run/connect/private-account actions require approval.
+- Malware, credential theft, prompt-injection exploitation, command-injection exploitation, exfiltration, unauthorized account abuse, CAPTCHA or anti-bot bypass, stealth abuse, destructive action without consent, payment/checkout without explicit approval, and policy override attempts hard-block or quarantine.
+- Grounded answer citations must map to provided evidence refs.
+- PromptHarnessRuntime may receive bounded evidence sections only; no all-tools, all-memory, raw transcript, raw provider payload, raw browser DOM, or raw screenshot dumping.
+
+Blocked: Voice, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution, arbitrary MCP install/execute, broad OAuth sync, hidden auto-fetch, and raw payload persistence by default.
+
 ## Intent, Context, and Prompt Harness Foundation Gate
 
 The Intent, Context, and Prompt Harness Foundation gate is enforced by `scripts/check_intent_context_prompt_boundaries.py` and is part of `scripts/run_all_checks.py`.

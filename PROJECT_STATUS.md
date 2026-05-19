@@ -1,13 +1,15 @@
 # Project Status
 
-current_phase: governance_reconciliation_boundary_hardening_complete
+current_phase: hybrid_intent_web_search_governance_complete
 
-implementation_status: governance_reconciliation_boundary_hardening_complete
+implementation_status: hybrid_intent_web_search_governance_complete
 
 accepted_docs: true
 
 current_governance_gate:
-Governance Reconciliation, Boundary Hardening, and Sprawl Cleanup
+Hybrid Intent, Web Search, Grounded Evidence, and Risk-Based Governance Completion
+
+Previous cleanup phase: `governance_reconciliation_boundary_hardening_complete`.
 
 ## uv Dependency Workflow Checkpoint
 
@@ -65,6 +67,17 @@ Browser-use moved beyond import-only to a controlled adapter proof that exposes 
 
 Still blocked after this checkpoint: live provider credential smoke as a required automated test, generic provider routing/model selection, retry/fallback policy, direct Browser-use SDK execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior. The next recommended goal is Voice Runtime Foundation because the remaining proof-only runtime/tooling items are bounded adapter limitations, not blockers for voice contracts.
 
+
+## Hybrid Intent, Web Search, Grounded Evidence, and Risk-Based Governance Checkpoint
+
+Marvex now has a real hybrid intent path for pre-Voice runtime use. `semantic-router[hybrid]==0.1.14` is declared and uv-resolved, with the exact uv result that this version has no `hybrid` extra; Marvex therefore uses real local `semantic_router.Route` definitions plus Marvex-owned hybrid fallback logic. `llama-index-core>=0.14.22` is adopted narrowly for selector proof through `SingleSelection`; LlamaIndex does not own Core, RuntimeComposition, MemoryRuntime, prompt assembly, or agent planning.
+
+`packages.web_search_runtime` adds SearXNG HTTP/JSON search and DDGS fallback adapters with safe web result/evidence models. SearXNG is preferred when configured; DDGS uses the real `ddgs>=9.14.4` package behind the adapter. `packages.grounded_answer_runtime` validates that grounded answer citations map to web evidence refs before acceptance, and PromptHarnessRuntime can receive bounded web evidence context through `ContextSourceKind.WEB_SEARCH_EVIDENCE`.
+
+Risk governance now allows read/list/search/inspect/summarize by default, requires approval for write/delete/send/upload/install/run/connect/private-account actions, and reserves hard-block for malware, credential theft, injection exploitation, exfiltration, unauthorized account abuse, CAPTCHA/anti-bot bypass, stealth abuse, destructive/payment actions without consent, and policy override attempts.
+
+Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution, arbitrary MCP install/execute, broad OAuth sync, hidden auto-fetch, raw provider/tool/browser/search payload persistence, browser side effects without approval, and generic provider routing/model selection. Voice Runtime Foundation can start next if final validation stays green because the remaining search/governance boundaries are bounded and tested.
+
 ## Validation Baseline
 
 Initial baseline before this cleanup:
@@ -103,6 +116,6 @@ Blocked without explicit future approval: new product features, new dependencies
 
 ## Next Recommended Goal
 
-Foundation cleanup checkpoint: continue reducing large-file and central-brain risk inside bounded foundations without adding product features. Start with focused ownership splits, boundary tests, and docs/gates updates for any remaining files that approach god-object size or mix policy with adapter mechanics.
+Voice Runtime Foundation can start next, provided it keeps voice behind explicit contracts and does not widen provider routing, tool execution, browser automation, OAuth sync, or raw payload persistence.
 
 Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.

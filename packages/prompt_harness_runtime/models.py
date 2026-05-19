@@ -19,6 +19,7 @@ class PromptSectionKind(str, Enum):
     MEMORY_CONTEXT = "memory_context"
     SKILL_CONTRIBUTION = "skill_contribution"
     TOOL_RESULT = "tool_result"
+    EVIDENCE_CONTEXT = "evidence_context"
     APPROVAL_STATE = "approval_state"
     RESPONSE_CONTRACT = "response_contract"
 
@@ -160,6 +161,7 @@ def _section_from_candidate(candidate: ContextCandidate) -> PromptSection:
         ContextSourceKind.MEMORY_PROJECTION: PromptSectionKind.MEMORY_CONTEXT,
         ContextSourceKind.SKILL_PROMPT_CONTRIBUTION: PromptSectionKind.SKILL_CONTRIBUTION,
         ContextSourceKind.TOOL_RESULT: PromptSectionKind.TOOL_RESULT,
+        ContextSourceKind.WEB_SEARCH_EVIDENCE: PromptSectionKind.EVIDENCE_CONTEXT,
     }
     kind = mapping.get(candidate.source_ref.kind, PromptSectionKind.USER_CONTEXT)
     return PromptSection(kind=kind, source_ref=candidate.source_ref, safe_content=candidate.safe_summary, token_estimate=candidate.token_estimate, included=True, reason_code="section.safe_context_candidate")
@@ -230,7 +232,7 @@ class PlanningNeedDecision(CapabilityRuntimeModel):
 
     @classmethod
     def from_intent(cls, intent_ref: IntentRef, *, context_candidate_count: int) -> "PlanningNeedDecision":
-        needed = intent_ref.intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_SKILL, IntentKind.MCP_NEEDED, IntentKind.SKILL_NEEDED, IntentKind.MEMORY_TREE_NEEDED} or context_candidate_count > 2
+        needed = intent_ref.intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_SKILL, IntentKind.MCP_NEEDED, IntentKind.SKILL_NEEDED, IntentKind.MEMORY_TREE_NEEDED, IntentKind.WEB_SEARCH, IntentKind.GROUNDED_ANSWER} or context_candidate_count > 2
         return cls(intent_ref=intent_ref, planning_needed=needed, reason_code="planning.context_or_capability_needed" if needed else "planning.not_needed")
 
 

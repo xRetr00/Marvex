@@ -80,4 +80,5 @@ class SemanticRouterHarnessAdapter:
             matched = next((route for route in self.config.routes if route.route_id == top.route_id), None)
             kind = matched.intent_kind if matched and top.score >= self.config.threshold_policy.min_confidence else IntentKind.CLARIFICATION
             base = classification_from_kind(request, kind=kind, score=top.score, reason_code=top.reason_code)
-        return SemanticRouterHarnessDecision(**base.model_dump(), backend_name=self.config.backend_name, library_owns_policy=False)
+        payload = base.model_dump(exclude={"backend_name", "library_owns_policy"})
+        return SemanticRouterHarnessDecision(**payload, backend_name=self.config.backend_name, library_owns_policy=False)
