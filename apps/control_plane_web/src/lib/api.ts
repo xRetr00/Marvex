@@ -292,3 +292,22 @@ export async function testVoiceWorkerStt() {
 export async function testVoiceWorkerTts() {
   return voiceActionSchema.parse(await readJson("/voice/worker/test-tts", { method: "POST" }));
 }
+export async function switchVoiceWorkerSttBackend(payload: { backend_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/stt/switch", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function switchVoiceWorkerTtsBackend(payload: { backend_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/tts/switch", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function switchVoiceWorkerActiveVoice(payload: { voice_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/voice/switch", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function installVoiceWorkerModel(payload: { model_id: string; backend_id: string; model_kind: string; relative_path: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/models/install", { method: "POST", body: JSON.stringify({ ...payload, explicit_user_triggered: true }) }));
+}
+
+export async function removeVoiceWorkerModel(payload: { model_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/models/remove", { method: "POST", body: JSON.stringify(payload) }));
+}

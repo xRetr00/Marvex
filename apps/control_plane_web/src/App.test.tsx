@@ -125,6 +125,11 @@ describe("Control Plane app", () => {
     expect(await screen.findByRole("button", { name: /Test Wakeword/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Test Worker STT/i })).toBeInTheDocument();
     expect(await screen.findByRole("button", { name: /Test Worker TTS/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Switch Worker STT/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Switch Worker TTS/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Switch Worker Voice/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Install Worker Wakeword/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Remove Worker Wakeword/i })).toBeInTheDocument();
     expect((await screen.findAllByText("Default microphone")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("moonshine-v2")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText((content) => content.includes("Hey Marvex"))).length).toBeGreaterThan(0);

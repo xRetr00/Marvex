@@ -41,6 +41,11 @@ import {
   pauseVoiceWorker,
   resumeVoiceWorker,
   reloadVoiceWorkerConfig,
+  installVoiceWorkerModel,
+  removeVoiceWorkerModel,
+  switchVoiceWorkerActiveVoice,
+  switchVoiceWorkerSttBackend,
+  switchVoiceWorkerTtsBackend,
   testVoiceStt,
   testVoiceTts,
   testVoiceWorkerMic,
@@ -290,6 +295,11 @@ export function VoiceRuntimeView() {
   const workerWakeword = useMutation({ mutationFn: testVoiceWorkerWakeword, onSuccess: refreshWorker });
   const workerStt = useMutation({ mutationFn: testVoiceWorkerStt, onSuccess: refreshWorker });
   const workerTts = useMutation({ mutationFn: testVoiceWorkerTts, onSuccess: refreshWorker });
+  const workerSwitchStt = useMutation({ mutationFn: () => switchVoiceWorkerSttBackend({ backend_id: "moonshine-v2" }), onSuccess: refreshWorker });
+  const workerSwitchTts = useMutation({ mutationFn: () => switchVoiceWorkerTtsBackend({ backend_id: "kokoro-onnx" }), onSuccess: refreshWorker });
+  const workerSwitchVoice = useMutation({ mutationFn: () => switchVoiceWorkerActiveVoice({ voice_id: "af_heart" }), onSuccess: refreshWorker });
+  const workerInstallWakeword = useMutation({ mutationFn: () => installVoiceWorkerModel({ model_id: "hey-marvex", backend_id: "sherpa-onnx-kws", model_kind: "wakeword", relative_path: "wakeword/hey-marvex" }), onSuccess: refreshWorker });
+  const workerRemoveWakeword = useMutation({ mutationFn: () => removeVoiceWorkerModel({ model_id: "hey-marvex" }), onSuccess: refreshWorker });
   if (query.isLoading) return <InlineState message="Loading voice runtime controls..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   const data = query.data ?? {};
@@ -331,6 +341,11 @@ export function VoiceRuntimeView() {
           <Button variant="outline" onClick={() => workerWakeword.mutate()}>Test Wakeword</Button>
           <Button variant="outline" onClick={() => workerStt.mutate()}>Test Worker STT</Button>
           <Button variant="outline" onClick={() => workerTts.mutate()}>Test Worker TTS</Button>
+          <Button variant="outline" onClick={() => workerSwitchStt.mutate()}>Switch Worker STT</Button>
+          <Button variant="outline" onClick={() => workerSwitchTts.mutate()}>Switch Worker TTS</Button>
+          <Button variant="outline" onClick={() => workerSwitchVoice.mutate()}>Switch Worker Voice</Button>
+          <Button variant="outline" onClick={() => workerInstallWakeword.mutate()}>Install Worker Wakeword</Button>
+          <Button variant="outline" onClick={() => workerRemoveWakeword.mutate()}><Trash2 className="mr-2" size={16} />Remove Worker Wakeword</Button>
         </CardContent>
       </Card>
       <Card>
@@ -357,7 +372,7 @@ export function VoiceRuntimeView() {
       <SafeTable title="STT / TTS / Wakeword / VAD Backends" rows={backendRows} empty="No backend health." />
       <SafeTable title="Wakeword / VAD / Barge-In / Early Speech / Personality" rows={[settings]} empty="No voice settings." />
       <SafeTable title="Voice Telemetry Summary" rows={[telemetry]} empty="No voice telemetry." />
-      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data, workerStart.data, workerStop.data, workerPause.data, workerResume.data, workerReload.data, workerMic.data, workerPlayback.data, workerWakeword.data, workerStt.data, workerTts.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
+      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data, workerStart.data, workerStop.data, workerPause.data, workerResume.data, workerReload.data, workerMic.data, workerPlayback.data, workerWakeword.data, workerStt.data, workerTts.data, workerSwitchStt.data, workerSwitchTts.data, workerSwitchVoice.data, workerInstallWakeword.data, workerRemoveWakeword.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
     </div>
   );
 }

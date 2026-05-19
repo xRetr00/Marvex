@@ -19,6 +19,9 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 - Ring-buffer compatible PCM frame capture path for runtime integration without raw audio persistence.
 - Bounded live capture cycle path for explicit worker runs: microphone frames are evaluated through an injected/mockable VAD decision function, pre-roll frames are retained, silence cutoff/tail padding are represented in safe summaries, and max utterance duration stops capture without assistant dispatch.
 - Manual voice turn path that assembles mockable captured frames, emits VAD/STT/assistant/TTS/playback worker events, delegates STT/TTS/policy to existing runtime seams, and records safe summaries only.
+- `VoiceWorkerBackendRuntime` now sits inside the worker boundary for installed-asset backend readiness and test execution. It checks local asset readiness, package import/version availability, and invokes injected STT/TTS/wakeword runners only after the configured asset is installed under the safe asset root.
+- Worker STT/TTS test commands now return readiness-aware safe summaries with backend id, status, confidence/audio-ref presence, duration/count metadata, and exact blockers. Raw transcripts and requested synthesis text are not rendered in safe projections.
+- Worker wakeword tests now pass captured frames through the backend runtime when a runner is configured, while missing Hey Marvex assets still report not-ready instead of fake success.
 - Barge-in test path that interrupts playback and clears queued TTS state.
 - Worker-safe telemetry summaries expose event counts and durations/counts only; they do not include raw audio, raw transcripts, generated audio, secrets, or provider/tool payloads.
 
@@ -32,7 +35,7 @@ The sounddevice adapter is intentionally thin. It can list real local input/outp
 
 Voice model and voice assets must live under the configured local voice asset root. Path traversal is blocked. Installs are explicit user-triggered operations. Missing local assets report `not_installed`, file checksum mismatches report `blocked`, and no fake readiness is returned. No arbitrary path writes, hidden downloads, secrets, raw model internals, raw audio, generated audio, or raw transcripts are persisted by default.
 
-Current model assets are still not downloaded by this checkpoint. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper runtime execution remains ready only when the corresponding local model or voice asset is installed/configured. `Hey Marvex` wakeword tests require both enabled wakeword policy and the installed sherpa-onnx KWS asset; otherwise Control Plane reports the exact blocker.
+Current model assets are still not downloaded by this checkpoint. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper readiness now checks package import availability plus the corresponding local model or voice asset. The worker can invoke injected package runners for installed assets in tests and future local smoke paths, but the default heavy inference runner remains blocked until an audio-ref resolver and generated-audio sink are configured. `Hey Marvex` wakeword tests require both enabled wakeword policy and the installed sherpa-onnx KWS asset; otherwise Control Plane reports the exact blocker.
 
 ## Control Plane
 
@@ -52,4 +55,4 @@ Protected Control Plane endpoints expose `/control/voice/worker` status, devices
 
 ## Still Not Implemented
 
-Always-running 24/7 wakeword supervision, real physical microphone validation in CI, real model downloads, live heavy STT/TTS inference against installed model files, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented unless a later explicit goal widens scope.
+Always-running 24/7 wakeword supervision, real physical microphone validation in CI, real model downloads, default live heavy STT/TTS inference against installed model files without injected runners, audio-ref resolver backed by non-persistent live PCM, generated-audio sink routing for model output bytes, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented unless a later explicit goal widens scope.

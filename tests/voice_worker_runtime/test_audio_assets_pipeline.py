@@ -9,8 +9,9 @@ from datetime import UTC, datetime
 from packages.assistant_runtime import build_text_input_event, build_turn_input_from_event
 from packages.assistant_turn_integration import EndToEndTurnStateStore, run_end_to_end_assistant_turn
 from packages.contracts import TraceStage
-from packages.voice_runtime import AudioFrame, DeterministicSttAdapter, DeterministicTtsAdapter, VADDecision, VoicePolicyDecision, VoiceRuntime
+from packages.voice_runtime import AudioFrame, DeterministicSttAdapter, DeterministicTtsAdapter, SpeechSynthesisResult, TranscriptionResult, VADDecision, VoicePolicyDecision, VoiceRuntime, WakeWordDetectionResult
 from packages.voice_worker_runtime import (
+    VoiceWorkerBackendRuntime,
     FakeLocalAudioAdapter,
     VoiceAssetManager,
     VoiceModelInstallRequest,
@@ -279,6 +280,95 @@ def test_worker_wakeword_test_requires_enabled_policy_and_installed_asset(tmp_pa
     assert missing_asset.error and missing_asset.error.reason_code == "wakeword_model_not_installed"
     assert ready.event.event_type == VoiceWorkerEventType.WAKEWORD_DETECTED
     assert ready.error is None
+
+
+def test_worker_backend_runtime_blocks_missing_stt_asset_before_runner(tmp_path: Path) -> None:
+    calls: list[str] = []
+    runtime = VoiceWorkerBackendRuntime(
+        asset_manager=VoiceAssetManager(asset_root=tmp_path / "voice-assets"),
+        stt_runner=lambda request, asset: calls.append(asset.model_id) or TranscriptionResult.succeeded(
+            trace_id=request.trace_id,
+            text="should not run",
+            backend_id=request.backend_id or "moonshine-v2",
+            duration_ms=request.duration_ms,
+        ),
+    )
+
+    result = runtime.test_stt(trace_id="trace-missing-stt", backend_id="moonshine-v2", audio_ref_id="memory://voice/test/stt")
+
+    assert result.status == "failed"
+    assert result.safe_error is not None
+    assert result.safe_error.details["reason_code"] == "model_asset_missing_manual_install_required"
+    assert calls == []
+    assert result.raw_audio_persisted is False
+    assert "should not run" not in json.dumps(result.safe_projection()).lower()
+
+
+def test_worker_test_stt_invokes_installed_asset_runner_without_rendering_transcript(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True))
+    calls: list[tuple[str, str]] = []
+
+    def stt_runner(request, asset):
+        calls.append((request.audio_ref_id, asset.model_id))
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="private transcript", backend_id=request.backend_id or "moonshine-v2", duration_ms=request.duration_ms, language="en", confidence=0.91)
+
+    controller = VoiceWorkerController(asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, stt_runner=stt_runner))
+
+    result = controller.handle(VoiceWorkerCommand(command="test_stt", command_id="cmd-stt", payload={"audio_ref_id": "memory://voice/test/stt"}))
+    serialized = json.dumps(result.safe_projection()).lower()
+
+    assert calls == [("memory://voice/test/stt", "moonshine-v2")]
+    assert result.event.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED
+    assert result.event.summary["status"] == "succeeded"
+    assert result.event.summary["text_present"] is True
+    assert "private transcript" not in serialized
+    assert result.status.stt_backend_status["status"] == "ready"
+
+
+def test_worker_test_tts_invokes_installed_voice_runner_without_rendering_text(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    calls: list[tuple[str, str]] = []
+
+    def tts_runner(request, asset):
+        calls.append((request.text, asset.model_id))
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/af_heart", backend_id=request.backend_id or "kokoro-onnx", voice_id=request.voice_id, duration_ms=180)
+
+    controller = VoiceWorkerController(asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, tts_runner=tts_runner))
+
+    result = controller.handle(VoiceWorkerCommand(command="test_tts", command_id="cmd-tts", payload={"text": "sensitive spoken response"}))
+    serialized = json.dumps(result.safe_projection()).lower()
+
+    assert calls == [("sensitive spoken response", "kokoro-af-heart")]
+    assert result.event.event_type == VoiceWorkerEventType.TTS_STARTED
+    assert result.event.summary["status"] == "succeeded"
+    assert result.event.summary["audio_ref_present"] is True
+    assert "sensitive spoken response" not in serialized
+    assert result.status.tts_backend_status["status"] == "ready"
+
+
+def test_worker_wakeword_uses_installed_asset_runner_when_configured(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword", relative_path="wakeword/hey-marvex", explicit_user_triggered=True))
+    calls: list[tuple[int, str]] = []
+
+    def wakeword_runner(frames, asset, *, phrase: str, threshold: float):
+        calls.append((len(frames), asset.model_id))
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold + 0.01, backend_id=asset.backend_id)
+
+    config = VoiceWorkerConfig.default().model_copy(update={"wakeword": VoiceWorkerConfig.default().wakeword.model_copy(update={"enabled": True})})
+    controller = VoiceWorkerController(config=config, audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner))
+
+    result = controller.handle(VoiceWorkerCommand(command="test_wakeword", command_id="cmd-wake-runner"))
+
+    assert calls == [(4, "hey-marvex")]
+    assert result.event.event_type == VoiceWorkerEventType.WAKEWORD_DETECTED
+    assert result.event.summary["backend_id"] == "sherpa-onnx-kws"
+    assert result.event.summary["wakeword_ready"] is True
 
 
 def test_worker_status_projection_includes_health_events_errors_and_model_status(tmp_path: Path) -> None:

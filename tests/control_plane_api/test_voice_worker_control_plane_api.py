@@ -5,7 +5,7 @@ import json
 from wsgiref.util import setup_testing_defaults
 
 from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
-from packages.voice_worker_runtime import FakeLocalAudioAdapter, VoiceWorkerConfig, VoiceWorkerControlPlaneFacade, VoiceWorkerController
+from packages.voice_worker_runtime import FakeLocalAudioAdapter, VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerConfig, VoiceWorkerControlPlaneFacade, VoiceWorkerController
 
 
 def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-control-token", body: dict | None = None):
@@ -105,6 +105,34 @@ def test_control_plane_voice_worker_reload_config_selects_devices_without_audio_
     assert payload["status"]["config"]["audio"]["output_device_id"] == "output-default"
     assert payload["event"]["summary"]["audio_config_reloaded"] is True
     assert "raw_audio\": true" not in json.dumps(payload).lower()
+
+
+
+def test_control_plane_voice_worker_model_install_updates_worker_status_when_controller_owns_assets(tmp_path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
+    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager)
+    worker = VoiceWorkerControlPlaneFacade(controller)
+    app = create_control_plane_api_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        voice_worker_control=worker,
+    )
+
+    install_status, _headers, install = _call(
+        app,
+        "/control/voice/worker/models/install",
+        method="POST",
+        body={"model_id": "hey-marvex", "backend_id": "sherpa-onnx-kws", "model_kind": "wakeword", "relative_path": "wakeword/hey-marvex", "explicit_user_triggered": True},
+    )
+    status_code, _status_headers, status = _call(app, "/control/voice/worker")
+
+    assert install_status == "200 OK"
+    assert install["status"] == "installed"
+    assert status_code == "200 OK"
+    assert status["model_assets"]["required_ready_count"] == 1
+    assert status["wakeword_model_status"]["status"] == "installed"
 
 
 def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(tmp_path) -> None:

@@ -8,6 +8,7 @@ from packages.voice_runtime import AudioRingBuffer, ChunkAggregator, EarlySpeech
 
 from .assets import VoiceAssetManager, VoiceModelInstallRequest
 from .audio import FakeLocalAudioAdapter, LocalAudioAdapter, PlaybackAdapterResult
+from .backend_runtime import VoiceWorkerBackendRuntime
 from .models import (
     VoiceWorkerCommand,
     VoiceWorkerCommandResult,
@@ -40,11 +41,12 @@ class VoiceWorkerTurnRunResult:
 
 
 class VoiceWorkerController:
-    def __init__(self, *, config: VoiceWorkerConfig | None = None, audio: LocalAudioAdapter | None = None, voice_runtime: VoiceRuntime | None = None, asset_manager: VoiceAssetManager | None = None) -> None:
+    def __init__(self, *, config: VoiceWorkerConfig | None = None, audio: LocalAudioAdapter | None = None, voice_runtime: VoiceRuntime | None = None, asset_manager: VoiceAssetManager | None = None, backend_runtime: VoiceWorkerBackendRuntime | None = None) -> None:
         self.config = config or VoiceWorkerConfig.default()
         self.audio = audio or FakeLocalAudioAdapter()
         self.voice_runtime = voice_runtime or VoiceRuntime()
         self.asset_manager = asset_manager or VoiceAssetManager(asset_root=Path(".marvex") / "voice-assets")
+        self.backend_runtime = backend_runtime or VoiceWorkerBackendRuntime(asset_manager=self.asset_manager)
         self._state = VoiceWorkerLifecycleState.STOPPED
         self._heartbeat: VoiceWorkerHeartbeat | None = None
         self._events: list[VoiceWorkerEvent] = []
@@ -69,9 +71,9 @@ class VoiceWorkerController:
             recent_events=tuple(self._events[-20:]),
             error=self._error,
             model_assets=self.asset_manager.registry(),
-            stt_backend_status=self._backend_status(model_id=self.config.active_stt_backend_id, backend_id=self.config.active_stt_backend_id, model_kind="stt"),
-            tts_backend_status=self._backend_status(model_id="kokoro-af-heart" if self.config.active_tts_backend_id == "kokoro-onnx" else "piper-default", backend_id=self.config.active_tts_backend_id, model_kind="tts_voice"),
-            wakeword_model_status=self.asset_manager.required_status(model_id="hey-marvex", backend_id=self.config.wakeword.backend_id, model_kind="wakeword").model_dump(mode="json"),
+            stt_backend_status=self.backend_runtime.stt_status(self.config.active_stt_backend_id),
+            tts_backend_status=self.backend_runtime.tts_status(self.config.active_tts_backend_id, self.config.active_voice_id),
+            wakeword_model_status=self.backend_runtime.wakeword_status(self.config.wakeword.backend_id),
             telemetry=self._telemetry_summary(),
             telemetry_summary=self._telemetry_summary(),
         )
@@ -275,14 +277,53 @@ class VoiceWorkerController:
         if not self.asset_manager.is_ready(model_id="hey-marvex", backend_id=self.config.wakeword.backend_id, model_kind="wakeword"):
             self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code="wakeword_model_not_installed", message="Hey Marvex wakeword model asset is not installed under the voice asset root.")
             return self._record(VoiceWorkerEventType.ERROR, trace_id=command.command_id, summary={"wakeword_ready": False, "exact_blocker": "wakeword_model_not_installed"})
+        frames = tuple(
+            self.audio.capture_frames(
+                device_id=self.config.audio.input_device_id,
+                sample_rate=self.config.audio.sample_rate,
+                channel_count=self.config.audio.channel_count,
+                frame_count=4,
+            )
+        )
+        detection = self.backend_runtime.test_wakeword(
+            trace_id=command.command_id,
+            backend_id=self.config.wakeword.backend_id,
+            frames=frames,
+            phrase=self.config.wakeword.phrase,
+            threshold=self.config.wakeword.threshold,
+        )
+        if not detection.detected:
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=detection.reason_code, message="Hey Marvex wakeword was not detected by the configured runtime.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=command.command_id, summary={**detection.safe_projection(), "wakeword_ready": True})
         self._error = None
-        return self._record(VoiceWorkerEventType.WAKEWORD_DETECTED, trace_id=command.command_id, summary={"phrase": self.config.wakeword.phrase, "threshold": self.config.wakeword.threshold})
+        return self._record(VoiceWorkerEventType.WAKEWORD_DETECTED, trace_id=command.command_id, summary={**detection.safe_projection(), "wakeword_ready": True})
 
     def _handle_test_stt(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
-        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=command.command_id, summary={"backend_id": self.config.active_stt_backend_id, "status": "blocked_without_model_asset"})
+        result = self.backend_runtime.test_stt(
+            trace_id=command.command_id,
+            backend_id=str(command.payload.get("backend_id") or self.config.active_stt_backend_id),
+            audio_ref_id=str(command.payload.get("audio_ref_id") or "memory://voice/test/stt"),
+        )
+        if result.status == "failed" and result.safe_error is not None:
+            reason = result.safe_error.details.get("reason_code", "stt_backend_not_ready")
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=reason, message="STT backend test did not complete.")
+        else:
+            self._error = None
+        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=command.command_id, summary=_transcription_summary(result))
 
     def _handle_test_tts(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
-        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=command.command_id, summary={"backend_id": self.config.active_tts_backend_id, "voice_id": self.config.active_voice_id, "status": "blocked_without_voice_asset"})
+        result = self.backend_runtime.test_tts(
+            trace_id=command.command_id,
+            backend_id=str(command.payload.get("backend_id") or self.config.active_tts_backend_id),
+            voice_id=str(command.payload.get("voice_id") or self.config.active_voice_id),
+            text=str(command.payload.get("text") or "Voice test."),
+        )
+        if result.status == "failed" and result.safe_error is not None:
+            reason = result.safe_error.details.get("reason_code", "tts_backend_not_ready")
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=reason, message="TTS backend test did not complete.")
+        else:
+            self._error = None
+        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=command.command_id, summary=_synthesis_summary(result))
 
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
@@ -305,16 +346,6 @@ class VoiceWorkerController:
         self._events.append(event)
         return event
 
-    def _backend_status(self, *, model_id: str, backend_id: str, model_kind: str) -> dict[str, object]:
-        ready = self.asset_manager.is_ready(model_id=model_id, backend_id=backend_id, model_kind=model_kind)
-        return {
-            "active_backend_id": backend_id,
-            "model_id": model_id,
-            "model_kind": model_kind,
-            "status": "ready" if ready else "not_ready",
-            "exact_blocker": None if ready else "model_asset_missing_manual_install_required",
-        }
-
     def _telemetry_summary(self) -> dict[str, object]:
         event_counts: dict[str, int] = {}
         for event in self._events:
@@ -335,3 +366,36 @@ class VoiceWorkerController:
             "raw_audio_persisted": False,
             "raw_transcript_persisted": False,
         }
+
+
+def _transcription_summary(result: Any) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "backend_id": result.backend_id,
+        "status": result.status,
+        "duration_ms": result.duration_ms,
+        "language": result.language,
+        "confidence_present": result.confidence is not None,
+        "segment_count": len(result.segments),
+        "text_present": bool(result.text),
+        "raw_audio_persisted": False,
+        "raw_transcript_persisted": False,
+    }
+    if result.safe_error is not None:
+        summary["exact_blocker"] = result.safe_error.details.get("reason_code")
+    return summary
+
+
+def _synthesis_summary(result: Any) -> dict[str, object]:
+    summary: dict[str, object] = {
+        "backend_id": result.backend_id,
+        "voice_id": result.voice_id,
+        "status": result.status,
+        "format": result.format,
+        "sample_rate": result.sample_rate,
+        "duration_ms": result.duration_ms,
+        "audio_ref_present": bool(result.audio_ref),
+        "raw_audio_persisted": False,
+    }
+    if result.safe_error is not None:
+        summary["exact_blocker"] = result.safe_error.details.get("reason_code")
+    return summary

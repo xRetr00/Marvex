@@ -10,7 +10,7 @@ from .models import VoiceWorkerCommand
 class VoiceWorkerControlPlaneFacade:
     def __init__(self, controller: VoiceWorkerController | None = None, assets: VoiceAssetManager | None = None) -> None:
         self.controller = controller or VoiceWorkerController()
-        self.assets = assets or VoiceAssetManager()
+        self.assets = assets or self.controller.asset_manager
 
     def status(self) -> dict[str, object]:
         return self.controller.status().safe_projection()
