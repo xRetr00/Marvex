@@ -21,6 +21,12 @@ def _telemetry_summary(prompt_result: Any, confidence_bucket: str, context_pack:
     data["memory_tree_evidence_ref_count"] = _memory_tree_evidence_ref_count(context_pack)
     data["memory_tree_context_included"] = data["memory_tree_evidence_ref_count"] > 0
     data["provider_continuation_status"] = "ready" if tool_projection.get("provider_continuation_ready") else "not_ready"
+    data["provider_tool_proposal_count"] = 1 if tool_projection.get("provider_tool_proposal_id") else 0
+    data["provider_continuation_input_ready"] = bool(tool_projection.get("provider_continuation_input_ready", False))
+    data["provider_final_response_status"] = tool_projection.get("provider_final_response_status")
+    data["approval_state"] = _approval_status(tool_projection)
+    data["raw_tool_output_persisted"] = False
+    data["raw_provider_payload_persisted"] = False
     return data
 
 

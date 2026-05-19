@@ -50,7 +50,12 @@ Marvex now has a bounded deeper tool-using assistant turn path. IntentRuntime ca
 
 Still blocked: generic provider routing/model selection, retry/fallback policy, browser-use execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior.
 
-## Validation Baseline
+
+## Provider Tool Continuation and Live Execution Hardening Checkpoint
+
+Marvex now has a bounded provider tool continuation path for safe built-in execution. LM Studio/OpenAI-compatible provider tool calls are normalized as proposals, malformed arguments are denied without fallback execution, safe calculator results become provider continuation input summaries, and final fake-provider continuation responses are represented without persisting raw provider payloads or raw tool arguments.
+
+Approval resume now distinguishes approved, denied, and cancelled outcomes in safe projections. Approved Playwright-backed browser navigation can execute after CapabilityRuntime approval when a page boundary is supplied; click/type remain approval-gated and no browser-use execution was promoted. Trace search and Control Plane summaries expose only counts/status booleans for proposal, approval, execution, continuation, and final response state.`r`n`r`n## Validation Baseline
 
 Initial baseline before this cleanup:
 

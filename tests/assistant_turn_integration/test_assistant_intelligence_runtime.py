@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from datetime import UTC, datetime
 
 from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
@@ -38,12 +39,26 @@ class FakeMcpSession:
 
 
 class FakeBrowserPage:
+    def __init__(self) -> None:
+        self.visited: list[str] = []
+        self.clicked: list[str] = []
+        self.typed: list[tuple[str, str]] = []
+
     def title(self) -> str:
         return "Public Example"
 
     def inner_text(self, selector: str) -> str:
         assert selector == "body"
         return "Public browser page text that remains outside persisted payloads."
+
+    def goto(self, target: str, wait_until: str = "domcontentloaded") -> None:
+        self.visited.append(f"{target}:{wait_until}")
+
+    def click(self, target: str) -> None:
+        self.clicked.append(target)
+
+    def fill(self, target: str, value: str) -> None:
+        self.typed.append((target, value))
 
 def _turn_input(text: str):
     event = build_text_input_event(
@@ -279,3 +294,141 @@ def test_memory_tree_evidence_participates_in_context_prompt_telemetry_and_contr
     serialized = result.model_dump_json().lower()
     assert "source grounded assistant context" not in serialized
     assert "quote_preview" not in serialized
+
+
+def _memory_tree_runtime_fixture():
+    from packages.connector_runtime import ConnectorCategory, ConnectorRef
+    from packages.memory_tree_runtime import CanonicalSourceMetadata, MemoryTreeRuntime, canonicalize_source_document, chunk_document
+
+    metadata = CanonicalSourceMetadata(
+        source_id="source-memory-tree",
+        external_id="doc-1",
+        uri="local://memory/doc-1",
+        title="Memory Tree Plan",
+        connector_ref=ConnectorRef(connector_id="local-memory", category=ConnectorCategory.GENERIC_OAUTH),
+        captured_at=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    document = canonicalize_source_document(
+        metadata=metadata,
+        markdown_body="Memory tree evidence supports source grounded assistant context.",
+        ingested_at=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    chunks = chunk_document(document, max_chars=120)
+    return MemoryTreeRuntime.with_documents(documents=(document,), chunks=chunks), chunks
+
+
+def test_provider_tool_call_full_loop_builds_safe_continuation_input_and_final_response() -> None:
+    memory_tree, _chunks = _memory_tree_runtime_fixture()
+    store = EndToEndTurnStateStore()
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use memory tree evidence and the calculator tool"),
+        model="fake-model",
+        provider_tool_call={"id": "call_calc", "function": {"name": "calculator", "arguments": "{\"expression\": \"6 * 7\"}"}},
+        provider_tool_call_source=ProviderToolCallSource.LMSTUDIO,
+        memory_tree_runtime=memory_tree,
+        state_store=store,
+    )
+
+    continuation = result.tool_state_projection["provider_continuation_input"]
+    assert result.tool_state_projection["provider_continuation_input_ready"] is True
+    assert continuation["tool_call_id"] == "lmstudio.call_calc"
+    assert continuation["result_status"] == "succeeded"
+    assert continuation["safe_result_keys"] == ("result",)
+    assert continuation["memory_tree_evidence_ref_count"] >= 2
+    assert continuation["raw_tool_output_persisted"] is False
+    assert result.lifecycle_projection["provider_continuation_input_ready"] is True
+    assert result.tool_state_projection["provider_final_response_status"] == "completed"
+    assert result.telemetry_summary["provider_tool_proposal_count"] == 1
+    assert result.telemetry_summary["provider_continuation_input_ready"] is True
+    assert result.telemetry_summary["provider_final_response_status"] == "completed"
+    assert result.control_plane_summary["provider_continuation_input_ready"] is True
+    assert result.control_plane_summary["provider_final_response_status"] == "completed"
+    trace = store.trace_reader.read_trace("trace-intel-1")
+    assert trace is not None
+    serialized_trace = json.dumps(trace).lower()
+    assert "provider_continuation_input_ready" in serialized_trace
+    assert "provider_final_response_status" in serialized_trace
+    assert "6 * 7" not in serialized_trace
+    assert result.assistant_result.assistant_final_response is not None
+    assert "42" in result.assistant_result.assistant_final_response.text
+    serialized = result.model_dump_json().lower()
+    assert "6 * 7" not in serialized
+    assert "source grounded assistant context" not in serialized
+
+
+def test_malformed_provider_tool_arguments_are_rejected_without_fallback_execution() -> None:
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use the calculator tool"),
+        model="fake-model",
+        provider_tool_call={"id": "call_bad", "function": {"name": "calculator", "arguments": "{not-json"}},
+        provider_tool_call_source=ProviderToolCallSource.OPENAI_COMPATIBLE,
+    )
+
+    assert result.tool_state_projection["result_status"] == "denied"
+    assert result.tool_state_projection["provider_tool_argument_status"] == "malformed"
+    assert result.tool_state_projection["safe_result_reason_code"] == "malformed_provider_tool_arguments"
+    assert result.tool_state_projection["provider_continuation_ready"] is True
+    assert result.tool_state_projection["provider_continuation_input"]["result_status"] == "denied"
+    assert result.tool_state_projection["provider_final_response_status"] == "completed"
+    assert "2 + 2" not in result.model_dump_json()
+    assert "not-json" not in result.model_dump_json()
+
+
+def test_browser_approval_deny_and_cancel_return_safe_terminal_envelopes() -> None:
+    denied_store = EndToEndTurnStateStore()
+    run_end_to_end_assistant_turn(_turn_input("Click the browser button"), model="fake-model", state_store=denied_store)
+    denied_store.approval_store.deny("approval-turn-intel-1", reason="not needed")
+
+    denied = run_end_to_end_assistant_turn(
+        _turn_input("Click the browser button"),
+        model="fake-model",
+        state_store=denied_store,
+        resume_approval_request_id="approval-turn-intel-1",
+    )
+
+    assert denied.tool_state_projection["approval_decision"] == "denied"
+    assert denied.tool_state_projection["result_status"] == "denied"
+    assert denied.tool_state_projection["pending_approval_count"] == 0
+    assert denied.control_plane_summary["denied_count"] == 1
+    assert denied.tool_state_projection["final_response_ready"] is True
+
+    cancelled_store = EndToEndTurnStateStore()
+    run_end_to_end_assistant_turn(_turn_input("Click the browser button"), model="fake-model", state_store=cancelled_store)
+    cancelled_store.approval_store.cancel("approval-turn-intel-1", reason="user cancelled")
+
+    cancelled = run_end_to_end_assistant_turn(
+        _turn_input("Click the browser button"),
+        model="fake-model",
+        state_store=cancelled_store,
+        resume_approval_request_id="approval-turn-intel-1",
+    )
+
+    assert cancelled.tool_state_projection["approval_decision"] == "cancelled"
+    assert cancelled.tool_state_projection["result_status"] == "denied"
+    assert cancelled.tool_state_projection["pending_approval_count"] == 0
+    assert cancelled.tool_state_projection["provider_continuation_ready"] is True
+    assert cancelled.control_plane_summary["denied_count"] == 1
+
+
+def test_approved_browser_navigation_executes_through_playwright_workflow_after_resume() -> None:
+    store = EndToEndTurnStateStore()
+    page = FakeBrowserPage()
+    paused = run_end_to_end_assistant_turn(_turn_input("Navigate browser to https://example.test/page"), model="fake-model", state_store=store)
+    assert paused.tool_state_projection["pending_approval_count"] == 1
+    store.approval_store.approve("approval-turn-intel-1", reason="allow public navigation")
+
+    resumed = run_end_to_end_assistant_turn(
+        _turn_input("Navigate browser to https://example.test/page"),
+        model="fake-model",
+        state_store=store,
+        resume_approval_request_id="approval-turn-intel-1",
+        browser_page=page,
+    )
+
+    assert page.visited == ["https://example.test/page:domcontentloaded"]
+    assert resumed.tool_state_projection["approval_decision"] == "approved"
+    assert resumed.tool_state_projection["browser_action_kind"] == "navigate"
+    assert resumed.tool_state_projection["result_status"] == "succeeded"
+    assert resumed.tool_state_projection["provider_continuation_ready"] is True
+    assert resumed.lifecycle_projection["tool_result_delivery_ready"] is True
+    assert "https://example.test/page" not in resumed.model_dump_json()

@@ -20,14 +20,14 @@ verified date: 2026-05-19
 
 verified by: Codex
 
-scope: Deeper runtime integration only. This checkpoint includes provider tool-call proposal mapping into Marvex-approved safe execution, safe Playwright read workflow execution, allowlisted MCP proof execution, SQLite memory backend safe-ref participation, semantic-router-backed IntentRuntime classification injection, Memory Tree evidence refs in context/prompt/telemetry/control summaries, and trace-searchable safe runtime summaries. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
+scope: Deeper runtime integration only. This checkpoint includes provider tool-call proposal mapping into Marvex-approved safe execution, safe provider continuation input construction, final fake-provider continuation response representation, malformed provider argument rejection, safe Playwright read/navigation workflow execution after approval, allowlisted MCP proof execution, SQLite memory backend safe-ref participation, semantic-router-backed IntentRuntime classification injection, Memory Tree evidence refs in context/prompt/telemetry/control summaries, and trace-searchable safe runtime summaries. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
 
 adopt / defer / reject decision:
 
 audit classification:
 
-- Real runtime behavior: safe built-in calculator execution, provider tool-call proposal mapping into CapabilityRuntime execution for approved safe tools, Playwright read/extract workflow metadata, approval pause/resume state, allowlisted MCP proof execution, prompt/context budget projections, safe trace summaries, and Memory Tree evidence-ref context inclusion.
-- Proof-only behavior: fake provider continuation readiness, LM Studio/OpenAI/LiteLLM tool-call shape compatibility, local/fake MCP sessions, and browser-use import-backed support.
+- Real runtime behavior: safe built-in calculator execution, provider tool-call proposal mapping into CapabilityRuntime execution for approved safe tools, safe provider continuation input with result-key summaries, final response representation after tool result, malformed provider argument denial without fallback execution, Playwright read/extract/navigation workflow metadata after policy approval, approval pause/resume/deny/cancel state, allowlisted MCP proof execution, prompt/context budget projections, safe trace summaries, and Memory Tree evidence-ref context inclusion.
+- Proof-only behavior: fake provider continuation model call, LM Studio/OpenAI/LiteLLM tool-call shape compatibility, local/fake MCP sessions, and browser-use import-backed support.
 - Disabled seams: arbitrary browser/computer execution, browser-use execution, arbitrary MCP server launch/install, broad account/OAuth sync, shell/filesystem tools, and generic provider routing/model selection.
 - Missing but intentionally blocked: service daemon behavior, retry/fallback/model selection, live OAuth ingestion, voice, Orb/Face shell, desktop overlay, proactive behavior, credential entry/extraction, payment/checkout, CAPTCHA bypass, and raw payload persistence.
 

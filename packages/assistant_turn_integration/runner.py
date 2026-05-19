@@ -68,7 +68,7 @@ def run_end_to_end_assistant_turn(
     planning = PlanningNeedDecision.from_intent(intent.selected_intent, context_candidate_count=len(context_pack.included) + len(context_pack.excluded))
 
     if provider_tool_call is not None:
-        assistant_result, tool_projection, lifecycle_projection = _handle_provider_tool_call_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink, raw_tool_call=provider_tool_call, source=provider_tool_call_source)
+        assistant_result, tool_projection, lifecycle_projection = _handle_provider_tool_call_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink, raw_tool_call=provider_tool_call, source=provider_tool_call_source, memory_tree_evidence_ref_count=_memory_tree_evidence_ref_count(context_pack))
     elif intent.selected_intent.intent_kind == IntentKind.BROWSER_COMPUTER_USE:
         assistant_result, tool_projection, lifecycle_projection = _handle_browser_turn(turn_input, store, resume_approval_request_id, browser_page=browser_page)
     elif intent.selected_intent.intent_kind == IntentKind.MCP_NEEDED and mcp_session and mcp_server_ref and mcp_allowlist:
@@ -83,7 +83,7 @@ def run_end_to_end_assistant_turn(
         lifecycle_projection = {"trace_id": turn_input.trace_id, "turn_id": turn_input.turn_id, "tool_result_delivery_ready": False, "raw_payload_persisted": False}
 
     telemetry_summary = _telemetry_summary(prompt_result, intent.confidence.bucket.value, context_pack, planning.planning_needed, tool_projection)
-    _emit(telemetry_sink, turn_input, TraceStage.TURN_COMPLETED, "Integrated assistant turn completed.", {"status": "completed", "session_ref": _safe_ref(turn_input.session_ref), "conversation_ref": _safe_ref(conversation_ref), "tool_status": str(tool_projection.get("result_status", "not_executed")), "approval_status": _approval_status(tool_projection)})
+    _emit(telemetry_sink, turn_input, TraceStage.TURN_COMPLETED, "Integrated assistant turn completed.", {"status": "completed", "session_ref": _safe_ref(turn_input.session_ref), "conversation_ref": _safe_ref(conversation_ref), "tool_status": str(tool_projection.get("result_status", "not_executed")), "approval_status": _approval_status(tool_projection), "provider_tool_proposal_count": 1 if tool_projection.get("provider_tool_proposal_id") else 0, "provider_continuation_input_ready": bool(tool_projection.get("provider_continuation_input_ready", False)), "provider_final_response_status": tool_projection.get("provider_final_response_status"), "raw_tool_output_persisted": False, "raw_provider_payload_persisted": False})
 
     trace = store.trace_reader.read_trace(turn_input.trace_id)
     control_summary = {
@@ -96,6 +96,10 @@ def run_end_to_end_assistant_turn(
         "memory_tree_evidence_ref_count": _memory_tree_evidence_ref_count(context_pack),
         "intent_backend": intent_backend,
         "library_owns_policy": library_owns_policy,
+        "provider_tool_proposal_count": 1 if tool_projection.get("provider_tool_proposal_id") else 0,
+        "provider_continuation_input_ready": bool(tool_projection.get("provider_continuation_input_ready", False)),
+        "provider_final_response_status": tool_projection.get("provider_final_response_status"),
+        "approval_state": _approval_status(tool_projection),
         "raw_payload_persisted": False,
     }
     integrated = EndToEndAssistantTurnResult(

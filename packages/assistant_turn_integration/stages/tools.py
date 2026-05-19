@@ -44,28 +44,47 @@ def _handle_calculator_turn(turn_input: AssistantTurnInput, *, model: str, instr
     return assistant_result, state.safe_projection(), lifecycle.safe_projection()
 
 
-def _handle_provider_tool_call_turn(turn_input: AssistantTurnInput, *, model: str, instructions: str | None, previous_response_id: str | None, telemetry_sink: TelemetrySink, raw_tool_call: dict[str, Any], source: ProviderToolCallSource) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
+def _handle_provider_tool_call_turn(turn_input: AssistantTurnInput, *, model: str, instructions: str | None, previous_response_id: str | None, telemetry_sink: TelemetrySink, raw_tool_call: dict[str, Any], source: ProviderToolCallSource, memory_tree_evidence_ref_count: int = 0) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
     mapper = ProviderToolCallMapper(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id)
     mapped = mapper.from_litellm(raw_tool_call) if source is ProviderToolCallSource.LITELLM else mapper.from_openai_compatible(raw_tool_call, source=source)
     provider_proposal = mapped.to_capability_proposal()
     if provider_proposal.proposed_action != "calculator":
         result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"provider-tool-denied.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=provider_proposal.capability_ref, status="denied", safe_result={"reason_code": "unsupported_provider_tool"}, raw_input_persisted=False, raw_output_persisted=False)
-        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": True, "final_response_ready": True, "result_status": result.status, "provider_tool_call_source": source.value, "provider_tool_proposal_id": provider_proposal.proposal_id, "raw_payload_persisted": False}
+        continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
+        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": True, "provider_continuation_input_ready": True, "provider_continuation_input": continuation_input, "provider_final_response_status": "completed", "final_response_ready": True, "result_status": result.status, "safe_result_reason_code": "unsupported_provider_tool", "provider_tool_call_source": source.value, "provider_tool_proposal_id": provider_proposal.proposal_id, "raw_payload_persisted": False}
         assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Provider tool proposal was denied by Marvex policy.", metadata={"integration_summary": {"raw_payload_persisted": False}})
-        return assistant_result, tool_projection, {"tool_result_delivery_ready": True, "raw_payload_persisted": False}
+        return assistant_result, tool_projection, {"tool_result_delivery_ready": True, "provider_continuation_input_ready": True, "raw_payload_persisted": False}
+    expression, argument_status, reason_code = _provider_expression(raw_tool_call)
+    if expression is None:
+        result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"provider-tool-denied.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=provider_proposal.capability_ref, status="denied", safe_result={"reason_code": reason_code or "invalid_provider_tool_arguments"}, raw_input_persisted=False, raw_output_persisted=False)
+        continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
+        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": True, "provider_continuation_input_ready": True, "provider_continuation_input": continuation_input, "provider_final_response_status": "completed", "final_response_ready": True, "result_status": result.status, "provider_tool_argument_status": argument_status, "safe_result_reason_code": result.safe_result["reason_code"], "provider_tool_call_source": source.value, "provider_tool_proposal_id": provider_proposal.proposal_id, "raw_payload_persisted": False}
+        assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Provider tool proposal arguments were rejected by Marvex policy.", metadata={"integration_summary": {"raw_payload_persisted": False, "provider_tool_call_source": source.value}})
+        return assistant_result, tool_projection, {"tool_result_delivery_ready": True, "provider_continuation_input_ready": True, "raw_payload_persisted": False}
     proposal = _calculator_proposal(turn_input)
     permission = _permission(proposal)
-    execution_request = CapabilityExecutionRequest(schema_version=turn_input.schema_version, request_id=f"provider-tool-request.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, proposal=proposal, permission_decision=permission, arguments={"expression": _provider_expression(raw_tool_call)})
-    result = BuiltinToolCatalog.default().execute_request(execution_request).result
+    execution_request = CapabilityExecutionRequest(schema_version=turn_input.schema_version, request_id=f"provider-tool-request.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, proposal=proposal, permission_decision=permission, arguments={"expression": expression})
+    try:
+        result = BuiltinToolCatalog.default().execute_request(execution_request).result
+    except Exception:
+        result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"provider-tool-failed.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=proposal.capability_ref, status="denied", safe_result={"reason_code": "invalid_calculator_expression"}, raw_input_persisted=False, raw_output_persisted=False)
     state = ToolOrchestratedTurnState.from_safe_result(turn_input=turn_input, eligible_capability_count=1, proposal=proposal, permission_decision=permission, result=result, continuation_id=f"provider-tool-continuation.{turn_input.turn_id}")
     lifecycle = build_tool_orchestrated_lifecycle_summary(turn_input, state)
-    provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text="Provider tool result is ready for continuation.")), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={}, telemetry_sink=telemetry_sink)
+    continuation_input = _provider_continuation_input(provider_proposal.proposal_id, result, memory_tree_evidence_ref_count=memory_tree_evidence_ref_count)
+    final_text = _provider_final_text(result)
+    provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text=final_text)), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={"tool_continuation_ready": True, "raw_tool_output_persisted": False}, telemetry_sink=telemetry_sink)
     projection = state.safe_projection()
     projection["provider_tool_call_source"] = source.value
     projection["provider_tool_proposal_id"] = provider_proposal.proposal_id
     projection["provider_tool_capability_ref"] = provider_proposal.capability_ref.identifier
-    assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "provider_tool_call_source": source.value}}})
-    return assistant_result, projection, lifecycle.safe_projection()
+    projection["provider_tool_argument_status"] = argument_status
+    projection["provider_continuation_input_ready"] = True
+    projection["provider_continuation_input"] = continuation_input
+    projection["provider_final_response_status"] = "completed" if provider_result.assistant_final_response is not None else "failed"
+    assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "provider_tool_call_source": source.value, "provider_continuation_input_ready": True}}})
+    lifecycle_projection = lifecycle.safe_projection()
+    lifecycle_projection["provider_continuation_input_ready"] = True
+    return assistant_result, projection, lifecycle_projection
 
 
 def _handle_mcp_turn(turn_input: AssistantTurnInput, *, model: str, instructions: str | None, previous_response_id: str | None, telemetry_sink: TelemetrySink, mcp_session: McpClientSession, mcp_server_ref: McpServerRef, mcp_allowlist: McpAllowlist, listings: tuple[McpToolListingProjection, ...]) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any], dict[str, Any]]:
@@ -96,12 +115,24 @@ def _handle_browser_turn(turn_input: AssistantTurnInput, store: EndToEndTurnStat
         permission = _permission(proposal)
         request = BrowserExecutionRequest.from_proposal(request_id=f"browser-request.{turn_input.turn_id}", proposal=browser_action, permission_decision=permission)
         result = PlaywrightBrowserWorkflow(boundary=PlaywrightSdkBoundary(page=browser_page)).execute(request).result
-        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": result.status == "succeeded", "final_response_ready": True, "result_status": result.status, "browser_action_count": 1, "browser_action_kind": browser_action.action_kind.value, "raw_payload_persisted": False}
+        tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": result.status == "succeeded", "provider_continuation_input_ready": result.status == "succeeded", "final_response_ready": True, "result_status": result.status, "browser_action_count": 1, "browser_action_kind": browser_action.action_kind.value, "raw_payload_persisted": False}
         assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Safe browser read result is ready for provider continuation.", metadata={"integration_summary": {"raw_payload_persisted": False, "browser_action_kind": browser_action.action_kind.value}})
-        return assistant_result, tool_projection, {"tool_result_delivery_ready": result.status == "succeeded", "raw_payload_persisted": False}
+        return assistant_result, tool_projection, {"tool_result_delivery_ready": result.status == "succeeded", "provider_continuation_input_ready": result.status == "succeeded", "raw_payload_persisted": False}
     approval_decision = store.approval_store.read_decision(resume_approval_request_id) if resume_approval_request_id else None
+    if approval_decision is not None and approval_decision.decision == "denied":
+        outcome = "cancelled" if approval_decision.decision_id.endswith(":cancelled") else "denied"
+        result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"browser-result.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=proposal.capability_ref, status="denied", safe_result={"approval_decision": outcome}, raw_input_persisted=False, raw_output_persisted=False)
+        tool_projection = {"approval_decision": outcome, "pending_approval_count": 0, "execution_request_present": False, "provider_continuation_ready": True, "provider_continuation_input_ready": True, "final_response_ready": True, "result_status": result.status, "browser_action_count": 1, "browser_action_kind": browser_action.action_kind.value, "raw_payload_persisted": False}
+        assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text=f"Browser action was {outcome}.", metadata={"integration_summary": {"approval_decision": outcome, "raw_payload_persisted": False}})
+        return assistant_result, tool_projection, {"tool_result_delivery_ready": True, "provider_continuation_input_ready": True, "raw_payload_persisted": False}
     if approval_decision is not None and approval_decision.decision == "approved":
         permission = _permission(proposal)
+        if browser_page is not None:
+            request = BrowserExecutionRequest.from_proposal(request_id=f"browser-request.{turn_input.turn_id}", proposal=browser_action, permission_decision=permission, approval_decision=approval_decision)
+            result = PlaywrightBrowserWorkflow(boundary=PlaywrightSdkBoundary(page=browser_page)).execute(request).result
+            tool_projection = {"approval_decision": "approved", "pending_approval_count": 0, "execution_request_present": True, "provider_continuation_ready": result.status == "succeeded", "provider_continuation_input_ready": result.status == "succeeded", "final_response_ready": True, "result_status": result.status, "browser_action_count": 1, "browser_action_kind": browser_action.action_kind.value, "raw_payload_persisted": False}
+            assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Approved browser action result is ready for provider continuation.", metadata={"integration_summary": {"approved_count": 1, "raw_payload_persisted": False}})
+            return assistant_result, tool_projection, {"tool_result_delivery_ready": result.status == "succeeded", "provider_continuation_input_ready": result.status == "succeeded", "raw_payload_persisted": False}
         result = CapabilityResultEnvelope(schema_version=turn_input.schema_version, result_id=f"browser-result.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, capability_ref=proposal.capability_ref, status="requires_human_approval", safe_result={"browser_action_ready": True, "live_execution_deferred": True}, raw_input_persisted=False, raw_output_persisted=False)
         tool_projection = {"approval_decision": "approved", "pending_approval_count": 0, "execution_request_present": True, "provider_continuation_ready": False, "final_response_ready": False, "result_status": result.status, "browser_action_count": 1, "browser_action_kind": browser_action.action_kind.value, "raw_payload_persisted": False}
         assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Browser action approval was recorded; execution remains bounded by adapter policy.", metadata={"integration_summary": {"approved_count": 1, "raw_payload_persisted": False}})
@@ -120,8 +151,15 @@ def _calculator_proposal(turn_input: AssistantTurnInput) -> CapabilityCallPropos
 
 def _browser_action_proposal(turn_input: AssistantTurnInput) -> BrowserActionProposal:
     text = (turn_input.user_visible_input or "").lower()
-    action = BrowserActionKind.EXTRACT_TEXT if any(marker in text for marker in ("read", "extract", "page text")) else BrowserActionKind.CLICK
-    target = "body" if action == BrowserActionKind.EXTRACT_TEXT else "browser.action"
+    if any(marker in text for marker in ("read", "extract", "page text")):
+        action = BrowserActionKind.EXTRACT_TEXT
+        target = "body"
+    elif any(marker in text for marker in ("navigate", "go to", "open")):
+        action = BrowserActionKind.NAVIGATE
+        target = _browser_navigation_target(turn_input.user_visible_input or "")
+    else:
+        action = BrowserActionKind.CLICK
+        target = "browser.action"
     return BrowserActionProposal(schema_version=turn_input.schema_version, proposal_id=f"browser-proposal.{turn_input.turn_id}", trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, session_ref=BrowserSessionRef(session_id=f"browser-session.{turn_input.turn_id}"), action_kind=action, target=target, text_preview=None)
 
 
@@ -143,16 +181,58 @@ def _approval_required_result(turn_input: AssistantTurnInput) -> AssistantTurnRe
     return build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Approval required before browser action.", metadata={"integration_summary": {"pending_approval_count": 1, "raw_payload_persisted": False}})
 
 
-def _provider_expression(raw_tool_call: dict[str, Any]) -> str:
+def _provider_continuation_input(provider_tool_call_id: str, result: CapabilityResultEnvelope, *, memory_tree_evidence_ref_count: int = 0) -> dict[str, object]:
+    return {
+        "tool_call_id": provider_tool_call_id,
+        "capability_ref": result.capability_ref.safe_projection(),
+        "result_status": result.status,
+        "safe_result_keys": tuple(sorted(result.safe_result)),
+        "memory_tree_evidence_ref_count": memory_tree_evidence_ref_count,
+        "raw_tool_output_persisted": False,
+        "raw_provider_payload_persisted": False,
+    }
+
+
+def _provider_final_text(result: CapabilityResultEnvelope) -> str:
+    if result.status == "succeeded" and "result" in result.safe_result:
+        return f"The calculator result is {result.safe_result['result']}."
+    if result.status == "denied":
+        return "The provider tool result was denied by Marvex policy."
+    return "The provider tool result is ready for continuation."
+
+
+def _provider_expression(raw_tool_call: dict[str, Any]) -> tuple[str | None, str, str | None]:
     function = raw_tool_call.get("function") if isinstance(raw_tool_call, dict) else None
     arguments = function.get("arguments") if isinstance(function, dict) else raw_tool_call.get("arguments")
-    parsed: object = {}
     if isinstance(arguments, str):
         try:
             parsed = json.loads(arguments)
         except json.JSONDecodeError:
-            parsed = {}
+            return None, "malformed", "malformed_provider_tool_arguments"
     elif isinstance(arguments, dict):
         parsed = arguments
+    else:
+        return None, "invalid", "invalid_provider_tool_arguments"
+    if not isinstance(parsed, dict):
+        return None, "invalid", "invalid_provider_tool_arguments"
     expression = parsed.get("expression") if isinstance(parsed, dict) else None
-    return expression if isinstance(expression, str) and 0 < len(expression) <= 120 else "2 + 2"
+    if not isinstance(expression, str):
+        return None, "invalid", "invalid_provider_tool_arguments"
+    normalized = expression.strip()
+    if not normalized or len(normalized) > 120:
+        return None, "invalid", "invalid_provider_tool_arguments"
+    if any(marker in normalized.lower() for marker in ("secret", "token", "password", "credential", "bearer")):
+        return None, "invalid", "unsafe_provider_tool_arguments"
+    return normalized, "valid", None
+
+
+def _browser_navigation_target(text: str) -> str:
+    for marker in ("https://", "http://"):
+        start = text.find(marker)
+        if start < 0:
+            continue
+        end = start
+        while end < len(text) and not text[end].isspace() and text[end] not in ")]}>'\"":
+            end += 1
+        return text[start:end][:500]
+    return "about:blank"

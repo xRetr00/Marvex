@@ -24,6 +24,9 @@ _EVENT_PROJECTION_KEYS = {
     "service",
     "tool_status",
     "approval_status",
+    "provider_tool_proposal_count",
+    "provider_continuation_input_ready",
+    "provider_final_response_status",
 }
 _USAGE_KEY_PARTS = (
     "count",

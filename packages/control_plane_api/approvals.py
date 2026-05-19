@@ -46,7 +46,7 @@ class InMemoryApprovalStore:
         return self._decide(approval_request_id, decision="denied", reason=reason)
 
     def cancel(self, approval_request_id: str, *, reason: str) -> ApprovalDecisionResponse | None:
-        return self._decide(approval_request_id, decision="denied", reason=reason)
+        return self._decide(approval_request_id, decision="denied", reason=reason, outcome="cancelled")
 
     def _decide(
         self,
@@ -54,13 +54,14 @@ class InMemoryApprovalStore:
         *,
         decision: str,
         reason: str,
+        outcome: str | None = None,
     ) -> ApprovalDecisionResponse | None:
         request = self._pending.pop(approval_request_id, None)
         if request is None:
             return None
         approval_decision = ApprovalDecision(
             schema_version=request.schema_version,
-            decision_id=f"{approval_request_id}:{decision}",
+            decision_id=f"{approval_request_id}:{outcome or decision}",
             approval_request_id=approval_request_id,
             capability_ref=request.capability_ref,
             decision=decision,

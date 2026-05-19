@@ -32,6 +32,9 @@ REQUIRED_INTEGRATION_TERMS = (
     "resume_approval_request_id",
     "store.approval_store.read_decision",
     "ProviderToolCallMapper",
+    "provider_continuation_input",
+    "provider_final_response_status",
+    "malformed_provider_tool_arguments",
     "PlaywrightBrowserWorkflow",
     "MemoryReadQuery",
     "IntentKind.MEMORY_TREE_NEEDED",
@@ -69,6 +72,8 @@ REQUIRED_DOC_PHRASES = (
     "allowlisted MCP live proof",
     "safe browser workflow",
     "Memory Tree evidence refs",
+    "provider continuation input summaries",
+    "malformed provider argument rejection",
 )
 
 
