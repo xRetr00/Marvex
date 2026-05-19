@@ -40,6 +40,8 @@ REQUIRED_MARKERS = (
     "durations_counts_only",
     "telemetry_summary",
     "loopback-only",
+    "run_live_capture_cycle",
+    "prevents_runaway_recording",
 )
 CONTROL_TERMS = (
     "/control/voice/worker",
@@ -86,7 +88,7 @@ def main() -> int:
     if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend:
         failures.append("Control Plane web missing voice worker status and controls")
     doc = DOC.read_text(encoding="utf-8") if DOC.is_file() else ""
-    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry"):
+    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle"):
         if phrase not in doc:
             failures.append(f"docs/VOICE_WORKER_RUNTIME.md missing phrase: {phrase}")
     if failures:
