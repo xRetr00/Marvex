@@ -1,13 +1,21 @@
 # Project Status
 
-current_phase: voice_runtime_foundation_complete
+current_phase: voice_worker_runtime_boundary_checkpoint
 
-implementation_status: voice_runtime_foundation_complete
+implementation_status: voice_worker_runtime_boundary_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Voice Runtime Foundation Completion
+Voice Worker Runtime Boundary Checkpoint
+
+## Voice Worker Runtime Boundary Checkpoint
+
+Marvex now has the first dedicated local voice worker boundary in `packages.voice_worker_runtime`. The worker layer owns explicit local lifecycle commands, heartbeat/status, microphone and playback adapters, safe model asset root validation, worker events, and safe Control Plane projections. It is local-only, does not auto-start, and does not allow hidden recording or raw audio/transcript/generated-audio persistence by default.
+
+`sounddevice==0.5.5` is declared as the local audio device dependency and isolated behind `SoundDeviceAudioAdapter`; tests use `FakeLocalAudioAdapter` because CI cannot validate physical microphone or speaker hardware. The worker can list/test fake devices, capture PCM frames without persistence, run a mocked manual voice turn through VAD/STT/policy/assistant/TTS/playback event stages, and interrupt playback for barge-in. Real model downloads and physical device smoke remain explicit local/manual work.
+
+Control Plane API/web now exposes protected voice worker status, start/stop/pause/resume, microphone and playback tests, device lists, wakeword/STT/TTS test commands, model install/remove, backend switching, and active voice switching. VoiceWorkerRuntime does not own AutonomyPolicy, CapabilityRuntime, assistant turn execution policy, RuntimeComposition supervision, or Local API internals.
 
 ## Voice Runtime Foundation Checkpoint
 

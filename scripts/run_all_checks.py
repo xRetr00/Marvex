@@ -33,6 +33,7 @@ CHECKS = [
     "check_autonomy_policy_boundaries.py",
     "check_runtime_completion_phase_unlock.py",
     "check_voice_runtime_boundaries.py",
+    "check_voice_worker_runtime_boundaries.py",
     "check_end_to_end_turn_boundaries.py",
     "check_assistant_intelligence_tool_runtime_boundaries.py",
     "check_marketplace_memory_control_plane_boundaries.py",

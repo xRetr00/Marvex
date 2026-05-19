@@ -46,6 +46,7 @@ def create_control_plane_api_app(
     learning_runner: Any | None = None,
     learning_store: Any | None = None,
     voice_control: Any | None = None,
+    voice_worker_control: Any | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
 
@@ -63,7 +64,7 @@ def create_control_plane_api_app(
         if auth_error is not None:
             return _json_response(start_response, "401 Unauthorized", auth_error.model_dump(mode="json"))
 
-        voice_response = handle_voice_control_request(method=method, path=path, environ=environ, voice_control=voice_control)
+        voice_response = handle_voice_control_request(method=method, path=path, environ=environ, voice_control=voice_control, voice_worker_control=voice_worker_control)
         if voice_response is not None:
             status, payload = voice_response
             return _json_response(start_response, status, payload)

@@ -2,6 +2,10 @@
 
 Validation gates are mandatory before finishing any task, including a one-line hotfix.
 
+## Voice Worker Runtime Boundary Gate
+
+`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, protected Control Plane worker endpoints, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
+
 ## Required Command
 
 ```powershell

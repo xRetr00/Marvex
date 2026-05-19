@@ -4,6 +4,8 @@ import {
   applyLearningCandidate,
   downloadVoiceModel,
   enableSkill,
+  fetchVoiceWorkerDevices,
+  fetchVoiceWorkerStatus,
   fetchApprovalHistory,
   fetchAutoFetch,
   fetchMemoryDailyDigest,
@@ -33,8 +35,14 @@ import {
   selectVoiceStt,
   selectVoiceTts,
   setAutoFetchState,
+  startVoiceWorker,
+  stopVoiceWorker,
+  pauseVoiceWorker,
+  resumeVoiceWorker,
   testVoiceStt,
   testVoiceTts,
+  testVoiceWorkerMic,
+  testVoiceWorkerPlayback,
   updateVoiceBargeIn,
   updateVoiceEarlySpeech,
   updateVoicePersonality,
@@ -243,7 +251,13 @@ export function RuntimePolicyView() {
 export function VoiceRuntimeView() {
   const queryClient = useQueryClient();
   const query = useQuery({ queryKey: ["voice-runtime"], queryFn: fetchVoiceStatus, retry: false });
+  const workerQuery = useQuery({ queryKey: ["voice-worker"], queryFn: fetchVoiceWorkerStatus, retry: false });
+  const devicesQuery = useQuery({ queryKey: ["voice-worker-devices"], queryFn: fetchVoiceWorkerDevices, retry: false });
   const refresh = () => queryClient.invalidateQueries({ queryKey: ["voice-runtime"] });
+  const refreshWorker = () => {
+    queryClient.invalidateQueries({ queryKey: ["voice-worker"] });
+    queryClient.invalidateQueries({ queryKey: ["voice-worker-devices"] });
+  };
   const stt = useMutation({ mutationFn: () => selectVoiceStt({ main_backend_id: "moonshine-v2", fallback_backend_id: "sensevoice-small" }), onSuccess: refresh });
   const tts = useMutation({ mutationFn: () => selectVoiceTts({ main_backend_id: "kokoro-onnx", fallback_backend_id: "piper-tts", active_voice_id: "af_heart" }), onSuccess: refresh });
   const wakeword = useMutation({ mutationFn: () => updateWakeword(true), onSuccess: refresh });
@@ -256,6 +270,12 @@ export function VoiceRuntimeView() {
   const remove = useMutation({ mutationFn: () => removeVoiceModel({ model_id: "af_heart", model_kind: "tts_voice" }), onSuccess: refresh });
   const sttTest = useMutation({ mutationFn: testVoiceStt });
   const ttsTest = useMutation({ mutationFn: testVoiceTts });
+  const workerStart = useMutation({ mutationFn: startVoiceWorker, onSuccess: refreshWorker });
+  const workerStop = useMutation({ mutationFn: stopVoiceWorker, onSuccess: refreshWorker });
+  const workerPause = useMutation({ mutationFn: pauseVoiceWorker, onSuccess: refreshWorker });
+  const workerResume = useMutation({ mutationFn: resumeVoiceWorker, onSuccess: refreshWorker });
+  const workerMic = useMutation({ mutationFn: testVoiceWorkerMic, onSuccess: refreshWorker });
+  const workerPlayback = useMutation({ mutationFn: testVoiceWorkerPlayback, onSuccess: refreshWorker });
   if (query.isLoading) return <InlineState message="Loading voice runtime controls..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   const data = query.data ?? {};
@@ -264,8 +284,23 @@ export function VoiceRuntimeView() {
   const backends = typeof data.backends === "object" && data.backends ? data.backends as Record<string, unknown> : {};
   const telemetry = typeof data.telemetry === "object" && data.telemetry ? data.telemetry as Record<string, unknown> : {};
   const backendRows = Array.isArray(backends.backend_health) ? backends.backend_health as Record<string, unknown>[] : [];
+  const worker = typeof workerQuery.data === "object" && workerQuery.data ? workerQuery.data as Record<string, unknown> : {};
+  const devices = typeof devicesQuery.data === "object" && devicesQuery.data ? devicesQuery.data as Record<string, unknown> : {};
+  const inputDevices = Array.isArray(devices.input_devices) ? devices.input_devices as Record<string, unknown>[] : [];
+  const outputDevices = Array.isArray(devices.output_devices) ? devices.output_devices as Record<string, unknown>[] : [];
   return (
     <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>Voice Worker Process</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Button variant="outline" onClick={() => workerStart.mutate()}><Mic className="mr-2" size={16} />Start Worker</Button>
+          <Button variant="outline" onClick={() => workerPause.mutate()}>Pause Worker</Button>
+          <Button variant="outline" onClick={() => workerResume.mutate()}>Resume Worker</Button>
+          <Button variant="outline" onClick={() => workerStop.mutate()}>Stop Worker</Button>
+          <Button variant="outline" onClick={() => workerMic.mutate()}>Test Mic Level</Button>
+          <Button variant="outline" onClick={() => workerPlayback.mutate()}><Volume2 className="mr-2" size={16} />Test Playback</Button>
+        </CardContent>
+      </Card>
       <Card>
         <CardHeader><CardTitle>Voice Runtime</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
@@ -284,10 +319,13 @@ export function VoiceRuntimeView() {
         </CardContent>
       </Card>
       <SafeTable title="Voice Runtime Status" rows={[summary]} empty="No voice status." />
+      <SafeTable title="Voice Worker Status" rows={[worker]} empty="No voice worker status." />
+      <SafeTable title="Microphone Devices" rows={inputDevices} empty="No microphone devices reported." />
+      <SafeTable title="Playback Devices" rows={outputDevices} empty="No playback devices reported." />
       <SafeTable title="STT / TTS / Wakeword / VAD Backends" rows={backendRows} empty="No backend health." />
       <SafeTable title="Wakeword / VAD / Barge-In / Early Speech / Personality" rows={[settings]} empty="No voice settings." />
       <SafeTable title="Voice Telemetry Summary" rows={[telemetry]} empty="No voice telemetry." />
-      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
+      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data, workerStart.data, workerStop.data, workerPause.data, workerResume.data, workerMic.data, workerPlayback.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
     </div>
   );
 }

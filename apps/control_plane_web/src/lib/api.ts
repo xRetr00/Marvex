@@ -244,3 +244,35 @@ export async function testVoiceStt() {
 export async function testVoiceTts() {
   return voiceActionSchema.parse(await readJson("/voice/test-tts", { method: "POST", body: JSON.stringify({ test_id: "control-plane-tts", backend_id: "kokoro-onnx", phrase: "Testing voice." }) }));
 }
+
+export async function fetchVoiceWorkerStatus() {
+  return voiceActionSchema.parse(await readJson("/voice/worker"));
+}
+
+export async function fetchVoiceWorkerDevices() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/devices"));
+}
+
+export async function startVoiceWorker() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/start", { method: "POST" }));
+}
+
+export async function stopVoiceWorker() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/stop", { method: "POST" }));
+}
+
+export async function pauseVoiceWorker() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/pause", { method: "POST" }));
+}
+
+export async function resumeVoiceWorker() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/resume", { method: "POST" }));
+}
+
+export async function testVoiceWorkerMic() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/test-mic", { method: "POST", body: JSON.stringify({ device_id: "input-default" }) }));
+}
+
+export async function testVoiceWorkerPlayback() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/test-playback", { method: "POST", body: JSON.stringify({ device_id: "output-default" }) }));
+}

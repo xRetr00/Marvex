@@ -34,6 +34,10 @@ VoiceRuntime does not own intent routing, tools, memory, provider routing, capab
 
 Protected Control Plane APIs and web views expose status, backend health, STT/TTS selectors, wakeword settings, VAD/barge-in/early speech/personality settings, model or voice download/remove requests, STT/TTS tests, audio retention policy, and telemetry summaries. The frontend does not run audio engines directly.
 
+## Voice Worker Follow-Up
+
+The next phase now starts in `packages.voice_worker_runtime`. VoiceRuntime remains the in-process speech I/O orchestration foundation; VoiceWorkerRuntime owns the local worker lifecycle, microphone/playback adapters, process boundary, heartbeat/status, and Control Plane worker commands. VoiceWorkerRuntime delegates assistant policy and assistant turns through injected callbacks and must not make RuntimeComposition or Local API a worker supervisor.
+
 ## Still Outside This Foundation
 
 Separate always-running voice worker processes, OS microphone service supervision, Orb/Face UI, desktop overlay, final visual assistant shell, vision, and proactive non-voice behavior require later explicit goals.

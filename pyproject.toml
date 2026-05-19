@@ -28,6 +28,7 @@ dependencies = [
   "silero-vad==6.2.1",
   "webrtcvad-wheels==2.0.14",
   "sherpa-onnx-core==1.13.2",
+  "sounddevice==0.5.5",
 ]
 
 [project.optional-dependencies]

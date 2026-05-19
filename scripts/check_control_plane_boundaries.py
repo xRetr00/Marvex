@@ -23,6 +23,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "packages.memory_runtime",
     "packages.telemetry.search",
     "packages.voice_runtime",
+    "packages.voice_worker_runtime",
     "pydantic",
     "typing",
     "urllib.parse",

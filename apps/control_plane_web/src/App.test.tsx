@@ -81,7 +81,9 @@ describe("Control Plane app", () => {
       "/control/memory/tree/daily/2026-05-18": { schema_version: "1", daily_digest: { node_id: "daily-2026-05-18", title: "Daily Digest", evidence_count: 1 }, raw_content_persisted: false },
       "/control/memory/tree/drill-down/chunk-1": { schema_version: "1", evidence: { chunk_id: "chunk-1", source_id: "source-github", quote_preview: "bounded evidence preview" } },
       "/control/memory/tree/scoring": { schema_version: "1", scores: [{ chunk_id: "chunk-1", importance: 0.7, decision: "keep", policy_owner: "MemoryTreeRuntime" }], score_count: 1, raw_content_persisted: false },
-      "/control/voice": { schema_version: "1", summary: { main_stt_backend_id: "moonshine-v2", main_tts_backend_id: "kokoro-onnx", wakeword_enabled: false, no_raw_audio_persistence_by_default: true }, settings: { wakeword: { phrase: "Hey Marvex", always_listening_enabled: false }, vad: { backend: { main_backend_id: "silero-vad" } }, barge_in: { enabled: true }, early_speech: { enabled: true }, personality: { active_voice_id: "af_heart" } }, backends: { backend_health: [{ backend_id: "moonshine-v2", package_name: "moonshine-voice", import_available: true }, { backend_id: "kokoro-onnx", package_name: "kokoro-onnx", import_available: true }] }, telemetry: { wakeword_detections: 0, raw_audio_persisted: false, raw_transcript_persisted: false }, raw_audio_persisted: false, raw_transcript_persisted: false }
+      "/control/voice": { schema_version: "1", summary: { main_stt_backend_id: "moonshine-v2", main_tts_backend_id: "kokoro-onnx", wakeword_enabled: false, no_raw_audio_persistence_by_default: true }, settings: { wakeword: { phrase: "Hey Marvex", always_listening_enabled: false }, vad: { backend: { main_backend_id: "silero-vad" } }, barge_in: { enabled: true }, early_speech: { enabled: true }, personality: { active_voice_id: "af_heart" } }, backends: { backend_health: [{ backend_id: "moonshine-v2", package_name: "moonshine-voice", import_available: true }, { backend_id: "kokoro-onnx", package_name: "kokoro-onnx", import_available: true }] }, telemetry: { wakeword_detections: 0, raw_audio_persisted: false, raw_transcript_persisted: false }, raw_audio_persisted: false, raw_transcript_persisted: false },
+      "/control/voice/worker": { schema_version: "1", worker_id: "local-voice-worker", lifecycle_state: "stopped", process_started: false, heartbeat_ok: false, active_stt_backend_id: "moonshine-v2", active_tts_backend_id: "kokoro-onnx", active_voice_id: "af_heart", mic_status: "stopped", playback_status: "stopped", wakeword_status: "disabled", queued_tts_count: 0, local_only: true, hidden_recording_allowed: false, raw_audio_persisted: false, raw_transcript_persisted: false },
+      "/control/voice/worker/devices": { schema_version: "1", input_devices: [{ device_id: "input-default", label: "Default microphone", is_input: true }], output_devices: [{ device_id: "output-default", label: "Default speaker", is_output: true }], raw_audio_persisted: false }
     };
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input), "http://localhost").pathname;
@@ -116,6 +118,8 @@ describe("Control Plane app", () => {
     expect(await screen.findByText("bounded evidence preview")).toBeInTheDocument();
     expect(await screen.findByText("MemoryTreeRuntime")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Voice Runtime/i }));
+    expect(await screen.findByText("Voice Worker Process")).toBeInTheDocument();
+    expect(await screen.findByText("Default microphone")).toBeInTheDocument();
     expect((await screen.findAllByText("moonshine-v2")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText((content) => content.includes("Hey Marvex"))).length).toBeGreaterThan(0);
     expect(screen.queryByText(/apikey|Bearer|secret-token|raw prompt/i)).not.toBeInTheDocument();

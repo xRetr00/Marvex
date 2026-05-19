@@ -2337,6 +2337,7 @@ dependencies = [
     { name = "sherpa-onnx" },
     { name = "sherpa-onnx-core" },
     { name = "silero-vad" },
+    { name = "sounddevice" },
     { name = "stream2sentence" },
     { name = "webrtcvad-wheels" },
 ]
@@ -2373,6 +2374,7 @@ requires-dist = [
     { name = "sherpa-onnx", specifier = "==1.13.2" },
     { name = "sherpa-onnx-core", specifier = "==1.13.2" },
     { name = "silero-vad", specifier = "==6.2.1" },
+    { name = "sounddevice", specifier = "==0.5.5" },
     { name = "stream2sentence", specifier = "==0.3.2" },
     { name = "webrtcvad-wheels", specifier = "==2.0.14" },
 ]

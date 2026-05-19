@@ -1,6 +1,6 @@
 # Library Decision: Voice Runtime Backend Stack
 
-library name: moonshine-voice, FunASR, sherpa-onnx, Kokoro-ONNX, Piper TTS, stream2sentence, Silero VAD, and webrtcvad-wheels
+library name: moonshine-voice, FunASR, sherpa-onnx, Kokoro-ONNX, Piper TTS, stream2sentence, Silero VAD, webrtcvad-wheels, and sounddevice
 
 official source: PyPI package indexes plus upstream project repositories for each package. Marvex validates actual compatibility through `uv` resolution against the local project stack.
 
@@ -48,13 +48,17 @@ pyproject dependency: webrtcvad-wheels
 
 declared dependency: webrtcvad-wheels==2.0.14
 
+pyproject dependency: sounddevice
+
+declared dependency: sounddevice==0.5.5
+
 verified date: 2026-05-19
 
 verified by: Codex
 
 uv compatibility result: `uv pip install --dry-run -e . moonshine-voice funasr sherpa-onnx kokoro-onnx piper-tts stream2sentence silero-vad webrtcvad-wheels` resolved successfully. `uv add ...` installed the packages, then `uv run python -m pip check` initially reported `sherpa-onnx 1.13.2 requires sherpa-onnx-core, which is not installed`; adding `sherpa-onnx-core==1.13.2` fixed the check.
 
-architecture fit: Good when isolated behind `packages.voice_runtime` adapters. Moonshine v2 is the main STT backend id, SenseVoice-Small via FunASR is fallback STT, sherpa-onnx is the ASR/KWS/TTS/VAD secondary seam, Kokoro-ONNX is main TTS, Piper is fallback TTS, Silero is main VAD, webrtcvad-wheels is fallback VAD, and stream2sentence is evaluated behind the sentence clamp adapter.
+architecture fit: Good when isolated behind `packages.voice_runtime` and `packages.voice_worker_runtime` adapters. Moonshine v2 is the main STT backend id, SenseVoice-Small via FunASR is fallback STT, sherpa-onnx is the ASR/KWS/TTS/VAD secondary seam, Kokoro-ONNX is main TTS, Piper is fallback TTS, Silero is main VAD, webrtcvad-wheels is fallback VAD, stream2sentence is evaluated behind the sentence clamp adapter, and sounddevice owns local microphone/playback device access behind a mockable worker adapter.
 
 adopt / defer / reject decision: Adopt direct dependencies and keep real model execution explicit and model/voice-asset controlled. No raw audio or generated audio is persisted by default. The Control Plane can list/select/test/download safe projections, but the frontend does not run engines directly.
 

@@ -8,9 +8,41 @@ from packages.contracts import ErrorCode, ErrorEnvelope
 SCHEMA_VERSION = "1"
 
 
-def handle_voice_control_request(*, method: str, path: str, environ: dict[str, Any], voice_control: Any | None) -> tuple[str, dict[str, Any]] | None:
+def handle_voice_control_request(*, method: str, path: str, environ: dict[str, Any], voice_control: Any | None, voice_worker_control: Any | None = None) -> tuple[str, dict[str, Any]] | None:
     if not path.startswith("/control/voice"):
         return None
+    if path.startswith("/control/voice/worker"):
+        if voice_worker_control is None:
+            from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
+            voice_worker_control = VoiceWorkerControlPlaneFacade()
+        if method == "GET" and path == "/control/voice/worker":
+            return "200 OK", voice_worker_control.status()
+        if method == "GET" and path == "/control/voice/worker/devices":
+            return "200 OK", voice_worker_control.devices()
+        if method == "GET" and path == "/control/voice/worker/assets":
+            return "200 OK", voice_worker_control.assets_status()
+        worker_commands = {
+            "/control/voice/worker/start": "start",
+            "/control/voice/worker/stop": "stop",
+            "/control/voice/worker/pause": "pause",
+            "/control/voice/worker/resume": "resume",
+            "/control/voice/worker/reload-config": "reload_config",
+            "/control/voice/worker/test-mic": "test_mic",
+            "/control/voice/worker/test-wakeword": "test_wakeword",
+            "/control/voice/worker/test-stt": "test_stt",
+            "/control/voice/worker/test-tts": "test_tts",
+            "/control/voice/worker/test-playback": "test_playback",
+            "/control/voice/worker/stt/switch": "switch_stt_backend",
+            "/control/voice/worker/tts/switch": "switch_tts_backend",
+            "/control/voice/worker/voice/switch": "switch_active_voice",
+        }
+        if method == "POST" and path in worker_commands:
+            return "200 OK", voice_worker_control.command(worker_commands[path], _read_json(environ))
+        if method == "POST" and path == "/control/voice/worker/models/install":
+            return "200 OK", voice_worker_control.install_model_voice(_read_json(environ))
+        if method == "POST" and path == "/control/voice/worker/models/remove":
+            return "200 OK", voice_worker_control.remove_model_voice(_read_json(environ))
+        return "404 Not Found", _voice_error("voice_worker_endpoint_not_found", path)
     if voice_control is None:
         from packages.voice_runtime import VoiceControlPlaneFacade
         voice_control = VoiceControlPlaneFacade()
