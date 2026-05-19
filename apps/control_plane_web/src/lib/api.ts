@@ -28,6 +28,8 @@ import {
   sourceForgetSchema,
   sourcesSchema,
   traceSearchSchema,
+  voiceActionSchema,
+  voiceStatusSchema,
   type ApprovalDecisionResponse,
   type ApprovalHistory,
   type ApprovalList,
@@ -189,4 +191,36 @@ export async function fetchMemoryDailyDigest(date = "2026-05-18") {
 
 export async function fetchMemoryDrillDown(chunkId = "chunk-1") {
   return memoryTreeDrillDownSchema.parse(await readJson(`/memory/tree/drill-down/${encodeURIComponent(chunkId)}`));
+}
+
+export async function fetchVoiceStatus() {
+  return voiceStatusSchema.parse(await readJson("/voice"));
+}
+
+export async function selectVoiceStt(payload: { main_backend_id: string; fallback_backend_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/stt/select", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function selectVoiceTts(payload: { main_backend_id: string; fallback_backend_id: string; active_voice_id: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/tts/select", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function updateWakeword(always_listening_enabled: boolean) {
+  return voiceActionSchema.parse(await readJson("/voice/wakeword", { method: "POST", body: JSON.stringify({ always_listening_enabled }) }));
+}
+
+export async function downloadVoiceModel(payload: { model_id: string; backend_id: string; model_kind: string; source_uri: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/models/download", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function removeVoiceModel(payload: { model_id: string; model_kind: string }) {
+  return voiceActionSchema.parse(await readJson("/voice/models/remove", { method: "POST", body: JSON.stringify(payload) }));
+}
+
+export async function testVoiceStt() {
+  return voiceActionSchema.parse(await readJson("/voice/test-stt", { method: "POST", body: JSON.stringify({ test_id: "control-plane-stt", backend_id: "moonshine-v2", sample_ref_id: "control-plane-sample" }) }));
+}
+
+export async function testVoiceTts() {
+  return voiceActionSchema.parse(await readJson("/voice/test-tts", { method: "POST", body: JSON.stringify({ test_id: "control-plane-tts", backend_id: "kokoro-onnx", phrase: "Testing voice." }) }));
 }

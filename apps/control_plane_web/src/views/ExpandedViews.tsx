@@ -1,7 +1,8 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { CheckCircle2, Search, ShieldAlert, Trash2 } from "lucide-react";
+import { CheckCircle2, Mic, Search, ShieldAlert, Trash2, Volume2 } from "lucide-react";
 import {
   applyLearningCandidate,
+  downloadVoiceModel,
   enableSkill,
   fetchApprovalHistory,
   fetchAutoFetch,
@@ -20,14 +21,21 @@ import {
   fetchPolicies,
   fetchRuntimePolicy,
   fetchRuntimePolicyAudit,
+  fetchVoiceStatus,
   fetchSources,
   forgetSource,
   fetchSkillsMarketplace,
   fetchTraceSearch,
   forgetMemory,
   proposeMcpAllowlist,
+  removeVoiceModel,
   setRuntimePolicyMode,
-  setAutoFetchState
+  selectVoiceStt,
+  selectVoiceTts,
+  setAutoFetchState,
+  testVoiceStt,
+  testVoiceTts,
+  updateWakeword
 } from "../lib/api";
 import { Button } from "../components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "../components/ui/card";
@@ -223,6 +231,48 @@ export function RuntimePolicyView() {
       </Card>
       <SafeTable title="Capability Permission Matrix" rows={matrixRows} empty="No runtime policy matrix available." />
       <SafeTable title="Policy Decision Audit" rows={auditRows} empty="No policy decisions recorded." />
+    </div>
+  );
+}
+
+export function VoiceRuntimeView() {
+  const queryClient = useQueryClient();
+  const query = useQuery({ queryKey: ["voice-runtime"], queryFn: fetchVoiceStatus, retry: false });
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ["voice-runtime"] });
+  const stt = useMutation({ mutationFn: () => selectVoiceStt({ main_backend_id: "moonshine-v2", fallback_backend_id: "sensevoice-small" }), onSuccess: refresh });
+  const tts = useMutation({ mutationFn: () => selectVoiceTts({ main_backend_id: "kokoro-onnx", fallback_backend_id: "piper-tts", active_voice_id: "af_heart" }), onSuccess: refresh });
+  const wakeword = useMutation({ mutationFn: () => updateWakeword(true), onSuccess: refresh });
+  const download = useMutation({ mutationFn: () => downloadVoiceModel({ model_id: "af_heart", backend_id: "kokoro-onnx", model_kind: "tts_voice", source_uri: "local://voices/af_heart" }), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: () => removeVoiceModel({ model_id: "af_heart", model_kind: "tts_voice" }), onSuccess: refresh });
+  const sttTest = useMutation({ mutationFn: testVoiceStt });
+  const ttsTest = useMutation({ mutationFn: testVoiceTts });
+  if (query.isLoading) return <InlineState message="Loading voice runtime controls..." />;
+  if (query.isError) return <InlineState message={query.error.message} />;
+  const data = query.data ?? {};
+  const summary = typeof data.summary === "object" && data.summary ? data.summary as Record<string, unknown> : {};
+  const settings = typeof data.settings === "object" && data.settings ? data.settings as Record<string, unknown> : {};
+  const backends = typeof data.backends === "object" && data.backends ? data.backends as Record<string, unknown> : {};
+  const telemetry = typeof data.telemetry === "object" && data.telemetry ? data.telemetry as Record<string, unknown> : {};
+  const backendRows = Array.isArray(backends.backend_health) ? backends.backend_health as Record<string, unknown>[] : [];
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>Voice Runtime</CardTitle></CardHeader>
+        <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <Button variant="outline" onClick={() => stt.mutate()}><Mic className="mr-2" size={16} />Use Moonshine / SenseVoice</Button>
+          <Button variant="outline" onClick={() => tts.mutate()}><Volume2 className="mr-2" size={16} />Use Kokoro / Piper</Button>
+          <Button variant="outline" onClick={() => wakeword.mutate()}><Mic className="mr-2" size={16} />Enable Hey Marvex</Button>
+          <Button variant="outline" onClick={() => download.mutate()}>Install af_heart</Button>
+          <Button variant="outline" onClick={() => remove.mutate()}><Trash2 className="mr-2" size={16} />Remove af_heart</Button>
+          <Button variant="outline" onClick={() => sttTest.mutate()}>Test STT</Button>
+          <Button variant="outline" onClick={() => ttsTest.mutate()}>Test TTS</Button>
+        </CardContent>
+      </Card>
+      <SafeTable title="Voice Runtime Status" rows={[summary]} empty="No voice status." />
+      <SafeTable title="STT / TTS / Wakeword / VAD Backends" rows={backendRows} empty="No backend health." />
+      <SafeTable title="Wakeword / VAD / Barge-In / Early Speech / Personality" rows={[settings]} empty="No voice settings." />
+      <SafeTable title="Voice Telemetry Summary" rows={[telemetry]} empty="No voice telemetry." />
+      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, download.data, remove.data, sttTest.data, ttsTest.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
     </div>
   );
 }

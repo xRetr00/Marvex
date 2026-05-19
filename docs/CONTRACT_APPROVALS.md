@@ -81,4 +81,5 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - session runtime: bounded foundation; safe refs only.
 - intent/prompt harness seams: bounded foundation; safe projections and bounded prompt plans only.
 - service placeholders: future service contract; README-only.
-- future voice, desktop agent, shell/orb UI, proactive behavior, and vision: forbidden product behavior for now.
+- voice runtime foundation: bounded implementation foundation for in-process voice I/O orchestration only; no separate service process, visual shell, hidden recording, or raw audio/transcript persistence by default.
+- future voice worker/service process, desktop agent, shell/orb UI, proactive behavior, and vision: future service contract or forbidden product behavior for now unless a later goal explicitly approves them.

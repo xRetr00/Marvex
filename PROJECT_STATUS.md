@@ -1,13 +1,25 @@
 # Project Status
 
-current_phase: runtime_completion_phase_unlock_complete
+current_phase: voice_runtime_foundation_complete
 
-implementation_status: runtime_completion_phase_unlock_complete
+implementation_status: voice_runtime_foundation_complete
 
 accepted_docs: true
 
 current_governance_gate:
-Autonomy Modes and Policy Control Plane Completion
+Voice Runtime Foundation Completion
+
+## Voice Runtime Foundation Checkpoint
+
+Marvex now has a bounded VoiceRuntime foundation after runtime completion and phase unlock. `packages.voice_runtime` owns voice I/O orchestration only: wakeword, VAD, audio ring buffers, chunk aggregation, STT/TTS backend selection, model/voice registries, sentence clamping, queued speech, barge-in state, early safe filler speech, voice personality settings, safe voice turn envelopes, and safe Control Plane projections.
+
+Adopted voice dependencies are `moonshine-voice==0.0.59`, `funasr==1.3.1`, `sherpa-onnx==1.13.2`, `sherpa-onnx-core==1.13.2`, `kokoro-onnx==0.5.0`, `piper-tts==1.4.2`, `stream2sentence==0.3.2`, `silero-vad==6.2.1`, and `webrtcvad-wheels==2.0.14`. The uv compatibility probe resolved successfully; `uv run python -m pip check` initially found missing `sherpa-onnx-core`, and adding the explicit dependency fixed the check.
+
+Control Plane API/web now exposes protected Voice Runtime status, STT/TTS backend selectors, active voice selection, voice/model download request surfaces, STT/TTS test actions, wakeword settings, VAD/barge-in/early speech/personality settings, audio retention policy, backend health, and telemetry summaries. Frontend voice controls call protected backend APIs and do not run audio engines directly.
+
+Voice turns use injected assistant-turn and policy callbacks so VoiceRuntime does not own intent routing, tools, memory, provider routing, CapabilityRuntime, AutonomyPolicy, or visual UI. Prompt-injection-like transcripts can be quarantined before assistant execution; ambiguous voice commands ask clarification; risky actions produce voice approval prompts without execution. Wakeword 24/7 support is explicit, visible, policy-controlled, and disabled by default. Raw audio, generated audio, transcripts, backend internals, provider payloads, tool payloads, and secrets are not persisted or rendered by default.
+
+Still not implemented after this checkpoint: Orb/Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, separate always-running voice worker process supervision, real external OAuth credential sync against user accounts, direct Browser-use SDK task execution, and actual shell/file execution adapters. These remain future explicit goals or policy-controlled/not-implemented seams.
 
 
 Validation history markers retained for repository gates:
@@ -136,11 +148,11 @@ Marvex remains on the Assistant OS infrastructure path. Existing foundations are
 
 Approved implementation surfaces: provider foundation contracts and the approved assistant envelope contracts.
 
-Bounded foundations: assistant turn integration, telemetry, Local API, Control Plane API, Control Plane web, CapabilityRuntime, tool execution foundations, MCP adapter, MemoryRuntime, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, and PromptHarnessRuntime. These foundations may be maintained and tested, but expansion is blocked unless a future goal updates `docs/CONTRACT_APPROVALS.md`, this status file, validation gates, and relevant architecture docs.
+Bounded foundations: assistant turn integration, telemetry, Local API, Control Plane API, Control Plane web, CapabilityRuntime, tool execution foundations, MCP adapter, MemoryRuntime, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, and VoiceRuntime. These foundations may be maintained and tested, but expansion is blocked unless a future goal updates `docs/CONTRACT_APPROVALS.md`, this status file, validation gates, and relevant architecture docs.
 
 Experimental seams: browser/computer-use adapter seams are present for policy-gated proposals and bounded adapter proofs only. They are not general product permission for browser or desktop automation.
 
-Future service contracts: `services/*` placeholders remain README-only. Voice, desktop agent, shell/orb UI, proactive behavior, and vision remain forbidden product behavior for now.
+Future service contracts: `services/*` placeholders remain README-only. Separate voice worker service processes, desktop agent, shell/orb UI, proactive behavior, and vision remain future/forbidden product behavior for now.
 
 ## Cleanup Result
 
@@ -153,10 +165,10 @@ CapabilityRuntime remains authoritative for permissions, approvals, execution re
 
 ## Blocked
 
-Blocked without explicit future approval: new product features, new dependencies, generic provider routing/model selection, arbitrary tool execution, shell execution, filesystem write/edit/delete tools, arbitrary MCP install/launch/execute, arbitrary skill install/remote loading/script execution, uncontrolled browser/computer/desktop automation, raw prompt/transcript/tool/provider/browser payload persistence by default, voice, Orb, desktop overlay, proactive behavior, and vision.
+Blocked without explicit future approval: new product features, new dependencies, generic provider routing/model selection, arbitrary tool execution, shell execution, filesystem write/edit/delete tools, arbitrary MCP install/launch/execute, arbitrary skill install/remote loading/script execution, uncontrolled browser/computer/desktop automation, raw prompt/transcript/tool/provider/browser/audio payload persistence by default, voice behavior outside the bounded VoiceRuntime foundation, Orb, desktop overlay, proactive behavior, and vision.
 
 ## Next Recommended Goal
 
-Voice Runtime Foundation can start next, provided it keeps voice behind explicit contracts and does not widen provider routing, tool execution, browser automation, OAuth sync, learning mutation, or raw payload persistence.
+Recommended next goal: Voice Worker Process Boundary and Local Microphone Runtime. Keep the in-process VoiceRuntime contracts stable, add an explicit worker/service contract, and prove local capture/playback process boundaries without Orb/Face UI, desktop overlay, vision, proactive behavior, or raw audio/transcript persistence by default.
 
 Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.

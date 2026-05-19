@@ -22,6 +22,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "packages.marketplace_runtime",
     "packages.memory_runtime",
     "packages.telemetry.search",
+    "packages.voice_runtime",
     "pydantic",
     "typing",
     "urllib.parse",

@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, MonitorCog, Moon, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, Wrench } from "lucide-react";
+import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, Mic, MonitorCog, Moon, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, Wrench } from "lucide-react";
 import { fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
-import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, FeedbackLearningView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
+import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, FeedbackLearningView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView, VoiceRuntimeView } from "./views/ExpandedViews";
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
@@ -22,6 +22,7 @@ const views = [
   { id: "capabilities", label: "Capabilities / Tools", icon: Wrench },
   { id: "tool_policy", label: "Tool Risk Policy", icon: ShieldAlert },
   { id: "runtime_policy", label: "Runtime Policy", icon: ShieldCheck },
+  { id: "voice", label: "Voice Runtime", icon: Mic },
   { id: "mcp", label: "MCP", icon: ListChecks },
   { id: "mcp_marketplace", label: "MCP Marketplace", icon: Store },
   { id: "skills", label: "Skills", icon: Brain },
@@ -121,6 +122,7 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "capabilities") return <div className="space-y-4"><SafeTable title="Capability Registry" rows={snapshot.capabilities} empty="No capabilities eligible." /><SafeTable title="Tools" rows={snapshot.tools} empty="No tools available." /></div>;
   if (active === "tool_policy") return <PolicyView />;
   if (active === "runtime_policy") return <RuntimePolicyView />;
+  if (active === "voice") return <VoiceRuntimeView />;
   if (active === "mcp") return <SafeTable title="MCP Servers / Tools" rows={snapshot.mcp_servers} empty="No allowlisted MCP servers." />;
   if (active === "mcp_marketplace") return <McpMarketplaceView />;
   if (active === "skills") return <SafeTable title="Skills" rows={snapshot.skills} empty="No validated skills." />;

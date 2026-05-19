@@ -112,6 +112,8 @@ export const diagnosticsSchema = safeRecord;
 export const feedbackEventsSchema = z.object({ schema_version: z.string(), events: z.array(safeRecord), event_count: z.number(), raw_feedback_persisted: z.literal(false) });
 export const learningCandidatesSchema = z.object({ schema_version: z.string(), memory_candidates: z.array(safeRecord), skill_candidates: z.array(safeRecord), policy_candidates: z.array(safeRecord), preference_candidates: z.array(safeRecord), route_candidates: z.array(safeRecord), memory_scoring_changes: z.array(safeRecord).optional(), raw_feedback_persisted: z.literal(false) });
 export const learningApplySchema = safeRecord;
+export const voiceStatusSchema = safeRecord;
+export const voiceActionSchema = safeRecord;
 
 export type SafeRecord = z.infer<typeof safeRecord>;
 export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
@@ -136,3 +138,4 @@ export type RuntimePolicy = z.infer<typeof runtimePolicySchema>;
 export type RuntimePolicyAudit = z.infer<typeof runtimePolicyAuditSchema>;
 export type FeedbackEvents = z.infer<typeof feedbackEventsSchema>;
 export type LearningCandidates = z.infer<typeof learningCandidatesSchema>;
+export type VoiceStatus = z.infer<typeof voiceStatusSchema>;

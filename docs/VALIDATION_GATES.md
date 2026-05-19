@@ -639,7 +639,7 @@ This gate protects the pre-Voice adaptive runtime surface:
 
 Semantic memory search uses local deterministic token-vector scoring plus filters for trust, recency, entity, topic, source, source type, hotness, and evidence availability. It does not add a paid/cloud embedding dependency.
 
-Policy state: Voice, Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, OAuth sync, auto-fetch, and policy/skill mutation are governed by the autonomy policy layer or review-required candidates; raw sensitive payload persistence remains denied by default.
+Policy state: VoiceRuntime is now a bounded voice I/O foundation only. Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, OAuth sync, auto-fetch, and policy/skill mutation are governed by the autonomy policy layer or review-required candidates; raw sensitive payload persistence remains denied by default.
 
 ## Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance Gate
 
@@ -657,7 +657,7 @@ The gate protects these invariants:
 - Grounded answer citations must map to provided evidence refs.
 - PromptHarnessRuntime may receive bounded evidence sections only; no all-tools, all-memory, raw transcript, raw provider payload, raw browser DOM, or raw screenshot dumping.
 
-Policy state: Voice, Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, MCP install/execute, OAuth sync, and auto-fetch are governed by autonomy policy and approval state; raw payload persistence remains denied by default.
+Policy state: VoiceRuntime is now a bounded voice I/O foundation only. Orb/Face UI, desktop overlay, and proactive behavior remain not implemented. Tool execution, MCP install/execute, OAuth sync, and auto-fetch are governed by autonomy policy and approval state; raw payload persistence remains denied by default.
 
 ## Intent, Context, and Prompt Harness Foundation Gate
 
@@ -703,7 +703,7 @@ Protected ownership:
 - Control Plane owns safe visibility and approval API only.
 - RuntimeComposition does not become the end-to-end assistant brain.
 
-Blocked: raw prompt/transcript/tool/provider/browser payload persistence by default, direct frontend or Local API tool execution, arbitrary browser/computer actions, shell execution, filesystem write/edit/delete, generic provider routing/model selection, voice, Orb, desktop overlay, vision, and proactive behavior.
+Blocked: raw prompt/transcript/tool/provider/browser payload persistence by default, direct frontend or Local API tool execution, arbitrary browser/computer actions, shell execution, filesystem write/edit/delete, generic provider routing/model selection, Orb, desktop overlay, vision, proactive behavior, and any voice behavior outside the bounded VoiceRuntime foundation.
 
 ### Assistant Intelligence and Tool-Using Runtime Boundary Gate
 
@@ -726,7 +726,7 @@ Protected boundaries:
 - Control Plane API and frontend cannot execute tools directly or render raw secrets/payloads.
 - CapabilityRuntime remains authoritative for policy, approval, risk, and dispatch.
 
-Policy state: MCP install/execute, skill update/create, and shell execution are governed by the autonomy policy layer and approval state. Arbitrary skill remote execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, voice, Orb, desktop overlay, and proactive behavior remain not implemented or denied.
+Policy state: MCP install/execute, skill update/create, and shell execution are governed by the autonomy policy layer and approval state. Arbitrary skill remote execution, credential storage, raw prompt/transcript/tool/provider/browser payload rendering or persistence by default, remote exposure, Orb, desktop overlay, proactive behavior, and voice behavior outside the bounded VoiceRuntime foundation remain not implemented or denied.
 
 ### Governance Classification Gate
 
@@ -765,3 +765,23 @@ The Autonomy Modes gate is enforced by `scripts/check_autonomy_policy_boundaries
 Marvex runtime policy is mode controlled through `AutonomyPolicy` and Control Plane safe projections. `locked_down`, `ask_before_risky`, `auto_marvex`, and `custom` modes expose a capability permission matrix. Safe read/list/search, public web search, public page read/extract, MCP listing, memory search, and semantic memory search cannot be globally hard-blocked. Normal assistant capabilities such as MCP execute, skills use/update/create, connector OAuth/live sync, auto-fetch, memory/profile writes, browser/computer actions, file write/delete, external send/upload, retry/fallback, and learning mutation candidates must be policy-controlled as allow/ask/deny/quarantine decisions or clearly not implemented.
 
 Hard-block is reserved for blacklist abuse categories only: malware, credential theft/extraction, data exfiltration, prompt-injection exploitation, command-injection exploitation, CAPTCHA/anti-bot bypass, stealth abuse, unauthorized account access, illegal destructive abuse, and payment/checkout without explicit enabled policy and approval path. Every deny, quarantine, or hard-block decision must include reason codes and a safe audit projection. Control Plane can update policy mode and display audit records, but it must not execute tools directly or render raw secrets/payloads.
+
+## Voice Runtime Foundation Gate
+
+The Voice Runtime Foundation gate is enforced by `scripts/check_voice_runtime_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+VoiceRuntime owns voice I/O orchestration only: wakeword, VAD, audio buffering, chunk aggregation, STT/TTS backend selection, model/voice registries, sentence clamping, queued speech, early speech, barge-in state, voice personality settings, safe voice turn envelopes, and Control Plane safe projections.
+
+Protected boundaries:
+
+- VoiceRuntime must not own intent routing, tools, memory, provider routing, capability policy, autonomy policy, visual UI, desktop overlay, Orb/Face UI, or proactive non-voice behavior.
+- STT/TTS/wakeword/VAD adapters must not call assistant internals directly.
+- Voice turns must use injected assistant-turn and policy decision callbacks and cannot bypass AutonomyPolicy or CapabilityRuntime approval semantics.
+- Wakeword 24/7 mode must be explicit, visible, policy-controlled, and disabled by default.
+- Raw audio, generated audio, raw transcripts, raw provider/tool payloads, secrets, and backend internals must not be persisted or rendered by default.
+- Early speech cannot claim facts without evidence, and barge-in must interrupt playback/queued speech state.
+- STT, TTS, wakeword, VAD, voice/model downloads, voice tests, backend selectors, voice personality, audio retention, and telemetry summaries must be visible through protected Control Plane APIs/web views only.
+
+Adopted backend dependencies: Moonshine v2 through `moonshine-voice`, SenseVoice-Small through `funasr`, `sherpa-onnx` plus `sherpa-onnx-core`, `kokoro-onnx`, `piper-tts`, `stream2sentence`, `silero-vad`, and `webrtcvad-wheels`. Actual model/voice downloads remain explicit user-triggered operations into safe local model directories.
+
+Blocked: hidden recording, raw audio/transcript persistence by default, frontend engine execution, direct Local API tool/provider execution, separate voice worker daemon behavior, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior.
