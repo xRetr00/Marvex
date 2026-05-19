@@ -22,10 +22,12 @@ Voice turns use injected assistant-turn and policy callbacks so VoiceRuntime doe
 Still not implemented after this checkpoint: Orb/Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, separate always-running voice worker process supervision, real external OAuth credential sync against user accounts, direct Browser-use SDK task execution, and actual shell/file execution adapters. These remain future explicit goals or policy-controlled/not-implemented seams.
 
 
-Validation history markers retained for repository gates:
-- current_phase: adaptive_context_evidence_memory_learning_governance_complete
-- implementation_status: adaptive_context_evidence_memory_learning_governance_complete
-Previous cleanup phase: `governance_reconciliation_boundary_hardening_complete`.
+## Phase History
+
+Previous completed phases (retained as gate history):
+
+- `adaptive_context_evidence_memory_learning_governance_complete`
+- `governance_reconciliation_boundary_hardening_complete`
 
 ## uv Dependency Workflow Checkpoint
 

@@ -21,7 +21,7 @@ AI agents must run the validation scripts before finishing any task, including a
 one-line hotfix. The required command is:
 
 ```powershell
-python scripts/run_all_checks.py
+uv run python scripts/run_all_checks.py
 ```
 
 The user is not expected to review code correctness. Agents must not rely on
@@ -31,70 +31,9 @@ report.
 
 ## Current Implementation
 
-Provider Foundation is complete:
+Marvex has two approved implementation surfaces — provider foundation contracts and approved assistant envelope contracts — plus a set of bounded foundations classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Bounded foundations include assistant turn integration, telemetry, local API, control plane API and web, capability runtime, tool execution foundations, MCP adapter, browser/computer-use adapter seam, memory runtime, memory tree and connectors, marketplace runtime, session runtime, intent/context/prompt harness runtimes, hybrid intent and web search, grounded evidence, adaptive context and learning, autonomy policy, and voice runtime.
 
-- Pydantic contract models and JSON schema generation.
-- `ProviderPort` as a tiny contract-only provider boundary.
-- Deterministic `FakeProvider`.
-- `LiteLLMProvider` isolated behind the provider adapter boundary.
-- `LMStudioResponsesProvider` isolated behind the provider adapter boundary and
-  using the OpenAI Python SDK against LM Studio's OpenAI-compatible Responses API.
-- `ProviderRuntime` as the only approved provider creation boundary.
-- `TurnOrchestrator` for minimal Core turn orchestration through `ProviderPort`.
-- Minimal telemetry lifecycle events through `TelemetrySink` and
-  `NoopTelemetrySink`.
-- One-shot CLI vertical slice.
-- Local CLI health/version commands for process readiness reporting.
-- Manual provider smoke harness with fake, LiteLLM, and LM Studio targets.
-
-Process Readiness has started:
-
-- Health/version contracts exist as `HealthCheck` and `VersionInfo`.
-- A local `ProcessRuntime` health/version provider builds those contract objects
-  from explicit in-memory configuration.
-- The ProcessRuntime boundary gate keeps local health/version object
-  construction isolated until an approved integration task.
-- The CLI can expose local health/version contract objects without starting a
-  service.
-- A dependency-free local health/version API app object exists for `GET /health`
-  and `GET /version` only.
-- A manual developer-only local runner can host that app object on
-  `127.0.0.1:8765` for health/version smoke verification. No service daemon,
-  provider execution, WebSocket, session/history, or product service behavior
-  exists.
-- Local API auth policy is defined for future protected endpoints:
-  health/version stay public on loopback, while future turn/trace/event
-  endpoints must use `Authorization: Bearer <local-token>`.
-- `POST /v1/turns` now exists only as a protected HTTP/auth/JSON adapter:
-  fake-provider request envelope, injected handler boundary, and
-  `AssistantTurnResult` serialization. RuntimeComposition remains the future
-  execution composition owner and is not imported by the API.
-- RuntimeComposition now provides a fake-provider-only local API turn handler
-  factory that can be injected into the app for controlled fake execution.
-- A developer-only RuntimeComposition smoke runner can start local API fake
-  `/v1/turns` execution with a caller-provided fake/dev bearer token.
-- The developer-only fake `/v1/turns` smoke has been run and recorded with
-  bounded safe output details; it remains manual-only and fake-provider-only.
-- A protected local-only `GET /v1/traces/{trace_id}` adapter can now read from
-  an explicitly injected current-process in-memory telemetry reader. It does not
-  add persistence, service daemon behavior, WebSocket/events, real-provider API
-  mode, sessions/history, or default CLI changes.
-- The developer-only fake `/v1/turns` manual runner now shares one
-  current-process in-memory telemetry reader between fake turn recording and
-  protected trace reads.
-- A developer-only RuntimeComposition runner can also inject an explicit LM
-  Studio Responses `/v1/turns` handler and the same current-process trace
-  reader pattern. The provider token path is LM Studio-only through
-  ProviderRuntime config and `MARVEX_LMSTUDIO_API_KEY`; the request body, Local
-  API, Core, AssistantRuntime, telemetry, and default CLI remain provider-token
-  blind. Token-backed live success is still deferred until the user provides a
-  local LM Studio API token.
-
-Git workflow governance exists:
-
-- Normal small and medium tasks run directly on `main`.
-- Branches require explicit approval before creation.
-- Task flow is plan, approval, implementation, validation, commit, and push.
+Bounded foundations may be maintained and tested inside their current ownership boundaries but may not expand without an explicit goal update to `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and architecture docs. Service placeholders under `services/` remain README-only until their service contracts are approved. See `docs/GOVERNANCE_CLASSIFICATION.md` for the full classification of each surface and its expansion state.
 
 ## Current Boundary
 

@@ -32,3 +32,8 @@ If SQLite becomes insufficient, a future MemoryRuntime backend adapter may add a
 - Untrusted skill script execution or remote skill loading.
 - Credential storage.
 - Raw transcript, prompt, provider payload, browser DOM, screenshot, or tool payload persistence by default.
+
+## Dependency Status
+
+- pyproject dependency: none (sqlite3 is Python standard library; mcp is documented in mcp_sdk.md)
+- declared dependency: none

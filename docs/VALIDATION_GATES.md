@@ -5,10 +5,10 @@ Validation gates are mandatory before finishing any task, including a one-line h
 ## Required Command
 
 ```powershell
-python scripts/run_all_checks.py
+uv run python scripts/run_all_checks.py
 ```
 
-When `uv` is available for a dependency-changing task, run validation through the locked uv environment:
+For a dependency-changing task, also run the full uv workflow:
 
 ```powershell
 uv lock

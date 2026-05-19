@@ -835,3 +835,8 @@ Windows fit:
 - Marvex runs in a Windows PowerShell environment. Python libraries fit best.
   TypeScript apps, Node CLIs, Rust desktop services, Docker-heavy platforms, and
   WSL/GPU assumptions need explicit Windows validation before adoption.
+
+## Dependency Status
+
+- pyproject dependency: none (this is a research-only matrix; no dependency was approved by this document)
+- declared dependency: none

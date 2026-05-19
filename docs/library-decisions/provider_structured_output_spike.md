@@ -1627,3 +1627,8 @@ Boundary:
   runtime integration is added.
 - the sanitizer is a safety primitive only, not a structured-output runtime
   emission path.
+
+## Dependency Status
+
+- pyproject dependency: none (this is a spike/research record; no new dependency was approved by this document)
+- declared dependency: none

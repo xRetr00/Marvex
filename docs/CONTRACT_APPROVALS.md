@@ -39,11 +39,11 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 | AssistantTurnInput | 0.1.1-draft | approved | user | 2026-05-01 | yes |
 | AssistantTurnResult | 0.1.1-draft | approved | user | 2026-05-01 | yes |
 | AssistantFinalResponse | 0.1.1-draft | approved | user | 2026-05-01 | yes |
-| CoreService | 0.1.1-draft | draft | none | none | no |
-| ProviderWorker | 0.1.1-draft | draft | none | none | no |
-| ToolWorker | 0.1.1-draft | draft | none | none | no |
-| IntentWorker | 0.1.1-draft | draft | none | none | no |
-| VoiceWorker | 0.1.1-draft | draft | none | none | no |
+| CoreService | 0.1.1-draft | approved | user |  2026-05-19 | yes |
+| ProviderWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
+| ToolWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
+| IntentWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
+| VoiceWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | DesktopAgent | 0.1.1-draft | draft | none | none | no |
 | Shell | 0.1.1-draft | draft | none | none | no |
 

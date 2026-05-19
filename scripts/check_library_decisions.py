@@ -83,6 +83,14 @@ def validate_frontend_dependency_coverage(failures: list[str]) -> None:
             failures.append(f"control plane frontend stack decision missing library name: {name}")
 
 
+def validate_decision_file_pyproject_field(failures: list[str]) -> None:
+    for path, text in sorted(decision_texts().items()):
+        if "pyproject dependency:" not in normalize(text):
+            failures.append(
+                f"library decision file missing explicit pyproject dependency field: {path.relative_to(ROOT).as_posix()}"
+            )
+
+
 def main() -> int:
     failures = []
     paths = [ROOT / "docs/LIBRARY_POLICY.md", ROOT / "templates/LIBRARY_DECISION.md"]
@@ -97,6 +105,7 @@ def main() -> int:
 
     validate_runtime_dependency_coverage(failures)
     validate_frontend_dependency_coverage(failures)
+    validate_decision_file_pyproject_field(failures)
 
     if failures:
         for failure in failures:

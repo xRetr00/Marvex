@@ -26,7 +26,9 @@ This is not immediate microservices. It is a modular core designed so each major
 
 ## V1 Scope
 
-V1 includes only:
+### Original V1 Baseline
+
+The original V1 baseline included only:
 
 - Core Service
 - CLI Client
@@ -34,7 +36,7 @@ V1 includes only:
 - LM Studio Responses Provider
 - Telemetry
 
-V1 forbids:
+The original V1 baseline forbade:
 
 - Intent
 - Tools
@@ -45,7 +47,7 @@ V1 forbids:
 - Proactive behavior
 - Vision
 
-These future modules may be documented, but they may not be implemented in v1.
+These were the initial boundaries at V1. The current repository contains bounded foundations for several of them, each classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Bounded foundations may be maintained and tested inside their current ownership boundaries but are not product permission and may not expand without explicit goal approval.
 
 ## Core Principle
 

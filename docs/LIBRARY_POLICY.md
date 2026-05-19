@@ -60,6 +60,10 @@ Every external dependency must have a fallback plan:
 - remove feature if nonessential
 - implement only after an RFC if no maintained option exists
 
+## Declared-Dependency Adoption Policy
+
+A runtime dependency in `[project].dependencies` is considered adoption-approved once it has a matching library decision record under `docs/library-decisions/` with `pyproject dependency` and `declared dependency` fields. The dep declaration is the governance record of adoption approval; source code does not need to import the package immediately. Adapter stubs may probe availability via `importlib.metadata.version()` or similar until the first real backend slice wires a concrete import. This pattern applies to voice backend dependencies (`moonshine-voice`, `funasr`, `sherpa-onnx`, `sherpa-onnx-core`, `kokoro-onnx`, `piper-tts`, `stream2sentence`, `silero-vad`, `webrtcvad-wheels`) and any future adapter-first adoption where the dep is approved for use but the concrete backend wiring belongs to a later implementation slice.
+
 ## Frontend Dependency Coverage
 
 Frontend dependencies in isolated app packages may be covered by an explicit grouped frontend stack decision record when the stack is intentionally adopted together. The record must name the package file, maintenance posture, why the stack is used, why custom code is avoided, fallback, isolation boundary, and safety restrictions.

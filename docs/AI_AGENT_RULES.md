@@ -109,7 +109,7 @@ If a task introduces or changes a port, the task spec must also answer:
 Every change must include:
 
 - tests appropriate to the change
-- `python scripts/run_all_checks.py`
+- `uv run python scripts/run_all_checks.py`
 - final report with changed files and risks
 
 ## Reporting Rules
