@@ -53,7 +53,7 @@ export function App() {
   const snapshotQuery = useQuery({ queryKey: ["control-snapshot"], queryFn: fetchSnapshot, retry: false });
   const title = useMemo(() => views.find((view) => view.id === active)?.label ?? "Dashboard", [active]);
   const isDark = theme === "dark";
-  const logoSrc = isDark ? "/brand/logo-wordmark-dark.png" : "/brand/logo-wordmark.png";
+  const logoSrc = "/brand/logo-wordmark.png";
 
   useEffect(() => {
     const root = document.documentElement;
