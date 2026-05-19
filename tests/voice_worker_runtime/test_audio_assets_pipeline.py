@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from packages.assistant_runtime import build_text_input_event, build_turn_input_from_event
 from packages.assistant_turn_integration import EndToEndTurnStateStore, run_end_to_end_assistant_turn
 from packages.contracts import TraceStage
-from packages.voice_runtime import DeterministicSttAdapter, DeterministicTtsAdapter, VoicePolicyDecision, VoiceRuntime
+from packages.voice_runtime import AudioFrame, DeterministicSttAdapter, DeterministicTtsAdapter, VADDecision, VoicePolicyDecision, VoiceRuntime
 from packages.voice_worker_runtime import (
     FakeLocalAudioAdapter,
     VoiceAssetManager,
@@ -165,6 +165,66 @@ def test_worker_manual_voice_turn_tracks_preroll_tail_transcript_and_early_speec
     assert projection["early_speech"]["should_speak"] is True
     assert projection["early_speech"]["claims_facts_without_evidence"] is False
     assert projection["max_utterance_ms"] == 30000
+
+
+def test_worker_live_capture_cycle_segments_speech_with_preroll_tail_and_silence_cutoff() -> None:
+    class ScriptedAudio(FakeLocalAudioAdapter):
+        def capture_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int):
+            del device_id, frame_count
+            for index in range(8):
+                yield AudioFrame(frame_id=f"scripted-{index}", pcm=b"\x01\x00" * 160, sample_rate=sample_rate, channel_count=channel_count, duration_ms=100)
+
+    decisions = [False, False, True, True, True, False, False, False]
+    config = VoiceWorkerConfig.default().model_copy(update={"vad": VoiceWorkerConfig.default().vad.model_copy(update={"silence_timeout_ms": 300})})
+    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="open calendar"), tts=DeterministicTtsAdapter("kokoro-onnx"))
+    controller = VoiceWorkerController(config=config, audio=ScriptedAudio(), voice_runtime=voice_runtime)
+    controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
+
+    result = controller.run_live_capture_cycle(
+        trace_id="trace-live-cycle",
+        trigger="manual",
+        max_frame_count=8,
+        vad_decider=lambda frame, index: VADDecision.speech_started(frame_count=1, confidence=0.9, noise_floor_db=-42) if decisions[index] else VADDecision.silence(frame_count=1, confidence=0.1, noise_floor_db=-50),
+        assistant_turn_runner=lambda transcript: {"text": f"Voice answer for {transcript}"},
+        policy_decider=lambda transcript: VoicePolicyDecision.allow(trace_id="trace-live-cycle", reason_code="policy.voice.safe"),
+    )
+    projection = result.safe_projection()
+
+    assert result.turn.status == "completed"
+    assert projection["trigger"] == "manual"
+    assert projection["captured_frame_count"] == 8
+    assert projection["speech_frame_count"] == 3
+    assert projection["pre_roll_ms"] == 200
+    assert projection["tail_padding_ms"] == 240
+    assert projection["segment_finalized_reason"] == "chunk.finalized.silence_cutoff"
+    assert projection["prevents_runaway_recording"] is True
+    assert projection["raw_audio_persisted"] is False
+    assert projection["raw_transcript_persisted"] is False
+    assert [event.event_type for event in result.events].count(VoiceWorkerEventType.VAD_SPEECH_STARTED) == 1
+    assert [event.event_type for event in result.events].count(VoiceWorkerEventType.VAD_SPEECH_ENDED) == 1
+
+
+def test_worker_live_capture_cycle_stops_at_max_utterance_without_assistant_dispatch() -> None:
+    config = VoiceWorkerConfig.default().model_copy(update={"vad": VoiceWorkerConfig.default().vad.model_copy(update={"max_utterance_ms": 300})})
+    controller = VoiceWorkerController(config=config, audio=FakeLocalAudioAdapter(), voice_runtime=VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="should not dispatch"), tts=DeterministicTtsAdapter("kokoro-onnx")))
+    dispatches: list[str] = []
+
+    result = controller.run_live_capture_cycle(
+        trace_id="trace-live-runaway",
+        trigger="manual",
+        max_frame_count=8,
+        vad_decider=lambda frame, index: VADDecision.speech_started(frame_count=1, confidence=0.9, noise_floor_db=-42),
+        assistant_turn_runner=lambda transcript: dispatches.append(transcript) or {"text": "unexpected"},
+        policy_decider=lambda transcript: VoicePolicyDecision.allow(trace_id="trace-live-runaway", reason_code="policy.voice.safe"),
+    )
+    projection = result.safe_projection()
+
+    assert result.turn is None
+    assert dispatches == []
+    assert projection["segment_finalized_reason"] == "chunk.finalized.max_utterance_duration"
+    assert projection["assistant_dispatch_started"] is False
+    assert projection["prevents_runaway_recording"] is True
+    assert projection["captured_frame_count"] == 3
 
 
 def test_worker_manual_voice_turn_can_dispatch_transcript_to_assistant_turn_spine() -> None:

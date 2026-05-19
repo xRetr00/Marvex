@@ -30,7 +30,7 @@ class VoiceWorkerTurnRunResult:
 
     def safe_projection(self) -> dict[str, object]:
         return {
-            "turn_status": self.turn.status,
+            "turn_status": self.turn.status if self.turn is not None else "not_started",
             "event_count": len(self.events),
             "playback_status": self.playback.status,
             **self.capture_summary,
@@ -119,6 +119,100 @@ class VoiceWorkerController:
             "early_speech": early_speech.model_dump(mode="json"),
         }
         return VoiceWorkerTurnRunResult(turn=turn, events=events + more_events + (final,), playback=playback.model_copy(update={"status": "completed"}), capture_summary=capture_summary)
+
+    def run_live_capture_cycle(
+        self,
+        *,
+        trace_id: str,
+        trigger: str,
+        max_frame_count: int,
+        vad_decider: Callable[[Any, int], VADDecision],
+        assistant_turn_runner: Callable[[str], Any],
+        policy_decider: Callable[[str], Any],
+    ) -> VoiceWorkerTurnRunResult:
+        frames = tuple(
+            self.audio.capture_frames(
+                device_id=self.config.audio.input_device_id,
+                sample_rate=self.config.audio.sample_rate,
+                channel_count=self.config.audio.channel_count,
+                frame_count=max_frame_count,
+            )
+        )
+        pre_roll_frames: list[Any] = []
+        speech_frame_count = 0
+        captured_frame_count = 0
+        speech_started = False
+        finalized_reason = "chunk.not_finalized"
+        aggregator = ChunkAggregator(max_utterance_ms=self.config.vad.max_utterance_ms, silence_cutoff_ms=self.config.vad.silence_timeout_ms, tail_padding_ms=self.config.vad.tail_padding_ms)
+        ring = AudioRingBuffer(max_frames=max(1, max_frame_count), pre_roll_ms=0)
+        events: list[VoiceWorkerEvent] = []
+
+        for index, frame in enumerate(frames[:max_frame_count]):
+            captured_frame_count += 1
+            vad = vad_decider(frame, index)
+            ring.append(frame)
+            if not speech_started and not vad.is_speech:
+                pre_roll_frames.append(frame)
+                pre_roll_frames = pre_roll_frames[-2:]
+                continue
+            if not speech_started and vad.is_speech:
+                speech_started = True
+                ring = AudioRingBuffer(max_frames=max(1, len(pre_roll_frames) + max_frame_count), pre_roll_ms=sum(item.duration_ms for item in pre_roll_frames))
+                for pre_roll_frame in pre_roll_frames:
+                    ring.append(pre_roll_frame)
+                events.append(self._record(VoiceWorkerEventType.VAD_SPEECH_STARTED, trace_id=trace_id, summary={"pre_roll_ms": ring.pre_roll_ms}))
+            if speech_started:
+                ring.append(frame)
+                if vad.is_speech:
+                    speech_frame_count += 1
+                state = aggregator.accept(frame, vad)
+                if state.finalized:
+                    finalized_reason = state.reason_code
+                    break
+
+        capture_summary: dict[str, object] = {
+            "trigger": trigger,
+            "captured_frame_count": captured_frame_count,
+            "speech_frame_count": speech_frame_count,
+            "pre_roll_ms": ring.pre_roll_ms,
+            "tail_padding_ms": self.config.vad.tail_padding_ms,
+            "max_utterance_ms": self.config.vad.max_utterance_ms,
+            "segment_finalized_reason": finalized_reason,
+            "prevents_runaway_recording": True,
+            "assistant_dispatch_started": False,
+        }
+        playback = PlaybackAdapterResult(status="stopped", reason_code="live_capture.not_dispatched")
+        if not speech_started or finalized_reason == "chunk.finalized.max_utterance_duration":
+            if speech_started:
+                events.append(self._record(VoiceWorkerEventType.VAD_SPEECH_ENDED, trace_id=trace_id, summary={"reason_code": finalized_reason, "duration_ms": sum(frame.duration_ms for frame in ring.frames)}))
+            return VoiceWorkerTurnRunResult(turn=None, events=tuple(events), playback=playback, capture_summary=capture_summary)
+
+        events.append(self._record(VoiceWorkerEventType.VAD_SPEECH_ENDED, trace_id=trace_id, summary={"reason_code": finalized_reason, "duration_ms": sum(frame.duration_ms for frame in ring.frames)}))
+        events.append(self._record(VoiceWorkerEventType.TRANSCRIPTION_STARTED, trace_id=trace_id))
+        turn = self.voice_runtime.run_voice_turn(
+            VoiceTurnRequest.manual(trace_id=trace_id, audio_ref_id=f"memory://voice/captured/{trace_id}"),
+            assistant_turn_runner=assistant_turn_runner,
+            policy_decider=policy_decider,
+        )
+        partials = PartialTranscriptBuffer(max_items=4)
+        if turn.transcription.text:
+            partials.add(turn.transcription.text)
+        capture_summary.update({"partial_transcript_count": partials.safe_projection()["partial_count"], "final_transcript_event": turn.transcription.status == "succeeded" and bool(turn.transcription.text), "assistant_dispatch_started": True})
+        events.extend(
+            (
+                self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=trace_id, summary={"backend_id": turn.transcription.backend_id, "text_present": bool(turn.transcription.text)}),
+                self._record(VoiceWorkerEventType.ASSISTANT_TURN_STARTED, trace_id=trace_id, summary={"policy_decision": turn.policy_decision.decision}),
+                self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary={"backend_id": turn.speech.backend_id if turn.speech else "none"}),
+                self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id),
+            )
+        )
+        if turn.speech and turn.speech.audio_ref:
+            self.audio.play_audio(device_id=self.config.audio.output_device_id, audio_ref=turn.speech.audio_ref, sample_rate=turn.speech.sample_rate)
+        playback = self.audio.stop_playback().model_copy(update={"status": "completed"})
+        self._playback_status = "completed"
+        final = self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id)
+        turn.playback = VoicePlaybackResult(trace_id=trace_id, status="completed", audio_ref=turn.playback.audio_ref, backend_id=turn.playback.backend_id)  # type: ignore[misc]
+        return VoiceWorkerTurnRunResult(turn=turn, events=tuple(events) + (final,), playback=playback, capture_summary=capture_summary)
 
     def _handle_start(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self._state = VoiceWorkerLifecycleState.RUNNING
