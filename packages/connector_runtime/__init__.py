@@ -31,10 +31,12 @@ __all__ = [
     "ConnectorManifest",
     "ConnectorPermissionDecision",
     "ConnectorRef",
+    "ConnectorRuntime",
     "ConnectorSafeProjection",
     "ConnectorScope",
     "ConnectorSyncRequest",
     "ConnectorSyncResult",
+    "ConnectorSyncRunResult",
     "OAuthConnectionRef",
     "OAuthConnectionStatus",
     "SourceIngestionPolicy",
@@ -43,3 +45,11 @@ __all__ = [
     "SourceSyncMode",
     "default_connector_manifests",
 ]
+
+
+def __getattr__(name: str):
+    if name in {"ConnectorRuntime", "ConnectorSyncRunResult"}:
+        from .runtime import ConnectorRuntime, ConnectorSyncRunResult
+
+        return {"ConnectorRuntime": ConnectorRuntime, "ConnectorSyncRunResult": ConnectorSyncRunResult}[name]
+    raise AttributeError(name)

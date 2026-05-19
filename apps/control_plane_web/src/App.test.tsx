@@ -194,7 +194,9 @@ describe("Control Plane runtime policy view", () => {
     const responses: Record<string, unknown> = {
       "/control/snapshot": snapshot,
       "/control/runtime-policy": policy,
-      "/control/runtime-policy/audit": { schema_version: "1", audit_records: policy.audit_records, audit_count: 1, raw_payload_persisted: false }
+      "/control/runtime-policy/audit": { schema_version: "1", audit_records: policy.audit_records, audit_count: 1, raw_payload_persisted: false },
+      "/control/feedback": { schema_version: "1", events: [{ trace_id: "trace-feedback", signal_kind: "answer_rating", raw_feedback_persisted: false }], event_count: 1, raw_feedback_persisted: false },
+      "/control/learning/candidates": { schema_version: "1", memory_candidates: [], skill_candidates: [{ candidate_id: "skill.feedback.1", summary: "Review skill candidate", review_required: true }], policy_candidates: [], preference_candidates: [], route_candidates: [], memory_scoring_changes: [{ memory_ref: "memory-1", useful: true, reason_code: "memory.feedback.useful" }], raw_feedback_persisted: false }
     };
     const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const path = new URL(String(input), "http://localhost").pathname;
@@ -213,6 +215,9 @@ describe("Control Plane runtime policy view", () => {
     expect(await screen.findByText("mcp_execute")).toBeInTheDocument();
     expect(await screen.findByText("scheduled connector sync")).toBeInTheDocument();
     await userEvent.selectOptions(screen.getByLabelText("Autonomy mode"), "ask_before_risky");
+    await userEvent.click(screen.getByRole("button", { name: /Feedback \/ Learning/i }));
+    expect(await screen.findByText("Review skill candidate")).toBeInTheDocument();
+    expect(await screen.findByText("memory.feedback.useful")).toBeInTheDocument();
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/runtime-policy"), expect.objectContaining({ method: "POST" }));
     expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();

@@ -1,8 +1,8 @@
 # Project Status
 
-current_phase: autonomy_modes_policy_control_plane_complete
+current_phase: runtime_completion_phase_unlock_complete
 
-implementation_status: autonomy_modes_policy_control_plane_complete
+implementation_status: runtime_completion_phase_unlock_complete
 
 accepted_docs: true
 
@@ -105,6 +105,20 @@ Auto Marvex allows safe read/list/search, public web search, public page read/ex
 Control Plane API and web now expose Runtime Policy / Autonomy Modes with mode selection, a capability matrix, and policy decision audit records. The frontend updates policy only through protected Control Plane API calls and does not execute tools directly or render raw secrets/payloads.
 
 Still not implemented after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior beyond policy controls/seams, actual generic provider routing/model selection, real broad live OAuth data ingestion workers, untracked background sync, direct shell/file tools, and direct Browser-use SDK task execution. These are classified as not implemented or policy-controlled seams rather than global hard-blocks unless they hit blacklist abuse categories.
+
+## Runtime Completion and Phase Unlock Checkpoint
+
+Marvex now has the pre-Voice runtime completion layer needed to move beyond foundation-only behavior. Grounded-answer turns are first-class intent routes; web search evidence and Memory Tree evidence enter ContextRuntime, PromptHarnessRuntime, and citation-validated final answers. Prompt harness assembly now uses route profiles with non-zero evidence, memory, tool-schema, skill, and approval-policy budgets where relevant while simple chat stays lean.
+
+IntentRuntime exposes multi-step plans for mixed current-web/repo/grounded-answer requests and keeps clarification as a stop condition for ambiguous commands. CapabilityRuntime has dynamic tool selection with provider-facing schemas limited to eligible tools, plus per-request AutonomyPolicy decisions for browser, MCP, shell, file, connector, learning, and provider fallback actions. ProviderSelectionRuntime owns model/provider selection and fallback decisions without moving provider construction out of ProviderRuntime. Assistant turn integration has explicit recovery models for provider, tool, web-search, memory-retrieval, and clarification fallback paths.
+
+LearningRuntime now has a feedback ingestion and pipeline runner path. Feedback events can create reviewable memory, skill, policy, preference, route-example, source-preference, and memory-hotness candidates; candidate application is policy-controlled and audited, with Auto Marvex allowed to apply safe candidates. ConnectorRuntime now has a mock/local sync runner that uses Authlib-backed OAuth metadata, canonicalizes connector documents, chunks them, and feeds MemoryTreeRuntime; scheduled auto-fetch is policy-controlled and audited, with no untracked background sync.
+
+Control Plane API and web now expose protected feedback/learning APIs and views alongside autonomy mode selection, runtime policy matrix, connector sync settings, auto-fetch controls, tool/MCP/skill policy views, audit trail, memory scoring, prompt/evidence diagnostics, and runtime execution projections. Frontend mutation remains through protected APIs only.
+
+MCP launch/install, shell command execution, and file write/delete are no longer treated as broad governance hard-blocks. They are policy-controlled at the AutonomyPolicy level; actual shell and file execution adapters remain not implemented runtime adapters. Hard-block remains reserved for blacklist abuse only.
+
+Still not implemented after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior worker, real external OAuth credential sync against user accounts, direct Browser-use SDK task execution, and actual shell/file execution adapters. Real external OAuth sync requires user credentials/provider app configuration and must continue to avoid raw secret persistence. Shell/file adapters require a separate execution-adapter implementation and validation slice.
 ## Validation Baseline
 
 Initial baseline before this cleanup:

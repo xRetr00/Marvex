@@ -373,6 +373,7 @@ def _locked_down_matrix() -> CapabilityPermissionMatrix:
         "memory_auto_write": ActionPermission.DENY,
         "profile_write": ActionPermission.DENY,
         "learning_mutation_candidates": ActionPermission.DENY,
+        "provider_retry_fallback": ActionPermission.DENY,
         "file_write": ActionPermission.DENY,
         "file_delete": ActionPermission.DENY,
         "external_upload_send": ActionPermission.DENY,

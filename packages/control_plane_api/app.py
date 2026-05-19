@@ -42,6 +42,8 @@ def create_control_plane_api_app(
     scoring_views: tuple[Any, ...] = (),
     autonomy_policy: AutonomyPolicy | None = None,
     policy_audit_records: tuple[PolicyDecisionAuditRecord, ...] = (),
+    learning_runner: Any | None = None,
+    learning_store: Any | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
 
@@ -190,6 +192,26 @@ def create_control_plane_api_app(
             return _json_response(start_response, "200 OK", projection.model_dump(mode="json"))
         if method == "GET" and path == f"{CONTROL_PREFIX}/runtime-policy/audit":
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "audit_records": [_safe_nested_mapping(record.safe_projection()) for record in policy_audit_records], "audit_count": len(policy_audit_records), "raw_payload_persisted": False})
+        if method == "POST" and path == f"{CONTROL_PREFIX}/feedback":
+            if learning_runner is None:
+                return _json_response(start_response, "404 Not Found", _error("learning_runner_not_configured", path))
+            event_payload = _parse_feedback_event_payload(environ)
+            if isinstance(event_payload, ErrorEnvelope):
+                return _json_response(start_response, "400 Bad Request", event_payload.model_dump(mode="json"))
+            summary = learning_runner.ingest_feedback_payload(event_payload)
+            return _json_response(start_response, "200 OK", _learning_summary_payload(summary))
+        if method == "GET" and path == f"{CONTROL_PREFIX}/feedback":
+            events = tuple(getattr(learning_store, "feedback_events", ()) if learning_store is not None else ())
+            return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "events": [_safe_nested_mapping(event.model_dump(mode="json")) for event in events], "event_count": len(events), "raw_feedback_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/learning/candidates":
+            summary = getattr(learning_store, "latest_summary", None) if learning_store is not None else None
+            return _json_response(start_response, "200 OK", _learning_summary_payload(summary))
+        if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/learning/candidates/") and path.endswith("/apply"):
+            if learning_runner is None:
+                return _json_response(start_response, "404 Not Found", _error("learning_runner_not_configured", path))
+            candidate_id = path.removeprefix(f"{CONTROL_PREFIX}/learning/candidates/").removesuffix("/apply").strip("/")
+            result = learning_runner.apply_candidate(candidate_id)
+            return _json_response(start_response, "200 OK", _safe_nested_mapping(result.model_dump(mode="json")))
         if method == "POST" and path == f"{CONTROL_PREFIX}/runtime-policy":
             mode = _parse_runtime_policy_mode(environ)
             if mode is None:
@@ -224,6 +246,40 @@ def _parse_runtime_policy_mode(environ: dict[str, Any]) -> AutonomyMode | None:
         return AutonomyMode(value)
     except Exception:
         return None
+
+
+def _parse_feedback_event_payload(environ: dict[str, Any]) -> dict[str, Any] | ErrorEnvelope:
+    try:
+        payload = json.loads(_read_request_body(environ))
+        if not isinstance(payload, dict):
+            raise ValueError("feedback payload must be an object")
+        return payload
+    except Exception:
+        return ErrorEnvelope(
+            schema_version="0.1.1-draft",
+            trace_id="trace-control-plane-feedback-error",
+            error_id="control-plane-feedback-error",
+            code=ErrorCode.VALIDATION_ERROR,
+            message="Feedback request validation failed.",
+            recoverable=False,
+            source="control_plane_api",
+            details={"reason": "invalid_feedback_request"},
+        )
+
+
+def _learning_summary_payload(summary: Any | None) -> dict[str, Any]:
+    if summary is None:
+        return {"schema_version": SCHEMA_VERSION, "memory_candidates": [], "skill_candidates": [], "policy_candidates": [], "preference_candidates": [], "route_candidates": [], "tool_outcome_history": [], "raw_feedback_persisted": False}
+    return _safe_nested_mapping({
+        "schema_version": SCHEMA_VERSION,
+        "memory_candidates": [candidate.model_dump(mode="json") for candidate in summary.memory_write_candidates],
+        "skill_candidates": [candidate.model_dump(mode="json") for candidate in summary.skill_improvement_candidates],
+        "policy_candidates": [candidate.model_dump(mode="json") for candidate in summary.policy_tuning_candidates],
+        "preference_candidates": [candidate.model_dump(mode="json") for candidate in summary.preference_candidates],
+        "route_candidates": [candidate.model_dump(mode="json") for candidate in summary.route_example_candidates],
+        "memory_scoring_changes": [candidate.model_dump(mode="json") for candidate in summary.memory_hotness_updates],
+        "raw_feedback_persisted": False,
+    })
 
 def _runtime_execution_payload(snapshot: ControlPlaneSnapshot, approval_store: InMemoryApprovalStore) -> dict[str, Any]:
     loop = snapshot.agent_loops[0] if snapshot.agent_loops else {}

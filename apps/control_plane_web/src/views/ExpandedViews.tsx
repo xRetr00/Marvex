@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { CheckCircle2, Search, ShieldAlert, Trash2 } from "lucide-react";
 import {
+  applyLearningCandidate,
   enableSkill,
   fetchApprovalHistory,
   fetchAutoFetch,
@@ -8,6 +9,8 @@ import {
   fetchMemoryDrillDown,
   fetchConnectors,
   fetchDiagnostics,
+  fetchFeedbackEvents,
+  fetchLearningCandidates,
   fetchMcpMarketplace,
   fetchMemoryInspect,
   fetchMemorySourceTree,
@@ -104,6 +107,40 @@ export function DiagnosticsView() {
   if (query.isLoading) return <InlineState message="Loading runtime diagnostics..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   return <SafeTable title="Runtime Diagnostics" rows={query.data ? [query.data] : []} empty="No diagnostics available." />;
+}
+
+export function FeedbackLearningView() {
+  const queryClient = useQueryClient();
+  const feedback = useQuery({ queryKey: ["feedback-events"], queryFn: fetchFeedbackEvents, retry: false });
+  const candidates = useQuery({ queryKey: ["learning-candidates"], queryFn: fetchLearningCandidates, retry: false });
+  const mutation = useMutation({
+    mutationFn: applyLearningCandidate,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["learning-candidates"] })
+  });
+  if (feedback.isLoading || candidates.isLoading) return <InlineState message="Loading feedback and learning candidates..." />;
+  if (feedback.isError) return <InlineState message={feedback.error.message} />;
+  if (candidates.isError) return <InlineState message={candidates.error.message} />;
+  const candidateRows: Record<string, unknown>[] = [
+    ...(candidates.data?.memory_candidates ?? []).map((row) => ({ ...row, candidate_type: "memory" })),
+    ...(candidates.data?.skill_candidates ?? []).map((row) => ({ ...row, candidate_type: "skill" })),
+    ...(candidates.data?.policy_candidates ?? []).map((row) => ({ ...row, candidate_type: "policy" })),
+    ...(candidates.data?.preference_candidates ?? []).map((row) => ({ ...row, candidate_type: "preference" })),
+    ...(candidates.data?.route_candidates ?? []).map((row) => ({ ...row, candidate_type: "route" }))
+  ];
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>Feedback / Learning</CardTitle></CardHeader>
+        <CardContent className="flex flex-wrap gap-2">
+          {candidateRows.map((row) => <Button key={String(row.candidate_id ?? `${row.candidate_type}-${row.input_summary}`)} variant="outline" onClick={() => mutation.mutate(String(row.candidate_id))} disabled={!row.candidate_id}><CheckCircle2 className="mr-2" size={16} />Apply {String(row.candidate_id ?? row.candidate_type)}</Button>)}
+          {mutation.data && <span className="text-sm text-muted-foreground">Apply status: {String(mutation.data.status)}</span>}
+        </CardContent>
+      </Card>
+      <SafeTable title="Feedback Events" rows={feedback.data?.events ?? []} empty="No feedback events available." />
+      <SafeTable title="Learning Candidates" rows={candidateRows} empty="No learning candidates available." />
+      <SafeTable title="Memory Scoring Changes" rows={candidates.data?.memory_scoring_changes ?? []} empty="No memory scoring changes available." />
+    </div>
+  );
 }
 
 export function ConnectorListView() {

@@ -5,6 +5,8 @@ from typing import Literal, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from packages.capability_runtime import AutonomyAction, AutonomyPolicy, PolicyDecisionAuditRecord, ToolRiskLevel, evaluate_autonomy_action
+
 
 class LearningModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -135,6 +137,69 @@ class LearningLoopSummary(LearningModel):
             policy_candidate_count=len(self.policy_tuning_candidates),
             preference_candidate_count=len(self.preference_candidates),
         )
+
+
+class LearningApplyResult(LearningModel):
+    candidate_id: str
+    status: Literal["applied", "approval_required", "denied"]
+    audit_record: PolicyDecisionAuditRecord
+    raw_candidate_payload_persisted: Literal[False] = False
+
+
+class LearningCandidateStore:
+    def __init__(self) -> None:
+        self._feedback_events: tuple[FeedbackEvent, ...] = ()
+        self._latest_summary: LearningLoopSummary | None = None
+        self._applied_candidate_ids: tuple[str, ...] = ()
+
+    @property
+    def feedback_events(self) -> tuple[FeedbackEvent, ...]:
+        return self._feedback_events
+
+    @property
+    def applied_candidate_ids(self) -> tuple[str, ...]:
+        return self._applied_candidate_ids
+
+    @property
+    def latest_summary(self) -> LearningLoopSummary | None:
+        return self._latest_summary
+
+    def record(self, events: tuple[FeedbackEvent, ...], summary: LearningLoopSummary) -> None:
+        self._feedback_events = self._feedback_events + events
+        self._latest_summary = summary
+
+    def apply(self, candidate_id: str) -> None:
+        self._applied_candidate_ids = self._applied_candidate_ids + (candidate_id,)
+
+
+class LearningPipelineRunner:
+    def __init__(self, *, store: LearningCandidateStore, autonomy_policy: AutonomyPolicy, loop: LearningLoop | None = None) -> None:
+        self._store = store
+        self._policy = autonomy_policy
+        self._loop = loop or LearningLoop.default()
+
+    def ingest_and_run(self, events: tuple[FeedbackEvent, ...]) -> LearningLoopSummary:
+        summary = self._loop.process(events)
+        self._store.record(events, summary)
+        return summary
+
+    def ingest_feedback_payload(self, payload: dict[str, object]) -> LearningLoopSummary:
+        event = FeedbackEvent.model_validate(payload)
+        return self.ingest_and_run((event,))
+
+    def apply_candidate(self, candidate_id: str) -> LearningApplyResult:
+        audit = evaluate_autonomy_action(
+            self._policy,
+            AutonomyAction(action=f"apply learning candidate {candidate_id}", resource_type="learning_candidate", capability="learning_mutation", risk_level=ToolRiskLevel.MEDIUM),
+        )
+        if audit.decision.value == "allow":
+            self._store.apply(candidate_id)
+            status: Literal["applied", "approval_required", "denied"] = "applied"
+        elif audit.decision.value == "approval_required":
+            status = "approval_required"
+        else:
+            status = "denied"
+        return LearningApplyResult(candidate_id=candidate_id, status=status, audit_record=audit)
 
 
 class LearningLoop:

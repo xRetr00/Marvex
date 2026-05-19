@@ -149,8 +149,10 @@ class PromptAssemblyResult(CapabilityRuntimeModel):
 def assemble_prompt_harness(request: PromptAssemblyRequest) -> PromptAssemblyResult:
     if request.context_pack.all_context_injected:
         raise ValueError("prompt harness forbids all-context injection")
+    route_profile = _route_profile(request.intent_ref.intent_kind)
+    suppression = _suppression_for_route(request.intent_ref.intent_kind)
     sections = [_system_policy_section(request.intent_ref)]
-    sections.extend(_section_from_candidate(candidate) for candidate in request.context_pack.included)
+    sections.extend(_ordered_sections(request))
     sections.append(_response_contract_section(request.intent_ref))
     budget = PromptBudgetReport(
         max_context_tokens=request.context_pack.budget.max_context_tokens,
@@ -162,7 +164,7 @@ def assemble_prompt_harness(request: PromptAssemblyRequest) -> PromptAssemblyRes
         schema_version=request.schema_version,
         trace_id=request.trace_id,
         turn_id=request.turn_id,
-        plan=PromptHarnessPlan(schema_version=request.schema_version, trace_id=request.trace_id, turn_id=request.turn_id, intent_ref=request.intent_ref, sections=tuple(sections)),
+        plan=PromptHarnessPlan(schema_version=request.schema_version, trace_id=request.trace_id, turn_id=request.turn_id, intent_ref=request.intent_ref, sections=tuple(sections), route_profile=route_profile, suppression=suppression),
         budget_report=budget,
     )
 
@@ -172,7 +174,12 @@ def _system_policy_section(intent_ref: IntentRef) -> PromptSection:
 
 
 def _response_contract_section(intent_ref: IntentRef) -> PromptSection:
-    content = "Ask one clarification question." if intent_ref.intent_kind == IntentKind.CLARIFICATION else "Continue with only included safe context sections."
+    if intent_ref.intent_kind == IntentKind.CLARIFICATION:
+        content = "Ask one clarification question."
+    elif intent_ref.intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}:
+        content = "Use citation markers exactly as supplied by evidence sections. If evidence is missing, say evidence is missing."
+    else:
+        content = "Continue with only included safe context sections."
     return PromptSection(kind=PromptSectionKind.RESPONSE_CONTRACT, source_ref=ContextSourceRef(kind=ContextSourceKind.USER_INPUT_SUMMARY, identifier="response.contract"), safe_content=content, token_estimate=8, included=True, reason_code="section.response_contract")
 
 
@@ -187,6 +194,55 @@ def _section_from_candidate(candidate: ContextCandidate) -> PromptSection:
     }
     kind = mapping.get(candidate.source_ref.kind, PromptSectionKind.USER_CONTEXT)
     return PromptSection(kind=kind, source_ref=candidate.source_ref, safe_content=candidate.safe_summary, token_estimate=candidate.token_estimate, included=True, reason_code="section.safe_context_candidate")
+
+
+def _ordered_sections(request: PromptAssemblyRequest) -> list[PromptSection]:
+    sections = [_section_from_candidate(candidate) for candidate in request.context_pack.included]
+    if request.intent_ref.intent_kind == IntentKind.RISKY_ACTION:
+        sections = [
+            section.model_copy(update={"kind": PromptSectionKind.APPROVAL_STATE, "reason_code": "section.approval_policy"})
+            if section.kind == PromptSectionKind.CAPABILITY_SCHEMA
+            else section
+            for section in sections
+        ]
+    order = _section_order(request.intent_ref.intent_kind)
+    return sorted(sections, key=lambda section: order.get(section.kind, 99))
+
+
+def _section_order(intent_kind: IntentKind) -> dict[PromptSectionKind, int]:
+    if intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}:
+        return {PromptSectionKind.EVIDENCE_CONTEXT: 1, PromptSectionKind.MEMORY_CONTEXT: 2, PromptSectionKind.USER_CONTEXT: 3, PromptSectionKind.CAPABILITY_SCHEMA: 4}
+    if intent_kind in {IntentKind.MEMORY, IntentKind.MEMORY_TREE_NEEDED}:
+        return {PromptSectionKind.MEMORY_CONTEXT: 1, PromptSectionKind.EVIDENCE_CONTEXT: 2, PromptSectionKind.USER_CONTEXT: 3}
+    if intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_NEEDED, IntentKind.MCP_SKILL, IntentKind.SKILL_NEEDED}:
+        return {PromptSectionKind.CAPABILITY_SCHEMA: 1, PromptSectionKind.SKILL_CONTRIBUTION: 2, PromptSectionKind.APPROVAL_STATE: 3, PromptSectionKind.USER_CONTEXT: 4}
+    if intent_kind == IntentKind.RISKY_ACTION:
+        return {PromptSectionKind.APPROVAL_STATE: 1, PromptSectionKind.CAPABILITY_SCHEMA: 2, PromptSectionKind.USER_CONTEXT: 3}
+    return {PromptSectionKind.USER_CONTEXT: 1}
+
+
+def _route_profile(intent_kind: IntentKind) -> PromptRouteProfile:
+    base = {"route": intent_kind.value}
+    if intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}:
+        return PromptRouteProfile(**base, total_context_budget=1600, evidence_token_budget=900, memory_token_budget=300, tool_schema_token_budget=120, reserved_response_tokens=500, max_context_candidates=8)
+    if intent_kind in {IntentKind.MEMORY, IntentKind.MEMORY_TREE_NEEDED}:
+        return PromptRouteProfile(**base, total_context_budget=1200, evidence_token_budget=160, memory_token_budget=700, reserved_response_tokens=400, max_context_candidates=6)
+    if intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_NEEDED, IntentKind.MCP_SKILL}:
+        return PromptRouteProfile(**base, total_context_budget=1200, tool_schema_token_budget=700, skill_token_budget=120, reserved_response_tokens=350, max_context_candidates=6)
+    if intent_kind == IntentKind.SKILL_NEEDED:
+        return PromptRouteProfile(**base, total_context_budget=1100, tool_schema_token_budget=200, skill_token_budget=600, reserved_response_tokens=350, max_context_candidates=6)
+    if intent_kind == IntentKind.RISKY_ACTION:
+        return PromptRouteProfile(**base, total_context_budget=1000, tool_schema_token_budget=400, reserved_response_tokens=350, max_context_candidates=5)
+    return PromptRouteProfile(route=intent_kind.value, total_context_budget=400, reserved_response_tokens=250, max_context_candidates=2)
+
+
+def _suppression_for_route(intent_kind: IntentKind) -> PromptBlockSuppression:
+    return PromptBlockSuppression(
+        evidence_block_suppressed=intent_kind not in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH},
+        memory_block_suppressed=intent_kind not in {IntentKind.MEMORY, IntentKind.MEMORY_TREE_NEEDED, IntentKind.GROUNDED_ANSWER},
+        tool_block_suppressed=intent_kind not in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_NEEDED, IntentKind.MCP_SKILL, IntentKind.SKILL_NEEDED, IntentKind.RISKY_ACTION},
+        skill_block_suppressed=intent_kind != IntentKind.SKILL_NEEDED,
+    )
 
 
 class CompactionCandidate(CapabilityRuntimeModel):

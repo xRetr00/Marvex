@@ -109,6 +109,9 @@ export const sourceForgetSchema = z.object({ schema_version: z.string(), source_
 export const runtimePolicySchema = z.object({ schema_version: z.string(), mode: z.string(), matrix: z.record(z.string(), z.string()), audit_records: z.array(safeRecord), hard_block_blacklist_only: z.literal(true), read_list_search_allowed_by_default: z.literal(true), side_effects_policy_controlled: z.literal(true), raw_payload_persisted: z.literal(false) }).passthrough();
 export const runtimePolicyAuditSchema = z.object({ schema_version: z.string(), audit_records: z.array(safeRecord), audit_count: z.number(), raw_payload_persisted: z.literal(false) });
 export const diagnosticsSchema = safeRecord;
+export const feedbackEventsSchema = z.object({ schema_version: z.string(), events: z.array(safeRecord), event_count: z.number(), raw_feedback_persisted: z.literal(false) });
+export const learningCandidatesSchema = z.object({ schema_version: z.string(), memory_candidates: z.array(safeRecord), skill_candidates: z.array(safeRecord), policy_candidates: z.array(safeRecord), preference_candidates: z.array(safeRecord), route_candidates: z.array(safeRecord), memory_scoring_changes: z.array(safeRecord).optional(), raw_feedback_persisted: z.literal(false) });
+export const learningApplySchema = safeRecord;
 
 export type SafeRecord = z.infer<typeof safeRecord>;
 export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
@@ -131,3 +134,5 @@ export type MemoryTreeDaily = z.infer<typeof memoryTreeDailySchema>;
 export type MemoryTreeDrillDown = z.infer<typeof memoryTreeDrillDownSchema>;
 export type RuntimePolicy = z.infer<typeof runtimePolicySchema>;
 export type RuntimePolicyAudit = z.infer<typeof runtimePolicyAuditSchema>;
+export type FeedbackEvents = z.infer<typeof feedbackEventsSchema>;
+export type LearningCandidates = z.infer<typeof learningCandidatesSchema>;

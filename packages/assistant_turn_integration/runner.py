@@ -5,6 +5,7 @@ from typing import Any
 from packages.adapters.capabilities.mcp import McpAllowlist, McpClientSession, McpServerRef
 from packages.adapters.providers.fake.fake_provider import FakeProvider, FakeProviderConfig
 from packages.adapters.providers.tool_calls import ProviderToolCallSource
+from packages.assistant_runtime import build_text_success_turn_result
 from packages.assistant_runtime.provider_stage import run_provider_stage_turn
 from packages.context_runtime import ContextSourceKind
 from packages.contracts import AssistantTurnInput, AssistantTurnResult, ConversationRef, TraceStage
@@ -50,6 +51,7 @@ def run_end_to_end_assistant_turn(
     browser_page: Any | None = None,
     intent_classifier: Any | None = None,
     memory_tree_runtime: Any | None = None,
+    web_search_provider: Any | None = None,
     provider_continuation_provider: Any | None = None,
 ) -> EndToEndAssistantTurnResult:
     store = state_store or EndToEndTurnStateStore()
@@ -64,7 +66,7 @@ def run_end_to_end_assistant_turn(
     intent_backend = str(getattr(intent, "backend_name", "deterministic"))
     library_owns_policy = bool(getattr(intent, "library_owns_policy", False))
     mcp_listings = _discover_mcp(mcp_session, mcp_server_ref, mcp_allowlist) if intent.selected_intent.intent_kind == IntentKind.MCP_NEEDED else ()
-    context_pack = _build_context(turn_input, intent.selected_intent, mcp_listings=mcp_listings, memory_store=store.memory_store, memory_tree_runtime=memory_tree_runtime)
+    context_pack = _build_context(turn_input, intent.selected_intent, mcp_listings=mcp_listings, memory_store=store.memory_store, memory_tree_runtime=memory_tree_runtime, web_search_provider=web_search_provider)
     prompt_result = assemble_prompt_harness(PromptAssemblyRequest(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, intent_ref=intent.selected_intent, context_pack=context_pack))
     planning = PlanningNeedDecision.from_intent(intent.selected_intent, context_candidate_count=len(context_pack.included) + len(context_pack.excluded))
 
@@ -77,6 +79,8 @@ def run_end_to_end_assistant_turn(
         store.last_mcp_summary = mcp_summary
     elif intent.selected_intent.intent_kind == IntentKind.CAPABILITY_TOOL:
         assistant_result, tool_projection, lifecycle_projection = _handle_calculator_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink)
+    elif intent.selected_intent.intent_kind == IntentKind.GROUNDED_ANSWER:
+        assistant_result, tool_projection, lifecycle_projection = _handle_grounded_answer_turn(turn_input, context_pack)
     else:
         provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text="I can continue with the selected safe context.")), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={}, telemetry_sink=telemetry_sink)
         assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "prompt_section_count": prompt_result.safe_projection().section_count, "context_included_count": context_pack.safe_projection().included_count}}})
@@ -118,3 +122,47 @@ def run_end_to_end_assistant_turn(
     )
     store.record_result(integrated)
     return integrated
+
+
+def _handle_grounded_answer_turn(turn_input: AssistantTurnInput, context_pack: Any) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
+    web_ids = _web_evidence_ids(context_pack)
+    memory_links = _memory_evidence_links(context_pack)
+    citation_ids = web_ids + tuple(_memory_citation_id(link) for link in memory_links)
+    if not citation_ids:
+        reason_code = "citation.evidence_missing"
+        assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Evidence is missing for this grounded answer.", metadata={"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}})
+        return assistant_result, {"pending_approval_count": 0, "provider_continuation_ready": False, "final_response_ready": True, "result_status": "evidence_missing", "web_evidence_count": 0, "memory_evidence_count": 0, "citation_validation": reason_code, "raw_payload_persisted": False}, {"tool_result_delivery_ready": False, "raw_payload_persisted": False}
+    text = "Grounded answer uses available evidence " + " ".join(f"[{citation}]" for citation in citation_ids[:4]) + "."
+    reason_code = _validate_citation_ids(citation_ids[:4], allowed_ids=citation_ids)
+    assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text=text, metadata={"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}})
+    return assistant_result, {"pending_approval_count": 0, "provider_continuation_ready": True, "final_response_ready": True, "result_status": "succeeded", "web_evidence_count": len(web_ids), "memory_evidence_count": len(memory_links), "citation_validation": reason_code, "raw_payload_persisted": False}, {"tool_result_delivery_ready": True, "raw_payload_persisted": False}
+
+
+def _web_evidence_ids(context_pack: Any) -> tuple[str, ...]:
+    ids: list[str] = []
+    for candidate in context_pack.included:
+        if candidate.source_ref.kind != ContextSourceKind.WEB_SEARCH_EVIDENCE:
+            continue
+        for word in str(candidate.safe_summary).replace("[", " ").replace("]", " ").split():
+            if word.startswith("web.evidence."):
+                ids.append(word.strip(".,;:"))
+    return tuple(dict.fromkeys(ids))
+
+
+def _memory_evidence_links(context_pack: Any) -> tuple[str, ...]:
+    links: list[str] = []
+    for candidate in context_pack.included:
+        if candidate.source_ref.kind != ContextSourceKind.MEMORY_PROJECTION or not candidate.source_ref.identifier.startswith("memory_tree."):
+            continue
+        chunk_id = candidate.source_ref.identifier.removeprefix("memory_tree.node.")
+        if chunk_id and chunk_id != candidate.source_ref.identifier:
+            links.append(chunk_id)
+    return tuple(links)
+
+
+def _memory_citation_id(ref: object) -> str:
+    return "memory.evidence." + str(ref).replace(":", "-")
+
+def _validate_citation_ids(citation_ids: tuple[str, ...], *, allowed_ids: tuple[str, ...]) -> str:
+    allowed = set(allowed_ids)
+    return "citation.validated" if citation_ids and all(citation in allowed for citation in citation_ids) else "citation.evidence_ref_missing"

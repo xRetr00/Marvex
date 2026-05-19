@@ -67,6 +67,8 @@ class HybridIntentRuntime:
         deterministic = _deterministic_intent(text)
         semantic_kind, semantic_score = _semantic_select(text, self._routes)
         selected = semantic_kind if semantic_score >= 0.35 else deterministic
+        if deterministic in {IntentKind.GROUNDED_ANSWER, IntentKind.UNSAFE_OR_INJECTION_SUSPECTED, IntentKind.CLARIFICATION}:
+            selected = deterministic
         selector = SingleSelection(index=_kind_index(selected), reason=f"llamaindex.selector.{selected.value}")
         if selected == IntentKind.PROVIDER_SIMPLE_CHAT and _freshness_needed(text):
             selected = IntentKind.WEB_SEARCH
@@ -162,10 +164,12 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.UNSAFE_OR_INJECTION_SUSPECTED
     if re.fullmatch(r"\s*\d+\s*[+\-*/]\s*\d+\s*", lowered) or lowered.startswith("compute "):
         return IntentKind.CAPABILITY_TOOL
-    if any(part in lowered for part in ("latest", "current", "recent", "version", "search web", "search ")):
-        return IntentKind.WEB_SEARCH
     if any(part in lowered for part in ("grounded answer", "cite", "citation")):
         return IntentKind.GROUNDED_ANSWER
+    if "evidence" in lowered and any(part in lowered for part in ("web", "memory", "grounded", "answer")):
+        return IntentKind.GROUNDED_ANSWER
+    if any(part in lowered for part in ("latest", "current", "recent", "version", "search web", "search ")):
+        return IntentKind.WEB_SEARCH
     if any(part in lowered for part in ("memory tree", "source grounded", "evidence")):
         return IntentKind.MEMORY_TREE_NEEDED
     if any(part in lowered for part in ("remember", "memory", "preference")):

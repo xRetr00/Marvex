@@ -236,6 +236,25 @@ references.
 `PROJECT_STATUS.md` must reflect completed milestones and must not point to
 stale next tasks after a governance cleanup has completed.
 
+### Runtime Completion Phase Unlock Gate
+
+Pre-Voice runtime completion must remain implemented and classified by artifact,
+not by stale phase-lock wording.
+
+- Grounded-answer runtime must expose citation validation and web evidence to context candidate conversion.
+- PromptHarnessRuntime must keep route profiles with non-zero evidence, memory, tool-schema, skill, and approval-policy budgets for relevant routes.
+- IntentRuntime must keep multi-step IntentPlan support and clarification stop behavior.
+- CapabilityRuntime must keep dynamic tool selection and per-request AutonomyPolicy decisions.
+- ProviderSelectionRuntime must keep provider candidate, requirement, retry, fallback, and safe projection models.
+- Assistant turn integration must keep provider, tool, web-search, memory, and clarification recovery models.
+- LearningRuntime must keep FeedbackEvent ingestion, LearningPipelineRunner, candidate store, audited apply flow, and memory/route/skill candidate outputs.
+- ConnectorRuntime must keep policy-controlled sync and auto-fetch runner paths that canonicalize into MemoryTreeRuntime without raw secrets or untracked background sync.
+- Control Plane API/web must expose protected feedback/learning, runtime policy, connector, auto-fetch, audit, and diagnostics views without direct frontend mutation.
+- MCP launch/install, shell command execution, and file write/delete must be policy-controlled or explicitly not-implemented adapters, not broad governance hard-blocks.
+- Stale phase-lock and blanket-block wording for OAuth, auto-fetch, MCP launch, shell execution, retry/fallback, semantic memory, auto-write, and profile write must stay absent from active docs/code; use policy-controlled, not-implemented adapter, or hard-block blacklist-only classifications instead.
+
+`scripts/run_all_checks.py` runs the runtime completion phase unlock gate.
+
 ### Agent Context Budget Gate
 
 The agent context architecture docs must remain present and discoverable.

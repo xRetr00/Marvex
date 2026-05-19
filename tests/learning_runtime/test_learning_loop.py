@@ -5,11 +5,14 @@ from packages.learning_runtime import (
     FeedbackEvent,
     FeedbackSignalKind,
     IntentFailureFeedback,
+    LearningCandidateStore,
     LearningLoop,
+    LearningPipelineRunner,
     MemoryUseFeedback,
     ToolOutcomeFeedback,
     UserCorrection,
 )
+from packages.capability_runtime import AutonomyMode, AutonomyPolicy
 
 
 def test_user_correction_creates_review_required_memory_skill_and_policy_candidates() -> None:
@@ -44,3 +47,41 @@ def test_tool_memory_and_intent_feedback_update_safe_learning_candidates_without
     assert summary.route_example_candidates[0].expected_intent == "web_search"
     assert summary.silent_policy_mutation is False
     assert summary.silent_skill_mutation is False
+
+
+def test_learning_pipeline_ingests_feedback_and_applies_allowed_candidates_with_audit() -> None:
+    store = LearningCandidateStore()
+    runner = LearningPipelineRunner(store=store, autonomy_policy=AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX))
+    event = FeedbackEvent.from_user_correction(
+        trace_id="trace-learning-apply",
+        turn_id="turn-learning-apply",
+        correction=UserCorrection(text="Prefer official docs as source evidence.", applies_to="source_preference"),
+    )
+
+    summary = runner.ingest_and_run((event,))
+    apply_result = runner.apply_candidate(summary.preference_candidates[0].candidate_id)
+
+    assert store.feedback_events == (event,)
+    assert apply_result.status == "applied"
+    assert apply_result.audit_record.decision.value == "allow"
+    assert store.applied_candidate_ids == (summary.preference_candidates[0].candidate_id,)
+    assert apply_result.raw_candidate_payload_persisted is False
+
+
+def test_custom_learning_pipeline_requires_review_before_candidate_apply() -> None:
+    store = LearningCandidateStore()
+    runner = LearningPipelineRunner(store=store, autonomy_policy=AutonomyPolicy.for_mode(AutonomyMode.CUSTOM))
+    summary = runner.ingest_and_run((
+        FeedbackEvent(
+            trace_id="trace-learning-review",
+            turn_id="turn-learning-review",
+            signal_kind=FeedbackSignalKind.TOOL_OUTCOME,
+            payload=ToolOutcomeFeedback(tool_ref="browser.extract_text", succeeded=True, outcome_reason="useful public read"),
+        ),
+    ))
+
+    result = runner.apply_candidate(summary.skill_improvement_candidates[0].candidate_id)
+
+    assert result.status == "approval_required"
+    assert result.audit_record.decision.value == "approval_required"
+    assert store.applied_candidate_ids == ()

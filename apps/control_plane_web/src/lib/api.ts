@@ -9,6 +9,9 @@ import {
   controlSnapshotSchema,
   diagnosticsSchema,
   enablementStateSchema,
+  feedbackEventsSchema,
+  learningApplySchema,
+  learningCandidatesSchema,
   mcpMarketplaceSchema,
   memoryForgetSchema,
   memoryInspectSchema,
@@ -131,6 +134,18 @@ export async function setRuntimePolicyMode(mode: string) {
 
 export async function fetchDiagnostics() {
   return diagnosticsSchema.parse(await readJson("/diagnostics"));
+}
+
+export async function fetchFeedbackEvents() {
+  return feedbackEventsSchema.parse(await readJson("/feedback"));
+}
+
+export async function fetchLearningCandidates() {
+  return learningCandidatesSchema.parse(await readJson("/learning/candidates"));
+}
+
+export async function applyLearningCandidate(candidateId: string) {
+  return learningApplySchema.parse(await readJson(`/learning/candidates/${encodeURIComponent(candidateId)}/apply`, { method: "POST" }));
 }
 
 export async function fetchConnectors() {

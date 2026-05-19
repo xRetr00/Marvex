@@ -1,13 +1,14 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MonitorCog, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Wrench } from "lucide-react";
+import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, MonitorCog, Moon, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, Wrench } from "lucide-react";
 import { fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
-import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
+import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, FeedbackLearningView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView } from "./views/ExpandedViews";
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
+import { Button } from "./components/ui/button";
 
 const views = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
@@ -31,26 +32,59 @@ const views = [
   { id: "memory_sources", label: "Memory Sources", icon: Database },
   { id: "autofetch", label: "Auto-Fetch", icon: Clock3 },
   { id: "memory_trees", label: "Memory Trees", icon: GitBranch },
+  { id: "feedback_learning", label: "Feedback / Learning", icon: MessageSquare },
   { id: "diagnostics", label: "Runtime Diagnostics", icon: MonitorCog },
   { id: "settings", label: "Settings", icon: Settings }
 ] as const;
 
 type ViewId = typeof views[number]["id"];
 
+const themeStorageKey = "marvex-control-plane-theme";
+
 export function App() {
   const [active, setActive] = useState<ViewId>("dashboard");
+  const [theme, setTheme] = useState<"light" | "dark">(() => {
+    if (typeof window === "undefined") return "light";
+    const stored = window.localStorage.getItem(themeStorageKey);
+    if (stored === "light" || stored === "dark") return stored;
+    const prefersDark = typeof window.matchMedia === "function" && window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return prefersDark ? "dark" : "light";
+  });
   const snapshotQuery = useQuery({ queryKey: ["control-snapshot"], queryFn: fetchSnapshot, retry: false });
   const title = useMemo(() => views.find((view) => view.id === active)?.label ?? "Dashboard", [active]);
+  const isDark = theme === "dark";
+  const logoSrc = isDark ? "/brand/logo-wordmark-dark.png" : "/brand/logo-wordmark.png";
+
+  useEffect(() => {
+    const root = document.documentElement;
+    root.classList.toggle("dark", isDark);
+    window.localStorage.setItem(themeStorageKey, theme);
+  }, [isDark, theme]);
 
   return (
     <div className="min-h-screen">
       <header className="border-b border-border bg-card">
         <div className="flex min-h-14 items-center justify-between px-4">
-          <div>
-            <h1 className="text-base font-semibold">Marvex Control Plane</h1>
-            <p className="text-xs text-muted-foreground">Local admin dashboard for approvals, marketplaces, telemetry, capabilities, policies, and safe runtime views.</p>
+          <div className="flex items-center gap-3">
+            <img className="h-6 w-auto" src={logoSrc} alt="Marvex" />
+            <div>
+              <h1 className="text-base font-semibold">Marvex Control Plane</h1>
+              <p className="text-xs text-muted-foreground">Local admin dashboard for approvals, marketplaces, telemetry, capabilities, policies, and safe runtime views.</p>
+            </div>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground"><KeyRound size={16} /> local token required</div>
+          <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div className="flex items-center gap-2"><KeyRound size={16} /> local token required</div>
+            <Button
+              type="button"
+              variant="outline"
+              className="h-8 w-8 px-0 text-muted-foreground"
+              onClick={() => setTheme(isDark ? "light" : "dark")}
+              aria-label="Toggle dark mode"
+              title={isDark ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {isDark ? <Sun size={16} /> : <Moon size={16} />}
+            </Button>
+          </div>
         </div>
       </header>
       <div className="grid lg:grid-cols-[260px_1fr]">
@@ -97,6 +131,7 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "memory_sources") return <MemorySourcesView />;
   if (active === "autofetch") return <AutoFetchView />;
   if (active === "memory_trees") return <MemoryTreesView />;
+  if (active === "feedback_learning") return <FeedbackLearningView />;
   if (active === "diagnostics") return <DiagnosticsView />;
   return <SafeTable title="Settings" rows={[snapshot.settings]} empty="No settings exposed." />;
 }
