@@ -17,6 +17,7 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 - Loopback-only subprocess launch path with safe shutdown; `0.0.0.0` and remote bindings are rejected.
 - Microphone device listing/test/capture adapter path, device selection through worker config reload, and playback device/test/interrupt path.
 - Ring-buffer compatible PCM frame capture path for runtime integration without raw audio persistence.
+- Bounded live capture cycle path for explicit worker runs: microphone frames are evaluated through an injected/mockable VAD decision function, pre-roll frames are retained, silence cutoff/tail padding are represented in safe summaries, and max utterance duration stops capture without assistant dispatch.
 - Manual voice turn path that assembles mockable captured frames, emits VAD/STT/assistant/TTS/playback worker events, delegates STT/TTS/policy to existing runtime seams, and records safe summaries only.
 - Barge-in test path that interrupts playback and clears queued TTS state.
 - Worker-safe telemetry summaries expose event counts and durations/counts only; they do not include raw audio, raw transcripts, generated audio, secrets, or provider/tool payloads.
