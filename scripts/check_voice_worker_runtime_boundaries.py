@@ -34,12 +34,19 @@ REQUIRED_MARKERS = (
     "raw_audio_persistence_allowed: Literal[False]",
     "raw_transcript_persistence_allowed: Literal[False]",
     "phrase: str = \"Hey Marvex\"",
+    "model_asset_checksum_mismatch",
+    "wakeword_model_not_installed",
+    "model_path_not_found_under_voice_asset_root",
+    "durations_counts_only",
+    "telemetry_summary",
+    "loopback-only",
 )
 CONTROL_TERMS = (
     "/control/voice/worker",
     "test_mic",
     "test_playback",
     "test_wakeword",
+    "reload_config",
     "switch_stt_backend",
     "switch_tts_backend",
     "switch_active_voice",
@@ -76,10 +83,10 @@ def main() -> int:
         if term not in control_text:
             failures.append(f"Control Plane voice worker API missing term: {term}")
     frontend = FRONTEND.read_text(encoding="utf-8") if FRONTEND.is_file() else ""
-    if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend:
+    if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend:
         failures.append("Control Plane web missing voice worker status and controls")
     doc = DOC.read_text(encoding="utf-8") if DOC.is_file() else ""
-    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb"):
+    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry"):
         if phrase not in doc:
             failures.append(f"docs/VOICE_WORKER_RUNTIME.md missing phrase: {phrase}")
     if failures:

@@ -269,10 +269,26 @@ export async function resumeVoiceWorker() {
   return voiceActionSchema.parse(await readJson("/voice/worker/resume", { method: "POST" }));
 }
 
+export async function reloadVoiceWorkerConfig(payload: { input_device_id?: string; output_device_id?: string; sample_rate?: number; channel_count?: number }) {
+  return voiceActionSchema.parse(await readJson("/voice/worker/reload-config", { method: "POST", body: JSON.stringify(payload) }));
+}
+
 export async function testVoiceWorkerMic() {
   return voiceActionSchema.parse(await readJson("/voice/worker/test-mic", { method: "POST", body: JSON.stringify({ device_id: "input-default" }) }));
 }
 
 export async function testVoiceWorkerPlayback() {
   return voiceActionSchema.parse(await readJson("/voice/worker/test-playback", { method: "POST", body: JSON.stringify({ device_id: "output-default" }) }));
+}
+
+export async function testVoiceWorkerWakeword() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/test-wakeword", { method: "POST" }));
+}
+
+export async function testVoiceWorkerStt() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/test-stt", { method: "POST" }));
+}
+
+export async function testVoiceWorkerTts() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/test-tts", { method: "POST" }));
 }

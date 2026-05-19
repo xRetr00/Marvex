@@ -14,10 +14,12 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 - User-visible start, stop, pause, resume, reload-config, test-mic, test-wakeword, test-STT, test-TTS, test-playback, install-model, switch-STT, switch-TTS, and switch-active-voice command paths.
 - Local-only worker defaults with no hidden auto-start and no hidden recording.
 - Heartbeat and lifecycle status for worker supervision.
-- Microphone device listing/test/capture adapter path and playback device/test/interrupt path.
+- Loopback-only subprocess launch path with safe shutdown; `0.0.0.0` and remote bindings are rejected.
+- Microphone device listing/test/capture adapter path, device selection through worker config reload, and playback device/test/interrupt path.
 - Ring-buffer compatible PCM frame capture path for runtime integration without raw audio persistence.
 - Manual voice turn path that assembles mockable captured frames, emits VAD/STT/assistant/TTS/playback worker events, delegates STT/TTS/policy to existing runtime seams, and records safe summaries only.
 - Barge-in test path that interrupts playback and clears queued TTS state.
+- Worker-safe telemetry summaries expose event counts and durations/counts only; they do not include raw audio, raw transcripts, generated audio, secrets, or provider/tool payloads.
 
 ## Dependency Decision
 
@@ -27,13 +29,13 @@ The sounddevice adapter is intentionally thin. It can list real local input/outp
 
 ## Asset Policy
 
-Voice model and voice assets must live under the configured local voice asset root. Path traversal is blocked. Installs are explicit user-triggered operations. No arbitrary path writes, hidden downloads, secrets, raw model internals, raw audio, generated audio, or raw transcripts are persisted by default.
+Voice model and voice assets must live under the configured local voice asset root. Path traversal is blocked. Installs are explicit user-triggered operations. Missing local assets report `not_installed`, file checksum mismatches report `blocked`, and no fake readiness is returned. No arbitrary path writes, hidden downloads, secrets, raw model internals, raw audio, generated audio, or raw transcripts are persisted by default.
 
-Current model assets are still not downloaded by this checkpoint. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper runtime execution remains ready only when the corresponding local model or voice asset is installed/configured.
+Current model assets are still not downloaded by this checkpoint. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper runtime execution remains ready only when the corresponding local model or voice asset is installed/configured. `Hey Marvex` wakeword tests require both enabled wakeword policy and the installed sherpa-onnx KWS asset; otherwise Control Plane reports the exact blocker.
 
 ## Control Plane
 
-Protected Control Plane endpoints expose `/control/voice/worker` status, devices, start/stop/pause/resume, mic test, playback test, wakeword test, STT/TTS test, model install/remove, STT/TTS backend switching, and active voice switching. The web page shows worker status, microphone devices, playback devices, and explicit worker controls. It does not render raw audio or raw transcripts.
+Protected Control Plane endpoints expose `/control/voice/worker` status, devices, start/stop/pause/resume, config reload, mic test, playback test, wakeword test, STT/TTS test, model install/remove, STT/TTS backend switching, and active voice switching. The web page shows worker status, microphone and playback selectors, backend/model readiness, wakeword/STT/TTS tests, telemetry summaries, and explicit worker controls. It does not render raw audio or raw transcripts.
 
 ## Safety Defaults
 

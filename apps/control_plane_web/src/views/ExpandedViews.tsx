@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useState } from "react";
 import { CheckCircle2, Mic, Search, ShieldAlert, Trash2, Volume2 } from "lucide-react";
 import {
   applyLearningCandidate,
@@ -39,10 +40,14 @@ import {
   stopVoiceWorker,
   pauseVoiceWorker,
   resumeVoiceWorker,
+  reloadVoiceWorkerConfig,
   testVoiceStt,
   testVoiceTts,
   testVoiceWorkerMic,
   testVoiceWorkerPlayback,
+  testVoiceWorkerWakeword,
+  testVoiceWorkerStt,
+  testVoiceWorkerTts,
   updateVoiceBargeIn,
   updateVoiceEarlySpeech,
   updateVoicePersonality,
@@ -250,6 +255,8 @@ export function RuntimePolicyView() {
 
 export function VoiceRuntimeView() {
   const queryClient = useQueryClient();
+  const [selectedInputDevice, setSelectedInputDevice] = useState("");
+  const [selectedOutputDevice, setSelectedOutputDevice] = useState("");
   const query = useQuery({ queryKey: ["voice-runtime"], queryFn: fetchVoiceStatus, retry: false });
   const workerQuery = useQuery({ queryKey: ["voice-worker"], queryFn: fetchVoiceWorkerStatus, retry: false });
   const devicesQuery = useQuery({ queryKey: ["voice-worker-devices"], queryFn: fetchVoiceWorkerDevices, retry: false });
@@ -276,6 +283,13 @@ export function VoiceRuntimeView() {
   const workerResume = useMutation({ mutationFn: resumeVoiceWorker, onSuccess: refreshWorker });
   const workerMic = useMutation({ mutationFn: testVoiceWorkerMic, onSuccess: refreshWorker });
   const workerPlayback = useMutation({ mutationFn: testVoiceWorkerPlayback, onSuccess: refreshWorker });
+  const workerReload = useMutation({
+    mutationFn: () => reloadVoiceWorkerConfig({ input_device_id: selectedInputDevice || String(inputDevices[0]?.device_id ?? ""), output_device_id: selectedOutputDevice || String(outputDevices[0]?.device_id ?? ""), sample_rate: 16000, channel_count: 1 }),
+    onSuccess: refreshWorker
+  });
+  const workerWakeword = useMutation({ mutationFn: testVoiceWorkerWakeword, onSuccess: refreshWorker });
+  const workerStt = useMutation({ mutationFn: testVoiceWorkerStt, onSuccess: refreshWorker });
+  const workerTts = useMutation({ mutationFn: testVoiceWorkerTts, onSuccess: refreshWorker });
   if (query.isLoading) return <InlineState message="Loading voice runtime controls..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   const data = query.data ?? {};
@@ -288,17 +302,35 @@ export function VoiceRuntimeView() {
   const devices = typeof devicesQuery.data === "object" && devicesQuery.data ? devicesQuery.data as Record<string, unknown> : {};
   const inputDevices = Array.isArray(devices.input_devices) ? devices.input_devices as Record<string, unknown>[] : [];
   const outputDevices = Array.isArray(devices.output_devices) ? devices.output_devices as Record<string, unknown>[] : [];
+  const inputValue = selectedInputDevice || String(inputDevices[0]?.device_id ?? "");
+  const outputValue = selectedOutputDevice || String(outputDevices[0]?.device_id ?? "");
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader><CardTitle>Voice Worker Process</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+          <label className="grid gap-1 text-sm font-medium" htmlFor="worker-input-device">
+            Microphone device
+            <select id="worker-input-device" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={inputValue} onChange={(event) => setSelectedInputDevice(event.target.value)}>
+              {inputDevices.map((device) => <option key={String(device.device_id)} value={String(device.device_id)}>{String(device.label ?? device.device_id)}</option>)}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium" htmlFor="worker-output-device">
+            Playback device
+            <select id="worker-output-device" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={outputValue} onChange={(event) => setSelectedOutputDevice(event.target.value)}>
+              {outputDevices.map((device) => <option key={String(device.device_id)} value={String(device.device_id)}>{String(device.label ?? device.device_id)}</option>)}
+            </select>
+          </label>
+          <Button variant="outline" onClick={() => workerReload.mutate()}>Apply Devices</Button>
           <Button variant="outline" onClick={() => workerStart.mutate()}><Mic className="mr-2" size={16} />Start Worker</Button>
           <Button variant="outline" onClick={() => workerPause.mutate()}>Pause Worker</Button>
           <Button variant="outline" onClick={() => workerResume.mutate()}>Resume Worker</Button>
           <Button variant="outline" onClick={() => workerStop.mutate()}>Stop Worker</Button>
           <Button variant="outline" onClick={() => workerMic.mutate()}>Test Mic Level</Button>
           <Button variant="outline" onClick={() => workerPlayback.mutate()}><Volume2 className="mr-2" size={16} />Test Playback</Button>
+          <Button variant="outline" onClick={() => workerWakeword.mutate()}>Test Wakeword</Button>
+          <Button variant="outline" onClick={() => workerStt.mutate()}>Test Worker STT</Button>
+          <Button variant="outline" onClick={() => workerTts.mutate()}>Test Worker TTS</Button>
         </CardContent>
       </Card>
       <Card>
@@ -325,7 +357,7 @@ export function VoiceRuntimeView() {
       <SafeTable title="STT / TTS / Wakeword / VAD Backends" rows={backendRows} empty="No backend health." />
       <SafeTable title="Wakeword / VAD / Barge-In / Early Speech / Personality" rows={[settings]} empty="No voice settings." />
       <SafeTable title="Voice Telemetry Summary" rows={[telemetry]} empty="No voice telemetry." />
-      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data, workerStart.data, workerStop.data, workerPause.data, workerResume.data, workerMic.data, workerPlayback.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
+      <SafeTable title="Last Voice Action" rows={[stt.data, tts.data, wakeword.data, vad.data, bargeIn.data, earlySpeech.data, personality.data, retention.data, download.data, remove.data, sttTest.data, ttsTest.data, workerStart.data, workerStop.data, workerPause.data, workerResume.data, workerReload.data, workerMic.data, workerPlayback.data, workerWakeword.data, workerStt.data, workerTts.data].filter(Boolean) as Record<string, unknown>[]} empty="No voice action run." />
     </div>
   );
 }

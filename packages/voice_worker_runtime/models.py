@@ -7,6 +7,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from packages.voice_runtime.base import SCHEMA_VERSION, VoiceRuntimeModel, safe_mapping
+from packages.voice_worker_runtime.assets import InstalledModelRegistry
 
 
 class VoiceWorkerLifecycleState(str, Enum):
@@ -180,6 +181,12 @@ class VoiceWorkerStatus(VoiceRuntimeModel):
     queued_tts_count: int = 0
     recent_events: tuple[VoiceWorkerEvent, ...] = ()
     error: VoiceWorkerErrorEnvelope | None = None
+    model_assets: InstalledModelRegistry
+    stt_backend_status: dict[str, Any] = Field(default_factory=dict)
+    tts_backend_status: dict[str, Any] = Field(default_factory=dict)
+    wakeword_model_status: dict[str, Any] = Field(default_factory=dict)
+    telemetry: dict[str, Any] = Field(default_factory=dict)
+    telemetry_summary: dict[str, Any] = Field(default_factory=dict)
     raw_audio_persisted: Literal[False] = False
     raw_transcript_persisted: Literal[False] = False
 
@@ -200,6 +207,15 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
     playback_status: str
     wakeword_status: str
     queued_tts_count: int
+    health: dict[str, object]
+    recent_events: tuple[dict[str, object], ...] = ()
+    error: dict[str, object] | None = None
+    model_assets: dict[str, object]
+    stt_backend_status: dict[str, object] = Field(default_factory=dict)
+    tts_backend_status: dict[str, object] = Field(default_factory=dict)
+    wakeword_model_status: dict[str, object] = Field(default_factory=dict)
+    telemetry: dict[str, object] = Field(default_factory=dict)
+    telemetry_summary: dict[str, object] = Field(default_factory=dict)
     local_only: Literal[True] = True
     hidden_recording_allowed: Literal[False] = False
     raw_audio_persisted: Literal[False] = False
@@ -219,6 +235,19 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
             playback_status=status.playback_status,
             wakeword_status=status.wakeword_status,
             queued_tts_count=status.queued_tts_count,
+            health=VoiceWorkerHealth(
+                lifecycle_state=status.lifecycle_state,
+                process_started=status.process_started,
+                heartbeat_ok=status.heartbeat is not None,
+            ).model_dump(mode="json"),
+            recent_events=tuple(event.safe_projection() for event in status.recent_events),
+            error=status.error.model_dump(mode="json") if status.error else None,
+            model_assets=status.model_assets.model_dump(mode="json"),
+            stt_backend_status=safe_mapping(status.stt_backend_status),
+            tts_backend_status=safe_mapping(status.tts_backend_status),
+            wakeword_model_status=safe_mapping(status.wakeword_model_status),
+            telemetry=safe_mapping(status.telemetry),
+            telemetry_summary=safe_mapping(status.telemetry_summary or status.telemetry),
         )
 
 

@@ -90,6 +90,23 @@ def test_control_plane_voice_worker_device_tests_and_backend_switches_are_safe()
     assert "raw_audio\": true" not in json.dumps(playback).lower()
 
 
+def test_control_plane_voice_worker_reload_config_selects_devices_without_audio_persistence() -> None:
+    app = _app()
+
+    status, _headers, payload = _call(
+        app,
+        "/control/voice/worker/reload-config",
+        method="POST",
+        body={"input_device_id": "input-default", "output_device_id": "output-default", "sample_rate": 24000, "channel_count": 1},
+    )
+
+    assert status == "200 OK"
+    assert payload["status"]["config"]["audio"]["input_device_id"] == "input-default"
+    assert payload["status"]["config"]["audio"]["output_device_id"] == "output-default"
+    assert payload["event"]["summary"]["audio_config_reloaded"] is True
+    assert "raw_audio\": true" not in json.dumps(payload).lower()
+
+
 def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(tmp_path) -> None:
     app = _app()
 
@@ -103,9 +120,11 @@ def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(t
     remove_status, _remove_headers, remove = _call(app, "/control/voice/worker/models/remove", method="POST", body={"model_id": "hey-marvex"})
 
     assert install_status == "200 OK"
-    assert install["status"] == "installed"
-    assert install["local_path_present"] is True
+    assert install["status"] == "not_installed"
+    assert install["local_path_present"] is False
+    assert install["exact_blocker"] == "model_path_not_found_under_voice_asset_root"
     assert assets_status == "200 OK"
-    assert assets["installed_count"] == 1
+    assert assets["installed_count"] == 0
+    assert assets["required_blocked_count"] >= 5
     assert remove_status == "200 OK"
-    assert remove["removed"] is True
+    assert remove["removed"] is False

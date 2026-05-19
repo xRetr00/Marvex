@@ -119,7 +119,13 @@ describe("Control Plane app", () => {
     expect(await screen.findByText("MemoryTreeRuntime")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Voice Runtime/i }));
     expect(await screen.findByText("Voice Worker Process")).toBeInTheDocument();
-    expect(await screen.findByText("Default microphone")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Microphone device")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Playback device")).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Apply Devices/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Test Wakeword/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Test Worker STT/i })).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: /Test Worker TTS/i })).toBeInTheDocument();
+    expect((await screen.findAllByText("Default microphone")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText("moonshine-v2")).length).toBeGreaterThan(0);
     expect((await screen.findAllByText((content) => content.includes("Hey Marvex"))).length).toBeGreaterThan(0);
     expect(screen.queryByText(/apikey|Bearer|secret-token|raw prompt/i)).not.toBeInTheDocument();
