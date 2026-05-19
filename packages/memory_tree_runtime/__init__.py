@@ -94,3 +94,5 @@ __all__ = [
     "score_memory_chunk",
     "traverse_tree",
 ]
+
+from packages.memory_tree_runtime.search import MemorySearchFilters, MemorySemanticQuery, SemanticMemorySearchResult

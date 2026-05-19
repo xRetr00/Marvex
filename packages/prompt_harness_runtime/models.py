@@ -69,6 +69,26 @@ class PromptSection(CapabilityRuntimeModel):
         return value
 
 
+
+
+class PromptRouteProfile(CapabilityRuntimeModel):
+    route: str = "simple_chat"
+    total_context_budget: int = Field(default=800, ge=0)
+    evidence_token_budget: int = Field(default=0, ge=0)
+    memory_token_budget: int = Field(default=0, ge=0)
+    tool_schema_token_budget: int = Field(default=0, ge=0)
+    skill_token_budget: int = Field(default=0, ge=0)
+    reserved_response_tokens: int = Field(default=300, ge=0)
+    max_context_candidates: int = Field(default=4, ge=0)
+
+
+class PromptBlockSuppression(CapabilityRuntimeModel):
+    evidence_block_suppressed: bool = True
+    memory_block_suppressed: bool = True
+    tool_block_suppressed: bool = True
+    skill_block_suppressed: bool = True
+
+
 class PromptHarnessPlan(CapabilityRuntimeModel):
     schema_version: str
     trace_id: str
@@ -77,6 +97,8 @@ class PromptHarnessPlan(CapabilityRuntimeModel):
     sections: tuple[PromptSection, ...]
     all_tools_included: Literal[False] = False
     all_memory_included: Literal[False] = False
+    route_profile: PromptRouteProfile = Field(default_factory=PromptRouteProfile)
+    suppression: PromptBlockSuppression = Field(default_factory=PromptBlockSuppression)
     raw_prompt_persisted: Literal[False] = False
 
 

@@ -1,6 +1,7 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from enum import Enum
 from typing import Any, Protocol
 from urllib.parse import urlparse
@@ -129,3 +130,50 @@ def _bundle(query: WebSearchQuery, provider: str, rows: tuple[WebSearchResult, .
 def _domain(url: str) -> str:
     parsed = urlparse(url)
     return parsed.netloc or "unknown"
+
+
+class FreshnessDecision(CapabilityRuntimeModel):
+    freshness_needed: bool
+    source_is_stale: bool
+    recommended_freshness: WebSearchFreshness
+    reason_code: str
+    stale_threshold_days: int
+    raw_source_persisted: bool = False
+
+
+class FreshnessPolicy(CapabilityRuntimeModel):
+    dependency_docs_stale_days: int = 14
+    price_stale_days: int = 1
+    memory_stale_days: int = 180
+    default_stale_days: int = 30
+
+    @classmethod
+    def default(cls) -> "FreshnessPolicy":
+        return cls()
+
+    def evaluate(self, *, query: str, source_type: str, source_timestamp: datetime | None) -> FreshnessDecision:
+        lowered = query.lower()
+        source = source_type.lower()
+        implicit_current = any(marker in lowered for marker in ("compatible", "version", "sdk", "api", "docs", "price", "current status", "release"))
+        if source in {"dependency_docs", "api_docs", "library_docs"} or any(marker in lowered for marker in ("sdk", "api", "docs", "version", "compatible")):
+            threshold = self.dependency_docs_stale_days
+            freshness = WebSearchFreshness.CURRENT
+            reason = "freshness.current_dependency_or_docs"
+        elif "price" in lowered or source == "price":
+            threshold = self.price_stale_days
+            freshness = WebSearchFreshness.CURRENT
+            reason = "freshness.current_price"
+        elif source == "memory":
+            threshold = self.memory_stale_days
+            freshness = WebSearchFreshness.ANY
+            reason = "freshness.memory_not_current"
+        else:
+            threshold = self.default_stale_days
+            freshness = WebSearchFreshness.RECENT if implicit_current else WebSearchFreshness.ANY
+            reason = "freshness.recent_or_any"
+        stale = False
+        if source_timestamp is not None:
+            timestamp = source_timestamp if source_timestamp.tzinfo else source_timestamp.replace(tzinfo=UTC)
+            stale = (datetime.now(UTC) - timestamp).days > threshold
+        needed = (implicit_current or freshness == WebSearchFreshness.CURRENT) and (source != "memory" or stale)
+        return FreshnessDecision(freshness_needed=needed, source_is_stale=stale, recommended_freshness=freshness, reason_code=reason, stale_threshold_days=threshold)

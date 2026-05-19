@@ -78,6 +78,71 @@ class McpAllowlist(McpAdapterModel):
         return self.allows_server(tool_ref.server_ref) and tool_ref.tool_name in self.allowed_tool_names
 
 
+class McpAllowlistPolicy(McpAdapterModel):
+    policy_id: str = Field(..., min_length=1)
+    allowed_server_ids: tuple[str, ...]
+    allowed_tool_names: tuple[str, ...]
+    policy_source: Literal["runtime_config", "control_plane", "test_fixture"]
+    raw_config_persisted: Literal[False] = False
+
+    @classmethod
+    def from_runtime_config(
+        cls,
+        *,
+        policy_id: str,
+        allowed_server_ids: tuple[str, ...],
+        allowed_tool_names: tuple[str, ...],
+        source: Literal["runtime_config", "control_plane", "test_fixture"] = "runtime_config",
+    ) -> "McpAllowlistPolicy":
+        return cls(policy_id=policy_id, allowed_server_ids=allowed_server_ids, allowed_tool_names=allowed_tool_names, policy_source=source)
+
+    def to_allowlist(self) -> McpAllowlist:
+        return McpAllowlist(allowed_server_ids=self.allowed_server_ids, allowed_tool_names=self.allowed_tool_names)
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "policy_id": self.policy_id,
+            "policy_source": self.policy_source,
+            "allowed_server_count": len(self.allowed_server_ids),
+            "allowed_tool_count": len(self.allowed_tool_names),
+            "raw_config_persisted": False,
+        }
+
+
+class McpAllowlistProposal(McpAdapterModel):
+    proposal_id: str
+    policy_id: str
+    server_id: str
+    tool_name: str
+    requested_by: Literal["control_plane", "runtime_config", "test_fixture"]
+    action: Literal["add_tool", "remove_tool"]
+    review_required: Literal[True] = True
+    applied_without_review: Literal[False] = False
+
+    @classmethod
+    def propose_add_tool(
+        cls,
+        *,
+        policy_id: str,
+        server_id: str,
+        tool_name: str,
+        requested_by: Literal["control_plane", "runtime_config", "test_fixture"],
+    ) -> "McpAllowlistProposal":
+        return cls(proposal_id=f"mcp.allowlist.{_safe_identifier_part(server_id)}.{_safe_identifier_part(tool_name)}", policy_id=policy_id, server_id=server_id, tool_name=tool_name, requested_by=requested_by, action="add_tool")
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "proposal_id": self.proposal_id,
+            "policy_id": self.policy_id,
+            "server_id": self.server_id,
+            "tool_name": self.tool_name,
+            "requested_by": self.requested_by,
+            "action": self.action,
+            "review_required": True,
+            "applied_without_review": False,
+        }
+
+
 class McpToolListingProjection(McpAdapterModel):
     tool_ref: McpToolRef
     capability_ref: CapabilityRef

@@ -602,6 +602,26 @@ Blocked: shell execution, file write/edit/delete tools, credential access or ent
 
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->
 
+
+## Adaptive Context, Learning, and Governance Gate
+
+The Adaptive Context, Learning, and Governance gate is enforced by `scripts/check_adaptive_context_learning_governance.py` and is part of `scripts/run_all_checks.py`.
+
+This gate protects the pre-Voice adaptive runtime surface:
+
+- grounded routes must have non-zero evidence budget and must inject evidence when evidence exists;
+- memory routes must not globally suppress memory blocks;
+- tool/browser/MCP routes must expose eligible tool schemas without all-tools dumping;
+- citation guidance must only refer to provided evidence refs;
+- MCP allowlist changes are reviewable proposals driven by runtime/config/control-plane policy state, not source-only hard-coded mutation;
+- read/list/search governance remains allowed while write/delete/send/execute requires approval;
+- injection/exfiltration abuse hard-blocks or quarantines with reason codes;
+- learning loops can create memory/skill/policy/preference candidates but cannot silently mutate skills or policy.
+
+Semantic memory search uses local deterministic token-vector scoring plus filters for trust, recency, entity, topic, source, source type, hotness, and evidence availability. It does not add a paid/cloud embedding dependency.
+
+Blocked: Voice, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution without approval, broad OAuth sync, hidden auto-fetch, silent policy/skill mutation, and raw sensitive payload persistence by default.
+
 ## Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance Gate
 
 The Hybrid Intent, Web Search, Grounded Evidence, and Risk Governance gate is enforced by `scripts/check_hybrid_intent_web_search_governance.py` and is part of `scripts/run_all_checks.py`.

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .search import MemorySemanticQuery, SemanticMemorySearchResult, semantic_rank_nodes
 from .models import (
     CanonicalMemoryDocument,
     ChunkId,
@@ -58,6 +59,10 @@ class MemoryTreeRuntime:
     @classmethod
     def with_documents(cls, *, documents: tuple[CanonicalMemoryDocument, ...], chunks: tuple[MemoryChunk, ...]) -> MemoryTreeRuntime:
         return cls(documents=documents, chunks=chunks)
+
+    def semantic_memory_search(self, query: MemorySemanticQuery) -> SemanticMemorySearchResult:
+        metadata = {chunk.chunk_id: chunk.metadata for chunk in self._chunks}
+        return semantic_rank_nodes(query, self._nodes, chunk_metadata=metadata)
 
     def memory_tree_search(self, query: str) -> MemorySearchResult:
         terms = tuple(term.lower() for term in query.split() if term.strip())

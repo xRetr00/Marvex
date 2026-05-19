@@ -29,6 +29,7 @@ CHECKS = [
     "check_control_plane_boundaries.py",
     "check_intent_context_prompt_boundaries.py",
     "check_hybrid_intent_web_search_governance.py",
+    "check_adaptive_context_learning_governance.py",
     "check_end_to_end_turn_boundaries.py",
     "check_assistant_intelligence_tool_runtime_boundaries.py",
     "check_marketplace_memory_control_plane_boundaries.py",

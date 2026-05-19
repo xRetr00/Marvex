@@ -1,13 +1,13 @@
 # Project Status
 
-current_phase: hybrid_intent_web_search_governance_complete
+current_phase: adaptive_context_evidence_memory_learning_governance_complete
 
-implementation_status: hybrid_intent_web_search_governance_complete
+implementation_status: adaptive_context_evidence_memory_learning_governance_complete
 
 accepted_docs: true
 
 current_governance_gate:
-Hybrid Intent, Web Search, Grounded Evidence, and Risk-Based Governance Completion
+Adaptive Context, Evidence, Memory Learning, and Governance Completion
 
 Previous cleanup phase: `governance_reconciliation_boundary_hardening_complete`.
 
@@ -78,6 +78,19 @@ Risk governance now allows read/list/search/inspect/summarize by default, requir
 
 Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution, arbitrary MCP install/execute, broad OAuth sync, hidden auto-fetch, raw provider/tool/browser/search payload persistence, browser side effects without approval, and generic provider routing/model selection. Voice Runtime Foundation can start next if final validation stays green because the remaining search/governance boundaries are bounded and tested.
 
+
+## Adaptive Context, Evidence, Memory Learning, and Governance Checkpoint
+
+Marvex now has route-adaptive prompt/context delivery before Voice. Grounded lookup routes get non-zero evidence budget, citation guidance, and web evidence sections. Memory routes get non-zero memory budget and memory evidence sections. Tool, browser, and MCP routes get eligible capability schema sections plus approval policy context. Clarification routes stay concise and suppress unnecessary blocks intentionally rather than accidentally.
+
+Memory Tree search now has a local semantic/filterable search path with deterministic token-vector scoring, synonym normalization, metadata/hotness ranking, and filters for trust level, recency, entity, topic, source, source type, hotness, and evidence availability. No new embedding dependency was added; `fastembed` or `sentence-transformers` remain future options only if a later goal proves local embeddings are needed.
+
+LearningRuntime now records safe feedback events and produces review-required memory, skill, policy, preference, route-example, and memory-hotness candidates from corrections, ratings, tool outcomes, memory-use feedback, and intent/retrieval failures. It cannot silently mutate skills or policy.
+
+Governance now has granular, reason-coded audit decisions for allow, approval_required, deny, quarantine, and hard_block. MCP allowlist state can be projected from runtime/config/control-plane policy and changes are review-required proposals, not silent source-only mutation.
+
+Still blocked after this checkpoint: Voice runtime, Orb/Face UI, desktop overlay, proactive behavior, arbitrary tool execution without approval, broad live OAuth sync, hidden auto-fetch, silent policy/skill mutation, raw sensitive payload persistence, generic provider routing/model selection, and paid/cloud-only embeddings. Voice Runtime Foundation can start next if final validation remains green.
+
 ## Validation Baseline
 
 Initial baseline before this cleanup:
@@ -116,6 +129,6 @@ Blocked without explicit future approval: new product features, new dependencies
 
 ## Next Recommended Goal
 
-Voice Runtime Foundation can start next, provided it keeps voice behind explicit contracts and does not widen provider routing, tool execution, browser automation, OAuth sync, or raw payload persistence.
+Voice Runtime Foundation can start next, provided it keeps voice behind explicit contracts and does not widen provider routing, tool execution, browser automation, OAuth sync, learning mutation, or raw payload persistence.
 
 Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.

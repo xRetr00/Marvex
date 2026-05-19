@@ -108,3 +108,30 @@ def build_skill_context_pack(
         eligibility_decisions=tuple(decision.decision for decision in skill_decisions),
         prompt_contributions=tuple(prompt_contributions),
     )
+
+
+def select_skills_for_intent(
+    *,
+    intent_kind: object,
+    context_terms: tuple[str, ...],
+    manifests: tuple[SkillManifest, ...],
+) -> tuple[SkillEligibilityDecision, ...]:
+    intent_value = getattr(intent_kind, "value", str(intent_kind))
+    terms = {intent_value.replace("_", " "), intent_value}
+    terms.update(term.lower() for term in context_terms)
+    decisions: list[SkillEligibilityDecision] = []
+    for index, manifest in enumerate(manifests, start=1):
+        validation = SkillValidationResult.from_manifest(manifest)
+        searchable = " ".join([manifest.display_name, manifest.description, " ".join(contribution.when_to_use for contribution in manifest.prompt_contributions)]).lower()
+        eligible = any(term and term in searchable for term in terms)
+        decisions.append(
+            SkillEligibilityDecision.from_validation(
+                validation,
+                decision_id=f"skill.selection.{index}",
+                eligible=eligible,
+                reason_code="skill.context_intent_match" if eligible else "skill.context_intent_mismatch",
+                intent_tags=(intent_value,),
+                manifest=manifest,
+            )
+        )
+    return tuple(decisions)
