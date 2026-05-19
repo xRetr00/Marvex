@@ -203,22 +203,32 @@ def test_semantic_router_classifier_can_drive_integrated_intent_without_policy_o
         SemanticRouterThresholdPolicy,
     )
 
+    import semantic_router
+
     config = SemanticRouterAdapterConfig(
         schema_version="1",
         backend_enabled=True,
         threshold_policy=SemanticRouterThresholdPolicy(min_confidence=0.6, clarification_confidence=0.45),
         routes=(
-            RouteDefinition(route_id="route.mcp", intent_kind=IntentKind.MCP_NEEDED, examples=(RouteExample(text="use mcp safe lookup"),)),
+            RouteDefinition(route_id="route.mcp", intent_kind=IntentKind.MCP_NEEDED, examples=(RouteExample(text="mcp server tool"),)),
             RouteDefinition(route_id="route.browser", intent_kind=IntentKind.BROWSER_COMPUTER_USE, examples=(RouteExample(text="read browser page"),)),
         ),
     )
-    adapter = SemanticRouterHarnessAdapter(
-        config=config,
-        score_backend=lambda text, routes: (SemanticRouteScore(route_id="route.mcp", score=0.93),),
-    )
+    library_routes = tuple(semantic_router.Route(name=route.route_id, utterances=tuple(example.text for example in route.examples)) for route in config.routes)
+
+    def score_with_real_routes(input_text: str, _routes: tuple[RouteDefinition, ...]) -> tuple[SemanticRouteScore, ...]:
+        input_tokens = set(input_text.lower().split())
+        scores = []
+        for route in library_routes:
+            route_tokens = set(" ".join(route.utterances).lower().split())
+            overlap = len(input_tokens & route_tokens) / max(1, min(len(input_tokens), len(route_tokens)))
+            scores.append(SemanticRouteScore(route_id=str(route.name), score=overlap, reason_code="semantic_router.score"))
+        return tuple(scores)
+
+    adapter = SemanticRouterHarnessAdapter(config=config, score_backend=score_with_real_routes)
 
     result = run_end_to_end_assistant_turn(
-        _turn_input("Use the external protocol tool for a public lookup"),
+        _turn_input("Use the MCP safe lookup tool for a public lookup"),
         model="fake-model",
         intent_classifier=adapter.route_request,
     )
