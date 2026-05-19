@@ -68,6 +68,10 @@ class SemanticRouterHarnessAdapter:
 
     def route(self, input_text: str) -> SemanticRouterHarnessDecision:
         request = IntentClassificationRequest(schema_version=self.config.schema_version, trace_id="trace-semantic-router", turn_id="turn-semantic-router", user_input_summary=input_text[:600])
+        return self.route_request(request)
+
+    def route_request(self, request: IntentClassificationRequest) -> SemanticRouterHarnessDecision:
+        input_text = request.user_input_summary[:600]
         if not self.config.backend_enabled or self._score_backend is None:
             base = classification_from_kind(request, kind=IntentKind.CLARIFICATION, score=0.0, reason_code="semantic_router.backend_disabled")
         else:

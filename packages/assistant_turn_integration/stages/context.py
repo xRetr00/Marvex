@@ -18,14 +18,12 @@ from packages.contracts import AssistantTurnInput
 from packages.intent_runtime import IntentKind
 from packages.memory_runtime import MemoryReadQuery
 
-
 def _discover_mcp(mcp_session: McpClientSession | None, mcp_server_ref: McpServerRef | None, mcp_allowlist: McpAllowlist | None) -> tuple[McpToolListingProjection, ...]:
     if not mcp_session or not mcp_server_ref or not mcp_allowlist:
         return ()
     return asyncio.run(McpSdkAdapter(session=mcp_session, allowlist=mcp_allowlist).discover_tools(mcp_server_ref))
 
-
-def _build_context(turn_input: AssistantTurnInput, intent_ref: Any, *, mcp_listings: tuple[McpToolListingProjection, ...] = (), memory_store: Any | None = None) -> Any:
+def _build_context(turn_input: AssistantTurnInput, intent_ref: Any, *, mcp_listings: tuple[McpToolListingProjection, ...] = (), memory_store: Any | None = None, memory_tree_runtime: Any | None = None) -> Any:
     candidates: list[ContextCandidate] = [
         ContextCandidate.from_safe_summary(ContextSourceRef(kind=ContextSourceKind.USER_INPUT_SUMMARY, identifier=f"input.{turn_input.turn_id}"), _input_summary(turn_input), token_estimate=8, intent_tags=(intent_ref.intent_kind.value,), trust_level=ContextSourceTrustLevel.USER_SUMMARY),
     ]
@@ -43,16 +41,19 @@ def _build_context(turn_input: AssistantTurnInput, intent_ref: Any, *, mcp_listi
         memory_ref = _memory_context_ref(turn_input, memory_store)
         memory_identifier = f"memory.{memory_ref}" if memory_ref else "memory.preference.short-answer"
         candidates.append(ContextCandidate.from_safe_summary(ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=memory_identifier), "Approved memory preference ref is available.", token_estimate=8, intent_tags=(IntentKind.MEMORY.value,)))
+    elif intent_ref.intent_kind == IntentKind.MEMORY_TREE_NEEDED:
+        candidates.extend(_memory_tree_context_candidates(turn_input, memory_tree_runtime))
     elif intent_ref.intent_kind == IntentKind.BROWSER_COMPUTER_USE:
         eligibility = CapabilityEligibilityDecision(schema_version=turn_input.schema_version, decision_id=f"eligibility.browser.{turn_input.turn_id}", capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier="browser.click"), eligible=True, reason_code="eligible.browser_intent_requires_approval", intent_tags=(IntentKind.BROWSER_COMPUTER_USE.value,))
         candidates.append(ContextCandidate.from_capability_schema(eligibility, token_estimate=8))
     return build_context_pack(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, intent_ref=intent_ref, candidates=tuple(candidates), budget=ContextBudget(max_context_tokens=80, reserved_response_tokens=40), policy=ContextDeliveryPolicy(max_candidates=4, allowed_source_kinds=(ContextSourceKind.USER_INPUT_SUMMARY, ContextSourceKind.CAPABILITY_SCHEMA, ContextSourceKind.MCP_TOOL_SCHEMA, ContextSourceKind.SKILL_PROMPT_CONTRIBUTION, ContextSourceKind.MEMORY_PROJECTION), include_excluded_reasons=True))
 
-
 def _input_summary(turn_input: AssistantTurnInput) -> str:
     text = (turn_input.user_visible_input or "").lower()
     if "click" in text or "browser" in text or "checkout" in text:
         return "User requested a browser action."
+    if "memory tree" in text or "source grounded" in text or "evidence" in text:
+        return "User requested memory tree context."
     if "mcp" in text:
         return "User requested an MCP server tool."
     if "skill" in text:
@@ -62,7 +63,6 @@ def _input_summary(turn_input: AssistantTurnInput) -> str:
     if "calculator" in text or "2+2" in text or "calculate" in text:
         return "User requested a safe calculator capability."
     return "User requested a simple assistant response."
-
 
 def _memory_context_ref(turn_input: AssistantTurnInput, memory_store: Any | None) -> str | None:
     if memory_store is None or not hasattr(memory_store, "read") or turn_input.session_ref is None:
@@ -74,12 +74,53 @@ def _memory_context_ref(turn_input: AssistantTurnInput, memory_store: Any | None
         return None
     return result.records[0].memory_ref.ref_id if result.records else None
 
-
 def _memory_ref_count(memory_store: Any | None) -> int:
     if memory_store is None or not hasattr(memory_store, "safe_inspect"):
         return 0
     return len(tuple(memory_store.safe_inspect(max_records=50)))
 
-
 def _context_source_count(context_pack: Any, kind: ContextSourceKind) -> int:
     return len([candidate for candidate in context_pack.included if candidate.source_ref.kind == kind])
+
+def _memory_tree_context_candidates(turn_input: AssistantTurnInput, memory_tree_runtime: Any | None) -> tuple[ContextCandidate, ...]:
+    if memory_tree_runtime is None or not hasattr(memory_tree_runtime, "memory_query_with_evidence"):
+        return ()
+    try:
+        search = memory_tree_runtime.memory_query_with_evidence(_input_summary(turn_input))
+    except Exception:
+        return ()
+    candidates: list[ContextCandidate] = []
+    for node in tuple(getattr(search, "results", ()) or ())[:2]:
+        evidence_links = tuple(getattr(node, "evidence_links", ()) or ())
+        if not evidence_links:
+            continue
+        chunk_ids = ",".join(str(getattr(link, "chunk_id", "unknown")) for link in evidence_links[:3])
+        source_ids = ",".join(str(getattr(link, "source_id", "unknown")) for link in evidence_links[:3])
+        first_chunk_id = str(getattr(evidence_links[0], "chunk_id", getattr(node, "node_id", "unknown")))
+        candidates.append(
+            ContextCandidate.from_safe_summary(
+                ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=f"memory_tree.node.{first_chunk_id}"),
+                f"Memory tree evidence ref available; node_id={getattr(node, 'node_id', 'unknown')}; evidence_count={len(evidence_links)}; source_ids={source_ids}; chunk_ids={chunk_ids}.",
+                token_estimate=12,
+                intent_tags=(IntentKind.MEMORY_TREE_NEEDED.value,),
+            )
+        )
+    if hasattr(memory_tree_runtime, "memory_get_daily_digest"):
+        try:
+            digest = memory_tree_runtime.memory_get_daily_digest("current")
+        except Exception:
+            digest = None
+        if digest is not None and getattr(digest, "evidence_links", ()):
+            evidence_count = len(tuple(getattr(digest, "evidence_links", ()) or ()))
+            candidates.append(
+                ContextCandidate.from_safe_summary(
+                    ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier="memory_tree.digest.current"),
+                    f"Memory tree daily digest ref available; node_id={getattr(digest, 'node_id', 'daily:current')}; evidence_count={evidence_count}.",
+                    token_estimate=10,
+                    intent_tags=(IntentKind.MEMORY_TREE_NEEDED.value,),
+                )
+            )
+    return tuple(candidates)
+
+def _memory_tree_evidence_ref_count(context_pack: Any) -> int:
+    return len([candidate for candidate in context_pack.included if candidate.source_ref.kind == ContextSourceKind.MEMORY_PROJECTION and candidate.source_ref.identifier.startswith("memory_tree.")])

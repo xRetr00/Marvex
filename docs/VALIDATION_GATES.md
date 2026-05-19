@@ -650,9 +650,9 @@ Blocked: raw prompt/transcript/tool/provider/browser payload persistence by defa
 
 ### Assistant Intelligence and Tool-Using Runtime Boundary Gate
 
-`check_assistant_intelligence_tool_runtime_boundaries.py` enforces the Assistant Intelligence and Tool-Using Runtime Integration boundary. It checks that the integration spine uses route-specific intent/context/prompt selection, allowlisted MCP live proof through the MCP adapter, approval resume state, safe browser workflow metadata, and provider tool-call proposal mapping, SQLite memory safe-ref participation, and trace-searchable safe runtime status without letting provider tool calls become execution permission.
+`check_assistant_intelligence_tool_runtime_boundaries.py` enforces the Assistant Intelligence and Tool-Using Runtime Integration boundary. It checks that the integration spine uses route-specific intent/context/prompt selection, allowlisted MCP live proof through the MCP adapter, approval resume state, safe browser workflow metadata, and provider tool-call proposal mapping, SQLite memory safe-ref participation, Memory Tree evidence refs, semantic-router-backed intent classifier injection, and trace-searchable safe runtime status without letting provider tool calls become execution permission.
 
-Provider tool calls remain proposals. Browser and MCP adapters own SDK mechanics only after CapabilityRuntime approval. Memory participation is by MemoryRuntime safe refs/previews only, and trace search stays Telemetry-owned safe summary search. Core, Local API, RuntimeComposition, AssistantRuntime, ProviderRuntime, and Telemetry must not import browser/MCP/provider tool-call adapter owners directly or persist raw tool/browser/MCP/provider payloads by default.
+Provider tool calls remain proposals. Browser and MCP adapters own SDK mechanics only after CapabilityRuntime approval. Memory participation is by MemoryRuntime safe refs/previews and Memory Tree evidence refs/counts only, and trace search stays Telemetry-owned safe summary search. Core, Local API, RuntimeComposition, AssistantRuntime, ProviderRuntime, and Telemetry must not import browser/MCP/provider tool-call adapter owners directly or persist raw tool/browser/MCP/provider payloads by default.
 
 ## Marketplace, Memory Backend, and Control Plane Expansion Gate
 

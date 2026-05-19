@@ -13,6 +13,7 @@ _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ
 class IntentKind(str, Enum):
     CAPABILITY_TOOL = "capability_tool"
     MEMORY = "memory"
+    MEMORY_TREE_NEEDED = "memory_tree_needed"
     PROVIDER_SIMPLE_CHAT = "provider_simple_chat"
     BROWSER_COMPUTER_USE = "browser_computer_use"
     MCP_SKILL = "mcp_skill"
@@ -172,6 +173,11 @@ def classify_intent(request: IntentClassificationRequest) -> IntentClassificatio
         score = 0.82
         risk = IntentRiskSignal.RISKY_ACTION_REQUESTED
         risk_level = ToolRiskLevel.HIGH
+    elif any(marker in text for marker in ("memory tree", "source grounded", "evidence")):
+        kind = IntentKind.MEMORY_TREE_NEEDED
+        score = 0.83
+        risk = IntentRiskSignal.NONE
+        risk_level = ToolRiskLevel.LOW
     elif any(marker in text for marker in ("remember", "memory", "preference")):
         kind = IntentKind.MEMORY
         score = 0.81

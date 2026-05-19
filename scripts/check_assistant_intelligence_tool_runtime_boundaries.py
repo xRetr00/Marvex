@@ -34,6 +34,9 @@ REQUIRED_INTEGRATION_TERMS = (
     "ProviderToolCallMapper",
     "PlaywrightBrowserWorkflow",
     "MemoryReadQuery",
+    "IntentKind.MEMORY_TREE_NEEDED",
+    "intent_classifier",
+    "_memory_tree_evidence_ref_count",
     "_memory_ref_count",
     "raw_payload_persisted: Literal[False]",
 )
@@ -65,6 +68,7 @@ REQUIRED_DOC_PHRASES = (
     "Provider tool calls remain proposals",
     "allowlisted MCP live proof",
     "safe browser workflow",
+    "Memory Tree evidence refs",
 )
 
 

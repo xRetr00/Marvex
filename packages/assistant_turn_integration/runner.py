@@ -14,7 +14,7 @@ from packages.session_runtime import build_turn_linkage_from_assistant_turn_inpu
 from packages.telemetry import TelemetrySink
 
 from packages.assistant_turn_integration.models import EndToEndAssistantTurnResult
-from packages.assistant_turn_integration.stages.context import _build_context, _discover_mcp, _input_summary, _memory_ref_count
+from packages.assistant_turn_integration.stages.context import _build_context, _discover_mcp, _input_summary, _memory_ref_count, _memory_tree_evidence_ref_count
 from packages.assistant_turn_integration.stages.telemetry import _approval_status, _emit, _safe_ref, _telemetry_summary
 from packages.assistant_turn_integration.stages.tools import _handle_browser_turn, _handle_calculator_turn, _handle_mcp_turn, _handle_provider_tool_call_turn
 from packages.assistant_turn_integration.state import EndToEndTurnStateStore
@@ -48,6 +48,8 @@ def run_end_to_end_assistant_turn(
     provider_tool_call: dict[str, Any] | None = None,
     provider_tool_call_source: ProviderToolCallSource = ProviderToolCallSource.OPENAI_COMPATIBLE,
     browser_page: Any | None = None,
+    intent_classifier: Any | None = None,
+    memory_tree_runtime: Any | None = None,
 ) -> EndToEndAssistantTurnResult:
     store = state_store or EndToEndTurnStateStore()
     telemetry_sink: TelemetrySink = store.trace_reader
@@ -55,9 +57,13 @@ def run_end_to_end_assistant_turn(
     linkage = build_turn_linkage_from_assistant_turn_input(turn_input, conversation_ref=conversation_ref, previous_response_id=previous_response_id)
     _emit(telemetry_sink, turn_input, TraceStage.TURN_RECEIVED, "Integrated assistant turn received.", {"status": "received", "session_ref": _safe_ref(turn_input.session_ref), "conversation_ref": _safe_ref(conversation_ref)})
 
-    intent = classify_intent(IntentClassificationRequest(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, user_input_summary=_input_summary(turn_input)))
+    intent_request = IntentClassificationRequest(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, user_input_summary=_input_summary(turn_input))
+    classifier = intent_classifier or classify_intent
+    intent = classifier(intent_request)
+    intent_backend = str(getattr(intent, "backend_name", "deterministic"))
+    library_owns_policy = bool(getattr(intent, "library_owns_policy", False))
     mcp_listings = _discover_mcp(mcp_session, mcp_server_ref, mcp_allowlist) if intent.selected_intent.intent_kind == IntentKind.MCP_NEEDED else ()
-    context_pack = _build_context(turn_input, intent.selected_intent, mcp_listings=mcp_listings, memory_store=store.memory_store)
+    context_pack = _build_context(turn_input, intent.selected_intent, mcp_listings=mcp_listings, memory_store=store.memory_store, memory_tree_runtime=memory_tree_runtime)
     prompt_result = assemble_prompt_harness(PromptAssemblyRequest(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, intent_ref=intent.selected_intent, context_pack=context_pack))
     planning = PlanningNeedDecision.from_intent(intent.selected_intent, context_candidate_count=len(context_pack.included) + len(context_pack.excluded))
 
@@ -87,6 +93,9 @@ def run_end_to_end_assistant_turn(
         "denied_count": store.approval_store.denied_count(),
         "mcp_tool_count": int(tool_projection.get("mcp_tool_count", 0) or 0),
         "memory_ref_count": _memory_ref_count(store.memory_store),
+        "memory_tree_evidence_ref_count": _memory_tree_evidence_ref_count(context_pack),
+        "intent_backend": intent_backend,
+        "library_owns_policy": library_owns_policy,
         "raw_payload_persisted": False,
     }
     integrated = EndToEndAssistantTurnResult(

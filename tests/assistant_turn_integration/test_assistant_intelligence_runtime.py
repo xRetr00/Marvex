@@ -11,6 +11,7 @@ from packages.assistant_runtime import build_text_input_event, build_turn_input_
 from packages.assistant_turn_integration import EndToEndTurnStateStore, run_end_to_end_assistant_turn
 from packages.capability_runtime import CapabilityExecutionMode
 from packages.contracts import ConversationRef, SessionRef, TraceStage
+from packages.intent_runtime import IntentKind
 from packages.memory_runtime import MemoryRecord, MemoryRef, SQLiteMemoryStore
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
@@ -44,7 +45,6 @@ class FakeBrowserPage:
         assert selector == "body"
         return "Public browser page text that remains outside persisted payloads."
 
-
 def _turn_input(text: str):
     event = build_text_input_event(
         schema_version="1",
@@ -55,7 +55,6 @@ def _turn_input(text: str):
         session_id="session-intel-1",
     )
     return build_turn_input_from_event(schema_version="1", trace_id="trace-intel-1", turn_id="turn-intel-1", input_event=event)
-
 
 def test_tool_using_turn_executes_allowlisted_mcp_tool_through_capability_policy() -> None:
     store = EndToEndTurnStateStore()
@@ -92,7 +91,6 @@ def test_tool_using_turn_executes_allowlisted_mcp_tool_through_capability_policy
     assert TraceStage.TURN_RECEIVED.value in stages
     assert TraceStage.TURN_COMPLETED.value in stages
 
-
 def test_browser_approval_can_resume_safe_approved_readiness_without_frontend_execution() -> None:
     store = EndToEndTurnStateStore()
     paused = run_end_to_end_assistant_turn(_turn_input("Click the browser button"), model="fake-model", state_store=store)
@@ -116,7 +114,6 @@ def test_browser_approval_can_resume_safe_approved_readiness_without_frontend_ex
     assert resumed.control_plane_summary["pending_approval_count"] == 0
     assert resumed.raw_payload_persisted is False
 
-
 def test_intent_context_prompt_selects_skill_and_memory_without_dumping_all_tools() -> None:
     store = EndToEndTurnStateStore()
     result = run_end_to_end_assistant_turn(
@@ -132,7 +129,6 @@ def test_intent_context_prompt_selects_skill_and_memory_without_dumping_all_tool
     assert result.prompt_projection.section_kinds.count("capability_schema") <= 1
     assert result.telemetry_summary["selected_capability_schema_count"] <= 1
 
-
 def test_provider_tool_call_mapping_flows_through_integrated_capability_execution() -> None:
     result = run_end_to_end_assistant_turn(
         _turn_input("Use the calculator tool"),
@@ -146,7 +142,6 @@ def test_provider_tool_call_mapping_flows_through_integrated_capability_executio
     assert result.tool_state_projection["result_status"] == "succeeded"
     assert result.tool_state_projection["provider_continuation_ready"] is True
     assert "2 + 2" not in result.model_dump_json()
-
 
 def test_memory_backend_refs_participate_in_context_and_trace_search(tmp_path) -> None:
     memory_store = SQLiteMemoryStore(memory_db_path=tmp_path / "memory.sqlite", local_user_root=tmp_path)
@@ -185,7 +180,6 @@ def test_memory_backend_refs_participate_in_context_and_trace_search(tmp_path) -
     assert traces.match_count == 1
     assert "concise implementation" not in str(traces.safe_projection()).lower()
 
-
 def test_safe_browser_read_workflow_executes_live_adapter_without_approval() -> None:
     result = run_end_to_end_assistant_turn(
         _turn_input("Read the browser page text"),
@@ -198,3 +192,80 @@ def test_safe_browser_read_workflow_executes_live_adapter_without_approval() -> 
     assert result.tool_state_projection["pending_approval_count"] == 0
     assert result.telemetry_summary["browser_execution_status"] == "succeeded"
     assert "Public browser page text" not in result.model_dump_json()
+
+def test_semantic_router_classifier_can_drive_integrated_intent_without_policy_ownership() -> None:
+    from packages.adapters.intent.harness_semantic_router import (
+        RouteDefinition,
+        RouteExample,
+        SemanticRouteScore,
+        SemanticRouterAdapterConfig,
+        SemanticRouterHarnessAdapter,
+        SemanticRouterThresholdPolicy,
+    )
+
+    config = SemanticRouterAdapterConfig(
+        schema_version="1",
+        backend_enabled=True,
+        threshold_policy=SemanticRouterThresholdPolicy(min_confidence=0.6, clarification_confidence=0.45),
+        routes=(
+            RouteDefinition(route_id="route.mcp", intent_kind=IntentKind.MCP_NEEDED, examples=(RouteExample(text="use mcp safe lookup"),)),
+            RouteDefinition(route_id="route.browser", intent_kind=IntentKind.BROWSER_COMPUTER_USE, examples=(RouteExample(text="read browser page"),)),
+        ),
+    )
+    adapter = SemanticRouterHarnessAdapter(
+        config=config,
+        score_backend=lambda text, routes: (SemanticRouteScore(route_id="route.mcp", score=0.93),),
+    )
+
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use the external protocol tool for a public lookup"),
+        model="fake-model",
+        intent_classifier=adapter.route_request,
+    )
+
+    assert result.intent_projection.selected_intent["intent_kind"] == "mcp_needed"
+    assert result.intent_projection.route_reason_code == "semantic_router.score"
+    assert result.tool_state_projection["result_status"] == "not_executed"
+    assert result.control_plane_summary["intent_backend"] == "semantic_router"
+    assert result.control_plane_summary["library_owns_policy"] is False
+
+def test_memory_tree_evidence_participates_in_context_prompt_telemetry_and_control_plane() -> None:
+    from packages.connector_runtime import ConnectorCategory, ConnectorRef
+    from packages.memory_tree_runtime import CanonicalSourceMetadata, MemoryTreeRuntime, canonicalize_source_document, chunk_document
+
+    metadata = CanonicalSourceMetadata(
+        source_id="source-memory-tree",
+        external_id="doc-1",
+        uri="local://memory/doc-1",
+        title="Memory Tree Plan",
+        connector_ref=ConnectorRef(connector_id="local-memory", category=ConnectorCategory.GENERIC_OAUTH),
+        captured_at=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    document = canonicalize_source_document(
+        metadata=metadata,
+        markdown_body="Memory tree evidence supports source grounded assistant context.",
+        ingested_at=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    chunks = chunk_document(document, max_chars=120)
+    memory_tree = MemoryTreeRuntime.with_documents(documents=(document,), chunks=chunks)
+    store = EndToEndTurnStateStore()
+
+    result = run_end_to_end_assistant_turn(
+        _turn_input("Use memory tree evidence for this answer"),
+        model="fake-model",
+        state_store=store,
+        memory_tree_runtime=memory_tree,
+    )
+
+    assert result.intent_projection.selected_intent["intent_kind"] == "memory_tree_needed"
+    assert {source["identifier"] for source in result.context_projection.included_sources} >= {
+        f"memory_tree.node.{chunks[0].chunk_id}",
+        "memory_tree.digest.current",
+    }
+    assert "memory_context" in result.prompt_projection.section_kinds
+    assert result.telemetry_summary["memory_tree_evidence_ref_count"] >= 2
+    assert result.telemetry_summary["memory_tree_context_included"] is True
+    assert result.control_plane_summary["memory_tree_evidence_ref_count"] >= 2
+    serialized = result.model_dump_json().lower()
+    assert "source grounded assistant context" not in serialized
+    assert "quote_preview" not in serialized

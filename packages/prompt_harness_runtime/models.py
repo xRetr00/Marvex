@@ -230,7 +230,7 @@ class PlanningNeedDecision(CapabilityRuntimeModel):
 
     @classmethod
     def from_intent(cls, intent_ref: IntentRef, *, context_candidate_count: int) -> "PlanningNeedDecision":
-        needed = intent_ref.intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_SKILL, IntentKind.MCP_NEEDED, IntentKind.SKILL_NEEDED} or context_candidate_count > 2
+        needed = intent_ref.intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_SKILL, IntentKind.MCP_NEEDED, IntentKind.SKILL_NEEDED, IntentKind.MEMORY_TREE_NEEDED} or context_candidate_count > 2
         return cls(intent_ref=intent_ref, planning_needed=needed, reason_code="planning.context_or_capability_needed" if needed else "planning.not_needed")
 
 

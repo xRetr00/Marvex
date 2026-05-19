@@ -43,6 +43,13 @@ Nango, Airbyte CDK, Meltano/Singer, Pipedream, Markdown/frontmatter parsers rema
 ## Memory Tree Completion Audit Checkpoint
 
 The memory tree follow-up audit closed in-boundary gaps without adding live connector sync. Evidence links now flow through safe tree projections, scoring projections include component explanations, SQLite tree index readbacks include evidence metadata, source forget deletes indexed documents/chunks/scores/tree nodes, and Control Plane web exposes source tree, topic tree, daily digest, evidence drill-down, source forget, and auto-fetch controls. Live OAuth sync, background schedules, and broad account actions remain blocked future work.
+
+## Assistant Intelligence and Tool-Using Runtime Integration Checkpoint
+
+Marvex now has a bounded deeper tool-using assistant turn path. IntentRuntime can use deterministic routing or an injected semantic-router-backed adapter result while still owning Marvex intent decisions. ContextRuntime and PromptHarnessRuntime select only route-relevant safe context, including Memory Tree evidence refs/counts for memory-tree-needed turns. Provider tool calls remain proposals; CapabilityRuntime remains the only owner of approval, execution requests, result envelopes, and dispatch policy. The integration includes the safe browser workflow, allowlisted MCP live proof path, approval resume/deny/cancel state, provider continuation readiness, trace-searchable safe telemetry summaries, and Control Plane-safe counts/status projections.
+
+Still blocked: generic provider routing/model selection, retry/fallback policy, browser-use execution, arbitrary browser/computer actions, arbitrary MCP server launch/install, shell/filesystem tools, live OAuth/account sync, hidden auto-fetch, raw transcript/prompt/tool/provider/browser payload persistence, voice, Orb/Face UI, desktop overlay, and proactive behavior.
+
 ## Validation Baseline
 
 Initial baseline before this cleanup:

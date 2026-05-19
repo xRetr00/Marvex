@@ -16,13 +16,20 @@ pyproject dependency: existing adapter dependencies include `semantic-router==0.
 
 declared dependency: see individual runtime library decision records
 
-verified date: 2026-05-18
+verified date: 2026-05-19
 
 verified by: Codex
 
-scope: Deeper runtime integration only. This checkpoint includes provider tool-call proposal mapping into Marvex-approved safe execution, safe Playwright read workflow execution, allowlisted MCP proof execution, SQLite memory backend safe-ref participation, and trace-searchable safe runtime summaries. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
+scope: Deeper runtime integration only. This checkpoint includes provider tool-call proposal mapping into Marvex-approved safe execution, safe Playwright read workflow execution, allowlisted MCP proof execution, SQLite memory backend safe-ref participation, semantic-router-backed IntentRuntime classification injection, Memory Tree evidence refs in context/prompt/telemetry/control summaries, and trace-searchable safe runtime summaries. No generic provider routing, no model selection, no autonomous planner, no shell/filesystem write execution, no arbitrary MCP server launch, no arbitrary browser/computer action, no credential entry/extraction, no payment/checkout, no CAPTCHA bypass, and no raw payload persistence by default.
 
 adopt / defer / reject decision:
+
+audit classification:
+
+- Real runtime behavior: safe built-in calculator execution, provider tool-call proposal mapping into CapabilityRuntime execution for approved safe tools, Playwright read/extract workflow metadata, approval pause/resume state, allowlisted MCP proof execution, prompt/context budget projections, safe trace summaries, and Memory Tree evidence-ref context inclusion.
+- Proof-only behavior: fake provider continuation readiness, LM Studio/OpenAI/LiteLLM tool-call shape compatibility, local/fake MCP sessions, and browser-use import-backed support.
+- Disabled seams: arbitrary browser/computer execution, browser-use execution, arbitrary MCP server launch/install, broad account/OAuth sync, shell/filesystem tools, and generic provider routing/model selection.
+- Missing but intentionally blocked: service daemon behavior, retry/fallback/model selection, live OAuth ingestion, voice, Orb/Face shell, desktop overlay, proactive behavior, credential entry/extraction, payment/checkout, CAPTCHA bypass, and raw payload persistence.
 
 - Playwright Python: adopted already behind `packages.adapters.capabilities.browser`; this checkpoint adds a safe workflow executor over approved `BrowserExecutionRequest` objects.
 - MCP Python SDK: adopted already behind `packages.adapters.capabilities.mcp`; this checkpoint uses only allowlisted fake/local SDK-session proof paths.

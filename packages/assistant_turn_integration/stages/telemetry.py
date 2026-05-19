@@ -7,7 +7,7 @@ from packages.context_runtime import ContextSourceKind
 from packages.prompt_harness_runtime import HarnessTelemetrySummary
 from packages.telemetry import TelemetrySink, make_trace_event
 
-from packages.assistant_turn_integration.stages.context import _context_source_count
+from packages.assistant_turn_integration.stages.context import _context_source_count, _memory_tree_evidence_ref_count
 
 
 def _telemetry_summary(prompt_result: Any, confidence_bucket: str, context_pack: Any, planning_needed: bool, tool_projection: dict[str, Any]) -> dict[str, Any]:
@@ -18,6 +18,9 @@ def _telemetry_summary(prompt_result: Any, confidence_bucket: str, context_pack:
     data["browser_execution_status"] = tool_projection.get("result_status") if tool_projection.get("browser_action_count") else None
     data["mcp_execution_status"] = tool_projection.get("mcp_execution_status")
     data["memory_context_ref_count"] = _context_source_count(context_pack, ContextSourceKind.MEMORY_PROJECTION)
+    data["memory_tree_evidence_ref_count"] = _memory_tree_evidence_ref_count(context_pack)
+    data["memory_tree_context_included"] = data["memory_tree_evidence_ref_count"] > 0
+    data["provider_continuation_status"] = "ready" if tool_projection.get("provider_continuation_ready") else "not_ready"
     return data
 
 
