@@ -14,3 +14,6 @@ apps/control_plane_web/vite.config.js
 apps/control_plane_web/vite.config.d.ts
 .venv/
 marvex.egg-info/
+.claude/
+.claude_cache/
+Agent.md
