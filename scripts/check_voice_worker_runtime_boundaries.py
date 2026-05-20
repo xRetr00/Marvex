@@ -44,8 +44,16 @@ REQUIRED_MARKERS = (
     "prevents_runaway_recording",
     "VoiceWorkerBackendRuntime",
     "backend_package_not_available",
-    "stt_backend_runner_requires_model_inference_adapter",
-    "tts_backend_runner_requires_model_inference_adapter",
+    "VoiceWorkerSttModelRunner",
+    "VoiceWorkerTtsModelRunner",
+    "MoonshineSttRunner",
+    "SenseVoiceSttRunner",
+    "KokoroOnnxTtsRunner",
+    "PiperTtsRunner",
+    "moonshine_voice.transcriber",
+    "funasr",
+    "kokoro_onnx",
+    "PiperVoice",
     "VoiceWorkerAudioRefStore",
     "VoiceWorkerGeneratedAudioSink",
 )
@@ -94,7 +102,7 @@ def main() -> int:
     if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend:
         failures.append("Control Plane web missing voice worker status and controls")
     doc = DOC.read_text(encoding="utf-8") if DOC.is_file() else ""
-    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle", "VoiceWorkerBackendRuntime", "installed-asset backend readiness"):
+    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle", "VoiceWorkerBackendRuntime", "installed-asset backend readiness", "package-specific model adapters"):
         if phrase not in doc:
             failures.append(f"docs/VOICE_WORKER_RUNTIME.md missing phrase: {phrase}")
     if failures:

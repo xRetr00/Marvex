@@ -1,0 +1,150 @@
+from __future__ import annotations
+
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+from packages.voice_runtime import AudioFrame
+from packages.voice_worker_runtime import VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerBackendRuntime
+
+
+def _install_asset(manager: VoiceAssetManager, root: Path, *, model_id: str, backend_id: str, model_kind: str, relative_path: str) -> None:
+    target = root / relative_path
+    target.mkdir(parents=True, exist_ok=True)
+    result = manager.install_local(
+        VoiceModelInstallRequest(model_id=model_id, backend_id=backend_id, model_kind=model_kind, relative_path=relative_path, explicit_user_triggered=True)
+    )
+    assert result.status == "installed"
+
+
+def test_asset_manager_resolves_installed_path_without_projection_leak(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    _install_asset(manager, root, model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2")
+
+    path = manager.resolve_installed_path("moonshine-v2")
+    serialized = json.dumps(manager.registry().model_dump(mode="json"))
+
+    assert path == (root / "stt" / "moonshine-v2").resolve()
+    assert str(root).lower() not in serialized.lower()
+    assert manager.remove("moonshine-v2").removed is True
+    assert manager.resolve_installed_path("moonshine-v2") is None
+
+
+def test_default_moonshine_runner_invokes_transcriber_with_in_memory_frames(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    _install_asset(manager, root, model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2")
+    calls: list[tuple[str, int, int]] = []
+
+    class FakeTranscriber:
+        def __init__(self, model_path: str) -> None:
+            self.model_path = model_path
+
+        def transcribe_without_streaming(self, audio_data, sample_rate: int):
+            calls.append((self.model_path, len(audio_data), sample_rate))
+            return SimpleNamespace(lines=[SimpleNamespace(text="hello marvex", start_time=0.0, duration=0.25, words=[])])
+
+        def close(self) -> None:
+            calls.append(("closed", 0, 0))
+
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: SimpleNamespace(Transcriber=FakeTranscriber))
+    audio_ref = runtime.remember_captured_frames(trace_id="trace-moonshine", frames=(AudioFrame(frame_id="f1", pcm=b"\x00\x00\xff\x7f", sample_rate=16_000, channel_count=1, duration_ms=100),))
+
+    result = runtime.test_stt(trace_id="trace-moonshine", backend_id="moonshine-v2", audio_ref_id=audio_ref)
+
+    assert result.status == "succeeded"
+    assert result.text == "hello marvex"
+    assert calls[0] == (str((root / "stt" / "moonshine-v2").resolve()), 2, 16_000)
+    assert calls[-1][0] == "closed"
+    assert "hello marvex" not in json.dumps(result.safe_projection()).lower()
+
+
+def test_default_sensevoice_runner_invokes_funasr_automodel(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    _install_asset(manager, root, model_id="sensevoice-small", backend_id="sensevoice-small", model_kind="stt", relative_path="stt/sensevoice-small")
+    calls: list[tuple[str, int, int]] = []
+
+    class FakeAutoModel:
+        def __init__(self, model: str, **kwargs) -> None:
+            calls.append((model, 0, 0))
+
+        def generate(self, input, fs: int, **kwargs):
+            calls.append(("generate", len(input), fs))
+            return [{"text": "fallback transcript"}]
+
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: SimpleNamespace(AutoModel=FakeAutoModel))
+    audio_ref = runtime.remember_captured_frames(trace_id="trace-sense", frames=(AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),))
+
+    result = runtime.test_stt(trace_id="trace-sense", backend_id="sensevoice-small", audio_ref_id=audio_ref)
+
+    assert result.status == "succeeded"
+    assert result.text == "fallback transcript"
+    assert calls[0][0] == str((root / "stt" / "sensevoice-small").resolve())
+    assert calls[1] == ("generate", 2, 16_000)
+
+
+def test_default_kokoro_runner_synthesizes_to_generated_audio_ref(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    asset_dir = root / "tts" / "kokoro-af-heart"
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "model.onnx").write_bytes(b"onnx")
+    (asset_dir / "voices.npy").write_bytes(b"voices")
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    calls: list[tuple[str, str, str]] = []
+
+    class FakeAudio:
+        def astype(self, dtype):
+            return self
+
+        def tobytes(self) -> bytes:
+            return b"kokoro-pcm"
+
+    class FakeKokoro:
+        def __init__(self, model_path: str, voices_path: str) -> None:
+            calls.append((model_path, voices_path, "init"))
+
+        def create(self, text: str, voice: str):
+            calls.append((text, voice, "create"))
+            return FakeAudio(), 24_000
+
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: SimpleNamespace(Kokoro=FakeKokoro))
+
+    result = runtime.test_tts(trace_id="trace-kokoro", backend_id="kokoro-onnx", voice_id="af_heart", text="hello there")
+
+    assert result.status == "succeeded"
+    assert result.audio_ref == "memory://voice/generated/trace-kokoro/af_heart"
+    assert runtime.generated_audio.resolve(result.audio_ref) == b"kokoro-pcm"
+    assert calls[0] == (str(asset_dir / "model.onnx"), str(asset_dir / "voices.npy"), "init")
+    assert calls[1] == ("hello there", "af_heart", "create")
+
+
+def test_default_piper_runner_synthesizes_chunks_to_generated_audio_ref(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    asset_dir = root / "tts" / "piper-default"
+    asset_dir.mkdir(parents=True)
+    (asset_dir / "voice.onnx").write_bytes(b"onnx")
+    (asset_dir / "voice.onnx.json").write_text("{}", encoding="utf-8")
+    manager.install_local(VoiceModelInstallRequest(model_id="piper-default", backend_id="piper-tts", model_kind="tts_voice", relative_path="tts/piper-default", explicit_user_triggered=True))
+    calls: list[str] = []
+
+    class FakeVoice:
+        @staticmethod
+        def load(model_path: str, config_path: str | None = None):
+            calls.append(f"load:{model_path}:{config_path}")
+            return FakeVoice()
+
+        def synthesize(self, text: str):
+            calls.append(f"synthesize:{text}")
+            return [SimpleNamespace(audio_int16_bytes=b"one", sample_rate=22_050), SimpleNamespace(audio_int16_bytes=b"two", sample_rate=22_050)]
+
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: SimpleNamespace(PiperVoice=FakeVoice))
+
+    result = runtime.test_tts(trace_id="trace-piper", backend_id="piper-tts", voice_id="piper-default", text="speak now")
+
+    assert result.status == "succeeded"
+    assert runtime.generated_audio.resolve(result.audio_ref or "") == b"onetwo"
+    assert calls == [f"load:{asset_dir / 'voice.onnx'}:{asset_dir / 'voice.onnx.json'}", "synthesize:speak now"]

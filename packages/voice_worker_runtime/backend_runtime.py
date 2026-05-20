@@ -10,6 +10,7 @@ from packages.voice_runtime.base import VoiceRuntimeModel
 from packages.voice_runtime.errors import VoiceErrorEnvelope
 
 from .assets import VoiceAssetManager, VoiceModelInstallResult
+from .model_adapters import VoiceWorkerSttModelRunner, VoiceWorkerTtsModelRunner
 
 
 class VoiceWorkerAudioRef(VoiceRuntimeModel):
@@ -88,6 +89,7 @@ class VoiceWorkerGeneratedAudioSink:
 SttRunner = Callable[[TranscriptionRequest, VoiceModelInstallResult], TranscriptionResult]
 TtsRunner = Callable[[SpeechSynthesisRequest, VoiceModelInstallResult], SpeechSynthesisResult]
 WakewordRunner = Callable[[tuple[AudioFrame, ...], VoiceModelInstallResult], WakeWordDetectionResult]
+ModuleLoader = Callable[[str], Any]
 
 
 _STT_MODELS = {
@@ -115,12 +117,24 @@ class VoiceWorkerBackendRuntime:
         wakeword_runner: WakewordRunner | None = None,
         audio_refs: VoiceWorkerAudioRefStore | None = None,
         generated_audio: VoiceWorkerGeneratedAudioSink | None = None,
+        module_loader: ModuleLoader | None = None,
     ) -> None:
         self.asset_manager = asset_manager
         self.audio_refs = audio_refs or VoiceWorkerAudioRefStore()
         self.generated_audio = generated_audio or VoiceWorkerGeneratedAudioSink()
-        self._stt_runner = stt_runner or self._default_stt_runner
-        self._tts_runner = tts_runner or self._default_tts_runner
+        self._module_loader = module_loader or import_module
+        self._stt_runner = stt_runner or VoiceWorkerSttModelRunner(
+            asset_manager=self.asset_manager,
+            audio_refs=self.audio_refs,
+            transcriber_factory=lambda model_path: self._module_loader("moonshine_voice.transcriber").Transcriber(model_path),
+            automodel_factory=lambda **kwargs: self._module_loader("funasr").AutoModel(**kwargs),
+        )
+        self._tts_runner = tts_runner or VoiceWorkerTtsModelRunner(
+            asset_manager=self.asset_manager,
+            generated_audio=self.generated_audio,
+            kokoro_factory=lambda *args, **kwargs: self._module_loader("kokoro_onnx").Kokoro(*args, **kwargs),
+            voice_loader=lambda *args, **kwargs: self._module_loader("piper").PiperVoice.load(*args, **kwargs),
+        )
         self._wakeword_runner = wakeword_runner
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
@@ -217,33 +231,6 @@ class VoiceWorkerBackendRuntime:
         if not package["import_available"]:
             return "backend_package_not_available"
         return None
-
-    def _default_stt_runner(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
-        del asset
-        backend_id = request.backend_id or "unknown-stt"
-        frames = self.audio_refs.resolve(request.audio_ref_id)
-        if not frames:
-            return TranscriptionResult.failed(
-                trace_id=request.trace_id,
-                backend_id=backend_id,
-                duration_ms=request.duration_ms,
-                error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=backend_id, reason_code="stt_audio_ref_not_available"),
-            )
-        return TranscriptionResult.failed(
-            trace_id=request.trace_id,
-            backend_id=backend_id,
-            duration_ms=sum(frame.duration_ms for frame in frames),
-            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=backend_id, reason_code="stt_backend_runner_requires_model_inference_adapter"),
-        )
-
-    def _default_tts_runner(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
-        del asset
-        return SpeechSynthesisResult.failed(
-            trace_id=request.trace_id,
-            backend_id=request.backend_id or "unknown-tts",
-            voice_id=request.voice_id,
-            error=VoiceErrorEnvelope.backend_error(trace_id=request.trace_id, backend_id=request.backend_id or "unknown-tts", reason_code="tts_backend_runner_requires_model_inference_adapter"),
-        )
 
 
 def _resolve(mapping: dict[str, tuple[str, str, str]], backend_id: str, *, default_model: str) -> tuple[str, str, str]:

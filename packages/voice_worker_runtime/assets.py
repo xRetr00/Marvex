@@ -64,6 +64,7 @@ class VoiceAssetManager:
     def __init__(self, *, asset_root: Path | None = None) -> None:
         self.asset_root = (asset_root or Path(".marvex") / "voice-assets").resolve()
         self._installed: dict[str, VoiceModelInstallResult] = {}
+        self._paths: dict[str, Path] = {}
 
     def install_local(self, request: VoiceModelInstallRequest) -> VoiceModelInstallResult:
         target = (self.asset_root / request.relative_path).resolve()
@@ -100,11 +101,24 @@ class VoiceAssetManager:
             checksum_present=bool(request.checksum_sha256),
         )
         self._installed[request.model_id] = result
+        self._paths[request.model_id] = target
         return result
 
     def remove(self, model_id: str) -> VoiceModelRemoveResult:
         removed = self._installed.pop(model_id, None) is not None
+        self._paths.pop(model_id, None)
         return VoiceModelRemoveResult(model_id=model_id, removed=removed, reason_code="voice_worker.asset.removed" if removed else "voice_worker.asset.not_found")
+
+    def resolve_installed_path(self, model_id: str) -> Path | None:
+        item = self._installed.get(model_id)
+        target = self._paths.get(model_id)
+        if item is None or item.status != "installed" or target is None:
+            return None
+        if not target.resolve().is_relative_to(self.asset_root):
+            return None
+        if not target.exists():
+            return None
+        return target
 
     def registry(self) -> InstalledModelRegistry:
         installed = tuple(self._installed.values())
