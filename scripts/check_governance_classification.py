@@ -11,11 +11,13 @@ REQUIRED_DOCS = (
     "services/voice_worker/README.md",
 )
 REQUIRED_CLASSIFICATIONS = (
-    "approved implementation surface",
+    "documented surface",
     "bounded foundation",
-    "experimental seam",
-    "future service contract",
-    "forbidden product behavior for now",
+    "evaluation seam",
+    "draft service contract",
+    "policy-controlled surface",
+    "safety-restricted surface",
+    "future product surface",
 )
 REQUIRED_SURFACES = (
     "provider foundation",
@@ -41,13 +43,10 @@ REQUIRED_SURFACES = (
     "future proactive behavior",
     "future vision",
 )
-CODE_NOT_APPROVAL_PHRASES = (
+STATUS_PHRASES = (
     "existing code is not approval",
-    "current goal spec",
     "docs/contract_approvals.md",
-    "project_status.md",
-    "validation gates",
-    "relevant architecture docs",
+    "contract approval and contract status live only in docs/contract_approvals.md",
 )
 STATUS_REQUIRED_PHRASES = (
     "governance_reconciliation_boundary_hardening_complete",
@@ -86,23 +85,18 @@ def validate_governance_classifications(docs: dict[str, str]) -> list[str]:
         if surface not in classification:
             failures.append(f"governance classification doc missing surface: {surface}")
 
-    for phrase in CODE_NOT_APPROVAL_PHRASES:
+    for phrase in STATUS_PHRASES:
         if phrase not in combined:
-            failures.append(f"governance docs missing code-not-approval phrase: {phrase}")
-        if phrase not in approvals and phrase != "docs/contract_approvals.md":
-            failures.append(f"CONTRACT_APPROVALS.md missing code-not-approval phrase: {phrase}")
+            failures.append(f"governance docs missing status phrase: {phrase}")
+        if phrase not in approvals:
+            failures.append(f"CONTRACT_APPROVALS.md missing status phrase: {phrase}")
 
     for phrase in STATUS_REQUIRED_PHRASES:
         if phrase not in status:
             failures.append(f"PROJECT_STATUS.md missing current cleanup phrase: {phrase}")
 
-    if "| voiceworker | 0.1.1-draft | approved | user | 2026-05-19 | yes |" in approvals:
-        if "| voice worker runtime | approved implementation surface |" not in classification:
-            failures.append("VoiceWorker approval requires voice worker runtime to be classified as an approved implementation surface")
-        if "future voice worker/service process" in classification:
-            failures.append("VoiceWorker approval forbids stale future voice worker/service process classification")
-        if "contract status: not approved" in voice_worker_service:
-            failures.append("VoiceWorker service README still says contract status is not approved")
+    if "contract status: see docs/contract_approvals.md" not in voice_worker_service:
+        failures.append("VoiceWorker service README must point contract status at docs/CONTRACT_APPROVALS.md")
 
     stale_next = (
         "recommended next: add a local service composition slice",

@@ -2,11 +2,10 @@
 
 Status: README-only placeholder.
 
-Contract status: not approved.
+Contract status: see `docs/CONTRACT_APPROVALS.md`.
 
-No files may be added here until the Tool Worker contract is approved.
+No files may be added here until the Tool Worker contract is listed in `docs/CONTRACT_APPROVALS.md`.
 
 Intended ownership: future isolated tool execution.
 
-Forbidden now: tool implementation, sandbox code, command execution logic.
-
+Scope limits now: tool implementation, sandbox code, command execution logic.

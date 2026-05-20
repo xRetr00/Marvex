@@ -40,4 +40,4 @@ The next phase now starts in `packages.voice_worker_runtime`. VoiceRuntime remai
 
 ## Still Outside This Foundation
 
-VoiceRuntime itself still does not own service daemon behavior, OS microphone supervision, Orb/Face UI, desktop overlay, final visual assistant shell, vision, or proactive non-voice behavior. The approved local-only VoiceWorker contract now owns the separate worker process boundary and OS audio adapter path.
+VoiceRuntime itself still does not own service daemon behavior, OS microphone supervision, Orb/Face UI, desktop overlay, final visual assistant shell, vision, or proactive non-voice behavior. The local-only VoiceWorker contract listed in `docs/CONTRACT_APPROVALS.md` now owns the separate worker process boundary and OS audio adapter path.

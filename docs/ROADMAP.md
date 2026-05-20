@@ -4,15 +4,15 @@ Marvex is built as correct Assistant OS infrastructure first. The roadmap is a g
 
 ## Current Reality
 
-Several surfaces that were once future-only now exist as bounded internal foundations. They are not product expansion approval.
+Several surfaces that were once future-only now exist as bounded internal foundations. Contract approval still lives in `docs/CONTRACT_APPROVALS.md`.
 
 Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, assistant loop primitives, and assistant turn integration.
 
 The current cleanup phase is governance reconciliation, boundary hardening, and foundation cleanup before adding new capability surfaces.
 
-## Phase 1: Approved Provider Foundation
+## Phase 1: Provider Foundation
 
-Approved implementation surfaces remain limited to provider-foundation contracts and explicit provider proof paths. Provider turns are still not the final assistant turn model.
+Provider-foundation contracts and explicit provider proof paths remain the current provider surface. Provider turns are still not the final assistant turn model.
 
 ## Phase 2: Bounded Internal Foundations
 
@@ -24,15 +24,15 @@ Every bounded foundation must have:
 - safe projection rules
 - validation gates
 - status and architecture documentation
-- explicit blocked behavior
+- explicit scope limits
 
 ## Phase 3: Process Readiness
 
-Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are approved. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
+Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are listed in `docs/CONTRACT_APPROVALS.md`. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
 
 ## Phase 4: Future Product Surfaces
 
-Future product surfaces remain blocked unless separately approved:
+Future product surfaces remain outside the current product surface until a matching contract is listed in `docs/CONTRACT_APPROVALS.md`:
 
 - voice worker
 - desktop agent

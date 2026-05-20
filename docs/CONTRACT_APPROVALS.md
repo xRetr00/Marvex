@@ -1,6 +1,6 @@
 # Contract Approvals
 
-This registry controls whether a documented contract may be used for implementation.
+This registry controls whether a documented contract may be used for implementation. It is the only file in the repository that records approval state. Contract approval and contract status live only in `docs/CONTRACT_APPROVALS.md`.
 
 `docs/CONTRACTS.md` describes intended contract shapes. A contract is not implementation-approved until this registry says `approval_status: approved` and `implementation_allowed: yes`.
 

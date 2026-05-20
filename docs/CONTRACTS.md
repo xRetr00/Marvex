@@ -2,15 +2,12 @@
 
 All contracts are JSON-compatible. Product code must not invent private shapes for the same data.
 
-Contracts are implementation-draft until approved in `docs/CONTRACT_APPROVALS.md`.
+Contracts are implementation-draft until listed in `docs/CONTRACT_APPROVALS.md`.
 
-Current approved contracts are provider-foundation contracts, not assistant-turn
-contracts. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and
-`FinalResponse` must not be silently repurposed as full assistant-turn contracts.
+Current provider-foundation contracts are listed in `docs/CONTRACT_APPROVALS.md`; they are not full assistant-turn contracts. `TurnInput`, `TurnOutput`, `ProviderRequest`, `ProviderResponse`, and `FinalResponse` must not be silently repurposed as full assistant-turn contracts.
 Assistant-level contract planning lives in `docs/ASSISTANT_TURN_CONTRACT_MAP.md`.
-The smallest approved assistant envelope lives in
-`docs/ASSISTANT_TURN_ENVELOPE.md`.
-Approved assistant envelope schemas live in `docs/ASSISTANT_TURN_CONTRACTS.md`.
+The smallest assistant envelope lives in `docs/ASSISTANT_TURN_ENVELOPE.md`.
+Assistant envelope schemas live in `docs/ASSISTANT_TURN_CONTRACTS.md`.
 
 ## General Validation Rules
 
@@ -67,7 +64,7 @@ Fields:
 - `schema_version`: string, required, non-empty.
 - `trace_id`: string, required, non-empty.
 - `turn_id`: string, required, non-empty.
-- `input_text`: string, required, may be empty only if an approved future input mode defines that behavior.
+- `input_text`: string, required, may be empty only if a future input mode listed in `docs/CONTRACT_APPROVALS.md` defines that behavior.
 - `previous_response_id`: string or null, required, nullable.
 - `source`: string enum, required, initially `cli`.
 - `metadata`: object, required, may be empty.
@@ -177,7 +174,7 @@ Conversation continuity:
 - Core may copy `TurnInput.previous_response_id` into `ProviderRequest.previous_response_id` after validation.
 - Core returns `provider_response_id` in `TurnOutput`.
 - Core must not maintain hidden global conversation history in v1.
-- A future session store must be explicit, contract-owned, and approved before implementation.
+- A future session store must be explicit, contract-owned, and listed in `docs/CONTRACT_APPROVALS.md` before implementation.
 
 ## ProviderResponse
 
@@ -258,7 +255,7 @@ Fields:
 - `status`: string enum, required. Allowed values: `ok`, `degraded`, `starting`, `stopping`, `error`.
 - `version`: string, required, non-empty.
 - `uptime_seconds`: number, required, non-negative. In a future runtime, this is seconds since the reporting service started.
-- `dependencies`: object, required, may be empty. No nested dependency-status schema is approved yet.
+- `dependencies`: object, required, may be empty. No nested dependency-status schema is listed in `docs/CONTRACT_APPROVALS.md` yet.
 
 No timestamp field exists on `HealthCheck`. If a future service needs observed
 time, that field requires an approved contract change.
@@ -300,7 +297,7 @@ Purpose: Local-only worker service boundary for voice capture, wakeword/VAD,
 STT/TTS backend execution, speaker playback, model asset readiness/downloads,
 heartbeat/status, and safe worker telemetry.
 
-Approval status: approved in `docs/CONTRACT_APPROVALS.md`.
+Contract status: listed in `docs/CONTRACT_APPROVALS.md`.
 
 Fields are implemented as bounded Pydantic models in
 `packages.voice_worker_runtime.models`:

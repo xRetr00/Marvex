@@ -18,13 +18,14 @@ def test_governance_gate_requires_all_major_surfaces_to_be_classified() -> None:
 
 def test_governance_gate_accepts_explicit_classifications_and_code_not_approval_rule() -> None:
     classification_rows = "\n".join(
-        f"| {surface} | bounded foundation: implementation exists, but expansion is blocked without explicit approval | owner | blocked |"
+        f"| {surface} | bounded foundation | owner | notes |"
         for surface in REQUIRED_SURFACES
     )
     docs = {
-        "docs/GOVERNANCE_CLASSIFICATION.md": "Existing code is not approval.\napproved implementation surface\nbounded foundation\nexperimental seam\nfuture service contract\nforbidden product behavior for now\ndocs/CONTRACT_APPROVALS.md\n" + classification_rows,
-        "docs/CONTRACT_APPROVALS.md": "Existing code is not approval.\ncurrent goal spec\nPROJECT_STATUS.md\nvalidation gates\nrelevant architecture docs\n",
+        "docs/GOVERNANCE_CLASSIFICATION.md": "Existing code is not approval.\ndocumented surface\nbounded foundation\nevaluation seam\ndraft service contract\npolicy-controlled surface\nsafety-restricted surface\nfuture product surface\ndocs/CONTRACT_APPROVALS.md\n" + classification_rows,
+        "docs/CONTRACT_APPROVALS.md": "Existing code is not approval.\ncontract approval and contract status live only in docs/CONTRACT_APPROVALS.md\n",
         "PROJECT_STATUS.md": "governance_reconciliation_boundary_hardening_complete\nnext recommended goal: foundation cleanup\n",
+        "services/voice_worker/README.md": "Contract status: see `docs/CONTRACT_APPROVALS.md`\n",
     }
 
     assert validate_governance_classifications(docs) == []

@@ -47,8 +47,8 @@ def main() -> int:
     if "Runtime Policy" not in ui_text or "Runtime Policy / Autonomy Modes" not in views_text:
         failures.append("Control Plane runtime policy selector view is required")
     docs_text = (ROOT / "docs" / "GOVERNANCE_CLASSIFICATION.md").read_text(encoding="utf-8")
-    if "policy-controlled" not in docs_text or "hard-blocked blacklist only" not in docs_text:
-        failures.append("governance docs must distinguish policy-controlled from hard-blocked blacklist only")
+    if "policy-controlled surface" not in docs_text or "safety-restricted surface" not in docs_text:
+        failures.append("governance docs must distinguish policy-controlled surfaces from safety-restricted surfaces")
     blanket_block_terms = (
         "broad oauth sync",
         "hidden auto-fetch",

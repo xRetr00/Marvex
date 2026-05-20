@@ -10,8 +10,9 @@ process-ready desktop application where major modules can be replaced, disabled,
 or moved into subprocesses.
 
 `PROJECT_STATUS.md` is authoritative for the current phase and allowed work.
-Implementation is allowed only through approved task slices with contracts,
-tests, validation scripts, and final reports.
+Implementation is allowed only through task slices with contracts,
+tests, validation scripts, and final reports, and any contract-status question
+must be answered in `docs/CONTRACT_APPROVALS.md`.
 
 Agents should start orientation with `docs/SYSTEM_MAP.md`,
 `docs/MODULE_INDEX.md`, and `docs/AGENT_CONTEXT_RULES.md` before broad source
@@ -31,9 +32,9 @@ report.
 
 ## Current Implementation
 
-Marvex has two approved implementation surfaces — provider foundation contracts and approved assistant envelope contracts — plus a set of bounded foundations classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Bounded foundations include assistant turn integration, telemetry, local API, control plane API and web, capability runtime, tool execution foundations, MCP adapter, browser/computer-use adapter seam, memory runtime, memory tree and connectors, marketplace runtime, session runtime, intent/context/prompt harness runtimes, hybrid intent and web search, grounded evidence, adaptive context and learning, autonomy policy, and voice runtime.
+Marvex contains provider foundation contracts, assistant envelope contracts, and a set of bounded foundations classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Contract approval and contract status live only in `docs/CONTRACT_APPROVALS.md`.
 
-Bounded foundations may be maintained and tested inside their current ownership boundaries but may not expand without an explicit goal update to `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and architecture docs. Service placeholders under `services/` remain README-only until their service contracts are approved. See `docs/GOVERNANCE_CLASSIFICATION.md` for the full classification of each surface and its expansion state.
+Bounded foundations may be maintained and tested inside their current ownership boundaries. Any contract-status change must be recorded in `docs/CONTRACT_APPROVALS.md` first. Service placeholders under `services/` remain README-only until their matching contract is listed there. See `docs/GOVERNANCE_CLASSIFICATION.md` for the scope and ownership map of each surface.
 
 ## Current Boundary
 
@@ -41,15 +42,15 @@ Allowed now:
 
 - Documentation, templates, and validation scripts.
 - README/status/library/schema governance cleanup.
-- Approved task slices only.
+- Task slices tied to the documented surface map.
 - Service placeholder READMEs.
 
-Forbidden now:
+Out of scope now:
 
-- Unapproved product behavior changes.
-- Provider behavior changes outside approved adapter tasks.
-- CLI behavior changes outside approved API tasks.
-- Telemetry runtime behavior changes outside approved telemetry tasks.
+- Product behavior changes outside the documented surface and contract-status workflow.
+- Provider behavior changes outside the provider adapter boundary.
+- CLI behavior changes outside the CLI boundary.
+- Telemetry runtime behavior changes outside the telemetry boundary.
 - UI code.
 - Tool execution.
 - Memory systems.

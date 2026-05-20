@@ -15,7 +15,7 @@ REQUIRED_STATUS_PHRASES = (
     "accepted_docs: true",
     "Existing foundations are now classified",
     "CapabilityRuntime remains authoritative",
-    "Assistant turn integration coordinates approved runtime layers",
+    "Assistant turn integration coordinates documented runtime layers",
     "Next Recommended Goal",
 )
 FORBIDDEN_STATUS_PHRASES = (
@@ -27,15 +27,17 @@ FORBIDDEN_STATUS_PHRASES = (
 )
 REQUIRED_GOVERNANCE_PHRASES = (
     "Existing code is not approval",
-    "approved implementation surface",
+    "documented surface",
     "bounded foundation",
-    "experimental seam",
-    "future service contract",
-    "forbidden product behavior for now",
+    "evaluation seam",
+    "draft service contract",
+    "policy-controlled surface",
+    "safety-restricted surface",
+    "future product surface",
 )
 REQUIRED_ROADMAP_PHRASES = (
     "bounded internal foundations",
-    "not product expansion approval",
+    "contract approval still lives in `docs/CONTRACT_APPROVALS.md`",
     "governance reconciliation, boundary hardening, and foundation cleanup",
     "Existing code is not approval",
 )

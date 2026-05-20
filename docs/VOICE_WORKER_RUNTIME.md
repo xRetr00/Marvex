@@ -1,6 +1,6 @@
 # Voice Worker Runtime
 
-Contract status: `VoiceWorker` is approved in `docs/CONTRACT_APPROVALS.md` for local-only worker runtime implementation.
+Contract status: `VoiceWorker` is listed in `docs/CONTRACT_APPROVALS.md` for local-only worker runtime implementation.
 
 Marvex now has the first dedicated local voice worker process boundary after the in-process VoiceRuntime foundation. This is the live local voice runtime worker direction; it is not Orb, not Face UI, not desktop overlay, not vision, and not the final visual assistant shell.
 

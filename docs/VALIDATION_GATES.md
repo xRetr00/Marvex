@@ -734,7 +734,7 @@ Policy state: MCP install/execute, skill update/create, and shell execution are 
 
 ### Governance Classification Gate
 
-Every major implemented or future surface must be classified in `docs/GOVERNANCE_CLASSIFICATION.md` as one of: approved implementation surface, bounded foundation, experimental seam, future service contract, or forbidden product behavior for now.
+Every major implemented or future surface must be classified in `docs/GOVERNANCE_CLASSIFICATION.md` as one of: documented surface, bounded foundation, evaluation seam, draft service contract, policy-controlled surface, safety-restricted surface, or future product surface.
 
 This gate enforces the rule that existing code is not approval. Future work is allowed only when supported by the current goal spec, `docs/CONTRACT_APPROVALS.md`, `PROJECT_STATUS.md`, validation gates, and relevant architecture docs.
 
