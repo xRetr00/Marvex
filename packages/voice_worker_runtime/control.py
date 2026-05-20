@@ -36,6 +36,18 @@ class VoiceWorkerControlPlaneFacade:
     def assets_status(self) -> dict[str, object]:
         return self.assets.registry().model_dump(mode="json")
 
+    def start_wakeword_supervisor(self) -> dict[str, object]:
+        return self.controller.start_wakeword_supervisor(explicit_user_triggered=True).safe_projection()
+
+    def stop_wakeword_supervisor(self) -> dict[str, object]:
+        return self.controller.stop_wakeword_supervisor(explicit_user_triggered=True).safe_projection()
+
+    def tick_wakeword_supervisor(self) -> dict[str, object]:
+        return self.controller.tick_wakeword_supervisor().safe_projection()
+
+    def wakeword_supervisor_health(self) -> dict[str, object]:
+        return self.controller.wakeword_supervisor_health().safe_projection()
+
 
 def _strip_raw_keys(value: Any) -> Any:
     if isinstance(value, dict):

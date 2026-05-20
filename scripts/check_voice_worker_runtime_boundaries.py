@@ -56,6 +56,18 @@ REQUIRED_MARKERS = (
     "PiperVoice",
     "VoiceWorkerAudioRefStore",
     "VoiceWorkerGeneratedAudioSink",
+    "WakewordWorkerSupervisor",
+    "WakewordSupervisorPolicy",
+    "WakewordSupervisorLifecycleState",
+    "WakewordSupervisorHealth",
+    "WakewordSupervisorTickResult",
+    "wakeword_supervisor.halted",
+    "wakeword_supervisor.not_started",
+    "wakeword_supervisor.backoff_active",
+    "wakeword_supervisor.clean_shutdown",
+    "wakeword_supervisor.explicit_user_required",
+    "auto_restart_enabled",
+    "wakeword_supervisor_status",
 )
 CONTROL_TERMS = (
     "/control/voice/worker",
@@ -102,7 +114,7 @@ def main() -> int:
     if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend:
         failures.append("Control Plane web missing voice worker status and controls")
     doc = DOC.read_text(encoding="utf-8") if DOC.is_file() else ""
-    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle", "VoiceWorkerBackendRuntime", "installed-asset backend readiness", "package-specific model adapters"):
+    for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle", "VoiceWorkerBackendRuntime", "installed-asset backend readiness", "package-specific model adapters", "WakewordWorkerSupervisor", "explicit visible wakeword supervision"):
         if phrase not in doc:
             failures.append(f"docs/VOICE_WORKER_RUNTIME.md missing phrase: {phrase}")
     if failures:

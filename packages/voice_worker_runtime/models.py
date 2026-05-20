@@ -185,6 +185,7 @@ class VoiceWorkerStatus(VoiceRuntimeModel):
     stt_backend_status: dict[str, Any] = Field(default_factory=dict)
     tts_backend_status: dict[str, Any] = Field(default_factory=dict)
     wakeword_model_status: dict[str, Any] = Field(default_factory=dict)
+    wakeword_supervisor_status: dict[str, Any] = Field(default_factory=dict)
     telemetry: dict[str, Any] = Field(default_factory=dict)
     telemetry_summary: dict[str, Any] = Field(default_factory=dict)
     raw_audio_persisted: Literal[False] = False
@@ -214,6 +215,7 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
     stt_backend_status: dict[str, object] = Field(default_factory=dict)
     tts_backend_status: dict[str, object] = Field(default_factory=dict)
     wakeword_model_status: dict[str, object] = Field(default_factory=dict)
+    wakeword_supervisor_status: dict[str, object] = Field(default_factory=dict)
     telemetry: dict[str, object] = Field(default_factory=dict)
     telemetry_summary: dict[str, object] = Field(default_factory=dict)
     local_only: Literal[True] = True
@@ -246,6 +248,7 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
             stt_backend_status=safe_mapping(status.stt_backend_status),
             tts_backend_status=safe_mapping(status.tts_backend_status),
             wakeword_model_status=safe_mapping(status.wakeword_model_status),
+            wakeword_supervisor_status=safe_mapping(status.wakeword_supervisor_status),
             telemetry=safe_mapping(status.telemetry),
             telemetry_summary=safe_mapping(status.telemetry_summary or status.telemetry),
         )

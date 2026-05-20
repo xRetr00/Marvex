@@ -26,6 +26,7 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 - Worker wakeword tests now pass captured frames through the backend runtime when a runner is configured, while missing Hey Marvex assets still report not-ready instead of fake success.
 - Barge-in test path that interrupts playback and clears queued TTS state.
 - Worker-safe telemetry summaries expose event counts and durations/counts only; they do not include raw audio, raw transcripts, generated audio, secrets, or provider/tool payloads.
+- `WakewordWorkerSupervisor` adds explicit visible wakeword supervision inside the worker boundary. It owns its own lifecycle states (`stopped`, `starting`, `running`, `degraded`, `halted`), runs detection ticks only when the configured Hey Marvex asset is installed and the wakeword backend package is importable, applies bounded exponential backoff between failed ticks, halts the loop after a configurable consecutive failure threshold so the user can intervene, and emits a clean shutdown signal on explicit worker stop. Hidden auto-start remains disallowed: every supervisor start, stop, and clean shutdown transition must be explicit-user-triggered. The supervisor never persists raw audio, raw transcripts, or generated audio. Safe `wakeword_supervisor_status` projections expose lifecycle state, started flag, consecutive failures, current backoff, last/next tick timestamps, asset readiness, backend id, phrase, `auto_restart_enabled`, and exact blocker only.
 
 ## Dependency Decision
 
@@ -57,4 +58,4 @@ Protected Control Plane endpoints expose `/control/voice/worker` status, devices
 
 ## Still Not Implemented
 
-Always-running 24/7 wakeword supervision, real physical microphone validation in CI, real model downloads, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented unless a later explicit goal widens scope.
+Always-running 24/7 background wakeword supervision (the supervisor remains explicit-user-triggered and tick-driven, not a hidden background daemon), real physical microphone validation in CI, real model downloads, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented unless a later explicit goal widens scope.

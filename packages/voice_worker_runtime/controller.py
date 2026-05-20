@@ -20,6 +20,12 @@ from .models import (
     VoiceWorkerLifecycleState,
     VoiceWorkerStatus,
 )
+from .supervision import (
+    WakewordSupervisorHealth,
+    WakewordSupervisorPolicy,
+    WakewordSupervisorTickResult,
+    WakewordWorkerSupervisor,
+)
 
 
 class VoiceWorkerTurnRunResult:
@@ -41,7 +47,17 @@ class VoiceWorkerTurnRunResult:
 
 
 class VoiceWorkerController:
-    def __init__(self, *, config: VoiceWorkerConfig | None = None, audio: LocalAudioAdapter | None = None, voice_runtime: VoiceRuntime | None = None, asset_manager: VoiceAssetManager | None = None, backend_runtime: VoiceWorkerBackendRuntime | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        config: VoiceWorkerConfig | None = None,
+        audio: LocalAudioAdapter | None = None,
+        voice_runtime: VoiceRuntime | None = None,
+        asset_manager: VoiceAssetManager | None = None,
+        backend_runtime: VoiceWorkerBackendRuntime | None = None,
+        wakeword_supervisor: WakewordWorkerSupervisor | None = None,
+        wakeword_supervisor_policy: WakewordSupervisorPolicy | None = None,
+    ) -> None:
         self.config = config or VoiceWorkerConfig.default()
         self.audio = audio or FakeLocalAudioAdapter()
         self.voice_runtime = voice_runtime or VoiceRuntime()
@@ -53,6 +69,13 @@ class VoiceWorkerController:
         self._playback_status = "stopped"
         self._queued_tts_count = 0
         self._error: VoiceWorkerErrorEnvelope | None = None
+        self.wakeword_supervisor: WakewordWorkerSupervisor = wakeword_supervisor or WakewordWorkerSupervisor(
+            config=self.config,
+            asset_manager=self.asset_manager,
+            backend_runtime=self.backend_runtime,
+            audio=self.audio,
+            policy=wakeword_supervisor_policy,
+        )
 
     def status(self) -> VoiceWorkerStatus:
         return VoiceWorkerStatus(
@@ -74,9 +97,27 @@ class VoiceWorkerController:
             stt_backend_status=self.backend_runtime.stt_status(self.config.active_stt_backend_id),
             tts_backend_status=self.backend_runtime.tts_status(self.config.active_tts_backend_id, self.config.active_voice_id),
             wakeword_model_status=self.backend_runtime.wakeword_status(self.config.wakeword.backend_id),
+            wakeword_supervisor_status=self.wakeword_supervisor.health().safe_projection(),
             telemetry=self._telemetry_summary(),
             telemetry_summary=self._telemetry_summary(),
         )
+
+    def start_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
+        self.wakeword_supervisor.update_config(self.config)
+        return self.wakeword_supervisor.start(explicit_user_triggered=explicit_user_triggered)
+
+    def stop_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
+        return self.wakeword_supervisor.stop(explicit_user_triggered=explicit_user_triggered)
+
+    def tick_wakeword_supervisor(self) -> WakewordSupervisorTickResult:
+        self.wakeword_supervisor.update_config(self.config)
+        return self.wakeword_supervisor.tick()
+
+    def wakeword_supervisor_health(self) -> WakewordSupervisorHealth:
+        return self.wakeword_supervisor.health()
+
+    def clean_shutdown_wakeword_supervisor(self) -> WakewordSupervisorHealth:
+        return self.wakeword_supervisor.clean_shutdown()
 
     def handle(self, command: VoiceWorkerCommand) -> VoiceWorkerCommandResult:
         handler = getattr(self, f"_handle_{command.command}")
@@ -226,6 +267,9 @@ class VoiceWorkerController:
         self._state = VoiceWorkerLifecycleState.STOPPED
         self._playback_status = "stopped"
         self._queued_tts_count = 0
+        # Clean shutdown of the wakeword supervisor on explicit worker stop so
+        # the supervisor loop never outlives an explicit user worker stop.
+        self.wakeword_supervisor.clean_shutdown()
         return self._record(VoiceWorkerEventType.MIC_STOPPED, trace_id=command.command_id)
 
     def _handle_pause(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
@@ -250,6 +294,9 @@ class VoiceWorkerController:
         }
         audio = self.config.audio.model_copy(update=audio_updates)
         self.config = self.config.model_copy(update={"wakeword": wakeword, "audio": audio})
+        # Keep the wakeword supervisor in sync with the new config so its asset
+        # readiness, phrase, and threshold checks remain correct.
+        self.wakeword_supervisor.update_config(self.config)
         return self._record(
             VoiceWorkerEventType.MIC_STARTED,
             trace_id=command.command_id,
