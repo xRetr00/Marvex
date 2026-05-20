@@ -41,6 +41,7 @@ CHECKS = [
     "check_provider_structured_output_boundaries.py",
     "check_telemetry_boundaries.py",
     "check_runtime_ownership.py",
+    "check_core_service_boundaries.py",
     "check_library_research_matrix.py",
     "check_library_decisions.py",
     "check_schema_versions.py",

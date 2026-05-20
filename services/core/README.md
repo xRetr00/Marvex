@@ -1,6 +1,8 @@
 # Core Service
 
-Status: approved contract, documentation-only service surface, no entrypoint or runtime code yet.
+Status: approved contract with in-process CoreService lifecycle envelope in
+`packages/core/service.py`. No service-owned process entrypoint exists under
+`services/core` yet.
 
 ## Intended Ownership
 
@@ -32,6 +34,18 @@ CoreService may depend on worker ports, lifecycle adapters, telemetry/event plum
 
 CoreService must never own provider protocols, tool execution, memory storage, UI, voice, desktop automation, policy approval, provider routing, or session storage. It must not become the provider router, model-policy engine, tool runner, or conversation database.
 
-## Next Implementation Prerequisites
+## Implemented Closure Slice
 
-Before code, this surface needs lifecycle contract docs, envelope/schema tests, and validation gates that prove the service boundary can start, report readiness, fail safely, and shut down cleanly.
+The current closure slice is intentionally in-process and orchestration-only:
+
+- CoreService can start, report health/version, submit assistant turns through
+  an injected executor port, and shut down.
+- It uses approved `HealthCheck`, `VersionInfo`, `AssistantTurnInput`,
+  `AssistantTurnResult`, and `ErrorEnvelope` contracts.
+- It can be composed behind the existing Local API from outside Core, but Core
+  does not import Local API or own HTTP exposure.
+- Failures at the CoreService envelope return structured `ErrorEnvelope`
+  results instead of leaking raw exceptions.
+
+Future process entrypoints, worker IPC, supervision, and daemon behavior still
+require separate approved tasks.

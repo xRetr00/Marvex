@@ -1,6 +1,7 @@
 # Core Package
 
-Status: minimal Provider Foundation implementation.
+Status: CoreService lifecycle envelope plus minimal Provider Foundation
+implementation.
 
 Ownership: Core runtime boundary.
 
@@ -8,6 +9,21 @@ Responsibility: Turn lifecycle orchestration through approved contracts and
 ports. Current behavior is limited to constructing provider requests, invoking
 an injected `ProviderPort`, emitting telemetry lifecycle events, and returning
 contract-compatible turn output.
+
+CoreService closure:
+
+- `service.py` owns the approved CoreService lifecycle envelope.
+- It exposes explicit `start()`, `shutdown()`, `get_health()`,
+  `get_version()`, and `submit_turn(...)` methods.
+- Health/version use the approved `HealthCheck` and `VersionInfo` contracts
+  directly without importing ProcessRuntime.
+- Turn submission accepts approved `AssistantTurnInput` and returns approved
+  `AssistantTurnResult`.
+- Execution is through an injected `CoreTurnExecutorPort` only. CoreService does
+  not construct providers, select runtimes, import Local API, import
+  RuntimeComposition, import adapters, or own assistant stage internals.
+- Unavailable lifecycle state, executor exceptions, and executor identity
+  mismatches return safe `ErrorEnvelope` results.
 
 Assistant-runtime provider-stage wiring skeleton:
 
