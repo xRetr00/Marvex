@@ -2,6 +2,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
+EXCLUDED_PARTS = {"node_modules", "dist", ".venv", ".claude"}
 ALLOWED_VAXIL_REFERENCES = {
     "VAXIL_REFERENCE.md",
     "docs/ARCHITECTURE.md",
@@ -30,6 +31,8 @@ def main() -> int:
         if not path.is_file():
             continue
         rel = path.relative_to(ROOT).as_posix()
+        if any(part in EXCLUDED_PARTS for part in path.relative_to(ROOT).parts):
+            continue
         try:
             text = path.read_text(encoding="utf-8").lower()
         except UnicodeDecodeError:

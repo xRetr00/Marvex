@@ -333,6 +333,112 @@ Safety rules:
   tools, memory, provider routing, RuntimeComposition supervision, and Local API
   internals remain outside the worker.
 
+## MemoryService
+
+Purpose: Draft future service boundary for durable memory ingestion, lookup,
+retrieval, compaction support, and safe memory projections.
+
+Contract status: draft/no implementation. Not approved until listed in
+`docs/CONTRACT_APPROVALS.md`.
+
+Owner: memory service boundary, with memory data models remaining replaceable
+behind a clean adapter.
+
+Can read: approved memory sources, safe session refs, approved telemetry
+summaries, and explicit caller context.
+
+Can write: approved memory records, embeddings/index updates, retrieval state,
+and safe memory events.
+
+Safety rules:
+
+- The service must not become a hidden session store or an implicit long-term
+  conversation log.
+- Raw provider payloads, secrets, and policy decisions are not memory content by
+  default.
+- Memory writes require explicit policy-approved inputs and bounded redaction
+  rules.
+- Memory storage, indexing, and retrieval stay behind clean ports so the Core
+  and caller-facing surfaces remain replaceable.
+
+Non-goals:
+
+- Provider routing
+- Tool execution
+- Policy or permission authority
+- UI, shell, desktop, or voice orchestration
+- Unbounded conversation persistence
+
+## TelemetryEventService
+
+Purpose: Draft future service boundary for persistent event history, safe
+trace/event ingestion, indexed readback, and audit-friendly telemetry storage.
+
+Contract status: draft/no implementation. Not approved until listed in
+`docs/CONTRACT_APPROVALS.md`.
+
+Owner: telemetry event service boundary, with event storage and query adapters
+kept replaceable behind a clean port.
+
+Can read: safe trace events, approved lifecycle events, and explicit read
+queries.
+
+Can write: structured telemetry events, event-history indexes, and retention or
+rollup state.
+
+Safety rules:
+
+- The service must store only safe, redacted, structured event data.
+- Raw provider payloads, secrets, and private user content are not telemetry
+  content by default.
+- Event history must preserve traceability without becoming a general data lake
+  for product state.
+- Write paths remain bounded and explicit; no hidden background ingestion from
+  unrelated modules.
+
+Non-goals:
+
+- General application storage
+- Policy or permission authority
+- Provider execution
+- Memory semantics
+- UI, shell, desktop, or voice orchestration
+
+## PolicyPermissionService
+
+Purpose: Draft future service boundary for policy evaluation, permission
+decisions, approval state, and safe runtime policy projections.
+
+Contract status: draft/no implementation. Not approved until listed in
+`docs/CONTRACT_APPROVALS.md`.
+
+Owner: policy and permission service boundary, with decision engines and policy
+stores kept replaceable behind clean adapters.
+
+Can read: policy rules, requested actions, caller identity/context, risk
+signals, and approved runtime metadata.
+
+Can write: permission decisions, approval records, policy snapshots, and safe
+decision events.
+
+Safety rules:
+
+- The service must remain the authority for policy and permission decisions
+  without leaking implementation-specific state into callers.
+- Decision outputs must be explicit, auditable, and redacted where needed.
+- The service must not execute tools, mutate memory, or perform provider work.
+- Policy evaluation and approval flows must stay isolated from UI and transport
+  concerns.
+
+Non-goals:
+
+- Intent inference
+- Provider routing or provider execution
+- Tool execution
+- Memory storage
+- Telemetry persistence
+- UI, shell, desktop, or voice orchestration
+
 ## Foundation Surface Contracts
 
 Some newer Marvex packages are bounded implementation foundations rather than public JSON contracts. Their existence does not broaden the provider-foundation contracts above and does not approve product expansion.

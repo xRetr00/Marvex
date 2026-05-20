@@ -20,6 +20,12 @@ The future desktop app should feel like one app while internally behaving like a
 - Marvex Intent Worker
 - Marvex Voice Worker
 - Marvex Desktop Agent
+- Marvex Memory Service
+- Marvex Telemetry Event Service
+- Marvex Policy Permission Service
+
+These three are future explicit service boundaries. Their current package
+foundations remain bounded in-process and do not imply a separate runtime yet.
 
 ## Subprocess Expectations
 
@@ -191,6 +197,11 @@ for that path. WebSocket, service lifecycle, subprocess supervision,
 persistence, generic provider API execution, token lifecycle, sessions/history,
 routing, retry/fallback, and model selection remain future explicit
 service-runtime work.
+
+MemoryService, TelemetryEventService, and PolicyPermissionService are also
+future explicit service boundaries. Today their package foundations stay
+in-process, bounded, and replaceable rather than becoming separate daemons or
+product surfaces.
 
 Future service startup must be explicit and bounded: no hidden auto-start from
 CLI proof commands, no background daemon creep, no hidden global token store, no

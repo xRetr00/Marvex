@@ -46,6 +46,9 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 | VoiceWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | DesktopAgent | 0.1.1-draft | draft | none | none | no |
 | Shell | 0.1.1-draft | draft | none | none | no |
+| MemoryService | 0.1.1-draft | draft | none | none | no |
+| TelemetryEventService | 0.1.1-draft | draft | none | none | no |
+| PolicyPermissionService | 0.1.1-draft | draft | none | none | no |
 
 ## Approval Rules
 
@@ -77,10 +80,13 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - mcp adapter/seam: bounded foundation; official SDK and allowlist only.
 - browser/computer-use adapter/seam: experimental seam; product automation blocked.
 - memory runtime: bounded foundation; safe refs/backend only.
+- memory service: future service contract; README-only.
 - marketplace runtime: bounded foundation; read-only metadata/proposals only.
 - session runtime: bounded foundation; safe refs only.
 - intent/prompt harness seams: bounded foundation; safe projections and bounded prompt plans only.
 - service placeholders: future service contract; README-only.
+- telemetry event service: future service contract; README-only.
+- policy permission service: future service contract; README-only.
 - voice runtime foundation: bounded implementation foundation for in-process voice I/O orchestration only; no separate service process, visual shell, hidden recording, or raw audio/transcript persistence by default.
 - voice worker runtime: approved implementation surface for local-only VoiceWorker process, lifecycle, safe worker commands/events, microphone/playback adapters, model asset readiness, and protected Control Plane projections; no hidden recording, remote exposure, raw audio/transcript persistence, Orb/shell UI, desktop agent, vision, or proactive behavior.
 - future desktop agent, shell/orb UI, proactive behavior, and vision: future service contract or forbidden product behavior for now unless a later goal explicitly approves them.

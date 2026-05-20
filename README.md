@@ -32,7 +32,7 @@ report.
 
 ## Current Implementation
 
-Marvex contains provider foundation contracts, assistant envelope contracts, and a set of bounded foundations classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Contract approval and contract status live only in `docs/CONTRACT_APPROVALS.md`.
+Marvex contains provider foundation contracts, assistant envelope contracts, and a set of bounded foundations classified in `docs/GOVERNANCE_CLASSIFICATION.md`. Those bounded foundations already exist in the repo and may be maintained or tested only inside their documented ownership and contract gates. Contract approval and contract status live only in `docs/CONTRACT_APPROVALS.md`.
 
 Bounded foundations may be maintained and tested inside their current ownership boundaries. Any contract-status change must be recorded in `docs/CONTRACT_APPROVALS.md` first. Service placeholders under `services/` remain README-only until their matching contract is listed there. See `docs/GOVERNANCE_CLASSIFICATION.md` for the scope and ownership map of each surface.
 
@@ -43,20 +43,23 @@ Allowed now:
 - Documentation, templates, and validation scripts.
 - README/status/library/schema governance cleanup.
 - Task slices tied to the documented surface map.
+- Maintenance and tests within documented bounded foundations.
 - Service placeholder READMEs.
 
 Out of scope now:
 
-- Product behavior changes outside the documented surface and contract-status workflow.
+- Product behavior for future surfaces that is not approved or implemented yet.
 - Provider behavior changes outside the provider adapter boundary.
 - CLI behavior changes outside the CLI boundary.
 - Telemetry runtime behavior changes outside the telemetry boundary.
-- UI code.
+- UI code outside the Control Plane web boundary.
 - Tool execution.
-- Memory systems.
-- Voice, vision, desktop context, proactive behavior.
+- Memory systems outside their bounded foundations.
+- Voice, vision, desktop context, proactive behavior, shell/orb UI, and future service-daemon behavior.
 
 A roadmap entry, task id, or placeholder README is not permission to implement.
+
+The provider/CLI path remains the foundation/test path only.
 
 No turn endpoint exists yet as a generic, default, or product real-provider
 execution surface. The only real-provider local API path is the explicit

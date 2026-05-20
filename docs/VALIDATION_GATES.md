@@ -12,6 +12,17 @@ Validation gates are mandatory before finishing any task, including a one-line h
 uv run python scripts/run_all_checks.py
 ```
 
+## Future Gate Rework Backlog
+
+Future validation work should move toward structural checks instead of brittle phrase or date latches.
+
+- Prefer machine-readable registries or structural Markdown parsing over exact phrase matching where possible.
+- Split `run_all_checks` into explicit profiles such as `fast`, `contract`, `boundary`, `full`, and `dependency`.
+- Detect contract changes directly from approval and contract registries so docs, status, and tests stay aligned.
+- Enforce dependency-to-adapter ownership so external packages stay behind clean ports and adapters.
+- Detect product-surface expansion when a bounded seam starts behaving like an assistant-facing feature.
+- Add loopback and no-hidden-autostart exposure gates for any new local worker or service boundary.
+
 For a dependency-changing task, also run the full uv workflow:
 
 ```powershell
@@ -34,7 +45,7 @@ Expected folders and required documents must exist.
 
 ### Service Placeholder Gate
 
-Every `services/*` folder must remain README-only until its service contract is approved in `docs/CONTRACT_APPROVALS.md` and `implementation_allowed` is `yes`.
+Every `services/*` folder must remain README-only until its matching service contract is approved in `docs/CONTRACT_APPROVALS.md` and a service-owned entrypoint task exists. Approval alone does not authorize implementation, and any later implementation still needs lifecycle, IPC, health, version, docs, tests, and gates.
 
 ### Forbidden Modules Gate
 
@@ -142,7 +153,8 @@ trace-reader HTTP/auth/JSON adapter.
   persistence, streaming, or cross-process lookup.
 - `packages/local_api` must not hard-code local token/secret values or print
   token material.
-- Service placeholder folders remain README-only.
+- Service placeholder folders remain README-only until matching contract
+  approval and a service-owned entrypoint task exist.
 - `scripts/run_all_checks.py` runs the local API boundary gate.
 
 ### Local API Client Boundary Gate
@@ -344,7 +356,8 @@ This gate requires:
   `AssistantTurnInput`, `AssistantTurnResult`, and `AssistantFinalResponse`.
 - Each approved contract lists required fields and a small JSON example.
 - `docs/CONTRACT_APPROVALS.md` lists the four assistant-envelope contracts as
-  approved/yes with approver `user` and approval date `2026-05-01`.
+  approved/yes with matching structured approval metadata and no conflicting
+  status rows.
 - Contract docs include closed assistant-envelope enum values, exact
   `payload`/`payload_ref` carrier rules, seed-only `policy_context`, minimal
   stage summary shape, provider-reference constraints, and candidate-only memory
@@ -366,6 +379,8 @@ This gate requires:
   authorize runtime behavior.
 - Provider-foundation contracts are not silently reclassified as assistant
   contracts.
+- The gate should consume structured approval rows from
+  `docs/CONTRACT_APPROVALS.md` rather than a hardcoded approval date string.
 - `scripts/run_all_checks.py` runs the assistant turn contract approval gate.
 
 The gate targets documentation, approval rows, and contract model placement

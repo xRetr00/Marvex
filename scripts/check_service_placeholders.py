@@ -13,6 +13,7 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
+SERVICE_ENTRYPOINT_TASKS = set()
 
 
 def implementation_allowed(contract_name: str) -> bool:
@@ -31,6 +32,10 @@ def implementation_allowed(contract_name: str) -> bool:
     return False
 
 
+def service_entrypoint_allowed(service_name: str, contract_name: str) -> bool:
+    return implementation_allowed(contract_name) and service_name in SERVICE_ENTRYPOINT_TASKS
+
+
 def main() -> int:
     failures = []
     if not SERVICES.is_dir():
@@ -46,9 +51,11 @@ def main() -> int:
             continue
 
         entries = sorted(p.name for p in service.iterdir())
-        if entries != ["README.md"] and not implementation_allowed(contract_name):
+        if entries != ["README.md"] and not service_entrypoint_allowed(
+            service.name, contract_name
+        ):
             failures.append(
-                f"{service.relative_to(ROOT).as_posix()} must contain only README.md until {contract_name} is approved for implementation; found {entries}"
+                f"{service.relative_to(ROOT).as_posix()} must contain only README.md until {contract_name} is approved and a service-owned entrypoint task updates this gate; found {entries}"
             )
 
     if failures:
