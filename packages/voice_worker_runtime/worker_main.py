@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any, TextIO
 
 from .controller import VoiceWorkerController
-from .models import VoiceWorkerCommand
+from .models import VoiceWorkerCommand, VoiceWorkerErrorEnvelope
 
 
 def run_worker_loop(
@@ -61,10 +61,17 @@ def run_worker_contract_loop(
             response = result.safe_projection()
             final_status = result.status.safe_projection()
         except Exception:
+            trace_id = _safe_payload_text(payload, "trace_id", fallback="trace-voice-worker-invalid") if isinstance(payload, dict) else "trace-voice-worker-invalid"
+            command_id = _safe_payload_text(payload, "command_id", fallback="voice-worker-command-invalid") if isinstance(payload, dict) else "voice-worker-command-invalid"
             response = {
                 "schema_version": "1",
-                "command_id": "voice-worker-command-invalid",
-                "error": {"reason_code": "voice_worker_command_invalid"},
+                "trace_id": trace_id,
+                "command_id": command_id,
+                "error": VoiceWorkerErrorEnvelope.safe_error(
+                    trace_id=trace_id,
+                    reason_code="voice_worker_command_invalid",
+                    message="Voice worker command validation failed.",
+                ).model_dump(mode="json"),
                 "raw_audio_persisted": False,
                 "raw_transcript_persisted": False,
             }
@@ -73,6 +80,15 @@ def run_worker_contract_loop(
         if isinstance(response, dict) and response.get("command_id") and command_name == "stop":
             break
     return {"host": host, "port": port, "status": final_status}
+
+
+def _safe_payload_text(payload: dict[str, Any], key: str, *, fallback: str) -> str:
+    value = payload.get(key)
+    if not isinstance(value, str) or not value.strip():
+        return fallback
+    if not all(character.isalnum() or character in ".:-_" for character in value):
+        return fallback
+    return value
 
 
 def main() -> int:

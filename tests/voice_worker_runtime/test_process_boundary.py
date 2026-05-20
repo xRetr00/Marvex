@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from io import StringIO
 
@@ -61,9 +62,9 @@ def test_process_adapter_starts_once_and_stops_with_safe_shutdown(monkeypatch) -
 def test_worker_contract_loop_reads_voice_worker_commands_and_writes_safe_jsonl() -> None:
     controller = VoiceWorkerController()
     input_stream = StringIO(
-        VoiceWorkerCommand(command="start", command_id="cmd-start").model_dump_json()
+        VoiceWorkerCommand(command="start", command_id="cmd-start", trace_id="trace-worker-jsonl").model_dump_json()
         + "\n"
-        + VoiceWorkerCommand(command="stop", command_id="cmd-stop").model_dump_json()
+        + VoiceWorkerCommand(command="stop", command_id="cmd-stop", trace_id="trace-worker-jsonl").model_dump_json()
         + "\n"
     )
     output_stream = StringIO()
@@ -79,11 +80,129 @@ def test_worker_contract_loop_reads_voice_worker_commands_and_writes_safe_jsonl(
     lines = [line for line in output_stream.getvalue().splitlines() if line.strip()]
     assert len(lines) == 2
     assert '"command_id": "cmd-start"' in lines[0]
+    assert '"trace_id": "trace-worker-jsonl"' in lines[0]
     assert '"lifecycle_state": "running"' in lines[0]
     assert '"command_id": "cmd-stop"' in lines[1]
+    assert '"trace_id": "trace-worker-jsonl"' in lines[1]
     assert '"lifecycle_state": "stopped"' in lines[1]
     assert '"raw_audio": true' not in output_stream.getvalue().lower()
     assert final["status"]["lifecycle_state"] == "stopped"
+
+
+def test_worker_contract_loop_supports_health_and_version_roundtrip() -> None:
+    controller = VoiceWorkerController()
+    input_stream = StringIO(
+        VoiceWorkerCommand(command="health", command_id="cmd-health", trace_id="trace-worker-health").model_dump_json()
+        + "\n"
+        + VoiceWorkerCommand(command="version", command_id="cmd-version", trace_id="trace-worker-version").model_dump_json()
+        + "\n"
+        + VoiceWorkerCommand(command="stop", command_id="cmd-stop", trace_id="trace-worker-stop").model_dump_json()
+        + "\n"
+    )
+    output_stream = StringIO()
+
+    run_worker_contract_loop(
+        controller=controller,
+        host="127.0.0.1",
+        port=8767,
+        input_stream=input_stream,
+        output_stream=output_stream,
+    )
+
+    health, version, stop = [
+        json.loads(line) for line in output_stream.getvalue().splitlines() if line.strip()
+    ]
+    assert health["event"]["trace_id"] == "trace-worker-health"
+    assert health["event"]["summary"]["health"]["schema_version"] == "1"
+    assert health["event"]["summary"]["health"]["local_only"] is True
+    assert version["event"]["trace_id"] == "trace-worker-version"
+    assert version["event"]["summary"]["version"]["worker"] == "local-voice-worker"
+    assert version["event"]["summary"]["version"]["contract_versions"]["VoiceWorkerCommand"] == "1"
+    assert stop["status"]["lifecycle_state"] == "stopped"
+
+
+def test_worker_contract_loop_invalid_command_returns_error_envelope_with_trace_id() -> None:
+    controller = VoiceWorkerController()
+    input_stream = StringIO(
+        '{"schema_version":"1","command":"bogus","command_id":"cmd-bad","trace_id":"trace-bad"}\n'
+    )
+    output_stream = StringIO()
+
+    run_worker_contract_loop(
+        controller=controller,
+        host="127.0.0.1",
+        port=8767,
+        input_stream=input_stream,
+        output_stream=output_stream,
+    )
+
+    response = json.loads(output_stream.getvalue())
+    assert response["schema_version"] == "1"
+    assert response["command_id"] == "cmd-bad"
+    assert response["trace_id"] == "trace-bad"
+    assert response["error"]["trace_id"] == "trace-bad"
+    assert response["error"]["reason_code"] == "voice_worker_command_invalid"
+    assert "bogus" not in json.dumps(response)
+
+
+def test_worker_contract_loop_supports_cancellation_shape() -> None:
+    controller = VoiceWorkerController()
+    input_stream = StringIO(
+        VoiceWorkerCommand(
+            command="cancel",
+            command_id="cmd-cancel",
+            trace_id="trace-worker-cancel",
+            payload={"reason_code": "user_cancelled"},
+        ).model_dump_json()
+        + "\n"
+        + VoiceWorkerCommand(command="stop", command_id="cmd-stop", trace_id="trace-worker-stop").model_dump_json()
+        + "\n"
+    )
+    output_stream = StringIO()
+
+    run_worker_contract_loop(
+        controller=controller,
+        host="127.0.0.1",
+        port=8767,
+        input_stream=input_stream,
+        output_stream=output_stream,
+    )
+
+    cancel, stop = [
+        json.loads(line) for line in output_stream.getvalue().splitlines() if line.strip()
+    ]
+    assert cancel["trace_id"] == "trace-worker-cancel"
+    assert cancel["event"]["summary"]["cancellation"]["reason_code"] == "user_cancelled"
+    assert cancel["event"]["summary"]["cancellation"]["raw_audio_persisted"] is False
+    assert cancel["event"]["summary"]["cancellation"]["raw_transcript_persisted"] is False
+    assert stop["status"]["lifecycle_state"] == "stopped"
+
+
+def test_process_adapter_round_trips_real_subprocess_health_and_stop() -> None:
+    adapter = VoiceWorkerProcessAdapter(VoiceWorkerProcessSpec(host="127.0.0.1", port=8767))
+    adapter.start()
+    try:
+        health = adapter.send_command(
+            VoiceWorkerCommand(
+                command="health",
+                command_id="cmd-health",
+                trace_id="trace-real-subprocess-health",
+            )
+        )
+        stop = adapter.send_command(
+            VoiceWorkerCommand(
+                command="stop",
+                command_id="cmd-stop",
+                trace_id="trace-real-subprocess-stop",
+            )
+        )
+    finally:
+        adapter.stop()
+
+    assert health["trace_id"] == "trace-real-subprocess-health"
+    assert health["event"]["summary"]["health"]["local_only"] is True
+    assert stop["trace_id"] == "trace-real-subprocess-stop"
+    assert stop["status"]["lifecycle_state"] == "stopped"
 
 
 def test_worker_main_once_mode_starts_and_stops_controller_without_remote_binding() -> None:

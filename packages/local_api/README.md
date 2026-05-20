@@ -18,7 +18,8 @@ Current behavior:
 - `GET /v1/traces/{trace_id}` is protected by local bearer auth and reads only
   through an explicitly injected trace reader.
 - Unknown routes return a safe `ErrorEnvelope` with `NOT_FOUND`.
-- `LocalApiConfig` defaults to `host="127.0.0.1"` and `port=8765`.
+- `LocalApiConfig` defaults to `host="127.0.0.1"` and `port=8765`; non-loopback
+  bind hosts are rejected at config construction.
 - `validate_local_bearer_token(...)` enforces auth for `/v1/turns`. It is not
   wired to `/health` or `/version`.
 

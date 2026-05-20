@@ -17,33 +17,18 @@ from .models import (
     VoiceWorkerEvent,
     VoiceWorkerEventType,
     VoiceWorkerHeartbeat,
+    VoiceWorkerHealth,
     VoiceWorkerLifecycleState,
     VoiceWorkerStatus,
+    VoiceWorkerVersionInfo,
 )
+from .projections import VoiceWorkerTurnRunResult, synthesis_summary, transcription_summary
 from .supervision import (
     WakewordSupervisorHealth,
     WakewordSupervisorPolicy,
     WakewordSupervisorTickResult,
     WakewordWorkerSupervisor,
 )
-
-
-class VoiceWorkerTurnRunResult:
-    def __init__(self, *, turn: Any, events: tuple[VoiceWorkerEvent, ...], playback: PlaybackAdapterResult, capture_summary: dict[str, object] | None = None) -> None:
-        self.turn = turn
-        self.events = events
-        self.playback = playback
-        self.capture_summary = capture_summary or {}
-
-    def safe_projection(self) -> dict[str, object]:
-        return {
-            "turn_status": self.turn.status if self.turn is not None else "not_started",
-            "event_count": len(self.events),
-            "playback_status": self.playback.status,
-            **self.capture_summary,
-            "raw_audio_persisted": False,
-            "raw_transcript_persisted": False,
-        }
 
 
 class VoiceWorkerController:
@@ -107,6 +92,17 @@ class VoiceWorkerController:
             telemetry_summary=self._telemetry_summary(),
         )
 
+    def health(self) -> VoiceWorkerHealth:
+        status = self.status()
+        return VoiceWorkerHealth(
+            lifecycle_state=status.lifecycle_state,
+            process_started=status.process_started,
+            heartbeat_ok=status.heartbeat is not None,
+        )
+
+    def version(self) -> VoiceWorkerVersionInfo:
+        return VoiceWorkerVersionInfo(worker=self.config.worker_id)
+
     def start_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
         self.wakeword_supervisor.update_config(self.config)
         return self.wakeword_supervisor.start(explicit_user_triggered=explicit_user_triggered)
@@ -127,7 +123,16 @@ class VoiceWorkerController:
     def handle(self, command: VoiceWorkerCommand) -> VoiceWorkerCommandResult:
         handler = getattr(self, f"_handle_{command.command}")
         event = handler(command)
-        return VoiceWorkerCommandResult(command_id=command.command_id, status=self.status(), event=event, error=self._error)
+        return VoiceWorkerCommandResult(
+            command_id=command.command_id,
+            trace_id=self._trace_id_for(command),
+            status=self.status(),
+            event=event,
+            error=self._error,
+        )
+
+    def _trace_id_for(self, command: VoiceWorkerCommand) -> str:
+        return command.trace_id or command.command_id
 
     def run_manual_turn(self, *, trace_id: str, assistant_turn_runner: Callable[[str], Any], policy_decider: Callable[[str], Any]) -> VoiceWorkerTurnRunResult:
         frames = tuple(self.audio.capture_frames(device_id=self.config.audio.input_device_id, sample_rate=self.config.audio.sample_rate, channel_count=self.config.audio.channel_count, frame_count=4))
@@ -262,10 +267,24 @@ class VoiceWorkerController:
         turn.playback = VoicePlaybackResult(trace_id=trace_id, status="completed", audio_ref=turn.playback.audio_ref, backend_id=turn.playback.backend_id)  # type: ignore[misc]
         return VoiceWorkerTurnRunResult(turn=turn, events=tuple(events) + (final,), playback=playback, capture_summary=capture_summary)
 
+    def _handle_health(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        return self._record(
+            VoiceWorkerEventType.HEALTH_REPORTED,
+            trace_id=self._trace_id_for(command),
+            summary={"health": self.health().model_dump(mode="json")},
+        )
+
+    def _handle_version(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        return self._record(
+            VoiceWorkerEventType.VERSION_REPORTED,
+            trace_id=self._trace_id_for(command),
+            summary={"version": self.version().safe_projection()},
+        )
+
     def _handle_start(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self._state = VoiceWorkerLifecycleState.RUNNING
         self._heartbeat = VoiceWorkerHeartbeat.now(lifecycle_state=self._state)
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary={"explicit_user_triggered": True})
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary={"explicit_user_triggered": True})
 
     def _handle_stop(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.audio.stop_playback()
@@ -275,17 +294,17 @@ class VoiceWorkerController:
         # Clean shutdown of the wakeword supervisor on explicit worker stop so
         # the supervisor loop never outlives an explicit user worker stop.
         self.wakeword_supervisor.clean_shutdown()
-        return self._record(VoiceWorkerEventType.MIC_STOPPED, trace_id=command.command_id)
+        return self._record(VoiceWorkerEventType.MIC_STOPPED, trace_id=self._trace_id_for(command))
 
     def _handle_pause(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self._state = VoiceWorkerLifecycleState.PAUSED
         self._heartbeat = VoiceWorkerHeartbeat.now(lifecycle_state=self._state)
-        return self._record(VoiceWorkerEventType.MIC_STOPPED, trace_id=command.command_id, summary={"paused": True})
+        return self._record(VoiceWorkerEventType.MIC_STOPPED, trace_id=self._trace_id_for(command), summary={"paused": True})
 
     def _handle_resume(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self._state = VoiceWorkerLifecycleState.RUNNING
         self._heartbeat = VoiceWorkerHeartbeat.now(lifecycle_state=self._state)
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary={"resumed": True})
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary={"resumed": True})
 
     def _handle_reload_config(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         wakeword = self.config.wakeword.model_copy(update={
@@ -304,13 +323,13 @@ class VoiceWorkerController:
         self.wakeword_supervisor.update_config(self.config)
         return self._record(
             VoiceWorkerEventType.MIC_STARTED,
-            trace_id=command.command_id,
+            trace_id=self._trace_id_for(command),
             summary={"config_reloaded": True, "audio_config_reloaded": bool(audio_updates)},
         )
 
     def _handle_test_mic(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         level = self.audio.test_mic_level(device_id=command.payload.get("device_id") or self.config.audio.input_device_id, duration_ms=250)
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary=level.model_dump(mode="json"))
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=level.model_dump(mode="json"))
 
     def _handle_test_playback(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         playback = self.audio.play_audio(device_id=command.payload.get("device_id") or self.config.audio.output_device_id, audio_ref="memory://voice/test/playback", sample_rate=24_000)
@@ -318,17 +337,18 @@ class VoiceWorkerController:
             playback = self.audio.interrupt_playback(reason_code="barge_in.user_speech_detected")
             self._playback_status = "interrupted"
             self._queued_tts_count = 0
-            return self._record(VoiceWorkerEventType.BARGE_IN_DETECTED, trace_id=command.command_id, summary=playback.model_dump(mode="json"))
+            return self._record(VoiceWorkerEventType.BARGE_IN_DETECTED, trace_id=self._trace_id_for(command), summary=playback.model_dump(mode="json"))
         self._playback_status = "completed"
-        return self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=command.command_id, summary=playback.model_dump(mode="json"))
+        return self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=self._trace_id_for(command), summary=playback.model_dump(mode="json"))
 
     def _handle_test_wakeword(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        trace_id = self._trace_id_for(command)
         if not self.config.wakeword.enabled:
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code="wakeword_not_enabled", message="Wakeword is disabled.")
-            return self._record(VoiceWorkerEventType.ERROR, trace_id=command.command_id, summary={"wakeword_ready": False})
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="wakeword_not_enabled", message="Wakeword is disabled.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False})
         if not self.asset_manager.is_ready(model_id="hey-marvex", backend_id=self.config.wakeword.backend_id, model_kind="wakeword"):
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code="wakeword_model_not_installed", message="Hey Marvex wakeword model asset is not installed under the voice asset root.")
-            return self._record(VoiceWorkerEventType.ERROR, trace_id=command.command_id, summary={"wakeword_ready": False, "exact_blocker": "wakeword_model_not_installed"})
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="wakeword_model_not_installed", message="Hey Marvex wakeword model asset is not installed under the voice asset root.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False, "exact_blocker": "wakeword_model_not_installed"})
         frames = tuple(
             self.audio.capture_frames(
                 device_id=self.config.audio.input_device_id,
@@ -338,19 +358,20 @@ class VoiceWorkerController:
             )
         )
         detection = self.backend_runtime.test_wakeword(
-            trace_id=command.command_id,
+            trace_id=trace_id,
             backend_id=self.config.wakeword.backend_id,
             frames=frames,
             phrase=self.config.wakeword.phrase,
             threshold=self.config.wakeword.threshold,
         )
         if not detection.detected:
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=detection.reason_code, message="Hey Marvex wakeword was not detected by the configured runtime.")
-            return self._record(VoiceWorkerEventType.ERROR, trace_id=command.command_id, summary={**detection.safe_projection(), "wakeword_ready": True})
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=detection.reason_code, message="Hey Marvex wakeword was not detected by the configured runtime.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={**detection.safe_projection(), "wakeword_ready": True})
         self._error = None
-        return self._record(VoiceWorkerEventType.WAKEWORD_DETECTED, trace_id=command.command_id, summary={**detection.safe_projection(), "wakeword_ready": True})
+        return self._record(VoiceWorkerEventType.WAKEWORD_DETECTED, trace_id=trace_id, summary={**detection.safe_projection(), "wakeword_ready": True})
 
     def _handle_test_stt(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        trace_id = self._trace_id_for(command)
         audio_ref_id = command.payload.get("audio_ref_id")
         if audio_ref_id is None:
             frames = tuple(
@@ -361,52 +382,72 @@ class VoiceWorkerController:
                     frame_count=4,
                 )
             )
-            audio_ref_id = self.backend_runtime.remember_captured_frames(trace_id=command.command_id, frames=frames)
+            audio_ref_id = self.backend_runtime.remember_captured_frames(trace_id=trace_id, frames=frames)
         result = self.backend_runtime.test_stt(
-            trace_id=command.command_id,
+            trace_id=trace_id,
             backend_id=str(command.payload.get("backend_id") or self.config.active_stt_backend_id),
             audio_ref_id=str(audio_ref_id),
         )
         if result.status == "failed" and result.safe_error is not None:
             reason = result.safe_error.details.get("reason_code", "stt_backend_not_ready")
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=reason, message="STT backend test did not complete.")
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=reason, message="STT backend test did not complete.")
         else:
             self._error = None
-        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=command.command_id, summary={**_transcription_summary(result), "audio_ref_present": True})
+        return self._record(VoiceWorkerEventType.TRANSCRIPTION_COMPLETED, trace_id=trace_id, summary={**transcription_summary(result), "audio_ref_present": True})
 
     def _handle_test_tts(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        trace_id = self._trace_id_for(command)
         result = self.backend_runtime.test_tts(
-            trace_id=command.command_id,
+            trace_id=trace_id,
             backend_id=str(command.payload.get("backend_id") or self.config.active_tts_backend_id),
             voice_id=str(command.payload.get("voice_id") or self.config.active_voice_id),
             text=str(command.payload.get("text") or "Voice test."),
         )
         if result.status == "failed" and result.safe_error is not None:
             reason = result.safe_error.details.get("reason_code", "tts_backend_not_ready")
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=command.command_id, reason_code=reason, message="TTS backend test did not complete.")
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=reason, message="TTS backend test did not complete.")
         else:
             self._error = None
-        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=command.command_id, summary=_synthesis_summary(result))
+        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary=synthesis_summary(result))
 
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary=result.model_dump(mode="json"))
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))
 
     def _handle_download_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.download(VoiceModelDownloadRequest.model_validate(command.payload))
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary=result.model_dump(mode="json"))
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))
 
     def _handle_switch_stt_backend(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.config = self.config.model_copy(update={"active_stt_backend_id": str(command.payload.get("backend_id") or self.config.active_stt_backend_id)})
-        return self._record(VoiceWorkerEventType.TRANSCRIPTION_STARTED, trace_id=command.command_id, summary={"active_stt_backend_id": self.config.active_stt_backend_id})
+        return self._record(VoiceWorkerEventType.TRANSCRIPTION_STARTED, trace_id=self._trace_id_for(command), summary={"active_stt_backend_id": self.config.active_stt_backend_id})
 
     def _handle_switch_tts_backend(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.config = self.config.model_copy(update={"active_tts_backend_id": str(command.payload.get("backend_id") or self.config.active_tts_backend_id)})
-        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=command.command_id, summary={"active_tts_backend_id": self.config.active_tts_backend_id})
+        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=self._trace_id_for(command), summary={"active_tts_backend_id": self.config.active_tts_backend_id})
 
     def _handle_switch_active_voice(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.config = self.config.model_copy(update={"active_voice_id": str(command.payload.get("voice_id") or self.config.active_voice_id)})
-        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=command.command_id, summary={"active_voice_id": self.config.active_voice_id})
+        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=self._trace_id_for(command), summary={"active_voice_id": self.config.active_voice_id})
+
+    def _handle_cancel(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        self.audio.stop_playback()
+        self._playback_status = "stopped"
+        self._queued_tts_count = 0
+        return self._record(
+            VoiceWorkerEventType.CANCELLED,
+            trace_id=self._trace_id_for(command),
+            summary={
+                "cancellation": {
+                    "schema_version": command.schema_version,
+                    "trace_id": self._trace_id_for(command),
+                    "command_id": command.command_id,
+                    "reason_code": str(command.payload.get("reason_code") or "cancelled"),
+                    "raw_audio_persisted": False,
+                    "raw_transcript_persisted": False,
+                }
+            },
+        )
 
     def _record(self, event_type: VoiceWorkerEventType, *, trace_id: str, summary: dict[str, Any] | None = None) -> VoiceWorkerEvent:
         event = VoiceWorkerEvent(event_id=f"voice-worker-event-{len(self._events) + 1}", event_type=event_type, trace_id=trace_id, summary=summary or {})
@@ -433,36 +474,3 @@ class VoiceWorkerController:
             "raw_audio_persisted": False,
             "raw_transcript_persisted": False,
         }
-
-
-def _transcription_summary(result: Any) -> dict[str, object]:
-    summary: dict[str, object] = {
-        "backend_id": result.backend_id,
-        "status": result.status,
-        "duration_ms": result.duration_ms,
-        "language": result.language,
-        "confidence_present": result.confidence is not None,
-        "segment_count": len(result.segments),
-        "text_present": bool(result.text),
-        "raw_audio_persisted": False,
-        "raw_transcript_persisted": False,
-    }
-    if result.safe_error is not None:
-        summary["exact_blocker"] = result.safe_error.details.get("reason_code")
-    return summary
-
-
-def _synthesis_summary(result: Any) -> dict[str, object]:
-    summary: dict[str, object] = {
-        "backend_id": result.backend_id,
-        "voice_id": result.voice_id,
-        "status": result.status,
-        "format": result.format,
-        "sample_rate": result.sample_rate,
-        "duration_ms": result.duration_ms,
-        "audio_ref_present": bool(result.audio_ref),
-        "raw_audio_persisted": False,
-    }
-    if result.safe_error is not None:
-        summary["exact_blocker"] = result.safe_error.details.get("reason_code")
-    return summary

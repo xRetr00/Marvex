@@ -13,7 +13,11 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 ## Runtime Behavior Added
 
 - Explicit `VoiceWorkerConfig`, `VoiceWorkerStatus`, `VoiceWorkerCommand`, `VoiceWorkerEvent`, `VoiceWorkerHealth`, `VoiceWorkerLifecycleState`, `VoiceWorkerErrorEnvelope`, and `SafeVoiceWorkerProjection` models.
-- User-visible start, stop, pause, resume, reload-config, test-mic, test-wakeword, test-STT, test-TTS, test-playback, download-model, install-model, switch-STT, switch-TTS, and switch-active-voice command paths.
+- `VoiceWorkerCommand` envelopes now carry an optional explicit `trace_id`; when omitted, the command id is used as the trace fallback. Process JSONL responses preserve the effective trace id on command results, events, cancellation summaries, and structured errors.
+- JSONL command/status process mode supports worker `health` and `version` commands. Health returns the safe worker health projection; version returns worker version and VoiceWorker contract versions.
+- Invalid JSONL command input returns a structured `VoiceWorkerErrorEnvelope` projection with a safe trace id and command id. Raw invalid command names, raw audio, and raw transcripts are not echoed.
+- The worker command path includes a safe `cancel` command shape that clears playback/queued TTS state and emits cancellation metadata without raw audio or transcript persistence.
+- User-visible health, version, start, stop, cancel, pause, resume, reload-config, test-mic, test-wakeword, test-STT, test-TTS, test-playback, download-model, install-model, switch-STT, switch-TTS, and switch-active-voice command paths.
 - Local-only worker defaults with no hidden auto-start and no hidden recording.
 - Heartbeat and lifecycle status for worker supervision.
 - Loopback-only subprocess launch path with safe shutdown; `0.0.0.0` and remote bindings are rejected.
@@ -61,4 +65,4 @@ Protected Control Plane endpoints expose `/control/voice/worker` status, devices
 
 ## Still Not Implemented
 
-Always-running 24/7 background wakeword supervision remains disallowed unless it is explicit, visible, local-only, and policy-controlled. Real physical microphone validation in CI, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented. The active VoiceWorker implementation goal still needs deeper real backend adapters, OS audio I/O completion, and persistent local worker supervision.
+Always-running 24/7 background wakeword supervision remains disallowed unless it is explicit, visible, local-only, and policy-controlled. Real physical microphone validation in CI, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented. The current VoiceWorker process-boundary slice has a real JSONL subprocess roundtrip for health, version, trace propagation, safe errors, cancellation, startup, and stop; deeper real backend adapters, OS audio I/O completion, and production daemon/service supervision remain future work.

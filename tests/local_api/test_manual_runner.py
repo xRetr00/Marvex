@@ -168,6 +168,17 @@ def test_runner_config_defaults_to_loopback_only():
     assert config.port == 8765
 
 
+def test_runner_config_rejects_remote_bind_hosts():
+    from packages.local_api.runner import LocalApiConfig
+
+    try:
+        LocalApiConfig(host="0.0.0.0")
+    except ValueError as exc:
+        assert str(exc) == "host must be loopback-only"
+    else:
+        raise AssertionError("remote Local API bind host must be rejected")
+
+
 def test_runner_uses_existing_health_version_app_behavior():
     from packages.local_api.runner import run_local_health_version_api
 

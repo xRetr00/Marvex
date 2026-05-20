@@ -32,6 +32,9 @@ class VoiceWorkerEventType(str, Enum):
     PLAYBACK_STARTED = "playback_started"
     PLAYBACK_FINISHED = "playback_finished"
     BARGE_IN_DETECTED = "barge_in_detected"
+    CANCELLED = "cancelled"
+    HEALTH_REPORTED = "health_reported"
+    VERSION_REPORTED = "version_reported"
     ERROR = "error"
 
 
@@ -129,9 +132,31 @@ class VoiceWorkerHealth(VoiceRuntimeModel):
     hidden_recording_allowed: Literal[False] = False
 
 
+class VoiceWorkerVersionInfo(VoiceRuntimeModel):
+    schema_version: str = SCHEMA_VERSION
+    worker: str
+    worker_version: str = "0.1.0"
+    contract_versions: dict[str, str] = Field(
+        default_factory=lambda: {
+            "VoiceWorkerCommand": SCHEMA_VERSION,
+            "VoiceWorkerCommandResult": SCHEMA_VERSION,
+            "VoiceWorkerEvent": SCHEMA_VERSION,
+            "VoiceWorkerErrorEnvelope": SCHEMA_VERSION,
+            "VoiceWorkerHealth": SCHEMA_VERSION,
+        }
+    )
+    build: dict[str, Any] = Field(default_factory=dict)
+
+    def safe_projection(self) -> dict[str, object]:
+        return safe_mapping(self.model_dump(mode="json"))
+
+
 class VoiceWorkerCommand(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     command: Literal[
+        "health",
+        "version",
+        "cancel",
         "start",
         "stop",
         "pause",
@@ -148,7 +173,8 @@ class VoiceWorkerCommand(VoiceRuntimeModel):
         "switch_tts_backend",
         "switch_active_voice",
     ]
-    command_id: str
+    command_id: str = Field(..., min_length=1)
+    trace_id: str | None = Field(default=None, min_length=1)
     payload: dict[str, Any] = Field(default_factory=dict)
     explicit_user_triggered: Literal[True] = True
 
@@ -258,6 +284,7 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
 class VoiceWorkerCommandResult(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     command_id: str
+    trace_id: str
     status: VoiceWorkerStatus
     event: VoiceWorkerEvent
     error: VoiceWorkerErrorEnvelope | None = None

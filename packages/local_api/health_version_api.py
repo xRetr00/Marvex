@@ -43,6 +43,12 @@ class LocalApiConfig:
     host: str = "127.0.0.1"
     port: int = 8765
 
+    def __post_init__(self) -> None:
+        if self.host not in {"127.0.0.1", "localhost", "::1"}:
+            raise ValueError("host must be loopback-only")
+        if not isinstance(self.port, int) or self.port < 1 or self.port > 65535:
+            raise ValueError("port must be between 1 and 65535")
+
 
 @dataclass(frozen=True)
 class LocalTurnRequestEnvelope:

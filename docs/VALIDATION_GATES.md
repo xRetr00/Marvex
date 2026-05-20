@@ -4,7 +4,9 @@ Validation gates are mandatory before finishing any task, including a one-line h
 
 ## Voice Worker Runtime Boundary Gate
 
-`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, explicit local model downloads, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Kokoro/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
+`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, trace-carrying command/result projections, health/version JSONL commands, safe cancellation metadata, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, explicit local model downloads, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Kokoro/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
+
+Targeted integration tests cover the current process-ready worker slice: JSONL command trace propagation, health/version command roundtrips, explicit stop shutdown, loopback-only host rejection, and structured invalid-command `VoiceWorkerErrorEnvelope` responses.
 
 ## Required Command
 

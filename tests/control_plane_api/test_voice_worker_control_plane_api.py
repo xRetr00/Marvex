@@ -5,7 +5,8 @@ import json
 from wsgiref.util import setup_testing_defaults
 
 from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
-from packages.voice_worker_runtime import FakeLocalAudioAdapter, VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerConfig, VoiceWorkerControlPlaneFacade, VoiceWorkerController
+from packages.voice_runtime import WakeWordDetectionResult
+from packages.voice_worker_runtime import FakeLocalAudioAdapter, VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerBackendRuntime, VoiceWorkerConfig, VoiceWorkerControlPlaneFacade, VoiceWorkerController
 
 
 def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-control-token", body: dict | None = None):
@@ -138,7 +139,16 @@ def test_control_plane_voice_worker_model_install_updates_worker_status_when_con
 def test_control_plane_voice_worker_wakeword_supervisor_lifecycle_is_explicit_and_safe(tmp_path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
-    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager)
+
+    def wakeword_runner(_frames, asset, *, phrase: str, threshold: float):
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+
+    controller = VoiceWorkerController(
+        config=VoiceWorkerConfig.default(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner),
+    )
     worker = VoiceWorkerControlPlaneFacade(controller)
     app = create_control_plane_api_app(
         approval_store=InMemoryApprovalStore.from_requests(()),

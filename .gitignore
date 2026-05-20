@@ -17,3 +17,5 @@ marvex.egg-info/
 .claude/
 .claude_cache/
 Agent.md
+.codex_commit_git/
+.codex_alt_git/
