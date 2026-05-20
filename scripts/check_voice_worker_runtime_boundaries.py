@@ -74,6 +74,7 @@ CONTROL_TERMS = (
     "test_mic",
     "test_playback",
     "test_wakeword",
+    "wakeword-supervisor",
     "reload_config",
     "switch_stt_backend",
     "switch_tts_backend",
@@ -111,7 +112,7 @@ def main() -> int:
         if term not in control_text:
             failures.append(f"Control Plane voice worker API missing term: {term}")
     frontend = FRONTEND.read_text(encoding="utf-8") if FRONTEND.is_file() else ""
-    if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend:
+    if "Voice Worker Process" not in frontend or "Start Worker" not in frontend or "Test Mic Level" not in frontend or "Microphone device" not in frontend or "Playback device" not in frontend or "Apply Devices" not in frontend or "Test Wakeword" not in frontend or "Start Wakeword Supervisor" not in frontend or "Tick Wakeword Supervisor" not in frontend or "Wakeword Supervisor Status" not in frontend:
         failures.append("Control Plane web missing voice worker status and controls")
     doc = DOC.read_text(encoding="utf-8") if DOC.is_file() else ""
     for phrase in ("no hidden recording", "local-only", "sounddevice==0.5.5", "not Orb", "checksum", "Loopback-only", "Worker-safe telemetry", "Bounded live capture cycle", "VoiceWorkerBackendRuntime", "installed-asset backend readiness", "package-specific model adapters", "WakewordWorkerSupervisor", "explicit visible wakeword supervision"):

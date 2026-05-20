@@ -285,6 +285,22 @@ export async function testVoiceWorkerWakeword() {
   return voiceActionSchema.parse(await readJson("/voice/worker/test-wakeword", { method: "POST" }));
 }
 
+export async function fetchVoiceWorkerWakewordSupervisor() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor"));
+}
+
+export async function startVoiceWorkerWakewordSupervisor() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor/start", { method: "POST" }));
+}
+
+export async function stopVoiceWorkerWakewordSupervisor() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor/stop", { method: "POST" }));
+}
+
+export async function tickVoiceWorkerWakewordSupervisor() {
+  return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor/tick", { method: "POST" }));
+}
+
 export async function testVoiceWorkerStt() {
   return voiceActionSchema.parse(await readJson("/voice/worker/test-stt", { method: "POST" }));
 }

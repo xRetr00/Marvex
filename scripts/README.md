@@ -152,11 +152,19 @@ attempt to enforce actual agent tool usage.
 Manual smoke scripts:
 
 - `smoke_providers.py`
+- `smoke_voice_worker_wakeword_supervisor.py`
 - `spike_lmstudio_structured_output.py`
 
 `smoke_providers.py` is developer-only manual verification for provider paths.
 It is intentionally excluded from `run_all_checks.py` and must not become a CI
 dependency.
+
+`smoke_voice_worker_wakeword_supervisor.py` is developer-only manual
+verification for explicit wakeword worker supervision against a locally
+installed Hey Marvex asset under `.marvex/voice-assets-smoke`. It exercises
+explicit start, restart-on-failure backoff, health projection, recovery tick,
+explicit stop, and worker-stop clean shutdown. It is intentionally excluded
+from `run_all_checks.py` and must not become a CI dependency.
 
 `spike_lmstudio_structured_output.py` is developer-only manual observation for
 LM Studio Responses provider-native structured-output compatibility. It is

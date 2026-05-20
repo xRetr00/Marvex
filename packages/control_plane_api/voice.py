@@ -21,6 +21,8 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
             return "200 OK", voice_worker_control.devices()
         if method == "GET" and path == "/control/voice/worker/assets":
             return "200 OK", voice_worker_control.assets_status()
+        if method == "GET" and path == "/control/voice/worker/wakeword-supervisor":
+            return "200 OK", voice_worker_control.wakeword_supervisor_health()
         worker_commands = {
             "/control/voice/worker/start": "start",
             "/control/voice/worker/stop": "stop",
@@ -38,6 +40,12 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
         }
         if method == "POST" and path in worker_commands:
             return "200 OK", voice_worker_control.command(worker_commands[path], _read_json(environ))
+        if method == "POST" and path == "/control/voice/worker/wakeword-supervisor/start":
+            return "200 OK", voice_worker_control.start_wakeword_supervisor()
+        if method == "POST" and path == "/control/voice/worker/wakeword-supervisor/stop":
+            return "200 OK", voice_worker_control.stop_wakeword_supervisor()
+        if method == "POST" and path == "/control/voice/worker/wakeword-supervisor/tick":
+            return "200 OK", voice_worker_control.tick_wakeword_supervisor()
         if method == "POST" and path == "/control/voice/worker/models/install":
             return "200 OK", voice_worker_control.install_model_voice(_read_json(environ))
         if method == "POST" and path == "/control/voice/worker/models/remove":

@@ -135,6 +135,47 @@ def test_control_plane_voice_worker_model_install_updates_worker_status_when_con
     assert status["wakeword_model_status"]["status"] == "installed"
 
 
+def test_control_plane_voice_worker_wakeword_supervisor_lifecycle_is_explicit_and_safe(tmp_path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
+    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager)
+    worker = VoiceWorkerControlPlaneFacade(controller)
+    app = create_control_plane_api_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        voice_worker_control=worker,
+    )
+
+    install_status, _install_headers, install = _call(
+        app,
+        "/control/voice/worker/models/install",
+        method="POST",
+        body={"model_id": "hey-marvex", "backend_id": "sherpa-onnx-kws", "model_kind": "wakeword", "relative_path": "wakeword/hey-marvex", "explicit_user_triggered": True},
+    )
+    _reload_status, _reload_headers, _reload = _call(app, "/control/voice/worker/reload-config", method="POST", body={"wakeword_enabled": True})
+    health_status, _health_headers, health = _call(app, "/control/voice/worker/wakeword-supervisor")
+    start_status, _start_headers, started = _call(app, "/control/voice/worker/wakeword-supervisor/start", method="POST")
+    tick_status, _tick_headers, tick = _call(app, "/control/voice/worker/wakeword-supervisor/tick", method="POST")
+    stop_status, _stop_headers, stopped = _call(app, "/control/voice/worker/wakeword-supervisor/stop", method="POST")
+
+    assert install_status == "200 OK"
+    assert install["status"] == "installed"
+    assert health_status == "200 OK"
+    assert health["lifecycle_state"] == "stopped"
+    assert start_status == "200 OK"
+    assert started["lifecycle_state"] == "running"
+    assert started["hidden_auto_start_allowed"] is False
+    assert tick_status == "200 OK"
+    assert tick["lifecycle_state"] == "running"
+    assert tick["backend_id"] == "sherpa-onnx-kws"
+    assert stop_status == "200 OK"
+    assert stopped["lifecycle_state"] == "stopped"
+    serialized = json.dumps({"health": health, "started": started, "tick": tick, "stopped": stopped}).lower()
+    assert "pcm" not in serialized
+    assert "transcript_text" not in serialized
+
+
 def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(tmp_path) -> None:
     app = _app()
 
