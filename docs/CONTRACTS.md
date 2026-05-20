@@ -294,6 +294,48 @@ Can read: all clients and services.
 
 Can write: service being queried.
 
+## VoiceWorker
+
+Purpose: Local-only worker service boundary for voice capture, wakeword/VAD,
+STT/TTS backend execution, speaker playback, model asset readiness/downloads,
+heartbeat/status, and safe worker telemetry.
+
+Approval status: approved in `docs/CONTRACT_APPROVALS.md`.
+
+Fields are implemented as bounded Pydantic models in
+`packages.voice_worker_runtime.models`:
+
+- `VoiceWorkerConfig`: local-only worker settings, active STT/TTS/voice ids,
+  wakeword, VAD, audio, and privacy defaults.
+- `VoiceWorkerCommand`: explicit user-triggered command envelope for start,
+  stop, pause, resume, reload-config, tests, model install/remove, backend
+  switches, and active voice selection.
+- `VoiceWorkerCommandResult`: command id, status, event, and safe error.
+- `VoiceWorkerStatus`: lifecycle, heartbeat, active backend ids, mic/playback
+  status, model assets, backend readiness, wakeword supervisor state, recent
+  safe events, and worker-safe telemetry.
+- `VoiceWorkerEvent`: safe lifecycle/device/wakeword/VAD/STT/TTS/playback/error
+  event summary.
+- `VoiceWorkerErrorEnvelope`: safe reason-coded worker error envelope.
+
+Owner: `packages.voice_worker_runtime`.
+
+Can read: protected Control Plane, future local service supervisor, future Shell.
+
+Can write: VoiceWorker runtime only.
+
+Safety rules:
+
+- The worker is local-only and must reject remote bindings.
+- No hidden auto-start, hidden recording, or remote exposure.
+- Raw audio, generated audio, raw transcripts, backend internals, secrets,
+  provider payloads, and tool payloads are not persisted or rendered by default.
+- Worker commands that touch devices or model assets must be explicit
+  user-triggered operations.
+- Assistant policy, AutonomyPolicy, CapabilityRuntime approval, intent routing,
+  tools, memory, provider routing, RuntimeComposition supervision, and Local API
+  internals remain outside the worker.
+
 ## Foundation Surface Contracts
 
 Some newer Marvex packages are bounded implementation foundations rather than public JSON contracts. Their existence does not broaden the provider-foundation contracts above and does not approve product expansion.

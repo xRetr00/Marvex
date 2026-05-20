@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+from importlib import import_module
 import re
 from typing import Literal
 
@@ -34,13 +36,18 @@ class ChunkPlaybackState(VoiceRuntimeModel):
 
 
 class SentenceBoundaryDetector:
-    def __init__(self, policy: SentenceClampPolicy) -> None:
+    def __init__(self, policy: SentenceClampPolicy, *, module_loader: Callable[[str], object] | None = None) -> None:
         self.policy = policy
         self._buffer = ""
         self._next = 0
+        self._module_loader = module_loader or import_module
 
     def accept(self, chunk: StreamingTextChunk) -> tuple[SpokenChunk, ...]:
         self._buffer += chunk.text
+        if chunk.final:
+            packaged = self._stream2sentence_chunks()
+            if packaged:
+                return packaged
         boundary = re.search(r"[.!?](\s|$)", self._buffer)
         if boundary is None and len(self._buffer) < self.policy.max_chars and not chunk.final:
             return ()
@@ -52,6 +59,21 @@ class SentenceBoundaryDetector:
         spoken = SpokenChunk(chunk_id=f"spoken-{self._next}", text=text, index=self._next)
         self._next += 1
         return (spoken,)
+
+    def _stream2sentence_chunks(self) -> tuple[SpokenChunk, ...]:
+        try:
+            module = self._module_loader("stream2sentence")
+            sentences = tuple(str(sentence).strip() for sentence in module.generate_sentences((self._buffer,)) if str(sentence).strip())  # type: ignore[attr-defined]
+        except Exception:
+            return ()
+        if not sentences:
+            return ()
+        self._buffer = ""
+        chunks = []
+        for sentence in sentences:
+            chunks.append(SpokenChunk(chunk_id=f"spoken-{self._next}", text=sentence[: self.policy.max_chars], index=self._next))
+            self._next += 1
+        return tuple(chunks)
 
 
 class TTSQueueCancelResult(VoiceRuntimeModel):

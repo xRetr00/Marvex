@@ -1,8 +1,12 @@
 from __future__ import annotations
 
 import hashlib
+import shutil
 from pathlib import Path
+from typing import Callable
 from typing import Literal
+from urllib.parse import urlparse
+from urllib.request import url2pathname, urlopen
 
 from pydantic import Field
 from packages.voice_runtime.base import SCHEMA_VERSION, VoiceRuntimeModel
@@ -36,6 +40,31 @@ class VoiceModelInstallResult(VoiceRuntimeModel):
     model_kind: str
     status: Literal["installed", "blocked", "not_installed"]
     local_path_present: bool = False
+    checksum_present: bool = False
+    exact_blocker: str | None = None
+    raw_model_internals_rendered: Literal[False] = False
+    raw_payload_persisted: Literal[False] = False
+
+
+class VoiceModelDownloadRequest(VoiceRuntimeModel):
+    schema_version: str = SCHEMA_VERSION
+    model_id: str = Field(..., min_length=1)
+    backend_id: str = Field(..., min_length=1)
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    source_uri: str = Field(..., min_length=1)
+    relative_path: str = Field(..., min_length=1)
+    checksum_sha256: str | None = None
+    explicit_user_triggered: Literal[True] = True
+
+
+class VoiceModelDownloadResult(VoiceRuntimeModel):
+    schema_version: str = SCHEMA_VERSION
+    model_id: str
+    backend_id: str
+    model_kind: str
+    status: Literal["installed", "blocked", "not_installed"]
+    download_started: bool
+    install_started: bool
     checksum_present: bool = False
     exact_blocker: str | None = None
     raw_model_internals_rendered: Literal[False] = False
@@ -104,6 +133,82 @@ class VoiceAssetManager:
         self._paths[request.model_id] = target
         return result
 
+    def download(
+        self,
+        request: VoiceModelDownloadRequest,
+        *,
+        fetcher: Callable[[str], bytes] | None = None,
+    ) -> VoiceModelDownloadResult:
+        target = (self.asset_root / request.relative_path).resolve()
+        if not target.is_relative_to(self.asset_root):
+            return _download_result_from_request(
+                request,
+                status="blocked",
+                download_started=False,
+                install_started=False,
+                exact_blocker="model_path_outside_voice_asset_root",
+            )
+        blocker = self._download_to_target(source_uri=request.source_uri, target=target, fetcher=fetcher)
+        if blocker is not None:
+            return _download_result_from_request(
+                request,
+                status="blocked",
+                download_started=True,
+                install_started=False,
+                exact_blocker=blocker,
+            )
+        installed = self.install_local(
+            VoiceModelInstallRequest(
+                model_id=request.model_id,
+                backend_id=request.backend_id,
+                model_kind=request.model_kind,
+                relative_path=request.relative_path,
+                checksum_sha256=request.checksum_sha256,
+                explicit_user_triggered=True,
+            )
+        )
+        if installed.status == "blocked" and installed.exact_blocker == "model_asset_checksum_mismatch" and target.is_file():
+            target.unlink(missing_ok=True)
+        return VoiceModelDownloadResult(
+            model_id=installed.model_id,
+            backend_id=installed.backend_id,
+            model_kind=installed.model_kind,
+            status=installed.status,
+            download_started=True,
+            install_started=True,
+            checksum_present=installed.checksum_present,
+            exact_blocker=installed.exact_blocker,
+        )
+
+    def _download_to_target(
+        self,
+        *,
+        source_uri: str,
+        target: Path,
+        fetcher: Callable[[str], bytes] | None,
+    ) -> str | None:
+        parsed = urlparse(source_uri)
+        try:
+            if parsed.scheme == "file":
+                source = Path(url2pathname(parsed.path)).resolve()
+                if not source.exists():
+                    return "model_source_not_found"
+                if source.is_dir():
+                    target.mkdir(parents=True, exist_ok=True)
+                    shutil.copytree(source, target, dirs_exist_ok=True)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    shutil.copy2(source, target)
+                return None
+            if parsed.scheme == "https":
+                data = fetcher(source_uri) if fetcher is not None else _fetch_https(source_uri)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.write_bytes(data)
+                return None
+        except Exception:
+            return "model_download_failed"
+        return "model_download_source_scheme_not_allowed"
+
     def remove(self, model_id: str) -> VoiceModelRemoveResult:
         removed = self._installed.pop(model_id, None) is not None
         self._paths.pop(model_id, None)
@@ -159,3 +264,28 @@ class VoiceAssetManager:
 
 def _looks_like_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
+
+
+def _fetch_https(source_uri: str) -> bytes:
+    with urlopen(source_uri, timeout=30) as response:  # noqa: S310 - explicit user-triggered model download.
+        return response.read()
+
+
+def _download_result_from_request(
+    request: VoiceModelDownloadRequest,
+    *,
+    status: Literal["installed", "blocked", "not_installed"],
+    download_started: bool,
+    install_started: bool,
+    exact_blocker: str | None = None,
+) -> VoiceModelDownloadResult:
+    return VoiceModelDownloadResult(
+        model_id=request.model_id,
+        backend_id=request.backend_id,
+        model_kind=request.model_kind,
+        status=status,
+        download_started=download_started,
+        install_started=install_started,
+        checksum_present=bool(request.checksum_sha256),
+        exact_blocker=exact_blocker,
+    )

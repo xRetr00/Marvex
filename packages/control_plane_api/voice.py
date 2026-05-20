@@ -48,6 +48,8 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
             return "200 OK", voice_worker_control.tick_wakeword_supervisor()
         if method == "POST" and path == "/control/voice/worker/models/install":
             return "200 OK", voice_worker_control.install_model_voice(_read_json(environ))
+        if method == "POST" and path == "/control/voice/worker/models/download":
+            return "200 OK", voice_worker_control.download_model_voice(_read_json(environ))
         if method == "POST" and path == "/control/voice/worker/models/remove":
             return "200 OK", voice_worker_control.remove_model_voice(_read_json(environ))
         return "404 Not Found", _voice_error("voice_worker_endpoint_not_found", path)

@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from dataclasses import dataclass
 from typing import Any, Callable
+
+from .models import VoiceWorkerCommand
 
 
 @dataclass(frozen=True)
@@ -17,7 +20,7 @@ class VoiceWorkerProcessSpec:
             raise ValueError("voice worker process host must be loopback-only")
 
     def argv(self) -> tuple[str, ...]:
-        return (sys.executable, "-m", self.module, "--host", self.host, "--port", str(self.port))
+        return (sys.executable, "-m", self.module, "--host", self.host, "--port", str(self.port), "--jsonl")
 
 
 class VoiceWorkerProcessAdapter:
@@ -29,7 +32,7 @@ class VoiceWorkerProcessAdapter:
     def start(self) -> None:
         if self._process is not None and self._process.poll() is None:
             return
-        self._process = self._process_factory(self.spec.argv(), stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, shell=False)
+        self._process = self._process_factory(self.spec.argv(), stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, shell=False, text=True)
 
     def stop(self) -> None:
         if self._process is None or self._process.poll() is not None:
@@ -39,3 +42,14 @@ class VoiceWorkerProcessAdapter:
 
     def is_running(self) -> bool:
         return self._process is not None and self._process.poll() is None
+
+    def send_command(self, command: VoiceWorkerCommand) -> dict[str, Any]:
+        if self._process is None or self._process.poll() is not None:
+            raise RuntimeError("voice worker process is not running")
+        if self._process.stdin is None or self._process.stdout is None:
+            raise RuntimeError("voice worker process contract pipes are not available")
+        self._process.stdin.write(command.model_dump_json() + "\n")
+        self._process.stdin.flush()
+        line = self._process.stdout.readline()
+        payload = json.loads(line or "{}")
+        return payload if isinstance(payload, dict) else {}

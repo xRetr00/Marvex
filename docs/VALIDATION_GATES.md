@@ -4,7 +4,7 @@ Validation gates are mandatory before finishing any task, including a one-line h
 
 ## Voice Worker Runtime Boundary Gate
 
-`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Kokoro/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
+`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, explicit local model downloads, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Kokoro/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
 
 ## Required Command
 
@@ -788,7 +788,7 @@ Protected boundaries:
 
 Adopted backend dependencies: Moonshine v2 through `moonshine-voice`, SenseVoice-Small through `funasr`, `sherpa-onnx` plus `sherpa-onnx-core`, `kokoro-onnx`, `piper-tts`, `stream2sentence`, `silero-vad`, and `webrtcvad-wheels`. Actual model/voice downloads remain explicit user-triggered operations into safe local model directories.
 
-Blocked: hidden recording, raw audio/transcript persistence by default, frontend engine execution, direct Local API tool/provider execution, separate voice worker daemon behavior, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior.
+Blocked: hidden recording, raw audio/transcript persistence by default, frontend engine execution, direct Local API tool/provider execution, VoiceRuntime-owned service daemon behavior, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior.
 
 ## Voice Worker Runtime Boundary Gate
 
@@ -803,10 +803,10 @@ Protected boundaries:
 - Worker start, stop, pause, resume, device config reload, mic test, playback test, wakeword test, STT/TTS tests, model install/remove, backend switching, and active voice switching must be user-visible protected Control Plane or explicit process commands; no hidden auto-start is allowed.
 - Microphone capture and playback must stay behind local audio adapters. Physical device validation may be manual, but runtime paths and mocked tests must exist.
 - Raw audio, generated audio, raw transcripts, backend internals, secrets, provider payloads, and tool payloads must not be persisted or rendered by default.
-- Model and voice installs must be explicit user-triggered operations under the safe local voice asset root. Missing model files must report `not_installed`; checksum mismatches must report `blocked`; wakeword tests must report not-ready until the Hey Marvex sherpa-onnx KWS asset is installed and wakeword is enabled.
+- Model and voice installs/downloads must be explicit user-triggered operations under the safe local voice asset root. Missing model files must report `not_installed`; checksum mismatches must report `blocked`; wakeword tests must report not-ready until the Hey Marvex sherpa-onnx KWS asset is installed and wakeword is enabled.
 - Worker telemetry must persist/project safe summaries only: lifecycle/device/capture/wakeword/VAD/STT/TTS/playback/barge-in/error counts and durations, never raw audio or transcripts.
 - Barge-in must cancel playback state and queued TTS state. Early speech must remain bounded, rate-limited, and unable to claim facts without evidence.
 
 Adopted worker dependency: `sounddevice==0.5.5`, isolated behind `SoundDeviceAudioAdapter`. CI uses `FakeLocalAudioAdapter` for deterministic device/capture/playback tests because physical microphone and speaker hardware are host-local.
 
-Blocked: hidden recording, raw audio/transcript/generated-audio persistence by default, hidden downloads, arbitrary path writes, remote worker exposure, always-running 24/7 wakeword supervision without explicit visible control, real model downloads in automated validation, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior.
+Blocked: hidden recording, raw audio/transcript/generated-audio persistence by default, hidden downloads, arbitrary path writes, remote worker exposure, always-running 24/7 wakeword supervision without explicit visible control, real model downloads in automated validation, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior. Approved VoiceWorker work may implement explicit user-triggered local model downloads and local-only persistent worker supervision behind the worker contract.

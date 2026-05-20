@@ -15,8 +15,8 @@ VoiceRuntime does not own intent routing, tools, memory, provider routing, capab
 - Secondary ASR/wakeword/TTS/VAD seam: `sherpa-onnx==1.13.2` plus `sherpa-onnx-core==1.13.2`.
 - TTS main: `kokoro-onnx==0.5.0`.
 - TTS fallback: `piper-tts==1.4.2`.
-- Sentence chunking: `stream2sentence==0.3.2` behind a conservative sentence clamp seam.
-- VAD main/fallback: `silero-vad==6.2.1` and `webrtcvad-wheels==2.0.14`.
+- Sentence chunking: `stream2sentence==0.3.2` behind a conservative sentence clamp seam that falls back to local punctuation clamping if package execution fails.
+- VAD main/fallback: `silero-vad==6.2.1` and `webrtcvad-wheels==2.0.14`, imported through concrete adapters with safe silence fallback on package/runtime errors.
 
 `uv` resolution succeeded for the stack. `pip check` initially found that `sherpa-onnx-core` was required but missing; adding `sherpa-onnx-core==1.13.2` fixed the dependency check.
 
@@ -40,4 +40,4 @@ The next phase now starts in `packages.voice_worker_runtime`. VoiceRuntime remai
 
 ## Still Outside This Foundation
 
-Separate always-running voice worker processes, OS microphone service supervision, Orb/Face UI, desktop overlay, final visual assistant shell, vision, and proactive non-voice behavior require later explicit goals.
+VoiceRuntime itself still does not own service daemon behavior, OS microphone supervision, Orb/Face UI, desktop overlay, final visual assistant shell, vision, or proactive non-voice behavior. The approved local-only VoiceWorker contract now owns the separate worker process boundary and OS audio adapter path.

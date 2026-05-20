@@ -94,7 +94,7 @@ def test_process_spec_is_loopback_local_subprocess_command() -> None:
     spec = VoiceWorkerProcessSpec(port=8788)
     argv = spec.argv()
 
-    assert argv[1:] == ("-m", "packages.voice_worker_runtime.worker_main", "--host", "127.0.0.1", "--port", "8788")
+    assert argv[1:] == ("-m", "packages.voice_worker_runtime.worker_main", "--host", "127.0.0.1", "--port", "8788", "--jsonl")
     assert "0.0.0.0" not in argv
 
 

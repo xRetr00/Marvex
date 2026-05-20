@@ -1,5 +1,7 @@
 # Voice Worker Runtime
 
+Contract status: `VoiceWorker` is approved in `docs/CONTRACT_APPROVALS.md` for local-only worker runtime implementation.
+
 Marvex now has the first dedicated local voice worker process boundary after the in-process VoiceRuntime foundation. This is the live local voice runtime worker direction; it is not Orb, not Face UI, not desktop overlay, not vision, and not the final visual assistant shell.
 
 ## Ownership
@@ -11,10 +13,11 @@ It does not own assistant policy, AutonomyPolicy, CapabilityRuntime approval, in
 ## Runtime Behavior Added
 
 - Explicit `VoiceWorkerConfig`, `VoiceWorkerStatus`, `VoiceWorkerCommand`, `VoiceWorkerEvent`, `VoiceWorkerHealth`, `VoiceWorkerLifecycleState`, `VoiceWorkerErrorEnvelope`, and `SafeVoiceWorkerProjection` models.
-- User-visible start, stop, pause, resume, reload-config, test-mic, test-wakeword, test-STT, test-TTS, test-playback, install-model, switch-STT, switch-TTS, and switch-active-voice command paths.
+- User-visible start, stop, pause, resume, reload-config, test-mic, test-wakeword, test-STT, test-TTS, test-playback, download-model, install-model, switch-STT, switch-TTS, and switch-active-voice command paths.
 - Local-only worker defaults with no hidden auto-start and no hidden recording.
 - Heartbeat and lifecycle status for worker supervision.
 - Loopback-only subprocess launch path with safe shutdown; `0.0.0.0` and remote bindings are rejected.
+- JSONL command/status process mode for persistent local worker supervision: the process reads approved `VoiceWorkerCommand` envelopes from stdin, writes safe `VoiceWorkerCommandResult` projections to stdout, and exits the loop on an explicit `stop` command.
 - Microphone device listing/test/capture adapter path, device selection through worker config reload, and playback device/test/interrupt path.
 - Ring-buffer compatible PCM frame capture path for runtime integration without raw audio persistence.
 - Bounded live capture cycle path for explicit worker runs: microphone frames are evaluated through an injected/mockable VAD decision function, pre-roll frames are retained, silence cutoff/tail padding are represented in safe summaries, and max utterance duration stops capture without assistant dispatch.
@@ -36,13 +39,13 @@ The sounddevice adapter is intentionally thin. It can list real local input/outp
 
 ## Asset Policy
 
-Voice model and voice assets must live under the configured local voice asset root. Path traversal is blocked. Installs are explicit user-triggered operations. Missing local assets report `not_installed`, file checksum mismatches report `blocked`, and no fake readiness is returned. No arbitrary path writes, hidden downloads, secrets, raw model internals, raw audio, generated audio, or raw transcripts are persisted by default.
+Voice model and voice assets must live under the configured local voice asset root. Path traversal is blocked. Installs and downloads are explicit user-triggered operations. Missing local assets report `not_installed`, file checksum mismatches report `blocked`, and no fake readiness is returned. No arbitrary path writes, hidden downloads, secrets, raw model internals, raw audio, generated audio, or raw transcripts are persisted by default.
 
-Current model assets are still not downloaded by this checkpoint. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper readiness now checks package import availability plus the corresponding local model or voice asset. The worker can invoke package-specific Moonshine, SenseVoice/FunASR, Kokoro, and Piper model adapters for installed assets in tests and future local smoke paths, and those adapters resolve captured audio refs or produce generated audio refs without persistence. Actual live inference remains blocked until the user explicitly installs compatible model/voice assets under the safe asset root. `Hey Marvex` wakeword tests require both enabled wakeword policy and the installed sherpa-onnx KWS asset; otherwise Control Plane reports the exact blocker.
+explicit local model downloads now copy `file://` assets or fetch HTTPS bytes into the safe voice asset root, then register the result through the same checksum-aware install path. Moonshine v2, SenseVoice-Small, sherpa-onnx KWS/ASR/TTS/VAD, Kokoro, and Piper readiness now checks package import availability plus the corresponding local model or voice asset. The worker can invoke package-specific Moonshine, SenseVoice/FunASR, Kokoro, and Piper model adapters for installed assets in tests and future local smoke paths, and those adapters resolve captured audio refs or produce generated audio refs without persistence. Hidden downloads remain forbidden. `Hey Marvex` wakeword tests require both enabled wakeword policy and the installed sherpa-onnx KWS asset; otherwise Control Plane reports the exact blocker.
 
 ## Control Plane
 
-Protected Control Plane endpoints expose `/control/voice/worker` status, devices, start/stop/pause/resume, config reload, mic test, playback test, wakeword test, STT/TTS test, model install/remove, STT/TTS backend switching, and active voice switching. The web page shows worker status, microphone and playback selectors, backend/model readiness, wakeword/STT/TTS tests, telemetry summaries, and explicit worker controls. It does not render raw audio or raw transcripts.
+Protected Control Plane endpoints expose `/control/voice/worker` status, devices, start/stop/pause/resume, config reload, mic test, playback test, wakeword test, STT/TTS test, model install/download/remove, STT/TTS backend switching, and active voice switching. The web page shows worker status, microphone and playback selectors, backend/model readiness, wakeword/STT/TTS tests, telemetry summaries, and explicit worker controls. It does not render raw audio or raw transcripts.
 
 ## Safety Defaults
 
@@ -58,4 +61,4 @@ Protected Control Plane endpoints expose `/control/voice/worker` status, devices
 
 ## Still Not Implemented
 
-Always-running 24/7 background wakeword supervision (the supervisor remains explicit-user-triggered and tick-driven, not a hidden background daemon), real physical microphone validation in CI, real model downloads, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented unless a later explicit goal widens scope.
+Always-running 24/7 background wakeword supervision remains disallowed unless it is explicit, visible, local-only, and policy-controlled. Real physical microphone validation in CI, real live heavy STT/TTS smoke against installed model files, package-specific sherpa-onnx KWS invocation for Hey Marvex, echo suppression, Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive non-voice behavior, and remote worker exposure remain not implemented. The active VoiceWorker implementation goal still needs deeper real backend adapters, OS audio I/O completion, and persistent local worker supervision.

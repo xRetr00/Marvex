@@ -6,7 +6,7 @@ from typing import Any
 
 from packages.voice_runtime import AudioRingBuffer, ChunkAggregator, EarlySpeechTrigger, PartialTranscriptBuffer, VADDecision, VoicePlaybackResult, VoiceRuntime, VoiceTurnRequest, select_early_speech
 
-from .assets import VoiceAssetManager, VoiceModelInstallRequest
+from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest
 from .audio import FakeLocalAudioAdapter, LocalAudioAdapter, PlaybackAdapterResult
 from .backend_runtime import VoiceWorkerBackendRuntime
 from .models import (
@@ -385,6 +385,10 @@ class VoiceWorkerController:
 
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary=result.model_dump(mode="json"))
+
+    def _handle_download_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        result = self.asset_manager.download(VoiceModelDownloadRequest.model_validate(command.payload))
         return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=command.command_id, summary=result.model_dump(mode="json"))
 
     def _handle_switch_stt_backend(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:

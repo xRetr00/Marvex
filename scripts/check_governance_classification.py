@@ -8,6 +8,7 @@ REQUIRED_DOCS = (
     "docs/GOVERNANCE_CLASSIFICATION.md",
     "docs/CONTRACT_APPROVALS.md",
     "PROJECT_STATUS.md",
+    "services/voice_worker/README.md",
 )
 REQUIRED_CLASSIFICATIONS = (
     "approved implementation surface",
@@ -34,6 +35,7 @@ REQUIRED_SURFACES = (
     "intent/prompt harness seams",
     "service placeholders",
     "future voice",
+    "voice worker runtime",
     "future desktop agent",
     "future shell/orb ui",
     "future proactive behavior",
@@ -70,6 +72,7 @@ def validate_governance_classifications(docs: dict[str, str]) -> list[str]:
     classification = _normalize(docs.get("docs/GOVERNANCE_CLASSIFICATION.md", ""))
     approvals = _normalize(docs.get("docs/CONTRACT_APPROVALS.md", ""))
     status = _normalize(docs.get("PROJECT_STATUS.md", ""))
+    voice_worker_service = _normalize(docs.get("services/voice_worker/README.md", ""))
 
     for rel in REQUIRED_DOCS:
         if not docs.get(rel):
@@ -92,6 +95,14 @@ def validate_governance_classifications(docs: dict[str, str]) -> list[str]:
     for phrase in STATUS_REQUIRED_PHRASES:
         if phrase not in status:
             failures.append(f"PROJECT_STATUS.md missing current cleanup phrase: {phrase}")
+
+    if "| voiceworker | 0.1.1-draft | approved | user | 2026-05-19 | yes |" in approvals:
+        if "| voice worker runtime | approved implementation surface |" not in classification:
+            failures.append("VoiceWorker approval requires voice worker runtime to be classified as an approved implementation surface")
+        if "future voice worker/service process" in classification:
+            failures.append("VoiceWorker approval forbids stale future voice worker/service process classification")
+        if "contract status: not approved" in voice_worker_service:
+            failures.append("VoiceWorker service README still says contract status is not approved")
 
     stale_next = (
         "recommended next: add a local service composition slice",

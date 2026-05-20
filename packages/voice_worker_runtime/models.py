@@ -142,6 +142,7 @@ class VoiceWorkerCommand(VoiceRuntimeModel):
         "test_stt",
         "test_tts",
         "test_playback",
+        "download_model",
         "install_model",
         "switch_stt_backend",
         "switch_tts_backend",

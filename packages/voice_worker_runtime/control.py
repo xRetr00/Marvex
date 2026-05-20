@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .assets import VoiceAssetManager, VoiceModelInstallRequest
+from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest
 from .controller import VoiceWorkerController
 from .models import VoiceWorkerCommand
 
@@ -29,6 +29,9 @@ class VoiceWorkerControlPlaneFacade:
 
     def install_model_voice(self, payload: dict[str, Any]) -> dict[str, object]:
         return self.assets.install_local(VoiceModelInstallRequest.model_validate(payload)).model_dump(mode="json")
+
+    def download_model_voice(self, payload: dict[str, Any]) -> dict[str, object]:
+        return self.assets.download(VoiceModelDownloadRequest.model_validate(payload)).model_dump(mode="json")
 
     def remove_model_voice(self, payload: dict[str, Any]) -> dict[str, object]:
         return self.assets.remove(str(payload.get("model_id") or "")).model_dump(mode="json")
