@@ -7,7 +7,8 @@ The bootstrap is complete only when:
 - the Marvex folder exists
 - all required docs exist
 - all templates exist
-- all placeholder service folders are README-only
+- all placeholder service folders are README-only except explicitly approved
+  service-owned entrypoint files such as `services/core/main.py`
 - validation scripts exist
 - `python scripts/run_all_checks.py` passes
 - no product implementation exists

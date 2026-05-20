@@ -7,6 +7,10 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 LOCAL_API_ROOT = ROOT / "packages" / "local_api"
 SERVICE_ROOT = ROOT / "services"
+ALLOWED_SERVICE_ENTRYPOINT_FILES = {
+    "services/core/__init__.py",
+    "services/core/main.py",
+}
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
@@ -167,7 +171,14 @@ def _scan_service_placeholders(failures: list[str]) -> None:
     if not SERVICE_ROOT.exists():
         return
     for path in SERVICE_ROOT.rglob("*"):
-        if path.is_file() and path.name != "README.md":
+        if "__pycache__" in path.parts:
+            continue
+        if not path.is_file() or path.name == "README.md":
+            continue
+        rel = _rel(path)
+        if rel in ALLOWED_SERVICE_ENTRYPOINT_FILES:
+            continue
+        if path.is_file():
             failures.append(f"{_rel(path)} violates README-only service placeholder policy")
 
 

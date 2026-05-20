@@ -21,7 +21,8 @@
 - `docs/GOVERNANCE_CLASSIFICATION.md` classifies every major surface.
 - Existing code is not approval; future work needs current goal spec, docs/CONTRACT_APPROVALS.md, PROJECT_STATUS.md, validation gates, and relevant architecture docs.
 - File size and god-file checks target known risk files directly.
-- Service placeholders remain README-only.
+- Service placeholders remain README-only except explicitly approved
+  service-owned entrypoint files.
 - Core/provider/ports/adapters boundaries remain validated by scripts.
 - CapabilityRuntime owns permission, approval, execution request, result envelope, and loop guard policy.
 - Assistant turn integration stays composition glue and must not own provider routing, prompt policy, memory policy, or tool policy.

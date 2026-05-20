@@ -161,13 +161,13 @@ Initial baseline before this cleanup:
 
 Marvex remains on the Assistant OS infrastructure path. Existing foundations are now classified in `docs/GOVERNANCE_CLASSIFICATION.md` so code existence is not treated as product approval.
 
-Documented implementation surfaces: provider foundation contracts, the assistant envelope contracts, runtime completion foundations, and the local-only VoiceWorker runtime contract listed in `docs/CONTRACT_APPROVALS.md`.
+Documented implementation surfaces: provider foundation contracts, the assistant envelope contracts, runtime completion foundations, the minimal local CoreService entrypoint, and the local-only VoiceWorker runtime contract listed in `docs/CONTRACT_APPROVALS.md`.
 
-Bounded foundations: assistant turn integration, telemetry, Local API, Control Plane API, Control Plane web, CapabilityRuntime, tool execution foundations, MCP adapter, MemoryRuntime, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, and VoiceRuntime. VoiceWorker is no longer a future service placeholder: it is listed for local-only worker implementation inside its documented boundaries. These foundations may be maintained and tested, but expansion outside their documented scope requires updates to `docs/CONTRACT_APPROVALS.md`, this status file, validation gates, and relevant architecture docs.
+Bounded foundations: assistant turn integration, telemetry, Local API, Control Plane API, Control Plane web, CapabilityRuntime, tool execution foundations, MCP adapter, MemoryRuntime, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, and VoiceRuntime. `packages/core/service.py` is the pure Core orchestration foundation; `services/core/main.py` is the minimal local runnable Core service entrypoint. VoiceWorker is no longer a future service placeholder: it is listed for local-only worker implementation inside its documented boundaries. These foundations may be maintained and tested, but expansion outside their documented scope requires updates to `docs/CONTRACT_APPROVALS.md`, this status file, validation gates, and relevant architecture docs.
 
 Experimental seams: browser/computer-use adapter seams are present for policy-gated proposals and bounded adapter proofs only. They are not general product permission for browser or desktop automation.
 
-Future service contracts: `services/*` placeholders remain README-only. Desktop agent, shell/orb UI, proactive behavior, and vision remain future product behavior for now; VoiceWorker is listed only for the local-only worker runtime surface described above.
+Future service contracts: `services/*` placeholders remain README-only except for the approved minimal `services/core` local entrypoint files. Desktop agent, shell/orb UI, proactive behavior, and vision remain future product behavior for now; VoiceWorker is listed only for the local-only worker runtime surface described above.
 
 ## Cleanup Result
 

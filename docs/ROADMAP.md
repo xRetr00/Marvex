@@ -28,7 +28,7 @@ Every bounded foundation must have:
 
 ## Phase 3: Process Readiness
 
-Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are listed in `docs/CONTRACT_APPROVALS.md`. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
+Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are listed in `docs/CONTRACT_APPROVALS.md` and a service-owned entrypoint task exists. The approved `services/core` exception is limited to the minimal local CoreService entrypoint. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
 
 ## Phase 4: Future Product Surfaces
 

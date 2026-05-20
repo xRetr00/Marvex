@@ -13,7 +13,54 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
-SERVICE_ENTRYPOINT_TASKS = set()
+SERVICE_ENTRYPOINT_TASKS = {"core"}
+ALLOWED_SERVICE_ENTRYPOINT_FILES = {
+    "core": {"README.md", "__init__.py", "main.py"},
+}
+ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
+    "__future__",
+    "argparse",
+    "collections.abc",
+    "dataclasses",
+    "json",
+    "packages.contracts",
+    "packages.core",
+    "packages.local_api",
+    "packages.runtime_composition",
+    "packages.telemetry",
+    "typing",
+    "wsgiref.simple_server",
+)
+FORBIDDEN_CORE_SERVICE_IMPORT_PREFIXES = (
+    "apps",
+    "packages.adapters",
+    "packages.provider_runtime",
+    "packages.process_runtime",
+    "services.provider_worker",
+    "services.tool_worker",
+    "services.intent_worker",
+    "services.voice_worker",
+    "services.desktop_agent",
+    "services.shell",
+)
+FORBIDDEN_CORE_SERVICE_TOKENS = (
+    "packages.adapters",
+    "packages.provider_runtime",
+    "create_provider",
+    "lmstudio",
+    "litellm",
+    "openai",
+    "anthropic",
+    "gemini",
+    "0.0.0.0",
+    "memory_runtime",
+    "tool_runtime",
+    "voice_worker",
+    "desktop",
+    "proactive",
+    "raw prompt",
+    "raw_provider",
+)
 
 
 def implementation_allowed(contract_name: str) -> bool:
@@ -36,6 +83,61 @@ def service_entrypoint_allowed(service_name: str, contract_name: str) -> bool:
     return implementation_allowed(contract_name) and service_name in SERVICE_ENTRYPOINT_TASKS
 
 
+def _module_from_import(node):
+    import ast
+
+    if isinstance(node, ast.ImportFrom):
+        if node.level:
+            return None
+        return node.module
+    if isinstance(node, ast.Import):
+        return node.names[0].name if node.names else None
+    return None
+
+
+def _matches_prefix(module: str, prefixes: tuple[str, ...]) -> bool:
+    return any(module == prefix or module.startswith(f"{prefix}.") for prefix in prefixes)
+
+
+def _scan_core_service_entrypoint(service, failures: list[str]) -> None:
+    import ast
+
+    allowed_files = ALLOWED_SERVICE_ENTRYPOINT_FILES["core"]
+    entries = {path.name for path in service.iterdir() if path.name != "__pycache__"}
+    unexpected_entries = sorted(entries - allowed_files)
+    if unexpected_entries:
+        failures.append(
+            f"{service.relative_to(ROOT).as_posix()} contains non-entrypoint files: {unexpected_entries}"
+        )
+
+    for path in sorted(service.rglob("*.py")):
+        if "__pycache__" in path.parts:
+            continue
+        if path.parent != service:
+            failures.append(
+                f"{path.relative_to(ROOT).as_posix()} is nested runtime/business logic under services/core"
+            )
+            continue
+        rel = path.relative_to(ROOT).as_posix()
+        text = path.read_text(encoding="utf-8")
+        lowered = text.lower()
+        for token in FORBIDDEN_CORE_SERVICE_TOKENS:
+            if token in lowered:
+                failures.append(f"{rel} contains forbidden service entrypoint token: {token}")
+
+        tree = ast.parse(text, filename=str(path))
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Import | ast.ImportFrom):
+                continue
+            module = _module_from_import(node)
+            if module is None:
+                continue
+            if _matches_prefix(module, FORBIDDEN_CORE_SERVICE_IMPORT_PREFIXES):
+                failures.append(f"{rel} imports forbidden dependency: {module}")
+            if not _matches_prefix(module, ALLOWED_CORE_SERVICE_IMPORT_PREFIXES):
+                failures.append(f"{rel} imports non-approved dependency: {module}")
+
+
 def main() -> int:
     failures = []
     if not SERVICES.is_dir():
@@ -51,19 +153,20 @@ def main() -> int:
             continue
 
         entries = sorted(p.name for p in service.iterdir())
-        if entries != ["README.md"] and not service_entrypoint_allowed(
-            service.name, contract_name
-        ):
+        entrypoint_allowed = service_entrypoint_allowed(service.name, contract_name)
+        if entries != ["README.md"] and not entrypoint_allowed:
             failures.append(
                 f"{service.relative_to(ROOT).as_posix()} must contain only README.md until {contract_name} is approved and a service-owned entrypoint task updates this gate; found {entries}"
             )
+        if service.name == "core" and entrypoint_allowed:
+            _scan_core_service_entrypoint(service, failures)
 
     if failures:
         for failure in failures:
             print(f"FAIL {failure}")
         return 1
 
-    print("PASS service placeholders are README-only")
+    print("PASS service placeholder policy")
     return 0
 
 

@@ -47,7 +47,7 @@ Expected folders and required documents must exist.
 
 ### Service Placeholder Gate
 
-Every `services/*` folder must remain README-only until its matching service contract is approved in `docs/CONTRACT_APPROVALS.md` and a service-owned entrypoint task exists. Approval alone does not authorize implementation, and any later implementation still needs lifecycle, IPC, health, version, docs, tests, and gates.
+Every `services/*` folder must remain README-only until its matching service contract is approved in `docs/CONTRACT_APPROVALS.md` and a service-owned entrypoint task exists. Approval alone does not authorize implementation, and any later implementation still needs lifecycle, IPC, health, version, docs, tests, and gates. The current approved exception is `services/core`, limited to `README.md`, `__init__.py`, and `main.py` for the minimal local CoreService entrypoint.
 
 ### Forbidden Modules Gate
 
@@ -156,7 +156,8 @@ trace-reader HTTP/auth/JSON adapter.
 - `packages/local_api` must not hard-code local token/secret values or print
   token material.
 - Service placeholder folders remain README-only until matching contract
-  approval and a service-owned entrypoint task exist.
+  approval and a service-owned entrypoint task exist. `services/core` may
+  contain only the approved minimal local entrypoint files.
 - `scripts/run_all_checks.py` runs the local API boundary gate.
 
 ### Local API Client Boundary Gate

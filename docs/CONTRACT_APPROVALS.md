@@ -39,7 +39,7 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 | AssistantTurnInput | 0.1.1-draft | approved | user | 2026-05-01 | yes |
 | AssistantTurnResult | 0.1.1-draft | approved | user | 2026-05-01 | yes |
 | AssistantFinalResponse | 0.1.1-draft | approved | user | 2026-05-01 | yes |
-| CoreService | 0.1.1-draft | approved | user |  2026-05-19 | yes |
+| CoreService | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | ProviderWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | ToolWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | IntentWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
@@ -57,6 +57,12 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 - `approval_status: approved` is invalid without an approver and approval date.
 - `implementation_allowed: yes` is invalid unless approval status is `approved`.
 - Service placeholder folders remain README-only until their matching service contract has `implementation_allowed: yes`.
+- CoreService approval is limited to the pure `packages/core/service.py`
+  orchestration foundation and the minimal local `services/core/main.py`
+  service entrypoint. It does not approve remote binding, daemon supervision,
+  provider-specific service branches, raw prompt/provider-output persistence,
+  hidden autostart, memory/tools/desktop/UI/vision/proactive behavior, or other
+  service implementations.
 
 ## Implementation Surface Classification Rule
 

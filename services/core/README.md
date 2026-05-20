@@ -1,8 +1,14 @@
 # Core Service
 
-Status: approved contract with in-process CoreService lifecycle envelope in
-`packages/core/service.py`. No service-owned process entrypoint exists under
-`services/core` yet.
+Status: approved minimal local Core service entrypoint.
+
+`packages/core/service.py` is the pure Core orchestration foundation:
+lifecycle, health/version, turn submission through a port, and structured
+`ErrorEnvelope` behavior. It remains transport-free.
+
+`services/core/main.py` is the runnable service-owned entrypoint: CLI parsing,
+loopback Local API startup, safe startup metadata, health/version one-shot, and
+shutdown wiring.
 
 ## Intended Ownership
 
@@ -36,16 +42,31 @@ CoreService must never own provider protocols, tool execution, memory storage, U
 
 ## Implemented Closure Slice
 
-The current closure slice is intentionally in-process and orchestration-only:
+The current closure slice is intentionally local-only and minimal:
 
 - CoreService can start, report health/version, submit assistant turns through
   an injected executor port, and shut down.
 - It uses approved `HealthCheck`, `VersionInfo`, `AssistantTurnInput`,
   `AssistantTurnResult`, and `ErrorEnvelope` contracts.
-- It can be composed behind the existing Local API from outside Core, but Core
-  does not import Local API or own HTTP exposure.
+- `services/core/main.py` composes CoreService behind the existing Local API
+  without adding Local API imports to `packages/core`.
+- Startup binds to `127.0.0.1` by default. Remote bind and `0.0.0.0` modes are
+  not approved.
 - Failures at the CoreService envelope return structured `ErrorEnvelope`
   results instead of leaking raw exceptions.
+- The turn path uses the existing approved runtime composition foundation/test
+  path. This is not the final assistant turn model and does not approve
+  provider-specific branching inside Core or the service folder.
 
-Future process entrypoints, worker IPC, supervision, and daemon behavior still
-require separate approved tasks.
+Runnable commands:
+
+```powershell
+uv run python -m services.core.main --help
+uv run python -m services.core.main --health-once
+uv run python -m services.core.main --serve --local-auth-token <local-token>
+```
+
+Future production daemon supervision, external process managers, worker IPC,
+remote bind modes, raw prompt/provider-output persistence, hidden autostart,
+and full assistant OS worker orchestration still require separate approved
+tasks.
