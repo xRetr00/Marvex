@@ -10,7 +10,7 @@ from packages.voice_runtime.base import VoiceRuntimeModel
 from packages.voice_runtime.errors import VoiceErrorEnvelope
 
 from .assets import VoiceAssetManager, VoiceModelInstallResult
-from .model_adapters import VoiceWorkerSttModelRunner, VoiceWorkerTtsModelRunner
+from .model_adapters import SherpaOnnxKwsRunner, VoiceWorkerSttModelRunner, VoiceWorkerTtsModelRunner
 
 
 class VoiceWorkerAudioRef(VoiceRuntimeModel):
@@ -128,14 +128,19 @@ class VoiceWorkerBackendRuntime:
             audio_refs=self.audio_refs,
             transcriber_factory=lambda model_path: self._module_loader("moonshine_voice.transcriber").Transcriber(model_path),
             automodel_factory=lambda **kwargs: self._module_loader("funasr").AutoModel(**kwargs),
+            sherpa_recognizer_factory=lambda model_dir: self._module_loader("sherpa_onnx").OfflineRecognizer.from_pre_trained(model_dir),
         )
         self._tts_runner = tts_runner or VoiceWorkerTtsModelRunner(
             asset_manager=self.asset_manager,
             generated_audio=self.generated_audio,
             kokoro_factory=lambda *args, **kwargs: self._module_loader("kokoro_onnx").Kokoro(*args, **kwargs),
             voice_loader=lambda *args, **kwargs: self._module_loader("piper").PiperVoice.load(*args, **kwargs),
+            sherpa_tts_factory=lambda model_dir: self._module_loader("sherpa_onnx").OfflineTts.from_pre_trained(model_dir),
         )
-        self._wakeword_runner = wakeword_runner
+        self._wakeword_runner: Any = wakeword_runner or SherpaOnnxKwsRunner(
+            asset_manager=self.asset_manager,
+            kws_factory=lambda model_dir: self._module_loader("sherpa_onnx").KeywordSpotter.from_pre_trained(model_dir),
+        )
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
         return self.audio_refs.remember_frames(trace_id=trace_id, frames=frames)
@@ -202,12 +207,7 @@ class VoiceWorkerBackendRuntime:
         blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
         if blocker is not None:
             return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=backend_id, reason_code=blocker)
-        if self._wakeword_runner is not None:
-            return self._wakeword_runner(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
-        confidence = threshold if frames else 0.0
-        if confidence >= threshold:
-            return WakeWordDetectionResult.detected(phrase=phrase, confidence=confidence, backend_id=backend_id)
-        return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=confidence, backend_id=backend_id, reason_code="wakeword.not_detected")
+        return self._wakeword_runner(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
 
     def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str) -> dict[str, object]:
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind=model_kind)

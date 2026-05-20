@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from packages.voice_runtime import AudioFrame, SpeechSynthesisRequest, TranscriptionRequest
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerAudioRefStore, VoiceWorkerGeneratedAudioSink
-from packages.voice_worker_runtime.model_adapters import KokoroOnnxTtsRunner, MoonshineSttRunner, PiperTtsRunner, SenseVoiceSttRunner
+from packages.voice_worker_runtime.model_adapters import KokoroOnnxTtsRunner, MoonshineSttRunner, PiperTtsRunner, SenseVoiceSttRunner, SherpaOnnxKwsRunner, SherpaOnnxSttRunner, SherpaOnnxTtsRunner
 
 
 def _install(manager: VoiceAssetManager, *, model_id: str, backend_id: str, model_kind: str, relative_path: str):
@@ -139,3 +139,129 @@ def test_piper_runner_synthesizes_chunks_to_generated_audio_ref(tmp_path: Path) 
     assert str(observed["model_path"]).endswith("voice.onnx")
     assert str(observed["config_path"]).endswith("voice.onnx.json")
     assert observed["text"] == "private piper response"
+
+
+def test_sherpa_onnx_stt_runner_transcribes_via_offline_recognizer(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset = _install(manager, model_id="sherpa-onnx-asr", backend_id="sherpa-onnx-asr", model_kind="stt", relative_path="stt/sherpa-onnx-asr")
+    audio_refs = VoiceWorkerAudioRefStore()
+    audio_ref = audio_refs.remember_frames(trace_id="trace-sherpa-stt", frames=(AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),))
+    observed: dict[str, object] = {}
+
+    class FakeStream:
+        result = SimpleNamespace(text="sherpa stt transcript")
+
+        def accept_waveform(self, sample_rate: int, waveform: list[float]) -> None:
+            observed["sample_rate"] = sample_rate
+            observed["waveform_count"] = len(waveform)
+
+    class FakeRecognizer:
+        def __init__(self, model_dir: str) -> None:
+            observed["model_dir"] = model_dir
+
+        def create_stream(self) -> FakeStream:
+            return FakeStream()
+
+        def decode_stream(self, stream: FakeStream) -> None:
+            observed["decoded"] = True
+
+    runner = SherpaOnnxSttRunner(asset_manager=manager, audio_refs=audio_refs, recognizer_factory=FakeRecognizer)
+    result = runner(TranscriptionRequest(trace_id="trace-sherpa-stt", audio_ref_id=audio_ref.audio_ref_id, duration_ms=100, backend_id="sherpa-onnx-asr"), asset)
+    serialized = json.dumps(result.safe_projection()).lower()
+
+    assert result.status == "succeeded"
+    assert result.text == "sherpa stt transcript"
+    assert str(observed["model_dir"]).endswith("stt\\sherpa-onnx-asr") or str(observed["model_dir"]).endswith("stt/sherpa-onnx-asr")
+    assert observed["sample_rate"] == 16_000
+    assert observed["decoded"] is True
+    assert "sherpa stt transcript" not in serialized
+
+
+def test_sherpa_onnx_tts_runner_synthesizes_via_offline_tts(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset_dir = manager.asset_root / "tts" / "sherpa-onnx-tts"
+    asset_dir.mkdir(parents=True)
+    asset = manager.install_local(VoiceModelInstallRequest(model_id="sherpa-onnx-tts", backend_id="sherpa-onnx-tts", model_kind="tts_voice", relative_path="tts/sherpa-onnx-tts", explicit_user_triggered=True))
+    generated_audio = VoiceWorkerGeneratedAudioSink()
+    observed: dict[str, object] = {}
+
+    class FakeTts:
+        def __init__(self, model_dir: str) -> None:
+            observed["model_dir"] = model_dir
+
+        def generate(self, text: str, sid: int = 0, speed: float = 1.0) -> SimpleNamespace:
+            observed["text"] = text
+            observed["sid"] = sid
+            return SimpleNamespace(samples=[0.5, -0.5, 0.25], sample_rate=22_050)
+
+    runner = SherpaOnnxTtsRunner(asset_manager=manager, generated_audio=generated_audio, tts_factory=FakeTts)
+    result = runner(SpeechSynthesisRequest(trace_id="trace-sherpa-tts", text="  sherpa   tts  text  ", voice_id="sherpa-voice", backend_id="sherpa-onnx-tts"), asset)
+    serialized = json.dumps(result.safe_projection()).lower()
+
+    assert result.status == "succeeded"
+    assert result.sample_rate == 22_050
+    assert result.audio_ref == "memory://voice/generated/trace-sherpa-tts/sherpa-voice"
+    assert generated_audio.resolve(result.audio_ref) != b""
+    assert observed["text"] == "sherpa tts text"
+    assert observed["sid"] == 0
+    assert "sherpa tts text" not in serialized
+
+
+def test_sherpa_onnx_kws_runner_detects_wakeword(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset = _install(manager, model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword", relative_path="kws/hey-marvex")
+    frames = (AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),)
+    observed: dict[str, object] = {}
+
+    class FakeKwsStream:
+        result = SimpleNamespace(keyword="hey marvex", confidence=0.91)
+
+        def accept_waveform(self, sample_rate: int, waveform: list[float]) -> None:
+            observed["sample_rate"] = sample_rate
+
+    class FakeKws:
+        def __init__(self, model_dir: str) -> None:
+            observed["model_dir"] = model_dir
+
+        def create_stream(self) -> FakeKwsStream:
+            return FakeKwsStream()
+
+        def decode_stream(self, stream: FakeKwsStream) -> None:
+            observed["decoded"] = True
+
+    runner = SherpaOnnxKwsRunner(asset_manager=manager, kws_factory=FakeKws)
+    result = runner(frames, asset, phrase="Hey Marvex", threshold=0.72)
+
+    assert result.detected is True
+    assert result.confidence == 0.91
+    assert result.backend_id == "sherpa-onnx-kws"
+    assert observed["sample_rate"] == 16_000
+    assert observed["decoded"] is True
+
+
+def test_sherpa_onnx_kws_runner_returns_not_detected_when_no_keyword(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset = _install(manager, model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword", relative_path="kws/hey-marvex")
+    frames = (AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),)
+
+    class FakeKwsStream:
+        result = SimpleNamespace(keyword="", confidence=0.1)
+
+        def accept_waveform(self, sample_rate: int, waveform: list[float]) -> None:
+            pass
+
+    class FakeKws:
+        def __init__(self, model_dir: str) -> None:
+            pass
+
+        def create_stream(self) -> FakeKwsStream:
+            return FakeKwsStream()
+
+        def decode_stream(self, stream: FakeKwsStream) -> None:
+            pass
+
+    runner = SherpaOnnxKwsRunner(asset_manager=manager, kws_factory=FakeKws)
+    result = runner(frames, asset, phrase="Hey Marvex", threshold=0.72)
+
+    assert result.detected is False
+    assert result.reason_code == "wakeword.not_detected"

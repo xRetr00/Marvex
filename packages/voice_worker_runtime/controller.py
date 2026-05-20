@@ -7,7 +7,7 @@ from typing import Any
 from packages.voice_runtime import AudioRingBuffer, ChunkAggregator, EarlySpeechTrigger, PartialTranscriptBuffer, VADDecision, VoicePlaybackResult, VoiceRuntime, VoiceTurnRequest, select_early_speech
 
 from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest
-from .audio import FakeLocalAudioAdapter, LocalAudioAdapter, PlaybackAdapterResult
+from .audio import FakeLocalAudioAdapter, LocalAudioAdapter, PlaybackAdapterResult, SoundDeviceAudioAdapter
 from .backend_runtime import VoiceWorkerBackendRuntime
 from .models import (
     VoiceWorkerCommand,
@@ -63,6 +63,11 @@ class VoiceWorkerController:
         self.voice_runtime = voice_runtime or VoiceRuntime()
         self.asset_manager = asset_manager or VoiceAssetManager(asset_root=Path(".marvex") / "voice-assets")
         self.backend_runtime = backend_runtime or VoiceWorkerBackendRuntime(asset_manager=self.asset_manager)
+        # Wire real PCM playback: when SoundDeviceAudioAdapter is used and has no
+        # resolver yet, give it a direct handle to the generated-audio sink so that
+        # play_audio calls receive actual synthesized PCM bytes instead of silence.
+        if isinstance(self.audio, SoundDeviceAudioAdapter) and self.audio._pcm_resolver is None:
+            self.audio._pcm_resolver = self.backend_runtime.generated_audio.resolve
         self._state = VoiceWorkerLifecycleState.STOPPED
         self._heartbeat: VoiceWorkerHeartbeat | None = None
         self._events: list[VoiceWorkerEvent] = []

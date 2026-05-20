@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Iterable
+from array import array
+from collections.abc import Callable, Iterable
 from typing import Literal, Protocol
 
 from pydantic import Field
@@ -96,8 +97,9 @@ class FakeLocalAudioAdapter:
 
 
 class SoundDeviceAudioAdapter:
-    def __init__(self) -> None:
+    def __init__(self, *, pcm_resolver: Callable[[str], bytes] | None = None) -> None:
         self._sd = None
+        self._pcm_resolver = pcm_resolver
 
     def _sounddevice(self):
         if self._sd is None:
@@ -140,11 +142,15 @@ class SoundDeviceAudioAdapter:
         return tuple(frames)
 
     def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:
-        samples = [0.0] * max(1, int(sample_rate * 0.05))
-        self._sounddevice().play(samples, samplerate=sample_rate, device=_device_arg(device_id))
-        return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="playing", reason_code="sounddevice.playback_started")
+        sd = self._sounddevice()
+        pcm = self._pcm_resolver(audio_ref) if self._pcm_resolver else b""
+        samples = _pcm_to_float_array(pcm) if pcm else [0.0] * max(1, int(sample_rate * 0.05))
+        sd.play(samples, samplerate=sample_rate, device=_device_arg(device_id))
+        sd.wait()
+        return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="completed", reason_code="sounddevice.playback_completed")
 
     def stop_playback(self) -> PlaybackAdapterResult:
+        self._sounddevice().stop()
         return PlaybackAdapterResult(status="stopped", reason_code="sounddevice.stop")
 
     def interrupt_playback(self, *, reason_code: str) -> PlaybackAdapterResult:
@@ -156,6 +162,23 @@ def _device_arg(device_id: str | None) -> int | str | None:
     if device_id is None:
         return None
     return int(device_id) if device_id.isdigit() else device_id
+
+
+def _pcm_to_float_array(pcm: bytes) -> list[float]:
+    """Convert raw int16 PCM bytes to a list of float32 samples in [-1, 1]."""
+    try:
+        import numpy as np
+
+        return (np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0).tolist()
+    except Exception:
+        pass
+    # Pure-Python fallback: strip any trailing odd byte so frombytes doesn't fail.
+    safe = pcm[: len(pcm) - (len(pcm) % 2)]
+    if not safe:
+        return [0.0]
+    buf = array("h")
+    buf.frombytes(safe)
+    return [max(-1.0, min(1.0, s / 32768.0)) for s in buf]
 
 
 def _bounded_level(value: object) -> float:

@@ -5,7 +5,7 @@ from io import StringIO
 
 import pytest
 
-from packages.voice_worker_runtime import VoiceWorkerCommand, VoiceWorkerController, VoiceWorkerLifecycleState, VoiceWorkerProcessAdapter, VoiceWorkerProcessSpec
+from packages.voice_worker_runtime import VoiceWorkerCommand, VoiceWorkerController, VoiceWorkerLifecycleState, VoiceWorkerProcessAdapter, VoiceWorkerProcessSpec, VoiceWorkerProcessSupervisor
 from packages.voice_worker_runtime.worker_main import run_worker_contract_loop, run_worker_loop
 
 
@@ -96,3 +96,110 @@ def test_worker_main_once_mode_starts_and_stops_controller_without_remote_bindin
     assert payload["status"]["local_only"] is True
     assert payload["status"]["hidden_recording_allowed"] is False
     assert controller.status().lifecycle_state == VoiceWorkerLifecycleState.STOPPED
+
+
+class _FakeProcessAdapter:
+    """Minimal fake for VoiceWorkerProcessSupervisor tests."""
+
+    def __init__(self, *, starts_alive: bool = True) -> None:
+        self._alive = starts_alive
+        self.start_calls = 0
+        self.stop_calls = 0
+
+    def start(self) -> None:
+        self.start_calls += 1
+        self._alive = True
+
+    def stop(self) -> None:
+        self.stop_calls += 1
+        self._alive = False
+
+    def is_running(self) -> bool:
+        return self._alive
+
+    def crash(self) -> None:
+        self._alive = False
+
+    def send_command(self, command: VoiceWorkerCommand) -> dict:
+        return {}
+
+
+def test_process_supervisor_start_stop_lifecycle() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter)
+
+    status = supervisor.start()
+    assert status["state"] == "running"
+    assert adapter.start_calls == 1
+    assert supervisor.is_running() is True
+
+    status = supervisor.stop()
+    assert status["state"] == "stopped"
+    assert adapter.stop_calls == 1
+    assert supervisor.is_running() is False
+
+
+def test_process_supervisor_check_healthy_process_resets_restart_counter() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter)
+    supervisor.start()
+
+    status = supervisor.check()
+    assert status["state"] == "running"
+    assert status["consecutive_restarts"] == 0
+    assert status["raw_audio_persisted"] is False
+
+
+def test_process_supervisor_restarts_crashed_process_with_backoff() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter, initial_backoff_s=0.5, max_backoff_s=4.0)
+    supervisor.start()
+    adapter.crash()
+
+    status = supervisor.check()
+    assert status["state"] == "restarted"
+    assert status["consecutive_restarts"] == 1
+    assert status["current_backoff_s"] == 0.5
+    assert adapter.start_calls == 2  # initial start + one restart
+
+    adapter.crash()
+    status = supervisor.check()
+    assert status["consecutive_restarts"] == 2
+    assert status["current_backoff_s"] == 1.0  # doubled
+
+
+def test_process_supervisor_halts_after_max_restarts() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter, max_consecutive_restarts=2, initial_backoff_s=0.1)
+    supervisor.start()
+
+    for _ in range(3):
+        adapter.crash()
+        supervisor.check()
+
+    assert supervisor._halted is True
+    status = supervisor.safe_status()
+    assert status["state"] == "halted"
+    assert status["halted"] is True
+    # A further start call should be blocked
+    blocked = supervisor.start()
+    assert blocked["state"] == "halted"
+
+
+def test_process_supervisor_auto_restart_disabled_halts_immediately() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter, auto_restart=False)
+    supervisor.start()
+    adapter.crash()
+
+    status = supervisor.check()
+    assert status["state"] == "halted"
+    assert status["reason_code"] == "process_exited_auto_restart_disabled"
+    assert adapter.start_calls == 1  # no restart attempted
+
+
+def test_process_supervisor_safe_status_never_persists_audio() -> None:
+    adapter = _FakeProcessAdapter()
+    supervisor = VoiceWorkerProcessSupervisor(adapter=adapter)
+    status = supervisor.safe_status()
+    assert status["raw_audio_persisted"] is False

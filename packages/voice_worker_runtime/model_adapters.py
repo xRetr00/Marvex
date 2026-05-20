@@ -6,7 +6,7 @@ from importlib import import_module
 from pathlib import Path
 from typing import Any
 
-from packages.voice_runtime import AudioFrame, SpeechSynthesisRequest, SpeechSynthesisResult, TranscriptionRequest, TranscriptionResult
+from packages.voice_runtime import AudioFrame, SpeechSynthesisRequest, SpeechSynthesisResult, TranscriptionRequest, TranscriptionResult, WakeWordDetectionResult
 from packages.voice_runtime.errors import VoiceErrorEnvelope
 
 from .assets import VoiceAssetManager, VoiceModelInstallResult
@@ -117,11 +117,184 @@ class PiperTtsRunner:
             return _tts_failed(request, asset.backend_id, "piper_tts_runtime_error")
 
 
+class SherpaOnnxSttRunner:
+    """Offline ASR via sherpa-onnx OfflineRecognizer.
+
+    Uses ``OfflineRecognizer.from_pre_trained(model_dir)`` to auto-detect
+    the model type from the installed model directory.  A custom
+    ``recognizer_factory(model_dir: str) -> recognizer`` may be injected for
+    tests without loading real ONNX weights.
+    """
+
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        audio_refs: Any,
+        recognizer_factory: Callable[[str], Any] | None = None,
+    ) -> None:
+        self.asset_manager = asset_manager
+        self.audio_refs = audio_refs
+        self.recognizer_factory = recognizer_factory
+
+    def __call__(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
+        path = self.asset_manager.resolve_installed_path(asset.model_id)
+        frames = self.audio_refs.resolve(request.audio_ref_id)
+        blocker = _stt_blocker(path=path, frames=frames)
+        if blocker:
+            return _stt_failed(request, asset.backend_id, blocker)
+        try:
+            if self.recognizer_factory is not None:
+                recognizer = self.recognizer_factory(str(path))
+            else:
+                module = import_module("sherpa_onnx")
+                recognizer = module.OfflineRecognizer.from_pre_trained(str(path))
+            stream = recognizer.create_stream()
+            stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
+            recognizer.decode_stream(stream)
+            text = str(getattr(getattr(stream, "result", ""), "text", "")).strip()
+            return TranscriptionResult.succeeded(
+                trace_id=request.trace_id,
+                text=text,
+                backend_id=asset.backend_id,
+                duration_ms=_duration_ms(frames, request.duration_ms),
+                language=request.language_hint or "en",
+                segments=({"text_present": bool(text)},),
+            )
+        except Exception:
+            return _stt_failed(request, asset.backend_id, "sherpa_onnx_stt_runtime_error")
+
+
+class SherpaOnnxTtsRunner:
+    """Offline TTS via sherpa-onnx OfflineTts.
+
+    Uses ``OfflineTts.from_pre_trained(model_dir)`` to auto-detect the TTS
+    model type.  A custom ``tts_factory(model_dir: str) -> tts`` may be
+    injected for tests without loading real ONNX weights.
+    """
+
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        generated_audio: Any,
+        tts_factory: Callable[[str], Any] | None = None,
+    ) -> None:
+        self.asset_manager = asset_manager
+        self.generated_audio = generated_audio
+        self.tts_factory = tts_factory
+
+    def __call__(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
+        path = self.asset_manager.resolve_installed_path(asset.model_id)
+        if path is None:
+            return _tts_failed(request, asset.backend_id, "model_asset_path_not_registered")
+        try:
+            if self.tts_factory is not None:
+                tts = self.tts_factory(str(path))
+            else:
+                module = import_module("sherpa_onnx")
+                tts = module.OfflineTts.from_pre_trained(str(path))
+            audio = tts.generate(_normalize_text(request.text), sid=0, speed=1.0)
+            samples = getattr(audio, "samples", [])
+            sample_rate = int(getattr(audio, "sample_rate", 22_050))
+            pcm = _float_samples_to_pcm_bytes(samples)
+            ref = self.generated_audio.remember_audio(
+                trace_id=request.trace_id,
+                voice_id=request.voice_id,
+                pcm=pcm,
+                sample_rate=sample_rate,
+            )
+            return SpeechSynthesisResult.succeeded(
+                trace_id=request.trace_id,
+                audio_ref=ref.audio_ref_id,
+                backend_id=asset.backend_id,
+                voice_id=request.voice_id,
+                sample_rate=sample_rate,
+                duration_ms=_audio_duration_ms(byte_count=len(pcm), sample_rate=sample_rate),
+            )
+        except Exception:
+            return _tts_failed(request, asset.backend_id, "sherpa_onnx_tts_runtime_error")
+
+
+class SherpaOnnxKwsRunner:
+    """Wakeword keyword spotting via sherpa-onnx KeywordSpotter.
+
+    Uses ``KeywordSpotter.from_pre_trained(model_dir)`` to load the KWS model.
+    A custom ``kws_factory(model_dir: str) -> kws`` may be injected for tests.
+    """
+
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        kws_factory: Callable[[str], Any] | None = None,
+    ) -> None:
+        self.asset_manager = asset_manager
+        self.kws_factory = kws_factory
+
+    def __call__(
+        self,
+        frames: tuple[AudioFrame, ...],
+        asset: VoiceModelInstallResult,
+        *,
+        phrase: str,
+        threshold: float,
+    ) -> WakeWordDetectionResult:
+        path = self.asset_manager.resolve_installed_path(asset.model_id)
+        if not frames or path is None:
+            return WakeWordDetectionResult(
+                detected=False,
+                phrase=phrase,
+                confidence=0.0,
+                backend_id=asset.backend_id,
+                reason_code="sherpa_onnx_kws_not_ready",
+            )
+        try:
+            if self.kws_factory is not None:
+                kws = self.kws_factory(str(path))
+            else:
+                module = import_module("sherpa_onnx")
+                kws = module.KeywordSpotter.from_pre_trained(str(path))
+            stream = kws.create_stream()
+            stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
+            kws.decode_stream(stream)
+            result = stream.result
+            keyword = str(getattr(result, "keyword", "")).strip()
+            detected = bool(keyword)
+            confidence = float(getattr(result, "confidence", threshold if detected else 0.0))
+            if detected:
+                return WakeWordDetectionResult.detected(phrase=phrase, confidence=confidence, backend_id=asset.backend_id)
+            return WakeWordDetectionResult(
+                detected=False,
+                phrase=phrase,
+                confidence=confidence,
+                backend_id=asset.backend_id,
+                reason_code="wakeword.not_detected",
+            )
+        except Exception:
+            return WakeWordDetectionResult(
+                detected=False,
+                phrase=phrase,
+                confidence=0.0,
+                backend_id=asset.backend_id,
+                reason_code="sherpa_onnx_kws_runtime_error",
+            )
+
+
 class VoiceWorkerSttModelRunner:
-    def __init__(self, *, asset_manager: VoiceAssetManager, audio_refs: Any, transcriber_factory: Callable[[str], Any] | None = None, automodel_factory: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        audio_refs: Any,
+        transcriber_factory: Callable[[str], Any] | None = None,
+        automodel_factory: Callable[..., Any] | None = None,
+        sherpa_recognizer_factory: Callable[[str], Any] | None = None,
+    ) -> None:
         self._runners = {
             "moonshine-v2": MoonshineSttRunner(asset_manager=asset_manager, audio_refs=audio_refs, transcriber_factory=transcriber_factory),
             "sensevoice-small": SenseVoiceSttRunner(asset_manager=asset_manager, audio_refs=audio_refs, automodel_factory=automodel_factory),
+            "sherpa-onnx-asr": SherpaOnnxSttRunner(asset_manager=asset_manager, audio_refs=audio_refs, recognizer_factory=sherpa_recognizer_factory),
         }
 
     def __call__(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
@@ -132,10 +305,19 @@ class VoiceWorkerSttModelRunner:
 
 
 class VoiceWorkerTtsModelRunner:
-    def __init__(self, *, asset_manager: VoiceAssetManager, generated_audio: Any, kokoro_factory: Callable[..., Any] | None = None, voice_loader: Callable[..., Any] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        generated_audio: Any,
+        kokoro_factory: Callable[..., Any] | None = None,
+        voice_loader: Callable[..., Any] | None = None,
+        sherpa_tts_factory: Callable[[str], Any] | None = None,
+    ) -> None:
         self._runners = {
             "kokoro-onnx": KokoroOnnxTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, kokoro_factory=kokoro_factory),
             "piper-tts": PiperTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, voice_loader=voice_loader),
+            "sherpa-onnx-tts": SherpaOnnxTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, tts_factory=sherpa_tts_factory),
         }
 
     def __call__(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:

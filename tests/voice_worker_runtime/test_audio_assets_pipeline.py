@@ -1,3 +1,6 @@
+# file size justification: comprehensive integration tests for the voice worker
+# audio pipeline — fake and real audio adapters, PCM playback, model downloads,
+# full turn cycles, telemetry, barge-in, and sounddevice wiring.
 from __future__ import annotations
 
 import hashlib
@@ -13,6 +16,7 @@ from packages.voice_runtime import AudioFrame, DeterministicSttAdapter, Determin
 from packages.voice_worker_runtime import (
     VoiceWorkerBackendRuntime,
     FakeLocalAudioAdapter,
+    SoundDeviceAudioAdapter,
     VoiceAssetManager,
     VoiceModelInstallRequest,
     VoiceWorkerCommand,
@@ -264,8 +268,16 @@ def test_worker_barge_in_interrupts_playback_and_routes_new_user_speech_event() 
 
 
 def test_worker_wakeword_test_requires_enabled_policy_and_installed_asset(tmp_path: Path) -> None:
+    from packages.voice_runtime import WakeWordDetectionResult
+
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager)
+    # Inject a fake wakeword_runner so the test is independent of whether
+    # sherpa-onnx is actually installed in the test environment.
+    def _fake_kws_runner(frames, asset, *, phrase, threshold):
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=0.95, backend_id=asset.backend_id)
+
+    backend = VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=_fake_kws_runner)
+    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=backend)
 
     disabled = controller.handle(VoiceWorkerCommand(command="test_wakeword", command_id="cmd-wake-disabled"))
     controller.handle(VoiceWorkerCommand(command="reload_config", command_id="cmd-reload", payload={"wakeword_enabled": True}))
@@ -447,6 +459,59 @@ def test_sounddevice_adapter_uses_real_runtime_api_shape(monkeypatch) -> None:
 
     assert frames[0].raw_audio_persisted is False
     assert frames[0].pcm == b"\x01\x00\x02\x00"
-    assert playing.status == "playing"
+    # play_audio now blocks (sd.wait) and returns "completed" to signal the
+    # audio finished playing before returning to the caller.
+    assert playing.status == "completed"
+    assert playing.reason_code == "sounddevice.playback_completed"
     assert interrupted.status == "interrupted"
-    assert [call[0] for call in calls] == ["rec", "wait", "rec", "wait", "play", "stop"]
+    assert [call[0] for call in calls] == ["rec", "wait", "rec", "wait", "play", "wait", "stop"]
+
+
+def test_sounddevice_adapter_play_audio_resolves_real_pcm_via_resolver(monkeypatch) -> None:
+    played_data: list[object] = []
+    fake_sd = __import__("types").SimpleNamespace(
+        query_devices=lambda: (),
+        play=lambda data, samplerate, device=None: played_data.append(data),
+        wait=lambda: None,
+        stop=lambda: None,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", fake_sd)
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    # Build 2-byte int16 PCM: one sample at +1.0 (0x7FFF) and one at -1.0 (0x8001)
+    import struct
+    pcm = struct.pack("<hh", 32767, -32767)
+    resolver: dict[str, bytes] = {"memory://voice/generated/t1/v1": pcm}
+    adapter = SoundDeviceAudioAdapter(pcm_resolver=resolver.get)
+
+    result = adapter.play_audio(device_id=None, audio_ref="memory://voice/generated/t1/v1", sample_rate=22_050)
+    assert result.status == "completed"
+    assert len(played_data) == 1
+    samples = played_data[0]
+    # Should be a list of floats derived from the PCM — not the raw bytes
+    assert isinstance(samples, list)
+    assert len(samples) == 2
+    assert abs(samples[0] - (32767 / 32768.0)) < 0.01
+    assert abs(samples[1] - (-32767 / 32768.0)) < 0.01
+
+
+def test_sounddevice_adapter_plays_silence_fallback_when_no_resolver(monkeypatch) -> None:
+    played_data: list[object] = []
+    fake_sd = __import__("types").SimpleNamespace(
+        query_devices=lambda: (),
+        play=lambda data, samplerate, device=None: played_data.append(data),
+        wait=lambda: None,
+        stop=lambda: None,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", fake_sd)
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    adapter = SoundDeviceAudioAdapter()  # no resolver
+    result = adapter.play_audio(device_id=None, audio_ref="memory://voice/generated/unknown", sample_rate=16_000)
+    assert result.status == "completed"
+    assert len(played_data) == 1
+    # Fallback: 50 ms of silence = 800 zeros at 16 kHz
+    assert len(played_data[0]) >= 1
+    assert all(s == 0.0 for s in played_data[0])
