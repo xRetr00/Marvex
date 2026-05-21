@@ -64,11 +64,12 @@ def test_core_executes_safe_capability_path_through_intent_and_tool_worker_proce
 
     assert result.error is None
     assert result.assistant_final_response is not None
-    assert result.assistant_final_response.text == "Capability completed."
+    assert result.assistant_final_response.text == "The calculator result is 4."
     assert result.metadata["intent_boundary"] == "intent_worker_process"
     assert result.metadata["tool_boundary"] == "tool_worker_process"
     assert result.metadata["intent"]["selected_intent"]["intent_kind"] == "capability_tool"
     assert result.metadata["tool"]["result"]["trace_id"] == "trace-core-safe-tool"
+    assert result.metadata["tool"]["result"]["safe_result"]["result"] == "4"
     assert result.metadata["tool"]["projection"]["safe_result_status"] == "succeeded"
     assert result.tool_result_refs[0].ref_id == "turn-core-safe-tool:capability:result"
 
@@ -80,14 +81,12 @@ def test_core_blocks_unapproved_risky_action_after_intent_preflight() -> None:
         turn_id="turn-core-blocked-tool",
     )
 
-    assert result.assistant_final_response is None
-    assert result.error is not None
-    assert result.error.code.value == "VALIDATION_ERROR"
-    assert result.error.source == "core_service_entrypoint"
-    assert result.error.details["reason"] == "tool_execution_blocked"
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "Approval required" in result.assistant_final_response.text
     assert result.metadata["intent"]["selected_intent"]["intent_kind"] == "risky_action"
-    assert result.metadata["tool"]["blocked"] is True
-    assert result.metadata["tool"]["policy_audit"]["decision"] == "approval_required"
+    assert result.metadata["approval_request"]["status"] == "pending"
+    assert result.metadata["agentic_loop"]["stop_reason"] == "waiting_for_human_approval"
 
 
 def test_core_returns_clarification_and_unsafe_results_without_tool_execution() -> None:

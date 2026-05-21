@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from collections.abc import Callable, Sequence
@@ -18,6 +19,7 @@ from packages.assistant_runtime.input_normalization import (
     build_text_input_event,
     build_turn_input_from_event,
 )
+from packages.assistant_turn_integration.models import EndToEndAssistantTurnProjection
 from packages.contracts import (
     AssistantFinalResponse,
     AssistantFinishReason,
@@ -33,14 +35,35 @@ from packages.contracts import (
     StageStatus,
     StageSummary,
     ToolResultRef,
+    TraceLevel,
+    TraceStage,
 )
+from packages.capability_runtime import (
+    ApprovalPrompt,
+    CapabilityApprovalRequest,
+    CapabilityKind,
+    CapabilityRef,
+    ToolRiskLevel,
+    ToolSideEffectLevel,
+)
+from packages.cognition_runtime import CognitionRuntime, CognitionTurnAssembly
+from packages.grounded_answer_runtime import GroundedAnswerDraft, validate_grounded_citations
 from packages.core import CoreService
 from packages.core.orchestration.assistant_provider_stage import (
     run_assistant_provider_stage_turn,
 )
 from packages.local_api import LocalApiConfig, create_health_version_api_app
 from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
-from packages.telemetry import InMemoryTraceReader
+from packages.telemetry import InMemoryTraceReader, make_trace_event
+from packages.web_search_runtime import (
+    DDGSWebSearchAdapter,
+    SearXNGWebSearchAdapter,
+    WebSearchEvidenceRef,
+    WebSearchFreshness,
+    WebSearchGroundingBundle,
+    WebSearchQuery,
+    WebSearchResult,
+)
 
 
 DEFAULT_HOST = "127.0.0.1"
@@ -61,6 +84,11 @@ class CoreServiceEntrypointConfig:
     provider: str = DEFAULT_PROVIDER
     worker_provider: str | None = None
     base_url: str | None = None
+    web_search: str = "fake"
+    web_base_url: str | None = None
+    demo_memory_evidence: bool = False
+    resume_approval: str | None = None
+    approval_decision: str | None = None
     timeout_seconds: float | None = None
     allow_remote: bool = False
 
@@ -227,16 +255,18 @@ class _ToolWorkerProcessExecutor:
         action: str,
         capability: str,
         resource_type: str,
+        capability_id: str = "fake.status",
+        arguments: dict[str, object] | None = None,
     ) -> dict[str, object]:
         command = {
             "command": "execute",
             "trace_id": turn_input.trace_id,
             "turn_id": turn_input.turn_id,
-            "capability_id": "fake.status",
+            "capability_id": capability_id,
             "action": action,
             "capability": capability,
             "resource_type": resource_type,
-            "arguments": {"input_present": bool(turn_input.user_visible_input)},
+            "arguments": dict(arguments or {"input_present": bool(turn_input.user_visible_input)}),
         }
         completed = subprocess.run(
             [
@@ -267,6 +297,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
         *,
         provider_name: str,
         model: str,
+        trace_reader: InMemoryTraceReader,
+        web_search_provider: object | None = None,
+        memory_tree_runtime: object | None = None,
+        resume_approval: str | None = None,
+        approval_decision: str | None = None,
         base_url: str | None = None,
         timeout_seconds: float | None = None,
     ) -> None:
@@ -282,8 +317,20 @@ class _CoreServiceProviderWorkerTurnExecutor:
             timeout_seconds=timeout_seconds,
         )
         self._model = model
+        self._trace_reader = trace_reader
+        self._web_search_provider = web_search_provider
+        self._memory_tree_runtime = memory_tree_runtime
+        self._resume_approval = resume_approval
+        self._approval_decision = approval_decision
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+        _emit_core_event(
+            self._trace_reader,
+            turn_input,
+            TraceStage.TURN_RECEIVED,
+            "Core agentic turn received.",
+            {"status": "received"},
+        )
         try:
             intent_response = self._intent_classifier.classify(turn_input)
         except Exception:
@@ -296,59 +343,85 @@ class _CoreServiceProviderWorkerTurnExecutor:
         intent_kind = str(
             dict(intent_projection.get("selected_intent", {})).get("intent_kind", "")
         )
+        cognition = CognitionRuntime(
+            intent_classifier=_fixed_intent_classifier(intent_response["classification"]),
+            intent_planner=_CoreIntentPlanner(intent_response["classification"]),
+            memory_tree_runtime=self._memory_tree_runtime,
+            web_search_provider=self._web_search_provider,
+        ).assemble_turn(turn_input)
+        loop = _AgenticLoopProjection(
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            max_steps=cognition.step_plan.max_steps,
+        )
         metadata: dict[str, object] = {
             "intent_boundary": "intent_worker_process",
             "intent": intent_projection,
             "intent_backend": intent_response.get("backend_name"),
+            "assistant_turn_spine": "used",
+            "cognition": cognition.safe_projection().model_dump(mode="json"),
         }
+        loop.step("plan")
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
+            loop.step("clarify", stop_reason="finalized")
             return _entrypoint_text_result(
                 turn_input,
                 text="I need clarification before continuing.",
-                metadata=metadata,
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
                 stage_name="intent_preflight",
             )
         if intent_projection.get("risk_signal") == "unsafe_request" or intent_kind in {
             "unsafe_or_injection_suspected",
             "unsafe_risky",
         }:
+            loop.step("block", stop_reason="blocked")
             return _entrypoint_error_result(
                 turn_input,
                 reason="unsafe_intent_blocked",
                 message="Request blocked by intent safety preflight.",
-                metadata=metadata,
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
         if intent_kind == "capability_tool":
+            loop.step("tool")
             return self._run_tool_path(
                 turn_input,
                 metadata=metadata,
+                cognition=cognition,
+                loop=loop,
                 action="read",
                 capability="read",
                 resource_type="local_status",
+                capability_id="builtin.calculator",
+                arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
         if intent_kind == "risky_action":
-            return self._run_tool_path(
-                turn_input,
-                metadata=metadata,
-                action="delete local file",
-                capability="file_delete",
-                resource_type="file",
-            )
+            return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if intent_kind in {"web_search", "grounded_answer"}:
+            loop.step("web_search")
+            loop.step("grounded_answer")
+            return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
 
+        loop.step("provider")
+        provider_turn_input = _turn_input_with_prompt(turn_input, cognition)
         result = run_assistant_provider_stage_turn(
-            turn_input,
+            provider_turn_input,
             provider=self._provider,
             model=self._model,
+            telemetry_sink=self._trace_reader,
         )
+        loop.step("finalize", stop_reason="finalized")
         metadata = dict(result.metadata)
         metadata.update(
             {
                 "intent_boundary": "intent_worker_process",
                 "intent": intent_projection,
                 "intent_backend": intent_response.get("backend_name"),
+                "assistant_turn_spine": "used",
+                "cognition": cognition.safe_projection().model_dump(mode="json"),
             }
         )
         metadata["provider_boundary"] = "provider_worker_process"
+        metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         return result.model_copy(update={"metadata": metadata})
 
     def _run_tool_path(
@@ -356,9 +429,13 @@ class _CoreServiceProviderWorkerTurnExecutor:
         turn_input: AssistantTurnInput,
         *,
         metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
         action: str,
         capability: str,
         resource_type: str,
+        capability_id: str = "fake.status",
+        arguments: dict[str, object] | None = None,
     ) -> AssistantTurnResult:
         try:
             tool_response = self._tool_executor.execute(
@@ -366,28 +443,34 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 action=action,
                 capability=capability,
                 resource_type=resource_type,
+                capability_id=capability_id,
+                arguments=arguments,
             )
         except Exception:
+            loop.step("finalize", stop_reason="failed")
             return _entrypoint_error_result(
                 turn_input,
                 reason="tool_worker_unavailable",
                 message="Tool execution failed.",
-                metadata=metadata,
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
         combined_metadata = dict(metadata)
         combined_metadata["tool_boundary"] = "tool_worker_process"
         combined_metadata["tool"] = tool_response
         if tool_response.get("ok") is not True:
+            loop.step("finalize", stop_reason="waiting_for_human_approval")
             return _entrypoint_error_result(
                 turn_input,
                 reason="tool_execution_blocked",
                 message="Capability execution blocked by policy.",
-                metadata=combined_metadata,
+                metadata=_with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input),
             )
+        loop.step("finalize", stop_reason="finalized", executed=True)
+        text = _tool_final_text(tool_response)
         return _entrypoint_text_result(
             turn_input,
-            text="Capability completed.",
-            metadata=combined_metadata,
+            text=text,
+            metadata=_with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input),
             stage_name="tool_execution",
             tool_result_refs=[
                 ToolResultRef(
@@ -395,6 +478,164 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     ref_id=f"{turn_input.turn_id}:capability:result",
                 )
             ],
+        )
+
+    def _run_grounded_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        web_refs = tuple(cognition.web_evidence_refs)
+        if not web_refs and not cognition.memory_evidence_refs:
+            loop.step("finalize", stop_reason="finalized")
+            grounded = {
+                "web_search_executed": cognition.web_search_required,
+                "citation_validation": "citation.evidence_missing",
+                "fabricated": False,
+            }
+            metadata = {**metadata, "grounding": grounded}
+            return _entrypoint_text_result(
+                turn_input,
+                text="Evidence is missing for this grounded answer, so I cannot answer without fabricating.",
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+                stage_name="grounded_answer",
+            )
+        memory_citation_ids = tuple(_memory_citation_id(ref) for ref in tuple(cognition.memory_evidence_refs)[:4])
+        citation_ids = tuple(ref.evidence_id for ref in web_refs[:4]) + memory_citation_ids
+        web_text = "; ".join(f"{ref.title} ({ref.domain}) [{ref.evidence_id}]" for ref in web_refs[:4])
+        memory_text = "; ".join(f"Memory evidence ({getattr(ref, 'source_id', 'memory')}) [{citation}]" for ref, citation in zip(tuple(cognition.memory_evidence_refs)[:4], memory_citation_ids, strict=False))
+        evidence_text = "; ".join(part for part in (web_text, memory_text) if part)
+        draft = GroundedAnswerDraft(
+            text=f"Grounded answer from available evidence: {evidence_text}.",
+            citation_ids=citation_ids,
+        )
+        validation = validate_grounded_citations(
+            draft,
+            evidence_refs=web_refs,
+            memory_evidence_refs=tuple(cognition.memory_evidence_refs),
+            citations_required=True,
+        )
+        if not validation.valid:
+            loop.step("finalize", stop_reason="finalized")
+            metadata = {
+                **metadata,
+                "grounding": {
+                    "web_search_executed": cognition.web_search_required,
+                    "citation_validation": validation.reason_code,
+                    "fabricated": False,
+                },
+            }
+            return _entrypoint_text_result(
+                turn_input,
+                text="Evidence is missing for this grounded answer, so I cannot answer without fabricating.",
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+                stage_name="grounded_answer",
+            )
+        loop.step("finalize", stop_reason="finalized")
+        metadata = {
+            **metadata,
+            "grounding": {
+                "web_search_executed": cognition.web_search_required,
+                "citation_validation": validation.reason_code,
+                "fabricated": False,
+                "evidence_ref_count": len(cognition.evidence_refs),
+            },
+        }
+        return _entrypoint_text_result(
+            turn_input,
+            text=draft.text,
+            metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+            stage_name="grounded_answer",
+        )
+
+    def _run_approval_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        approval_request = _approval_request(turn_input)
+        decision = (self._approval_decision or "").strip().lower()
+        if self._resume_approval:
+            if self._resume_approval != approval_request.approval_request_id:
+                loop.step("approval", stop_reason="blocked")
+                return _entrypoint_error_result(
+                    turn_input,
+                    reason="approval_resume_mismatch",
+                    message="Capability execution blocked because the approval request does not match this turn.",
+                    metadata=_with_loop_metadata(
+                        {
+                            **metadata,
+                            "approval": {
+                                "approval_request_id": self._resume_approval,
+                                "expected_approval_request_id": approval_request.approval_request_id,
+                                "decision": "mismatched",
+                            },
+                        },
+                        loop,
+                        self._trace_reader,
+                        turn_input,
+                    ),
+                )
+            if decision == "approve":
+                loop.step("approval")
+                loop.step("tool")
+                tool_response = self._tool_executor.execute(
+                    turn_input,
+                    action="approved risky action confirmation",
+                    capability="read",
+                    resource_type="approval_resume",
+                    capability_id="fake.status",
+                    arguments={"approved": True},
+                )
+                loop.step("finalize", stop_reason="finalized", executed=True)
+                metadata = {
+                    **metadata,
+                    "approval": {"approval_request_id": self._resume_approval, "decision": "approved"},
+                    "tool_boundary": "tool_worker_process",
+                    "tool": tool_response,
+                }
+                return _entrypoint_text_result(
+                    turn_input,
+                    text="Action executed after approval through the policy-controlled worker boundary.",
+                    metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+                    stage_name="approval_resume",
+                    tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:approval-resume:result")],
+                )
+            reason = "approval_cancelled" if decision == "cancel" else "approval_denied"
+            loop.step("approval", stop_reason="blocked")
+            return _entrypoint_error_result(
+                turn_input,
+                reason=reason,
+                message="Capability execution blocked by approval decision.",
+                metadata=_with_loop_metadata(
+                    {
+                        **metadata,
+                        "approval": {
+                            "approval_request_id": self._resume_approval,
+                            "decision": "cancelled" if decision == "cancel" else "denied",
+                        },
+                    },
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+            )
+        loop.step("approval", stop_reason="waiting_for_human_approval")
+        metadata = {
+            **metadata,
+            "approval_request": approval_request.model_dump(mode="json"),
+        }
+        return _entrypoint_text_result(
+            turn_input,
+            text=f"Approval required before continuing. approval_request_id={approval_request.approval_request_id}",
+            metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+            stage_name="approval_pause",
         )
 
 
@@ -516,6 +757,254 @@ def _stage_summary(
     )
 
 
+@dataclass
+class _AgenticLoopProjection:
+    trace_id: str
+    turn_id: str
+    max_steps: int
+    step_count: int = 0
+    executed_count: int = 0
+    stop_reason: str = "not_stopped"
+
+    def step(self, _name: str, *, stop_reason: str | None = None, executed: bool = False) -> None:
+        if self.step_count < self.max_steps:
+            self.step_count += 1
+        if executed:
+            self.executed_count += 1
+        if stop_reason is not None:
+            self.stop_reason = stop_reason
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "trace_id": self.trace_id,
+            "turn_id": self.turn_id,
+            "max_steps": self.max_steps,
+            "step_count": self.step_count,
+            "executed_count": self.executed_count,
+            "stop_reason": self.stop_reason,
+            "raw_payload_persisted": False,
+        }
+
+
+class _FakeCoreWebSearchProvider:
+    provider_name = "fake_search"
+
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
+        result = WebSearchResult(
+            title="Current browser-use release",
+            url="https://example.test/browser-use-release",
+            domain="example.test",
+            snippet="Current browser-use release evidence.",
+            freshness=query.freshness,
+        )
+        evidence = WebSearchEvidenceRef(
+            evidence_id="web.evidence.1",
+            source_url=result.url,
+            domain=result.domain,
+            title=result.title,
+            snippet=result.snippet,
+            freshness=query.freshness,
+        )
+        return WebSearchGroundingBundle(
+            query=query,
+            provider=self.provider_name,
+            results=(result,),
+            evidence_refs=(evidence,),
+        )
+
+
+class _DemoMemoryEvidenceLink:
+    document_id = "demo-memory-doc"
+    chunk_id = "chunk:demo:1"
+    source_id = "demo-memory-source"
+    quote_preview = "Demo memory evidence preview."
+
+
+class _DemoMemoryNode:
+    node_id = "node:demo-memory"
+    evidence_links = (_DemoMemoryEvidenceLink(),)
+
+
+class _DemoMemorySearch:
+    results = (_DemoMemoryNode(),)
+
+
+class _DemoMemoryTreeRuntime:
+    def memory_query_with_evidence(self, _query: str) -> _DemoMemorySearch:
+        return _DemoMemorySearch()
+
+
+def _with_loop_metadata(
+    metadata: dict[str, object],
+    loop: _AgenticLoopProjection,
+    trace_reader: InMemoryTraceReader,
+    turn_input: AssistantTurnInput,
+) -> dict[str, object]:
+    _emit_core_event(
+        trace_reader,
+        turn_input,
+        TraceStage.TURN_COMPLETED if loop.stop_reason == "finalized" else TraceStage.TURN_FAILED,
+        "Core agentic turn finalized.",
+        {"status": loop.stop_reason, "tool_status": "succeeded" if loop.executed_count else "not_executed"},
+        level=TraceLevel.INFO if loop.stop_reason == "finalized" else TraceLevel.WARNING,
+    )
+    trace = trace_reader.read_trace(turn_input.trace_id)
+    telemetry_event_count = int((trace or {}).get("event_count", 0) or 0)
+    cognition = dict(metadata.get("cognition") or {})
+    spine_projection = EndToEndAssistantTurnProjection(
+        schema_version=turn_input.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        intent_kind=str(cognition.get("intent_kind", "unknown")),
+        context_included_count=int(cognition.get("context_included_count", 0) or 0),
+        prompt_section_count=int(cognition.get("prompt_section_count", 0) or 0),
+        provider_continuation_ready=loop.stop_reason == "finalized",
+        final_response_ready=loop.stop_reason in {"finalized", "waiting_for_human_approval"},
+        pending_approval_count=1 if loop.stop_reason == "waiting_for_human_approval" else 0,
+        executed_tool_count=loop.executed_count,
+        telemetry_event_count=telemetry_event_count,
+    )
+    return {
+        **metadata,
+        "assistant_turn_spine_projection": spine_projection.model_dump(mode="json"),
+        "agentic_loop": loop.safe_projection(),
+        "telemetry": {
+            "trace_id": turn_input.trace_id,
+            "event_count": telemetry_event_count,
+            "raw_payload_persisted": False,
+        },
+    }
+
+
+def _emit_core_event(
+    trace_reader: InMemoryTraceReader,
+    turn_input: AssistantTurnInput,
+    stage: TraceStage,
+    message: str,
+    data: dict[str, object],
+    *,
+    level: TraceLevel = TraceLevel.INFO,
+) -> None:
+    trace_reader.emit(
+        make_trace_event(
+            schema_version=turn_input.schema_version,
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            stage=stage,
+            level=level,
+            message=message,
+            data={"turn_id": turn_input.turn_id, **data},
+        )
+    )
+
+
+def _tool_final_text(tool_response: dict[str, object]) -> str:
+    result = dict(tool_response.get("result") or {})
+    safe_result = dict(result.get("safe_result") or {})
+    if "result" in safe_result:
+        return f"The calculator result is {safe_result['result']}."
+    return "Capability completed with a safe result."
+
+
+def _calculator_expression(text: str | None) -> str:
+    match = re.search(r"\d+(?:\s*[+\-*/]\s*\d+)+", text or "")
+    return match.group(0) if match else "0+0"
+
+
+def _turn_input_with_prompt(
+    turn_input: AssistantTurnInput,
+    cognition: CognitionTurnAssembly,
+) -> AssistantTurnInput:
+    prompt_text = "\n".join(
+        section.safe_content
+        for section in cognition.prompt_result.plan.sections
+        if section.included
+    )
+    return turn_input.model_copy(update={"user_visible_input": prompt_text})
+
+
+def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:
+    capability_ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier="builtin.approval_resume")
+    prompt = ApprovalPrompt(
+        schema_version=turn_input.schema_version,
+        prompt_id=f"approval-prompt-{turn_input.turn_id}",
+        capability_ref=capability_ref,
+        user_visible_summary="Approval required for a risky local action.",
+        risk_level=ToolRiskLevel.HIGH,
+        side_effect_level=ToolSideEffectLevel.DESTRUCTIVE,
+    )
+    return CapabilityApprovalRequest(
+        schema_version=turn_input.schema_version,
+        approval_request_id=f"approval-{turn_input.turn_id}",
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        capability_ref=capability_ref,
+        prompt=prompt,
+    )
+
+
+def _memory_citation_id(ref: object) -> str:
+    chunk_id = str(getattr(ref, "chunk_id", "unknown"))
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", chunk_id).strip("-")
+    return f"memory.evidence.{safe}"
+
+
+def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> object | None:
+    if config.web_search == "none":
+        return None
+    if config.web_search == "ddgs":
+        return DDGSWebSearchAdapter()
+    if config.web_search == "searxng":
+        if not config.web_base_url:
+            raise ValueError("web_base_url is required for searxng web search")
+        return SearXNGWebSearchAdapter(base_url=config.web_base_url)
+    return _FakeCoreWebSearchProvider()
+
+
+def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | None:
+    return _DemoMemoryTreeRuntime() if config.demo_memory_evidence else None
+
+
+def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
+    projection = dict(classification)
+
+    def classify(request: object) -> object:
+        from packages.capability_runtime import ToolRiskLevel
+        from packages.intent_runtime.models import IntentKind, IntentRiskSignal, classification_from_kind
+
+        selected = dict(projection.get("selected_intent", {}))
+        kind = IntentKind(str(selected.get("intent_kind", "provider_simple_chat")))
+        risk = IntentRiskSignal(str(projection.get("risk_signal", "none")))
+        score = {"high": 0.9, "medium": 0.6, "low": 0.3}.get(str(projection.get("confidence_bucket", "medium")), 0.6)
+        risk_level = ToolRiskLevel.HIGH if risk == IntentRiskSignal.RISKY_ACTION_REQUESTED else ToolRiskLevel.SAFE
+        return classification_from_kind(
+            request,
+            kind=kind,
+            score=score,
+            risk_signal=risk,
+            risk_level=risk_level,
+            reason_code=str(projection.get("route_reason_code", "intent.worker_projection")),
+            backend_name="intent_worker_projection",
+        )
+
+    return classify
+
+
+class _CoreIntentPlanner:
+    def __init__(self, classification: object) -> None:
+        self._classification = classification
+
+    def plan(self, _request: object) -> dict[str, object]:
+        selected = dict(dict(self._classification).get("selected_intent", {}))
+        intent_kind = str(selected.get("intent_kind", "provider_simple_chat"))
+        return {
+            "primary_intent": intent_kind,
+            "secondary_intents": (),
+            "steps": ({"step_id": f"step.{intent_kind}", "intent_kind": intent_kind},),
+            "clarification_stop": intent_kind == "clarification",
+        }
+
+
 def _create_foundation_turn_executor(
     *,
     trace_reader: InMemoryTraceReader,
@@ -554,6 +1043,9 @@ def _create_turn_executor(
     trace_reader: InMemoryTraceReader,
     config: CoreServiceEntrypointConfig,
 ) -> object:
+    # NOTE: intent preflight + Tool/Provider worker routing only runs when a
+    # worker-backed provider is selected. The default "fake" provider uses the
+    # in-process foundation executor and intentionally skips intent preflight.
     if config.provider == "fake":
         return _create_foundation_turn_executor(trace_reader=trace_reader)
     provider_name = (
@@ -564,6 +1056,11 @@ def _create_turn_executor(
     return _CoreServiceProviderWorkerTurnExecutor(
         provider_name=provider_name or "fake",
         model=config.foundation_model,
+        trace_reader=trace_reader,
+        web_search_provider=_web_search_provider_from_config(config),
+        memory_tree_runtime=_memory_tree_from_config(config),
+        resume_approval=config.resume_approval,
+        approval_decision=config.approval_decision,
         base_url=config.base_url,
         timeout_seconds=config.timeout_seconds,
     )
@@ -664,7 +1161,8 @@ def run_turn_once(
         turn_id=turn_id,
         input_event=event,
     )
-    service = create_core_service(config=config)
+    trace_reader = InMemoryTraceReader()
+    service = create_core_service(config=config, trace_reader=trace_reader)
     service.start()
     try:
         result = service.submit_turn(turn_input)
@@ -745,6 +1243,33 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Base URL for local provider-compatible endpoints.",
     )
     parser.add_argument(
+        "--web-search",
+        choices=("fake", "none", "ddgs", "searxng"),
+        default="fake",
+        help="Web search provider for grounded runtime turns. Defaults to deterministic fake.",
+    )
+    parser.add_argument(
+        "--web-base-url",
+        default=None,
+        help="Base URL for SearXNG when --web-search searxng is selected.",
+    )
+    parser.add_argument(
+        "--demo-memory-evidence",
+        action="store_true",
+        help="Inject deterministic safe memory-tree evidence for local runtime smokes.",
+    )
+    parser.add_argument(
+        "--resume-approval",
+        default=None,
+        help="Approval request id to resume for the same trace_id and turn_id.",
+    )
+    parser.add_argument(
+        "--approval-decision",
+        choices=("approve", "deny", "cancel"),
+        default=None,
+        help="Decision to apply with --resume-approval.",
+    )
+    parser.add_argument(
         "--timeout",
         type=float,
         default=None,
@@ -776,6 +1301,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         provider=args.provider,
         worker_provider=args.worker_provider,
         base_url=args.base_url,
+        web_search=args.web_search,
+        web_base_url=args.web_base_url,
+        demo_memory_evidence=args.demo_memory_evidence,
+        resume_approval=args.resume_approval,
+        approval_decision=args.approval_decision,
         timeout_seconds=args.timeout,
         allow_remote=args.allow_remote,
     )

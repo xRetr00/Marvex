@@ -56,6 +56,13 @@ The current closure slice is intentionally local-only and minimal:
 - Failures at the CoreService envelope return structured `ErrorEnvelope`
   results instead of leaking raw exceptions.
 - The default turn path remains fake-provider CI/dev safe.
+- Intent preflight + Tool path: when a worker-backed provider is selected
+  (`--provider provider_worker`, `lmstudio_responses`, or `litellm`), Core runs
+  an IntentWorker classification preflight and routes by intent — `capability_tool`
+  goes through ToolWorker (policy-gated) execution, unsafe/risky intents are
+  blocked, and low-confidence/ambiguous intents return a clarification result.
+  The default `--provider fake` path skips preflight and runs the in-process
+  foundation provider turn.
 - Core can select the local ProviderWorker process boundary and send an
   assistant turn through ProviderWorker -> ProviderRuntime -> FakeProvider.
 - LM Studio Responses and LiteLLM provider flags are entrypoint configuration
