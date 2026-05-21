@@ -89,6 +89,7 @@ class CoreServiceEntrypointConfig:
     web_base_url: str | None = None
     demo_memory_evidence: bool = False
     memory_vault_root: str | None = None
+    file_capability_root: str | None = None
     resume_approval: str | None = None
     approval_decision: str | None = None
     timeout_seconds: float | None = None
@@ -303,6 +304,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         web_search_provider: object | None = None,
         memory_tree_runtime: object | None = None,
         memory_loop: LocalMemoryLoop | None = None,
+        file_capability_root: str | None = None,
         resume_approval: str | None = None,
         approval_decision: str | None = None,
         base_url: str | None = None,
@@ -324,6 +326,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._web_search_provider = web_search_provider
         self._memory_tree_runtime = memory_tree_runtime
         self._memory_loop = memory_loop
+        self._file_capability_root = file_capability_root
         self._resume_approval = resume_approval
         self._approval_decision = approval_decision
 
@@ -349,7 +352,6 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         cognition = CognitionRuntime(
             intent_classifier=_fixed_intent_classifier(intent_response["classification"]),
-            intent_planner=_CoreIntentPlanner(intent_response["classification"]),
             memory_store=self._memory_loop.memory_store if self._memory_loop is not None else None,
             memory_tree_runtime=self._memory_tree_runtime,
             web_search_provider=self._web_search_provider,
@@ -365,8 +367,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "intent_backend": intent_response.get("backend_name"),
             "assistant_turn_spine": "used",
             "cognition": cognition.safe_projection().model_dump(mode="json"),
+            "intent_plan": _intent_plan_projection(cognition.intent_plan),
         }
         loop.step("plan")
+        plan_intents = _intent_plan_kinds(cognition.intent_plan)
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
             loop.step("clarify", stop_reason="finalized")
             return _entrypoint_text_result(
@@ -386,7 +390,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 message="Request blocked by intent safety preflight.",
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
-        if intent_kind == "capability_tool":
+        if "capability_tool" in plan_intents:
             loop.step("tool")
             return self._run_tool_path(
                 turn_input,
@@ -399,9 +403,59 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 capability_id="builtin.calculator",
                 arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
-        if intent_kind == "risky_action":
+        if "risky_action" in plan_intents:
             return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if intent_kind in {"web_search", "grounded_answer"}:
+        if "file_read_list_search" in plan_intents:
+            loop.step("tool")
+            return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "mcp_needed" in plan_intents or "mcp_skill" in plan_intents:
+            loop.step("tool")
+            return self._run_mcp_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "memory" in plan_intents or "memory_tree_needed" in plan_intents:
+            loop.step("grounded_answer")
+            return self._run_memory_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "skill_needed" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="skill",
+                text="Skill instructions can be loaded only from configured local safe sources; install and launch remain disabled.",
+                projection={"local_skill_loader_available": False, "install_launch_enabled": False},
+            )
+        if "connector_account" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="connector",
+                text="Connector account actions require explicit configuration and approval; live OAuth is not started.",
+                projection={"live_oauth_started": False, "approval_required": True},
+            )
+        if "settings_control_plane" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="settings",
+                text="Control-plane settings are available as safe status only from this turn path.",
+                projection={"approval_resume_supported": True, "raw_payload_persisted": False},
+            )
+        if "browser_computer_use" in plan_intents:
+            loop.step("approval", stop_reason="waiting_for_human_approval")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="browser",
+                text="Browser/computer-use execution is gated and not run in CI.",
+                projection={"live_browser_executed": False, "approval_required": True},
+                stop_reason="waiting_for_human_approval",
+            )
+        if "web_search" in plan_intents or "grounded_answer" in plan_intents:
             loop.step("web_search")
             loop.step("grounded_answer")
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
@@ -558,6 +612,115 @@ class _CoreServiceProviderWorkerTurnExecutor:
             text=draft.text,
             metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             stage_name="grounded_answer",
+        )
+
+    def _run_file_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        if not self._file_capability_root:
+            loop.step("finalize", stop_reason="blocked")
+            return _entrypoint_error_result(
+                turn_input,
+                reason="file_capability_root_required",
+                message="File read/list/search requires an explicit configured root.",
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+            )
+        file_path = _file_path_from_input(turn_input.user_visible_input)
+        result = self._run_tool_path(
+            turn_input,
+            metadata=metadata,
+            cognition=cognition,
+            loop=loop,
+            action="read file",
+            capability="file_read",
+            resource_type="file",
+            capability_id="file.read",
+            arguments={"root": self._file_capability_root, "path": file_path, "max_preview_chars": 1200},
+        )
+        if result.error is not None or result.assistant_final_response is None:
+            return result
+        safe_result = dict(dict(result.metadata.get("tool", {})).get("result", {})).get("safe_result", {})
+        preview = str(dict(safe_result).get("preview", ""))
+        return result.model_copy(
+            update={
+                "assistant_final_response": result.assistant_final_response.model_copy(
+                    update={"text": f"File preview from {file_path}: {preview}"}
+                )
+            }
+        )
+
+    def _run_mcp_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        return self._run_tool_path(
+            turn_input,
+            metadata=metadata,
+            cognition=cognition,
+            loop=loop,
+            action="call mcp tool echo",
+            capability="mcp_execute",
+            resource_type="mcp_tool",
+            capability_id="mcp.local.echo",
+            arguments={
+                "server_id": "local",
+                "tool_name": "echo",
+                "allowed_server_ids": ["local"],
+                "allowed_tool_names": ["echo"],
+                "message": "bounded-local-mcp-fixture",
+            },
+        )
+
+    def _run_memory_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        if cognition.memory_evidence_refs:
+            return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        loop.step("finalize", stop_reason="finalized")
+        memory_projection = {
+            "memory_records_recalled": len(tuple(cognition.memory_evidence_refs)),
+            "memory_store_available": self._memory_loop is not None,
+            "raw_memory_content_persisted": False,
+        }
+        return _entrypoint_text_result(
+            turn_input,
+            text="Memory route executed with no matching approved memory evidence.",
+            metadata=_with_loop_metadata({**metadata, "memory": memory_projection}, loop, self._trace_reader, turn_input),
+            stage_name="memory",
+        )
+
+    def _run_safe_projection_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        loop: "_AgenticLoopProjection",
+        route_name: str,
+        text: str,
+        projection: dict[str, object],
+        stop_reason: str = "finalized",
+    ) -> AssistantTurnResult:
+        if loop.stop_reason == "not_stopped":
+            loop.step("finalize", stop_reason=stop_reason)
+        return _entrypoint_text_result(
+            turn_input,
+            text=text,
+            metadata=_with_loop_metadata({**metadata, route_name: projection}, loop, self._trace_reader, turn_input),
+            stage_name=route_name,
         )
 
     def _run_approval_path(
@@ -1018,6 +1181,35 @@ def _memory_write_projection(memory_write: object | None) -> dict[str, object]:
     }
 
 
+def _intent_plan_kinds(intent_plan: object) -> tuple[str, ...]:
+    steps = tuple(getattr(intent_plan, "steps", ()) or ())
+    return tuple(
+        str(getattr(getattr(step, "intent_kind", ""), "value", getattr(step, "intent_kind", "")))
+        for step in steps
+    )
+
+
+def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
+    steps = tuple(getattr(intent_plan, "steps", ()) or ())
+    return {
+        "primary_intent": str(getattr(getattr(intent_plan, "primary_intent", ""), "value", getattr(intent_plan, "primary_intent", ""))),
+        "step_count": len(steps),
+        "step_kinds": [
+            str(getattr(getattr(step, "intent_kind", ""), "value", getattr(step, "intent_kind", "")))
+            for step in steps
+        ],
+        "raw_payload_persisted": False,
+    }
+
+
+def _file_path_from_input(text: str | None) -> str:
+    value = (text or "").strip()
+    match = re.search(r"(?:read|inspect)\s+file\s+(.+)$", value, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip().strip("\"'")
+    return value.strip().strip("\"'") or "."
+
+
 def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
     projection = dict(classification)
 
@@ -1041,21 +1233,6 @@ def _fixed_intent_classifier(classification: object) -> Callable[[object], objec
         )
 
     return classify
-
-
-class _CoreIntentPlanner:
-    def __init__(self, classification: object) -> None:
-        self._classification = classification
-
-    def plan(self, _request: object) -> dict[str, object]:
-        selected = dict(dict(self._classification).get("selected_intent", {}))
-        intent_kind = str(selected.get("intent_kind", "provider_simple_chat"))
-        return {
-            "primary_intent": intent_kind,
-            "secondary_intents": (),
-            "steps": ({"step_id": f"step.{intent_kind}", "intent_kind": intent_kind},),
-            "clarification_stop": intent_kind == "clarification",
-        }
 
 
 def _create_foundation_turn_executor(
@@ -1113,6 +1290,7 @@ def _create_turn_executor(
         web_search_provider=_web_search_provider_from_config(config),
         memory_tree_runtime=_memory_tree_from_config(config),
         memory_loop=_memory_loop_from_config(config),
+        file_capability_root=config.file_capability_root,
         resume_approval=config.resume_approval,
         approval_decision=config.approval_decision,
         base_url=config.base_url,
@@ -1320,6 +1498,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Explicit local root for derived memory SQLite index and Obsidian-compatible wiki vault.",
     )
     parser.add_argument(
+        "--file-capability-root",
+        default=None,
+        help="Explicit local root for read-only file read/list/search capabilities.",
+    )
+    parser.add_argument(
         "--session-id",
         default=None,
         help="Session id for --turn-once memory recall/write wiring.",
@@ -1371,6 +1554,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         web_base_url=args.web_base_url,
         demo_memory_evidence=args.demo_memory_evidence,
         memory_vault_root=args.memory_vault_root,
+        file_capability_root=args.file_capability_root,
         resume_approval=args.resume_approval,
         approval_decision=args.approval_decision,
         timeout_seconds=args.timeout,

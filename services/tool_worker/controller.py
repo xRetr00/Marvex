@@ -1,8 +1,17 @@
 from __future__ import annotations
 
+# file size justification: ToolWorker's approved service entrypoint is limited
+# by service placeholder gates to this controller module plus main/models; the
+# controller owns local dispatch glue while execution stays in capability
+# adapters/runtime boundaries.
+
+import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
+
+from mcp.types import CallToolResult, ListToolsResult, TextContent, Tool
 
 from packages.capability_runtime.approvals import ApprovalDecision
 from packages.capability_runtime.autonomy import (
@@ -11,6 +20,12 @@ from packages.capability_runtime.autonomy import (
     AutonomyPolicy,
     PolicyDecision,
     evaluate_autonomy_action,
+)
+from packages.capability_runtime.governance_audit import (
+    GovernanceDecisionType,
+    GovernanceAction,
+    GranularPermission,
+    classify_governance_action,
 )
 from packages.capability_runtime.fake import DeterministicFakeCapabilityAdapter
 from packages.capability_runtime.models import (
@@ -27,6 +42,13 @@ from packages.capability_runtime.requests import CapabilityExecutionRequest
 from packages.capability_runtime.results import CapabilityExecutionSummary, CapabilityResultEnvelope, SafeCapabilityProjection
 from packages.contracts import HealthCheck, HealthStatus, VersionInfo
 from packages.adapters.capabilities.builtins import BuiltinToolCatalog
+from packages.adapters.capabilities.files import FileCapabilityError, ReadOnlyFileExecutor
+from packages.adapters.capabilities.mcp import (
+    McpAllowlistPolicy,
+    McpSdkAdapter,
+    McpServerRef,
+    McpTransport,
+)
 
 from .models import (
     SCHEMA_VERSION,
@@ -53,6 +75,7 @@ class ToolWorkerController:
         self._started_at = datetime.now(UTC)
         self._adapter = DeterministicFakeCapabilityAdapter()
         self._builtins = BuiltinToolCatalog.default()
+        self._files = ReadOnlyFileExecutor()
 
     def start(self, *, trace_id: str = "tool-worker-start") -> ToolWorkerCommandResult:
         self._state = ToolWorkerState.RUNNING
@@ -103,11 +126,22 @@ class ToolWorkerController:
         capability: str,
         resource_type: str,
         arguments: dict[str, object],
+        autonomy_mode: str | None = None,
     ) -> ToolWorkerCommandResult:
-        capability_ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier=capability_id)
+        capability_ref = CapabilityRef(
+            kind=CapabilityKind.MCP_TOOL if capability_id.startswith("mcp.") else CapabilityKind.TOOL,
+            identifier=capability_id,
+        )
         risk_level = self._risk_level(capability)
         side_effect_level = self._side_effect_level(capability)
-        policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
+        policy = AutonomyPolicy.for_mode(_autonomy_mode(autonomy_mode or self.config.autonomy_mode))
+        governance = classify_governance_action(
+            GovernanceAction(
+                requested_action=action,
+                capability=capability,
+                permission=_granular_permission(capability, action=action, resource_type=resource_type),
+            )
+        )
         audit = evaluate_autonomy_action(
             policy,
             AutonomyAction(
@@ -120,17 +154,21 @@ class ToolWorkerController:
             ),
         )
 
-        if audit.decision != PolicyDecision.ALLOW:
+        blocking_decision = _blocking_decision(governance.decision, audit.decision)
+        if blocking_decision != PolicyDecision.ALLOW:
+            status = "requires_human_approval" if blocking_decision == PolicyDecision.APPROVAL_REQUIRED else "denied"
             result = CapabilityResultEnvelope(
                 schema_version=SCHEMA_VERSION,
                 result_id=f"{turn_id}:capability:result",
                 trace_id=trace_id,
                 turn_id=turn_id,
                 capability_ref=capability_ref,
-                status="requires_human_approval"
-                if audit.decision == PolicyDecision.APPROVAL_REQUIRED
-                else "denied",
-                safe_result={"policy_decision": audit.decision.value},
+                status=status,
+                safe_result={
+                    "policy_decision": blocking_decision.value,
+                    "governance_decision": governance.decision.value,
+                    "autonomy_decision": audit.decision.value,
+                },
                 raw_input_persisted=False,
                 raw_output_persisted=False,
             )
@@ -148,11 +186,11 @@ class ToolWorkerController:
                 blocked=True,
                 result=result,
                 projection=SafeCapabilityProjection.from_summary(summary),
-                policy_audit=audit.safe_projection(),
+                policy_audit=_policy_projection(governance, audit),
                 error=ToolWorkerError(
                     trace_id=trace_id,
                     turn_id=turn_id,
-                    code=audit.decision.value,
+                    code=blocking_decision.value,
                     safe_message="Capability execution blocked by policy.",
                 ),
             )
@@ -193,18 +231,19 @@ class ToolWorkerController:
             decided_by="policy",
             raw_decision_payload_persisted=False,
         )
-        if capability_id == "builtin.calculator":
+        request = CapabilityExecutionRequest(
+            schema_version=SCHEMA_VERSION,
+            request_id=f"{proposal.proposal_id}:request",
+            trace_id=trace_id,
+            turn_id=turn_id,
+            proposal=proposal,
+            permission_decision=permission,
+            arguments=self._execution_arguments(capability_id, arguments),
+            raw_arguments_persisted=False,
+        )
+        if capability_id.startswith("builtin."):
             result = self._builtins.execute_request(
-                CapabilityExecutionRequest(
-                    schema_version=SCHEMA_VERSION,
-                    request_id=f"{proposal.proposal_id}:request",
-                    trace_id=trace_id,
-                    turn_id=turn_id,
-                    proposal=proposal,
-                    permission_decision=permission,
-                    arguments=dict(arguments),
-                    raw_arguments_persisted=False,
-                )
+                request
             ).result
             summary = CapabilityExecutionSummary.from_result(
                 result,
@@ -213,6 +252,67 @@ class ToolWorkerController:
                 denied_count=0,
                 executed_fake_count=0,
             )
+        elif capability_id in {"file.read", "file.list", "file.search"}:
+            try:
+                result = self._files.execute(request)
+            except FileCapabilityError as exc:
+                result = self._files.denial_result(request, code=exc.code)
+                summary = CapabilityExecutionSummary.from_result(
+                    result,
+                    readiness_count=1,
+                    eligible_count=0,
+                    denied_count=1,
+                    executed_fake_count=0,
+                )
+                return self._result(
+                    command="execute",
+                    ok=False,
+                    trace_id=trace_id,
+                    blocked=True,
+                    result=result.model_copy(update={"result_id": f"{turn_id}:capability:result"}),
+                    projection=SafeCapabilityProjection.from_summary(summary),
+                    policy_audit=_policy_projection(governance, audit),
+                    error=ToolWorkerError(
+                        trace_id=trace_id,
+                        turn_id=turn_id,
+                        code=exc.code,
+                        safe_message="File capability execution blocked.",
+                    ),
+                )
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1,
+                denied_count=0,
+                executed_fake_count=0,
+            )
+        elif capability_id.startswith("mcp."):
+            mcp_result = self._execute_mcp(request)
+            result = mcp_result.result
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
+                executed_fake_count=0,
+            )
+            if result.status != "succeeded":
+                return self._result(
+                    command="execute",
+                    ok=False,
+                    trace_id=trace_id,
+                    blocked=True,
+                    result=result.model_copy(update={"result_id": f"{turn_id}:capability:result"}),
+                    projection=SafeCapabilityProjection.from_summary(summary),
+                    policy_audit=_policy_projection(governance, audit),
+                    error=ToolWorkerError(
+                        trace_id=trace_id,
+                        turn_id=turn_id,
+                        code=str(result.safe_result.get("reason_code") or "mcp.denied"),
+                        safe_message="MCP capability execution blocked.",
+                    ),
+                    metadata={"mcp": mcp_result.metadata},
+                )
         else:
             result, summary = self._adapter.dispatch(
                 proposal=proposal,
@@ -233,12 +333,62 @@ class ToolWorkerController:
             trace_id=trace_id,
             result=result,
             projection=SafeCapabilityProjection.from_summary(summary),
-            policy_audit=audit.safe_projection(),
+            policy_audit=_policy_projection(governance, audit),
             metadata={
                 "raw_arguments_persisted": False,
                 "approval_decision": approval.decision,
+                **({"mcp": mcp_result.metadata} if capability_id.startswith("mcp.") else {}),
             },
         )
+
+    def _execute_mcp(self, request: CapabilityExecutionRequest) -> "_McpExecutionResult":
+        arguments = request.arguments
+        server_id = str(arguments.get("server_id") or "").strip() or "local"
+        tool_name = str(arguments.get("tool_name") or request.proposal.proposed_action.split(".")[-1]).strip()
+        allowed_server_ids = _string_tuple(arguments.get("allowed_server_ids")) or (server_id,)
+        allowed_tool_names = _string_tuple(arguments.get("allowed_tool_names"))
+        policy = McpAllowlistPolicy.from_runtime_config(
+            policy_id="tool-worker.local-mcp-fixture",
+            allowed_server_ids=allowed_server_ids,
+            allowed_tool_names=allowed_tool_names,
+            source="test_fixture",
+        )
+        server_ref = McpServerRef(server_id=server_id, transport=McpTransport.STDIO, origin="manual_test_fixture")
+        session = _LocalMcpFixtureSession(tool_name=tool_name)
+        adapter = McpSdkAdapter(session=session, allowlist=policy.to_allowlist())
+        listing = asyncio.run(adapter.discover_tools(server_ref))
+        selected = next((item for item in listing if item.tool_ref.tool_name == tool_name), None)
+        if selected is None or not selected.allowed:
+            result = CapabilityResultEnvelope(
+                schema_version=request.schema_version,
+                result_id=f"{request.request_id}:result",
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                capability_ref=request.proposal.capability_ref,
+                status="denied",
+                safe_result={"reason_code": "not_allowlisted"},
+                raw_input_persisted=False,
+                raw_output_persisted=False,
+            )
+            return _McpExecutionResult(result=result, metadata=_mcp_metadata(server_ref, policy))
+        call_request = request.model_copy(
+            update={
+                "proposal": request.proposal.model_copy(
+                    update={
+                        "capability_ref": selected.capability_ref,
+                        "proposed_action": tool_name,
+                    }
+                ),
+                "arguments": _safe_mcp_arguments(arguments),
+            }
+        )
+        result = asyncio.run(adapter.call_approved_tool(server_ref, call_request))
+        return _McpExecutionResult(result=result, metadata=_mcp_metadata(server_ref, policy))
+
+    def _execution_arguments(self, capability_id: str, arguments: dict[str, object]) -> dict[str, object]:
+        if capability_id != "builtin.repo_status":
+            return dict(arguments)
+        return {**_repo_status_arguments(), **dict(arguments)}
 
     def _risk_level(self, capability: str) -> ToolRiskLevel:
         if capability in {"file_write", "file_delete", "external_upload_send", "shell_command_execution"}:
@@ -296,3 +446,125 @@ class ToolWorkerController:
             ),
             metadata={"reason": reason, "raw_payload_persisted": False},
         )
+
+
+def _repo_status_arguments() -> dict[str, object]:
+    return {"branch": "unknown", "clean": False, "short_status": ""}
+
+
+def _autonomy_mode(value: str) -> AutonomyMode:
+    try:
+        return AutonomyMode(value)
+    except ValueError:
+        return AutonomyMode.AUTO_MARVEX
+
+
+def _granular_permission(capability: str, *, action: str, resource_type: str) -> GranularPermission:
+    normalized = capability.lower().strip()
+    action_text = action.lower()
+    if normalized in {"read", "list", "search", "file_read"}:
+        return GranularPermission.PUBLIC_READ
+    if normalized in {"memory_search", "semantic_memory_search"}:
+        return GranularPermission.MEMORY_READ
+    if normalized in {"mcp_list"}:
+        return GranularPermission.TOOL_LIST
+    if normalized in {"file_write", "file_delete"} or any(marker in action_text for marker in ("write", "delete")):
+        return GranularPermission.WRITE_LOCAL
+    if normalized in {"external_upload_send"} or any(marker in action_text for marker in ("send", "upload")):
+        return GranularPermission.SEND_EXTERNAL
+    if normalized in {"browser_click_type", "computer_actions"}:
+        return GranularPermission.BROWSER_SIDE_EFFECT
+    if normalized == "shell_command_execution":
+        return GranularPermission.EXECUTE_COMMAND
+    if normalized in {"connectors_oauth", "live_oauth_sync"} or resource_type == "connector":
+        return GranularPermission.CONNECT_ACCOUNT
+    if normalized == "mcp_install_launch":
+        return GranularPermission.ARBITRARY_EXECUTION
+    if normalized == "mcp_execute":
+        return GranularPermission.TOOL_LIST
+    return GranularPermission.PUBLIC_READ
+
+
+def _blocking_decision(governance_decision: GovernanceDecisionType, autonomy_decision: PolicyDecision) -> PolicyDecision:
+    if governance_decision == GovernanceDecisionType.HARD_BLOCK:
+        return PolicyDecision.HARD_BLOCK
+    if governance_decision == GovernanceDecisionType.QUARANTINE:
+        return PolicyDecision.QUARANTINE
+    if governance_decision == GovernanceDecisionType.DENY:
+        return PolicyDecision.DENY
+    if governance_decision == GovernanceDecisionType.APPROVAL_REQUIRED or autonomy_decision == PolicyDecision.APPROVAL_REQUIRED:
+        return PolicyDecision.APPROVAL_REQUIRED
+    if autonomy_decision != PolicyDecision.ALLOW:
+        return autonomy_decision
+    return PolicyDecision.ALLOW
+
+
+def _policy_projection(governance: object, autonomy: object) -> dict[str, object]:
+    projection = dict(autonomy.safe_projection())
+    projection.update({
+        "governance": governance.safe_projection().model_dump(mode="json"),
+        "autonomy": autonomy.safe_projection(),
+    })
+    return projection
+
+
+@dataclass(frozen=True)
+class _McpExecutionResult:
+    result: CapabilityResultEnvelope
+    metadata: dict[str, object]
+
+
+class _LocalMcpFixtureSession:
+    def __init__(self, *, tool_name: str) -> None:
+        self._tool_name = tool_name
+
+    async def initialize(self) -> object:
+        return None
+
+    async def list_tools(self) -> ListToolsResult:
+        return ListToolsResult(
+            tools=(
+                Tool(
+                    name=self._tool_name,
+                    description="Local deterministic MCP fixture tool.",
+                    inputSchema={"type": "object"},
+                ),
+            )
+        )
+
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> CallToolResult:
+        return CallToolResult(
+            content=[TextContent(type="text", text=f"fixture:{name}:{len(arguments)}")],
+            isError=False,
+        )
+
+
+def _string_tuple(value: object) -> tuple[str, ...]:
+    if isinstance(value, list | tuple):
+        return tuple(str(item).strip() for item in value if str(item).strip())
+    if isinstance(value, str) and value.strip():
+        return (value.strip(),)
+    return ()
+
+
+def _safe_mcp_arguments(arguments: dict[str, object]) -> dict[str, object]:
+    blocked = {"server_id", "tool_name", "allowed_server_ids", "allowed_tool_names"}
+    safe: dict[str, object] = {}
+    for key, value in arguments.items():
+        if key in blocked:
+            continue
+        if any(part in key.lower() for part in ("authorization", "bearer", "password", "secret", "token", "raw", "prompt")):
+            continue
+        if isinstance(value, str | int | float | bool) or value is None:
+            safe[key] = value
+    return safe
+
+
+def _mcp_metadata(server_ref: McpServerRef, policy: McpAllowlistPolicy) -> dict[str, object]:
+    return {
+        "server_id": server_ref.server_id,
+        "transport": server_ref.transport.value,
+        "origin": server_ref.origin,
+        "allowlist_policy": policy.safe_projection(),
+        "arbitrary_server_execution_allowed": False,
+    }

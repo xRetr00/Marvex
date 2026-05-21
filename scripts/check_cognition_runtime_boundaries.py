@@ -12,8 +12,10 @@ PROJECT_STATUS = ROOT / "PROJECT_STATUS.md"
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
+    "contextlib",
     "dataclasses",
     "datetime",
+    "io",
     "pathlib",
     "packages.cognition_runtime",
     "packages.capability_runtime",

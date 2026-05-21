@@ -85,7 +85,7 @@ def test_intent_worker_jsonl_start_status_classify_and_stop_safe_projection() ->
     assert projection["turn_id"] == "turn-intent-worker"
     assert projection["selected_intent"]["intent_kind"] == "capability_tool"
     assert projection["raw_input_persisted"] is False
-    assert responses[2]["backend_name"] == "hybrid_intent_runtime"
+    assert responses[2]["backend_name"] == "hybrid_intent_runtime.deterministic_local_encoder"
     assert "2+2" not in json.dumps(responses[2])
 
 

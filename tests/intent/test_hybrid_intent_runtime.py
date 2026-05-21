@@ -24,7 +24,9 @@ def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -
         "go to youtube": IntentKind.BROWSER_COMPUTER_USE,
         "search latest browser-use version": IntentKind.WEB_SEARCH,
         "what changed in my memory tree about Marvex?": IntentKind.MEMORY_TREE_NEEDED,
+        "what do you remember about my preferences": IntentKind.MEMORY,
         "list MCP tools": IntentKind.MCP_NEEDED,
+        "use the MCP skill echo": IntentKind.MCP_SKILL,
         "install this MCP server": IntentKind.MCP_NEEDED,
         "delete this file": IntentKind.RISKY_ACTION,
         "send this file outside": IntentKind.RISKY_ACTION,
@@ -36,7 +38,7 @@ def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -
     for text, expected in examples.items():
         result = runtime.classify(_request(text))
         assert result.selected_intent.intent_kind == expected, text
-        assert result.backend_name == "hybrid_intent_runtime"
+        assert result.backend_name == "hybrid_intent_runtime.deterministic_local_encoder"
         assert result.library_owns_policy is False
         assert result.route_decision.reason_code != "intent.deterministic_foundation"
 
@@ -44,11 +46,13 @@ def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -
 def test_hybrid_intent_uses_real_semantic_router_and_llamaindex_selector_proofs() -> None:
     runtime = HybridIntentRuntime.default()
 
-    result = runtime.classify(_request("search latest browser-use version"))
+    result = runtime.classify(_request("navigate webpage for me"))
 
-    assert result.selected_intent.intent_kind == IntentKind.WEB_SEARCH
-    assert result.route_decision.reason_code in {"hybrid.semantic_router", "hybrid.llamaindex_selector"}
+    assert result.selected_intent.intent_kind == IntentKind.BROWSER_COMPUTER_USE
+    assert result.route_decision.reason_code == "hybrid.semantic_encoder"
     assert result.hybrid_details["semantic_router_route_count"] >= 5
+    assert result.hybrid_details["semantic_encoder_backend_name"] == "deterministic_local_encoder"
+    assert result.hybrid_details["semantic_selection_strategy"] == "encoded_route_cosine"
     assert result.hybrid_details["llamaindex_selector_used"] is True
     assert result.hybrid_details["semantic_router_hybrid_extra_available"] is False
 

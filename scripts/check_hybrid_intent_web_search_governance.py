@@ -70,8 +70,10 @@ def main() -> int:
             result = classify_intent(_request(prompt))
             if result.selected_intent.intent_kind != expected:
                 failures.append(f"hybrid intent routed {prompt!r} to {result.selected_intent.intent_kind.value}, expected {expected.value}")
-            if result.backend_name != "hybrid_intent_runtime":
+            if result.backend_name != "hybrid_intent_runtime.deterministic_local_encoder":
                 failures.append(f"hybrid intent backend regressed for {prompt!r}: {result.backend_name}")
+            if result.hybrid_details.get("semantic_encoder_backend_name") != "deterministic_local_encoder":
+                failures.append(f"hybrid intent encoder seam missing for {prompt!r}")
             if result.library_owns_policy is not False:
                 failures.append("hybrid intent library ownership flag must remain false")
 

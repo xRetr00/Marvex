@@ -158,7 +158,14 @@ class BuiltinToolCatalog(BuiltinToolModel):
 
     @classmethod
     def default(cls) -> BuiltinToolCatalog:
-        return cls(tools=(CalculatorBuiltin(),))
+        return cls(
+            tools=(
+                CalculatorBuiltin(),
+                TimeDateBuiltin(clock=lambda: dt.datetime.now(dt.timezone.utc)),
+                CapabilityDiagnosticsBuiltin(capability_count=4, eligible_count=4),
+                RepoStatusBuiltin(snapshot=RepoStatusSnapshot(branch="unknown", clean=True)),
+            )
+        )
 
     def calculator(self) -> CalculatorBuiltin:
         return CalculatorBuiltin()
@@ -180,6 +187,35 @@ class BuiltinToolCatalog(BuiltinToolModel):
             calculator_request = CalculatorRequest(**request.arguments)
             value = _eval_numeric(ast.parse(calculator_request.expression, mode="eval").body)
             return _result_for_request(request, {"result": str(value.normalize())})
+        if request.proposal.capability_ref.identifier == "builtin.time_date":
+            time_request = TimeDateRequest(**request.arguments)
+            now = dt.datetime.now(dt.timezone.utc)
+            return _result_for_request(
+                request,
+                {
+                    "timezone": time_request.timezone,
+                    "iso_datetime": now.isoformat(),
+                    "iso_date": now.date().isoformat(),
+                },
+            )
+        if request.proposal.capability_ref.identifier == "builtin.capability_diagnostics":
+            return _result_for_request(
+                request,
+                {
+                    "capability_count": len(self.tools),
+                    "eligible_count": len(self.tools),
+                },
+            )
+        if request.proposal.capability_ref.identifier == "builtin.repo_status":
+            snapshot = _repo_status_snapshot(request.arguments)
+            return _result_for_request(
+                request,
+                {
+                    "branch": snapshot.branch,
+                    "clean": snapshot.clean,
+                    "status_length": len(snapshot.short_status),
+                },
+            )
         raise ValueError("unsupported builtin tool capability")
 
 
@@ -239,3 +275,10 @@ def _eval_numeric(node: ast.AST) -> Decimal:
         if isinstance(node.op, ast.Pow):
             return left ** int(right)
     raise ValueError("unsupported calculator expression")
+
+
+def _repo_status_snapshot(arguments: dict[str, object]) -> RepoStatusSnapshot:
+    branch = str(arguments.get("branch") or "unknown").strip() or "unknown"
+    clean = bool(arguments.get("clean", True))
+    short_status = str(arguments.get("short_status") or "")
+    return RepoStatusSnapshot(branch=branch[:120], clean=clean, short_status=short_status[:4000])

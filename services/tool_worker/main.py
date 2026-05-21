@@ -73,6 +73,7 @@ def handle_jsonl_command(
                 capability=_required_string(payload.get("capability")),
                 resource_type=_required_string(payload.get("resource_type")),
                 arguments=_arguments(payload),
+                autonomy_mode=payload.get("autonomy_mode") if isinstance(payload.get("autonomy_mode"), str) else None,
             )
         return controller.validation_result(trace_id=trace_id, reason="unsupported_command")
     except Exception:

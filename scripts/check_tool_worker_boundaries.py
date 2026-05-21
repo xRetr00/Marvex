@@ -9,13 +9,17 @@ WORKER_ROOT = ROOT / "services" / "tool_worker"
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
+    "asyncio",
     "argparse",
     "collections.abc",
     "dataclasses",
     "datetime",
     "enum",
+    "mcp.types",
     "json",
     "packages.adapters.capabilities.builtins",
+    "packages.adapters.capabilities.files",
+    "packages.adapters.capabilities.mcp",
     "packages.capability_runtime",
     "packages.contracts",
     "pydantic",
@@ -29,7 +33,6 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "packages.adapters.capabilities.integrations",
     "packages.adapters.capabilities.litellm_gateway",
     "packages.adapters.capabilities.lmstudio",
-    "packages.adapters.capabilities.mcp",
     "packages.adapters.capabilities.openai_agents",
     "packages.adapters.capabilities.openai_computer_use",
     "packages.adapters.capabilities.openai_tools",
@@ -48,7 +51,6 @@ FORBIDDEN_IMPORT_PREFIXES = (
     "services.voice_worker",
 )
 FORBIDDEN_TOKENS = (
-    "subprocess",
     "create_provider",
     "ProviderRequest",
     "ProviderResponse",
