@@ -207,18 +207,60 @@ def test_lmstudio_handler_rejects_missing_or_empty_model():
     assert empty.error.details == {"reason": "invalid_model"}
 
 
-def test_lmstudio_handler_rejects_provider_options():
+def test_lmstudio_handler_forwards_allowed_provider_options(monkeypatch):
+    from packages.runtime_composition.local_api_lmstudio_turns import (
+        create_local_api_lmstudio_turn_handler,
+    )
+
+    import packages.runtime_composition.local_api_lmstudio_turns as lmstudio_turns
+
+    captured = {}
+
+    def fake_bridge(turn_input, **kwargs):
+        captured["kwargs"] = kwargs
+        return success_result(turn_input)
+
+    monkeypatch.setattr(
+        lmstudio_turns,
+        "run_lmstudio_responses_assistant_bridge",
+        fake_bridge,
+    )
+
+    result = create_local_api_lmstudio_turn_handler()(
+        make_request(
+            provider_options={
+                "temperature": 0,
+                "max_output_tokens": 64,
+                "top_p": 0.9,
+                "timeout": 10,
+            }
+        )
+    )
+
+    assert result.error is None
+    assert captured["kwargs"]["provider_options"] == {
+        "temperature": 0,
+        "max_output_tokens": 64,
+        "top_p": 0.9,
+        "timeout": 10,
+    }
+
+
+def test_lmstudio_handler_rejects_unsafe_provider_options():
     from packages.runtime_composition.local_api_lmstudio_turns import (
         create_local_api_lmstudio_turn_handler,
     )
 
     result = create_local_api_lmstudio_turn_handler()(
-        make_request(provider_options={"temperature": 0})
+        make_request(provider_options={"api_key": "secret", "base_url": "http://x"})
     )
 
     assert result.error is not None
     assert result.error.code == ErrorCode.VALIDATION_ERROR
-    assert result.error.details == {"reason": "invalid_provider_options"}
+    assert result.error.details == {
+        "rejected_provider_options": ["api_key", "base_url"],
+        "reason": "invalid_provider_options",
+    }
 
 
 def test_lmstudio_handler_calls_runtime_composition_bridge(monkeypatch):
@@ -389,4 +431,3 @@ def test_lmstudio_malformed_provider_response_maps_to_safe_local_api_error(
     assert payload["message"] == "Local API turn handler failed."
     assert "object" not in serialized
     assert EXPECTED_TOKEN not in serialized
-

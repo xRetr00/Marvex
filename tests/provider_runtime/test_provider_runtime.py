@@ -70,7 +70,7 @@ def test_unknown_provider_fails_clearly():
         create_provider(ProviderRuntimeConfig(provider_name="unknown"))
 
 
-def test_provider_runtime_config_is_frozen_and_provider_name_only():
+def test_provider_runtime_config_supports_additive_connection_fields():
     from dataclasses import FrozenInstanceError, fields
 
     from packages.provider_runtime import ProviderRuntimeConfig
@@ -80,6 +80,58 @@ def test_provider_runtime_config_is_frozen_and_provider_name_only():
     assert [field.name for field in fields(ProviderRuntimeConfig)] == [
         "provider_name",
         "lmstudio_responses_api_key",
+        "base_url",
+        "timeout_seconds",
     ]
+    assert config.base_url is None
+    assert config.timeout_seconds is None
     with pytest.raises(FrozenInstanceError):
         config.provider_name = "litellm"
+
+
+def test_create_lmstudio_provider_receives_base_url_timeout_and_api_key():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(
+        ProviderRuntimeConfig(
+            provider_name="lmstudio_responses",
+            lmstudio_responses_api_key="fake-lmstudio-token-for-test",
+            base_url="http://127.0.0.1:1234/v1",
+            timeout_seconds=12.5,
+        )
+    )
+
+    assert isinstance(provider, LMStudioResponsesProvider)
+    assert provider._client_kwargs() == {
+        "base_url": "http://127.0.0.1:1234/v1",
+        "api_key": "fake-lmstudio-token-for-test",
+        "timeout": 12.5,
+    }
+
+
+def test_create_litellm_provider_receives_base_url_and_timeout():
+    from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(
+        ProviderRuntimeConfig(
+            provider_name="litellm",
+            base_url="http://127.0.0.1:4000",
+            timeout_seconds=9,
+        )
+    )
+
+    assert isinstance(provider, LiteLLMProvider)
+    assert provider._config.base_url == "http://127.0.0.1:4000"
+    assert provider._config.timeout_seconds == 9
+
+
+def test_fake_provider_rejects_connection_config_fields():
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    with pytest.raises(ValueError, match="base_url is only supported"):
+        create_provider(ProviderRuntimeConfig(provider_name="fake", base_url="http://x"))
+
+    with pytest.raises(ValueError, match="timeout_seconds is only supported"):
+        create_provider(ProviderRuntimeConfig(provider_name="fake", timeout_seconds=1))

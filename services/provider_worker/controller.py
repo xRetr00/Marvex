@@ -1,0 +1,366 @@
+from __future__ import annotations
+
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from datetime import UTC, datetime
+from enum import Enum
+
+from packages.capability_runtime import AutonomyMode, AutonomyPolicy
+from packages.contracts import (
+    ErrorCode,
+    ErrorEnvelope,
+    FinishReason,
+    HealthCheck,
+    HealthStatus,
+    ProviderRequest,
+    ProviderResponse,
+    VersionInfo,
+)
+from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+from packages.provider_selection_runtime import (
+    ModelCapabilityRequirement,
+    ProviderCandidate,
+    ProviderFallbackPolicy,
+    ProviderRetryPolicy,
+    ProviderSelectionRequest,
+    ProviderSelectionRuntime,
+)
+
+from .models import (
+    SCHEMA_VERSION,
+    SERVICE_NAME,
+    SERVICE_VERSION,
+    ProviderWorkerCommandResult,
+    ProviderWorkerConfig,
+    ProviderWorkerSelectionProjection,
+)
+
+
+ProviderFactory = Callable[[ProviderRuntimeConfig], object]
+
+
+class ProviderWorkerState(str, Enum):
+    INITIALIZED = "initialized"
+    RUNNING = "running"
+    STOPPING = "stopping"
+
+
+@dataclass
+class ProviderWorkerController:
+    config: ProviderWorkerConfig = field(default_factory=ProviderWorkerConfig)
+    provider_factory: ProviderFactory = create_provider
+
+    def __post_init__(self) -> None:
+        self._state = ProviderWorkerState.INITIALIZED
+        self._started_at = datetime.now(UTC)
+
+    def start(self, *, trace_id: str = "provider-worker-start") -> ProviderWorkerCommandResult:
+        self._state = ProviderWorkerState.RUNNING
+        return self._result(command="start", ok=True, trace_id=trace_id)
+
+    def stop(self, *, trace_id: str = "provider-worker-stop") -> ProviderWorkerCommandResult:
+        self._state = ProviderWorkerState.STOPPING
+        return self._result(command="stop", ok=True, trace_id=trace_id)
+
+    def status(self, *, trace_id: str = "provider-worker-status") -> ProviderWorkerCommandResult:
+        return self._result(command="status", ok=True, trace_id=trace_id)
+
+    def health(self) -> HealthCheck:
+        return HealthCheck(
+            schema_version=SCHEMA_VERSION,
+            service=SERVICE_NAME,
+            status=HealthStatus.OK
+            if self._state != ProviderWorkerState.STOPPING
+            else HealthStatus.STOPPING,
+            version=SERVICE_VERSION,
+            uptime_seconds=max(0.0, (datetime.now(UTC) - self._started_at).total_seconds()),
+            dependencies={
+                "provider_runtime": {"configured": True},
+                "accepted_providers": list(self.config.provider_candidates),
+            },
+        )
+
+    def version(self) -> VersionInfo:
+        return VersionInfo(
+            schema_version=SCHEMA_VERSION,
+            service=SERVICE_NAME,
+            service_version=SERVICE_VERSION,
+            contract_versions={
+                "ProviderWorker": SCHEMA_VERSION,
+                "ProviderRequest": SCHEMA_VERSION,
+                "ProviderResponse": SCHEMA_VERSION,
+                "ErrorEnvelope": SCHEMA_VERSION,
+                "HealthCheck": SCHEMA_VERSION,
+                "VersionInfo": SCHEMA_VERSION,
+            },
+            build={},
+        )
+
+    def send(
+        self,
+        *,
+        provider_name: str,
+        request: ProviderRequest,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        lmstudio_responses_api_key: str | None = None,
+    ) -> ProviderWorkerCommandResult:
+        decision_projection: ProviderWorkerSelectionProjection | None = None
+        try:
+            provider_ids, decision_projection, retry_allowed = self._selected_provider_ids(
+                requested_provider=provider_name,
+                request=request,
+            )
+        except Exception:
+            return self._error_result(
+                command="send",
+                trace_id=request.trace_id,
+                error=self._error(
+                    request,
+                    code=ErrorCode.PROVIDER_UNAVAILABLE,
+                    reason="provider_unavailable",
+                    message="Provider unavailable.",
+                    recoverable=True,
+                ),
+            )
+
+        last_response: ProviderResponse | None = None
+        last_error: ErrorEnvelope | None = None
+        retry_count = self.config.max_retries if retry_allowed else 0
+        for candidate in provider_ids:
+            for _attempt in range(retry_count + 1):
+                try:
+                    provider = self.provider_factory(
+                        ProviderRuntimeConfig(
+                            provider_name=candidate,
+                            lmstudio_responses_api_key=lmstudio_responses_api_key,
+                            base_url=base_url,
+                            timeout_seconds=timeout_seconds,
+                        )
+                    )
+                    response = provider.send(request)  # type: ignore[attr-defined]
+                except Exception as exc:
+                    last_error = self._exception_error(request, exc)
+                    if last_error.code in {
+                        ErrorCode.PROVIDER_TIMEOUT,
+                        ErrorCode.PROVIDER_UNAVAILABLE,
+                    }:
+                        break
+                    continue
+
+                safe_response = self._safe_response(response)
+                if self._is_success(safe_response):
+                    return self._result(
+                        command="send",
+                        ok=True,
+                        trace_id=request.trace_id,
+                        response=safe_response,
+                        selection=decision_projection,
+                        metadata={"payload_persisted": False},
+                    )
+                last_response = safe_response
+                last_error = safe_response.error or self._error(
+                    request,
+                    code=ErrorCode.PROVIDER_ERROR,
+                    reason="provider_error",
+                    message="Provider failed.",
+                    recoverable=True,
+                )
+
+        if last_response is not None and last_response.error is not None:
+            return self._error_result(
+                command="send",
+                trace_id=request.trace_id,
+                error=last_response.error,
+                response=last_response,
+                selection=decision_projection,
+            )
+        return self._error_result(
+            command="send",
+            trace_id=request.trace_id,
+            error=last_error
+            or self._error(
+                request,
+                code=ErrorCode.PROVIDER_UNAVAILABLE,
+                reason="provider_unavailable",
+                message="Provider unavailable.",
+                recoverable=True,
+            ),
+            response=last_response,
+            selection=decision_projection,
+        )
+
+    def _selected_provider_ids(
+        self,
+        *,
+        requested_provider: str,
+        request: ProviderRequest,
+    ) -> tuple[list[str], ProviderWorkerSelectionProjection, bool]:
+        candidates = self._candidate_ids(requested_provider)
+        runtime = ProviderSelectionRuntime(
+            candidates=tuple(self._candidate(provider_id, request) for provider_id in candidates)
+        )
+        decision = runtime.select(
+            ProviderSelectionRequest(
+                trace_id=request.trace_id,
+                requirement=ModelCapabilityRequirement(
+                    requested_capability="provider_send",
+                    min_context_length=1,
+                    local_preferred=True,
+                ),
+                autonomy_policy=AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX),
+                fallback_policy=ProviderFallbackPolicy(
+                    provider_fallback_enabled=self.config.fallback_enabled
+                ),
+                retry_policy=ProviderRetryPolicy(max_retries=self.config.max_retries),
+            )
+        )
+        selected = [decision.selected.provider_id]
+        selected.extend(candidate.provider_id for candidate in decision.fallback_candidates)
+        projection = decision.safe_projection()
+        return (
+            selected,
+            ProviderWorkerSelectionProjection(
+                selected_provider_id=projection.selected_provider_id,
+                fallback_provider_ids=projection.fallback_provider_ids,
+                rejected_provider_ids=projection.rejected_provider_ids,
+                fallback_allowed=projection.fallback_allowed,
+                retry_allowed=projection.retry_allowed,
+            ),
+            decision.retry_allowed,
+        )
+
+    def _candidate_ids(self, requested_provider: str) -> tuple[str, ...]:
+        if requested_provider in self.config.provider_candidates:
+            return tuple(
+                [requested_provider]
+                + [
+                    candidate
+                    for candidate in self.config.provider_candidates
+                    if candidate != requested_provider
+                ]
+            )
+        return (requested_provider,)
+
+    def _candidate(self, provider_id: str, request: ProviderRequest) -> ProviderCandidate:
+        return ProviderCandidate(
+            provider_id=provider_id,
+            model=request.model,
+            supports_tools=False,
+            context_length=128000,
+            locality="cloud" if provider_id == "litellm" else "local",
+            healthy=provider_id not in self.config.unavailable_provider_ids,
+            cost_tier="low" if provider_id == "litellm" else "free",
+        )
+
+    def _is_success(self, response: ProviderResponse) -> bool:
+        return (
+            response.error is None
+            and response.finish_reason != FinishReason.ERROR
+            and bool(response.output_text.strip())
+        )
+
+    def _safe_response(self, response: ProviderResponse) -> ProviderResponse:
+        return response.model_copy(
+            update={"raw_metadata": self._safe_metadata(response.raw_metadata)}
+        )
+
+    def _safe_metadata(self, metadata: dict[str, object]) -> dict[str, object]:
+        safe: dict[str, object] = {}
+        for key, value in metadata.items():
+            lowered = key.lower()
+            if any(token in lowered for token in ("raw", "secret", "token", "key")):
+                continue
+            if isinstance(value, str) and "must-not-leak" in value:
+                continue
+            safe[key] = value
+        return safe
+
+    def _exception_error(
+        self,
+        request: ProviderRequest,
+        exc: Exception,
+    ) -> ErrorEnvelope:
+        if isinstance(exc, TimeoutError):
+            return self._error(
+                request,
+                code=ErrorCode.PROVIDER_TIMEOUT,
+                reason="provider_timeout",
+                message="Provider request timed out.",
+                recoverable=True,
+            )
+        if isinstance(exc, (ConnectionError, ValueError)):
+            return self._error(
+                request,
+                code=ErrorCode.PROVIDER_UNAVAILABLE,
+                reason="provider_unavailable",
+                message="Provider unavailable.",
+                recoverable=True,
+            )
+        return self._error(
+            request,
+            code=ErrorCode.PROVIDER_ERROR,
+            reason="provider_error",
+            message="Provider failed.",
+            recoverable=True,
+        )
+
+    def _error(
+        self,
+        request: ProviderRequest,
+        *,
+        code: ErrorCode,
+        reason: str,
+        message: str,
+        recoverable: bool,
+    ) -> ErrorEnvelope:
+        return ErrorEnvelope(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            error_id=f"{request.turn_id}:provider-worker:{reason}",
+            code=code,
+            message=message,
+            recoverable=recoverable,
+            source="provider_worker",
+            details={"reason": reason},
+        )
+
+    def _result(
+        self,
+        *,
+        command: str,
+        ok: bool,
+        trace_id: str,
+        response: ProviderResponse | None = None,
+        selection: ProviderWorkerSelectionProjection | None = None,
+        metadata: dict[str, object] | None = None,
+    ) -> ProviderWorkerCommandResult:
+        return ProviderWorkerCommandResult(
+            command=command,
+            ok=ok,
+            trace_id=trace_id,
+            state=self._state.value,
+            response=response,
+            selection=selection,
+            metadata=dict(metadata or {}),
+        )
+
+    def _error_result(
+        self,
+        *,
+        command: str,
+        trace_id: str,
+        error: ErrorEnvelope,
+        response: ProviderResponse | None = None,
+        selection: ProviderWorkerSelectionProjection | None = None,
+    ) -> ProviderWorkerCommandResult:
+        return ProviderWorkerCommandResult(
+            command=command,
+            ok=False,
+            trace_id=trace_id,
+            state=self._state.value,
+            response=response,
+            error=error,
+            selection=selection,
+            metadata={"payload_persisted": False},
+        )

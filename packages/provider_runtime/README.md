@@ -1,10 +1,13 @@
 # Provider Runtime Package
 
-Status: minimal v1 provider creation boundary.
+Status: provider factory/runtime foundation for approved adapters.
 
 Ownership: Provider creation wiring for approved provider adapters.
 
-Responsibility: Create an approved provider adapter from explicit runtime config.
+Responsibility: Create an approved provider adapter from explicit runtime
+config. `ProviderRuntimeConfig` supports provider name plus additive connection
+fields used by approved adapters: LM Studio Responses API key, base URL, and
+timeout seconds where relevant.
 
 Production bridge decision:
 
@@ -52,6 +55,12 @@ Production bridge decision:
   for `provider_name="lmstudio_responses"` and maps only to
   `LMStudioResponsesProviderConfig(api_key=...)`. Missing or blank values keep
   the existing placeholder SDK key behavior.
+- The Core + ProviderWorker closure adds `base_url` and `timeout_seconds`.
+  ProviderRuntime maps those fields only into approved network provider adapter
+  config. The fake provider rejects connection config. Retry, fallback,
+  selection, timeout execution, availability, and process lifecycle remain
+  outside ProviderRuntime and are owned by ProviderWorker for the local service
+  slice.
 
 Approved provider names:
 

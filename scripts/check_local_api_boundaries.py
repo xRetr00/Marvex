@@ -10,6 +10,10 @@ SERVICE_ROOT = ROOT / "services"
 ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "services/core/__init__.py",
     "services/core/main.py",
+    "services/provider_worker/__init__.py",
+    "services/provider_worker/models.py",
+    "services/provider_worker/controller.py",
+    "services/provider_worker/main.py",
 }
 
 ALLOWED_IMPORT_PREFIXES = (

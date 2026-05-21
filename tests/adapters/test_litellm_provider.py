@@ -73,6 +73,48 @@ def test_litellm_called_with_model_and_messages(monkeypatch):
     ]
 
 
+def test_litellm_config_base_url_and_timeout_are_forwarded(monkeypatch):
+    from packages.adapters.providers.litellm import litellm_provider
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return make_completion_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+
+    LiteLLMProvider(
+        LiteLLMProviderConfig(
+            base_url="http://127.0.0.1:4000",
+            timeout_seconds=5,
+        )
+    ).send(make_request())
+
+    assert calls[0]["api_base"] == "http://127.0.0.1:4000"
+    assert calls[0]["timeout"] == 5
+
+
+def test_litellm_request_timeout_overrides_config_timeout(monkeypatch):
+    from packages.adapters.providers.litellm import litellm_provider
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return make_completion_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+
+    LiteLLMProvider(LiteLLMProviderConfig(timeout_seconds=5)).send(
+        make_request(provider_options={"timeout": 12})
+    )
+
+    assert calls[0]["timeout"] == 12
+
+
 def test_input_text_becomes_user_message_without_instructions(monkeypatch):
     from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider

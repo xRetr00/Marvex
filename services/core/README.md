@@ -7,8 +7,9 @@ lifecycle, health/version, turn submission through a port, and structured
 `ErrorEnvelope` behavior. It remains transport-free.
 
 `services/core/main.py` is the runnable service-owned entrypoint: CLI parsing,
-loopback Local API startup, safe startup metadata, health/version one-shot, and
-shutdown wiring.
+loopback Local API startup, provider selection flags, safe startup metadata,
+health/version one-shot, ProviderWorker process roundtrip proof, and shutdown
+wiring.
 
 ## Intended Ownership
 
@@ -54,9 +55,12 @@ The current closure slice is intentionally local-only and minimal:
   not approved.
 - Failures at the CoreService envelope return structured `ErrorEnvelope`
   results instead of leaking raw exceptions.
-- The turn path uses the existing approved runtime composition foundation/test
-  path. This is not the final assistant turn model and does not approve
-  provider-specific branching inside Core or the service folder.
+- The default turn path remains fake-provider CI/dev safe.
+- Core can select the local ProviderWorker process boundary and send an
+  assistant turn through ProviderWorker -> ProviderRuntime -> FakeProvider.
+- LM Studio Responses and LiteLLM provider flags are entrypoint configuration
+  for the provider boundary and do not add concrete provider imports to
+  `packages/core`.
 
 Runnable commands:
 
@@ -64,9 +68,10 @@ Runnable commands:
 uv run python -m services.core.main --help
 uv run python -m services.core.main --health-once
 uv run python -m services.core.main --serve --local-auth-token <local-token>
+uv run python -m services.core.main --turn-once "hello" --provider provider_worker --model fake-model
 ```
 
-Future production daemon supervision, external process managers, worker IPC,
-remote bind modes, raw prompt/provider-output persistence, hidden autostart,
-and full assistant OS worker orchestration still require separate approved
-tasks.
+Future production daemon supervision, external process managers, streaming
+worker IPC, remote bind modes, raw prompt/provider-output persistence, hidden
+autostart, and full assistant OS worker orchestration still require separate
+approved tasks.

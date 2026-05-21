@@ -19,6 +19,8 @@ from packages.provider_structured_output import map_adapter_raw_output_to_struct
 @dataclass(frozen=True)
 class LiteLLMProviderConfig:
     provider_name: str = "litellm"
+    base_url: str | None = None
+    timeout_seconds: float | None = None
     error_id: str = "litellm-error-001"
 
 
@@ -34,6 +36,10 @@ class LiteLLMProvider:
         allowed_options, ignored_options = self._filter_provider_options(
             request.provider_options
         )
+        if self._config.base_url is not None:
+            call_args["api_base"] = self._config.base_url
+        if self._config.timeout_seconds is not None:
+            call_args["timeout"] = self._config.timeout_seconds
         call_args.update(allowed_options)
         raw_metadata: dict[str, object] = {
             "previous_response_id": request.previous_response_id,

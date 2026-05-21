@@ -13,21 +13,27 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
-SERVICE_ENTRYPOINT_TASKS = {"core"}
+SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker"}
 ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "core": {"README.md", "__init__.py", "main.py"},
+    "provider_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
 }
 ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "__future__",
     "argparse",
     "collections.abc",
     "dataclasses",
+    "datetime",
     "json",
+    "packages.assistant_runtime.input_normalization",
     "packages.contracts",
     "packages.core",
+    "packages.core.orchestration.assistant_provider_stage",
     "packages.local_api",
     "packages.runtime_composition",
     "packages.telemetry",
+    "subprocess",
+    "sys",
     "typing",
     "wsgiref.simple_server",
 )
@@ -47,8 +53,6 @@ FORBIDDEN_CORE_SERVICE_TOKENS = (
     "packages.adapters",
     "packages.provider_runtime",
     "create_provider",
-    "lmstudio",
-    "litellm",
     "openai",
     "anthropic",
     "gemini",
@@ -138,6 +142,16 @@ def _scan_core_service_entrypoint(service, failures: list[str]) -> None:
                 failures.append(f"{rel} imports non-approved dependency: {module}")
 
 
+def _scan_provider_worker_entrypoint(service, failures: list[str]) -> None:
+    allowed_files = ALLOWED_SERVICE_ENTRYPOINT_FILES["provider_worker"]
+    entries = {path.name for path in service.iterdir() if path.name != "__pycache__"}
+    unexpected_entries = sorted(entries - allowed_files)
+    if unexpected_entries:
+        failures.append(
+            f"{service.relative_to(ROOT).as_posix()} contains non-entrypoint files: {unexpected_entries}"
+        )
+
+
 def main() -> int:
     failures = []
     if not SERVICES.is_dir():
@@ -160,6 +174,8 @@ def main() -> int:
             )
         if service.name == "core" and entrypoint_allowed:
             _scan_core_service_entrypoint(service, failures)
+        if service.name == "provider_worker" and entrypoint_allowed:
+            _scan_provider_worker_entrypoint(service, failures)
 
     if failures:
         for failure in failures:

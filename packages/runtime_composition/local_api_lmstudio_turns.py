@@ -14,6 +14,9 @@ from .assistant_provider_bridge import run_lmstudio_responses_assistant_bridge
 
 
 LOCAL_API_LMSTUDIO_RESPONSES_EXECUTION_MODE = "assistant_runtime_lmstudio_responses"
+ALLOWED_LMSTUDIO_PROVIDER_OPTIONS = frozenset(
+    {"temperature", "max_output_tokens", "top_p", "timeout"}
+)
 
 
 class LocalApiLmstudioTurnRequest(Protocol):
@@ -43,8 +46,13 @@ def create_local_api_lmstudio_turn_handler(
             return _validation_result(request, "unsupported_execution_mode")
         if not isinstance(request.model, str) or not request.model.strip():
             return _validation_result(request, "invalid_model")
-        if request.provider_options:
-            return _validation_result(request, "invalid_provider_options")
+        rejected_options = _rejected_provider_options(request.provider_options)
+        if rejected_options:
+            return _validation_result(
+                request,
+                "invalid_provider_options",
+                details={"rejected_provider_options": rejected_options},
+            )
 
         kwargs = {
             "model": request.model,
@@ -67,6 +75,8 @@ def create_local_api_lmstudio_turn_handler(
 def _validation_result(
     request: LocalApiLmstudioTurnRequest,
     reason: str,
+    *,
+    details: dict[str, object] | None = None,
 ) -> AssistantTurnResult:
     turn_input = request.assistant_turn_input
     return AssistantTurnResult(
@@ -88,7 +98,13 @@ def _validation_result(
             message="Local API LM Studio turn request validation failed.",
             recoverable=False,
             source="runtime_composition",
-            details={"reason": reason},
+            details={"reason": reason, **dict(details or {})},
         ),
         metadata={},
+    )
+
+
+def _rejected_provider_options(provider_options: dict[str, object]) -> list[str]:
+    return sorted(
+        name for name in provider_options if name not in ALLOWED_LMSTUDIO_PROVIDER_OPTIONS
     )
