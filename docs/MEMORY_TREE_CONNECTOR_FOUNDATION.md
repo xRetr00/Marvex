@@ -24,6 +24,11 @@ Marvex now has an OpenHuman-style memory design concept implemented with Marvex-
 - Entity/topic foundation: entity refs, topic refs, candidates, assignments, consolidation candidates, duplicate signals, and safe projection aliases.
 - Trees/traversal: source tree, topic tree, global/daily digest tree, summary nodes, evidence links, update summaries, traversal results, search, drill-down, source/topic/daily digest retrieval, entity resolve, and query-with-evidence.
 - Control Plane endpoints: `/control/connectors`, `/control/sources`, `/control/autofetch`, `/control/memory/tree/search`, `/control/memory/tree/source/{source_id}`, `/control/memory/tree/topic/{topic_id}`, `/control/memory/tree/daily/{date}`, `/control/memory/tree/drill-down/{chunk_id}`, `/control/memory/tree/scoring`, and `/control/sources/{source_id}/forget`.
+- Live local vault projection: Core memory-loop writes can now mirror derived
+  records into an explicit local Obsidian-compatible `wiki/` vault with
+  `summaries/`, `notes/`, and `sources/` folders plus the local SQLite tree
+  index. This is local Markdown you own, not an opaque embedding-only memory
+  backend.
 
 ## Privacy And Policy
 

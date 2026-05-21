@@ -47,6 +47,7 @@ from packages.capability_runtime import (
     ToolSideEffectLevel,
 )
 from packages.cognition_runtime import CognitionRuntime, CognitionTurnAssembly
+from packages.cognition_runtime import LocalMemoryLoop
 from packages.grounded_answer_runtime import GroundedAnswerDraft, validate_grounded_citations
 from packages.core import CoreService
 from packages.core.orchestration.assistant_provider_stage import (
@@ -87,6 +88,7 @@ class CoreServiceEntrypointConfig:
     web_search: str = "fake"
     web_base_url: str | None = None
     demo_memory_evidence: bool = False
+    memory_vault_root: str | None = None
     resume_approval: str | None = None
     approval_decision: str | None = None
     timeout_seconds: float | None = None
@@ -300,6 +302,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         trace_reader: InMemoryTraceReader,
         web_search_provider: object | None = None,
         memory_tree_runtime: object | None = None,
+        memory_loop: LocalMemoryLoop | None = None,
         resume_approval: str | None = None,
         approval_decision: str | None = None,
         base_url: str | None = None,
@@ -320,6 +323,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._trace_reader = trace_reader
         self._web_search_provider = web_search_provider
         self._memory_tree_runtime = memory_tree_runtime
+        self._memory_loop = memory_loop
         self._resume_approval = resume_approval
         self._approval_decision = approval_decision
 
@@ -346,6 +350,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         cognition = CognitionRuntime(
             intent_classifier=_fixed_intent_classifier(intent_response["classification"]),
             intent_planner=_CoreIntentPlanner(intent_response["classification"]),
+            memory_store=self._memory_loop.memory_store if self._memory_loop is not None else None,
             memory_tree_runtime=self._memory_tree_runtime,
             web_search_provider=self._web_search_provider,
         ).assemble_turn(turn_input)
@@ -402,13 +407,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
 
         loop.step("provider")
-        provider_turn_input = _turn_input_with_prompt(turn_input, cognition)
+        provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
         result = run_assistant_provider_stage_turn(
             provider_turn_input,
             provider=self._provider,
             model=self._model,
+            instructions=provider_instructions,
             telemetry_sink=self._trace_reader,
         )
+        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         loop.step("finalize", stop_reason="finalized")
         metadata = dict(result.metadata)
         metadata.update(
@@ -418,6 +425,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "intent_backend": intent_response.get("backend_name"),
                 "assistant_turn_spine": "used",
                 "cognition": cognition.safe_projection().model_dump(mode="json"),
+                "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
+                "memory_loop": _memory_write_projection(memory_write),
             }
         )
         metadata["provider_boundary"] = "provider_worker_process"
@@ -914,13 +923,18 @@ def _calculator_expression(text: str | None) -> str:
 def _turn_input_with_prompt(
     turn_input: AssistantTurnInput,
     cognition: CognitionTurnAssembly,
-) -> AssistantTurnInput:
+) -> tuple[AssistantTurnInput, str | None]:
+    system_text = "\n".join(
+        section.safe_content
+        for section in cognition.prompt_result.plan.sections
+        if section.included and section.kind.value in {"system_policy", "approval_state"}
+    )
     prompt_text = "\n".join(
         section.safe_content
         for section in cognition.prompt_result.plan.sections
-        if section.included
+        if section.included and section.kind.value not in {"system_policy", "approval_state"}
     )
-    return turn_input.model_copy(update={"user_visible_input": prompt_text})
+    return turn_input.model_copy(update={"user_visible_input": prompt_text}), (system_text or None)
 
 
 def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:
@@ -963,6 +977,45 @@ def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> obj
 
 def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | None:
     return _DemoMemoryTreeRuntime() if config.demo_memory_evidence else None
+
+
+def _memory_loop_from_config(config: CoreServiceEntrypointConfig) -> LocalMemoryLoop | None:
+    if not config.memory_vault_root:
+        return None
+    return LocalMemoryLoop.open(vault_root=config.memory_vault_root)
+
+
+def _prompt_fidelity_projection(
+    cognition: CognitionTurnAssembly,
+    provider_turn_input: AssistantTurnInput,
+    provider_instructions: str | None,
+) -> dict[str, object]:
+    sections = tuple(section.safe_content for section in cognition.prompt_result.plan.sections if section.included)
+    joined = "\n".join(sections)
+    return {
+        "system_channel_used": bool(provider_instructions),
+        "user_channel_used": bool(provider_turn_input.user_visible_input),
+        "adaptive_budget": cognition.prompt_result.plan.route_profile.total_context_budget,
+        "real_question_present": "User asked:" in joined,
+        "memory_content_present": "Recalled memory" in joined,
+        "evidence_content_present": "Evidence" in joined or "evidence" in joined,
+        "raw_prompt_persisted": False,
+    }
+
+
+def _memory_write_projection(memory_write: object | None) -> dict[str, object]:
+    if memory_write is None:
+        return {"enabled": False, "raw_transcript_persisted": False}
+    record = getattr(memory_write, "record", None)
+    audit = getattr(memory_write, "policy_audit", None)
+    return {
+        "enabled": True,
+        "written": bool(getattr(memory_write, "written", False)),
+        "policy_decision": str(getattr(audit, "decision", "")),
+        "memory_ref": getattr(getattr(record, "memory_ref", None), "ref_id", None),
+        "revised_memory_ref": getattr(memory_write, "revised_memory_ref", None),
+        "raw_transcript_persisted": False,
+    }
 
 
 def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
@@ -1059,6 +1112,7 @@ def _create_turn_executor(
         trace_reader=trace_reader,
         web_search_provider=_web_search_provider_from_config(config),
         memory_tree_runtime=_memory_tree_from_config(config),
+        memory_loop=_memory_loop_from_config(config),
         resume_approval=config.resume_approval,
         approval_decision=config.approval_decision,
         base_url=config.base_url,
@@ -1147,6 +1201,7 @@ def run_turn_once(
     config: CoreServiceEntrypointConfig,
     trace_id: str,
     turn_id: str,
+    session_id: str | None = None,
 ) -> int:
     event = build_text_input_event(
         schema_version="0.1.1-draft",
@@ -1154,6 +1209,7 @@ def run_turn_once(
         event_id=f"{turn_id}:input",
         text=text,
         timestamp=datetime.now(UTC),
+        session_id=session_id,
     )
     turn_input = build_turn_input_from_event(
         schema_version="0.1.1-draft",
@@ -1259,6 +1315,16 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Inject deterministic safe memory-tree evidence for local runtime smokes.",
     )
     parser.add_argument(
+        "--memory-vault-root",
+        default=None,
+        help="Explicit local root for derived memory SQLite index and Obsidian-compatible wiki vault.",
+    )
+    parser.add_argument(
+        "--session-id",
+        default=None,
+        help="Session id for --turn-once memory recall/write wiring.",
+    )
+    parser.add_argument(
         "--resume-approval",
         default=None,
         help="Approval request id to resume for the same trace_id and turn_id.",
@@ -1304,6 +1370,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         web_search=args.web_search,
         web_base_url=args.web_base_url,
         demo_memory_evidence=args.demo_memory_evidence,
+        memory_vault_root=args.memory_vault_root,
         resume_approval=args.resume_approval,
         approval_decision=args.approval_decision,
         timeout_seconds=args.timeout,
@@ -1315,6 +1382,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             config=config,
             trace_id=args.trace_id,
             turn_id=args.turn_id,
+            session_id=args.session_id,
         )
     try:
         return run_core_service(

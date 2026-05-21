@@ -12,15 +12,22 @@ PROJECT_STATUS = ROOT / "PROJECT_STATUS.md"
 
 ALLOWED_IMPORT_PREFIXES = (
     "__future__",
+    "dataclasses",
+    "datetime",
+    "pathlib",
     "packages.cognition_runtime",
     "packages.capability_runtime",
+    "packages.connector_runtime",
+    "packages.contracts",
     "packages.context_runtime",
     "packages.grounded_answer_runtime",
     "packages.intent_runtime",
     "packages.memory_runtime",
+    "packages.memory_tree_runtime",
     "packages.prompt_harness_runtime",
     "packages.web_search_runtime",
     "pydantic",
+    "re",
     "typing",
 )
 FORBIDDEN_IMPORT_PREFIXES = (
@@ -37,6 +44,11 @@ REQUIRED_TERMS = (
     "assemble_turn",
     "classify_intent",
     "assemble_prompt_harness",
+    "assemble_adaptive_prompt_harness",
+    "adaptive_context_policy_for_route",
+    "decide_compaction",
+    "LocalMemoryLoop",
+    "write_document_to_obsidian_vault",
     "web_search_required",
     "grounding_required",
     "raw_prompt_persisted: Literal[False]",
@@ -51,7 +63,6 @@ FORBIDDEN_TOKENS = (
     "ToolWorker",
     "IntentWorker",
     "Path.write_text",
-    "open(",
     "raw_prompt_persisted=True",
     "raw_context_persisted=True",
     "raw_payload_persisted=True",
@@ -90,6 +101,14 @@ def main() -> int:
     for token in FORBIDDEN_TOKENS:
         if token in text:
             failures.append(f"cognition runtime contains forbidden token: {token}")
+    if "Approved memory ref is available." in text:
+        failures.append("cognition runtime must not use tombstone memory prompt text")
+    if "User requested a simple assistant response." in text:
+        failures.append("cognition runtime must not replace real user input with canned simple summaries")
+    if "assemble_adaptive_prompt_harness" not in text or "adaptive_context_policy_for_route" not in text:
+        failures.append("cognition runtime must use adaptive prompt harness budgets")
+    if "User asked:" not in text:
+        failures.append("cognition runtime must carry the real user input into prompt context")
     for path in _python_files(COGNITION):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):

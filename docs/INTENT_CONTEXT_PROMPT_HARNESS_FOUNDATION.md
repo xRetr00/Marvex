@@ -25,3 +25,18 @@ Browser and computer-use schemas are excluded by default unless browser/computer
 ## Integration Proof
 
 Tests prove input summary to intent classification, semantic route adapter to Marvex route decision, context candidate filtering by intent/source/budget, bounded prompt harness assembly, compaction/offload decisions, validation adapter seams, and telemetry-safe summaries. Boundary gates keep ownership from leaking into Core, Local API, RuntimeComposition, ProviderRuntime, Telemetry, MemoryRuntime, SessionRuntime, or Control Plane API.
+
+## Live Fidelity Update
+
+Core worker-backed turns now use the adaptive harness path for live cognition
+assembly. The user channel carries the actual bounded user question plus
+route-relevant context sections. The provider `instructions` channel carries
+persistent system policy and approval policy sections. Recalled memory sections
+contain bounded memory text and provenance refs; they no longer use tombstone
+strings such as a generic approved-memory notice.
+
+The live path calls `adaptive_context_policy_for_route` and
+`assemble_adaptive_prompt_harness` instead of hardcoded tiny budgets. It also
+invokes compaction, tool-result-clearing, and memory-offload decision models at
+context assembly boundaries so pressure is handled by safe summaries or refs,
+not by dumping all context or mutating a subtask midway through execution.

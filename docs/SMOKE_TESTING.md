@@ -1,5 +1,9 @@
 # Manual Smoke Testing
 
+File size justification: this single manual smoke registry keeps host-dependent
+provider, local API, and Core proof commands discoverable without turning them
+into CI gates.
+
 Provider smoke testing is developer-only verification. It is not Marvex product
 runtime, and it must not become a CI requirement.
 
@@ -127,6 +131,37 @@ Failure policy for the explicit CLI proof mode:
 This proof mode does not add automatic preflight probing, retry/fallback,
 routing, sessions/history, model-selection policy, API-key policy, telemetry
 storage, service/API behavior, or product default behavior.
+
+### Core Prompt Fidelity Smoke
+
+Task memory-context fidelity adds a developer-only smoke that proves the Core
+provider-worker path sends the actual assembled request through the
+`lmstudio_responses` adapter. The automated smoke uses a loopback
+Responses-compatible endpoint, so it proves adapter/request structure without
+requiring CI network access:
+
+```powershell
+python scripts/smoke_core_prompt_fidelity.py `
+  --text "Using the evidence, what project codename do I prefer?" `
+  --seed-memory "User preferred project codename is Cedar." `
+  --seed-evidence "Evidence says Cedar is the preferred codename."
+```
+
+Expected success signs:
+
+- `request_has_instructions: true`
+- `request_has_real_question: true`
+- `request_has_real_memory: true`
+- `request_has_real_evidence: true`
+- `request_uses_adaptive_budget: true`
+- `raw_payload_persisted: false`
+
+For a live host smoke, run the same Core command shape with
+`--provider provider_worker --worker-provider lmstudio_responses --base-url
+http://localhost:1234/v1 --memory-vault-root <local-vault> --session-id
+<session-id>` after LM Studio is running and a model is loaded. Do not record
+raw prompts, full provider outputs, provider credentials, or environment dumps;
+record only the bounded structure booleans and trace/turn ids.
 
 Latest manual execution record:
 

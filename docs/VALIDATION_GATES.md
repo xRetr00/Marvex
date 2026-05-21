@@ -833,7 +833,19 @@ Blocked: hidden recording, raw audio/transcript/generated-audio persistence by d
 
 The Cognition Runtime gate is enforced by `scripts/check_cognition_runtime_boundaries.py` and is part of `scripts/run_all_checks.py`.
 
-Cognition Runtime owns pure turn assembly only: runtime intent projection, route-adaptive context, memory evidence refs, web evidence refs, prompt plan projection, and a bounded step plan. It must not import provider adapters, worker internals, subprocesses, services, or raw persistence APIs. Safe projections remain the public surface.
+Cognition Runtime owns turn assembly and the local derived memory-loop
+orchestration needed to feed that assembly: runtime intent projection,
+route-adaptive context, safe memory recall/write decisions, memory evidence
+refs, web evidence refs, prompt plan projection, and a bounded step plan. It
+must not import provider adapters, worker internals, subprocesses, services, or
+raw persistence APIs. Safe projections remain the public surface.
+
+This gate also asserts the prompt-fidelity fix: cognition must use the adaptive
+prompt harness path, carry the real user input into prompt context, avoid
+tombstone memory strings, and keep raw prompt/context/payload persistence false.
+Memory-loop persistence is allowed only as derived, policy-approved records
+under an explicit local vault root with Obsidian-compatible Markdown and a local
+index.
 
 The Core Agentic Turn Loop gate is enforced by `scripts/check_core_agentic_turn_loop_boundaries.py` and is part of `scripts/run_all_checks.py`.
 

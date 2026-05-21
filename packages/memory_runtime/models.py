@@ -129,8 +129,8 @@ class MemoryWriteCandidate(MemoryRuntimeModel):
 
     @model_validator(mode="after")
     def _validate_candidate(self) -> MemoryWriteCandidate:
-        if self.source != "manual" and self.policy_status == "approved":
-            raise ValueError("non-manual memory candidates cannot be approved here")
+        if self.source not in {"manual", "future_policy"} and self.policy_status == "approved":
+            raise ValueError("memory candidates require an approved source")
         if self.raw_transcript_persisted is not False:
             raise ValueError("raw_transcript_persisted must remain false")
         return self

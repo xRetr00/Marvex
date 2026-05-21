@@ -44,7 +44,7 @@ from .models import (
 from .runtime import MemoryTreeRuntime
 from .summaries import MemoryTreeForgetSummary, MemoryTreeTelemetrySummary
 from .sqlite_index import SQLiteMemoryTreeIndex
-from .vault import project_document_to_vault_markdown
+from .vault import project_document_to_vault_markdown, read_manual_notes_from_obsidian_vault, write_document_to_obsidian_vault
 
 __all__ = [
     "CanonicalContentId",
@@ -91,8 +91,10 @@ __all__ = [
     "canonicalize_source_document",
     "chunk_document",
     "project_document_to_vault_markdown",
+    "read_manual_notes_from_obsidian_vault",
     "score_memory_chunk",
     "traverse_tree",
+    "write_document_to_obsidian_vault",
 ]
 
 from packages.memory_tree_runtime.search import MemorySearchFilters, MemorySemanticQuery, SemanticMemorySearchResult

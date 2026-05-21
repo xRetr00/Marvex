@@ -55,12 +55,51 @@ AssistantRuntime may receive safe memory context in a future approved task, but
 it must not own memory storage or recall. Core, Local API, RuntimeComposition,
 ProviderRuntime, and local service startup remain memory-owner blind.
 
+## Live Derived Memory Loop
+
+The first live memory loop is active for Core worker-backed turns when an
+explicit local vault root is configured. It remains a derived-memory loop, not a
+transcript store.
+
+Current live behavior:
+
+- turn start recall reads approved `MemoryRecord` rows through the existing
+  bounded `MemoryReadQuery` path
+- prompt context receives bounded memory text and provenance refs, not opaque
+  embeddings or tombstone placeholders
+- turn end write derives safe facts from the current turn and evaluates
+  `AutonomyPolicy` for `memory_auto_write`
+- approved automated writes use `MemoryWriteCandidate(source="future_policy")`
+  plus a `MemoryPolicyDecision(decided_by="future_policy")`
+- persisted records use `write_authorization: policy_approved`
+- belief revision replaces the prior topic record before writing the new current
+  fact
+- local persistence uses `SQLiteMemoryStore` and an explicit local vault root
+
+The default vault shape is OpenHuman/Karpathy-inspired and human editable:
+
+```text
+<vault-root>/
+  memory.sqlite
+  memory_tree.sqlite
+  wiki/
+    summaries/
+    notes/
+    sources/
+```
+
+Generated Markdown uses YAML frontmatter with provenance fields and
+`raw_secret_persisted: false`. Bodies use Obsidian-compatible `[[wikilinks]]`.
+Manual notes under `wiki/notes/` are reserved for user-owned Markdown edits and
+feed the same safe note-read path.
+
 ## Future Policy
 
-Future memory reads and writes require an explicit policy decision before
-runtime integration. Write candidates default to `pending`; provider-driven or
-automatic transcript-derived writes remain blocked. Forget/delete behavior must
-be addressable by `MemoryRef` and return a safe result without exposing stored
+Future broad extraction remains policy controlled. Write candidates default to
+`pending` unless they are explicit user writes or derived `future_policy`
+records approved by the autonomy policy path. Provider-driven or automatic
+transcript-derived raw writes remain blocked. Forget/delete behavior must be
+addressable by `MemoryRef` and return a safe result without exposing stored
 content.
 
 The current write path can build a `MemoryRecord` only from an approved

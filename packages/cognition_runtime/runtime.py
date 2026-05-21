@@ -21,6 +21,17 @@ from packages.intent_runtime import (
 )
 from packages.memory_runtime import MemoryReadQuery
 from packages.prompt_harness_runtime import PromptAssemblyRequest, assemble_prompt_harness
+from packages.prompt_harness_runtime.adaptive import (
+    AdaptivePromptRoute,
+    adaptive_context_policy_for_route,
+    assemble_adaptive_prompt_harness,
+)
+from packages.prompt_harness_runtime.models import (
+    CompactionCandidate,
+    MemoryOffloadDecision,
+    ToolResultClearingDecision,
+    decide_compaction,
+)
 from packages.web_search_runtime import WebSearchFreshness, WebSearchQuery
 
 from .models import CognitionEvidenceRef, CognitionStep, CognitionStepPlan, CognitionTurnAssembly
@@ -62,28 +73,16 @@ class CognitionRuntime:
             web_search_required=web_search_required,
             grounding_required=grounding_required,
         )
-        context_pack = build_context_pack(
+        adaptive_policy = adaptive_context_policy_for_route(_adaptive_route_for_intent(intent_ref.intent_kind))
+        candidates = _compact_candidates(candidates, max_tokens=max(120, adaptive_policy.profile.total_context_budget // 3))
+        context_pack = adaptive_policy.build_pack(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
             turn_id=turn_input.turn_id,
             intent_ref=intent_ref,
             candidates=tuple(candidates),
-            budget=ContextBudget(
-                max_context_tokens=160 if grounding_required else 80,
-                reserved_response_tokens=40,
-            ),
-            policy=ContextDeliveryPolicy(
-                max_candidates=6,
-                allowed_source_kinds=(
-                    ContextSourceKind.USER_INPUT_SUMMARY,
-                    ContextSourceKind.CAPABILITY_SCHEMA,
-                    ContextSourceKind.MEMORY_PROJECTION,
-                    ContextSourceKind.WEB_SEARCH_EVIDENCE,
-                ),
-                include_excluded_reasons=True,
-            ),
         )
-        prompt_result = assemble_prompt_harness(
+        prompt_result = assemble_adaptive_prompt_harness(
             PromptAssemblyRequest(
                 schema_version=turn_input.schema_version,
                 trace_id=turn_input.trace_id,
@@ -157,17 +156,17 @@ class CognitionRuntime:
                 intent_tags=(IntentKind.CAPABILITY_TOOL.value,),
             )
             candidates.append(ContextCandidate.from_capability_schema(eligibility, token_estimate=8))
-        if intent_ref.intent_kind == IntentKind.MEMORY:
-            memory_ref = self._memory_context_ref(turn_input)
-            if memory_ref is not None:
-                candidates.append(_safe_memory_candidate(turn_input, intent_ref, f"memory.{memory_ref}"))
-        memory_refs = self._memory_tree_refs(turn_input) if grounding_required else ()
+        for memory_record in self._memory_context_records(turn_input):
+            candidates.append(_safe_memory_candidate(turn_input, intent_ref, memory_record))
+        memory_refs = self._memory_tree_refs(turn_input) if grounding_required or intent_ref.intent_kind == IntentKind.MEMORY_TREE_NEEDED else ()
         for ref in memory_refs[:2]:
             candidates.append(
                 ContextCandidate.from_safe_summary(
                     ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=f"memory_tree.node.{getattr(ref, 'chunk_id', 'unknown')}"),
-                    f"Memory evidence ref available; source_id={getattr(ref, 'source_id', 'memory')}; chunk_id={getattr(ref, 'chunk_id', 'unknown')}.",
-                    token_estimate=10,
+                    _bounded_input_summary(
+                        f"Memory evidence from {getattr(ref, 'source_id', 'memory')} [{getattr(ref, 'chunk_id', 'unknown')}]: {getattr(ref, 'quote_preview', '')}"
+                    ),
+                    token_estimate=_estimate_tokens(str(getattr(ref, "quote_preview", ""))) + 12,
                     intent_tags=(intent_ref.intent_kind.value,),
                 )
             )
@@ -178,8 +177,12 @@ class CognitionRuntime:
         return candidates, web_bundle, web_refs, memory_refs
 
     def _memory_context_ref(self, turn_input: Any) -> str | None:
+        records = self._memory_context_records(turn_input)
+        return records[0].memory_ref.ref_id if records else None
+
+    def _memory_context_records(self, turn_input: Any) -> tuple[Any, ...]:
         if self._memory_store is None or not hasattr(self._memory_store, "read") or turn_input.session_ref is None:
-            return None
+            return ()
         query = MemoryReadQuery(
             schema_version=turn_input.schema_version,
             query_id=f"memory-read.{turn_input.turn_id}",
@@ -192,8 +195,8 @@ class CognitionRuntime:
         try:
             result = self._memory_store.read(query)
         except Exception:
-            return None
-        return result.records[0].memory_ref.ref_id if result.records else None
+            return ()
+        return tuple(result.records)
 
     def _memory_tree_refs(self, turn_input: Any) -> tuple[Any, ...]:
         if self._memory_tree_runtime is None or not hasattr(self._memory_tree_runtime, "memory_query_with_evidence"):
@@ -260,32 +263,89 @@ def _steps_for_intent(
     return tuple(steps)
 
 
-def _safe_memory_candidate(turn_input: Any, intent_ref: IntentRef, identifier: str) -> ContextCandidate:
+def _safe_memory_candidate(turn_input: Any, intent_ref: IntentRef, record: Any) -> ContextCandidate:
+    content = _bounded_input_summary(
+        f"Recalled memory [{record.memory_ref.ref_id}] from turn {record.turn_id}: {record.content}"
+    )
     return ContextCandidate.from_safe_summary(
-        ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=identifier),
-        "Approved memory ref is available.",
-        token_estimate=8,
-        intent_tags=(intent_ref.intent_kind.value,),
+        ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=f"memory.{record.memory_ref.ref_id}"),
+        content,
+        token_estimate=_estimate_tokens(content),
+        intent_tags=(),
     )
 
 
 def _route_summary(text: str | None, intent_kind: IntentKind) -> str:
+    actual = _bounded_input_summary(text)
     if intent_kind in {IntentKind.WEB_SEARCH, IntentKind.GROUNDED_ANSWER}:
-        return "User requested current or grounded evidence."
+        return f"User asked: {actual}"
     if intent_kind == IntentKind.CAPABILITY_TOOL:
-        return "User requested a safe calculator capability."
+        return f"User asked: {actual}"
     if intent_kind == IntentKind.RISKY_ACTION:
-        return "User requested a risky action requiring approval."
+        return f"User asked: {actual}"
     if intent_kind == IntentKind.CLARIFICATION:
-        return "User request needs clarification."
-    if text and "memory" in text.lower():
-        return "User requested memory context."
-    return "User requested a simple assistant response."
+        return f"User asked: {actual}"
+    return f"User asked: {actual}"
 
 
 def _bounded_input_summary(text: str | None) -> str:
     value = (text or "").strip() or "empty turn"
     return value[:600]
+
+
+def _estimate_tokens(text: str) -> int:
+    return max(4, min(300, len(text.split()) + 4))
+
+
+def _adaptive_route_for_intent(intent_kind: IntentKind) -> AdaptivePromptRoute:
+    if intent_kind in {IntentKind.WEB_SEARCH, IntentKind.GROUNDED_ANSWER}:
+        return AdaptivePromptRoute.GROUNDED_LOOKUP
+    if intent_kind in {IntentKind.MEMORY, IntentKind.MEMORY_TREE_NEEDED}:
+        return AdaptivePromptRoute.MEMORY_QUERY
+    if intent_kind == IntentKind.CAPABILITY_TOOL:
+        return AdaptivePromptRoute.TOOL_USE
+    if intent_kind == IntentKind.BROWSER_COMPUTER_USE:
+        return AdaptivePromptRoute.BROWSER
+    if intent_kind == IntentKind.MCP_NEEDED:
+        return AdaptivePromptRoute.MCP
+    if intent_kind == IntentKind.CLARIFICATION:
+        return AdaptivePromptRoute.CLARIFICATION
+    return AdaptivePromptRoute.SIMPLE_CHAT
+
+
+def _compact_candidates(candidates: list[ContextCandidate], *, max_tokens: int) -> list[ContextCandidate]:
+    compacted: list[ContextCandidate] = []
+    for candidate in candidates:
+        compaction = decide_compaction(
+            CompactionCandidate(
+                source_ref=candidate.source_ref,
+                token_estimate=candidate.token_estimate,
+                retention_reason="current_user_intent",
+                safe_summary=candidate.safe_summary,
+            ),
+            max_tokens=max_tokens,
+        )
+        ToolResultClearingDecision.from_candidate(
+            CompactionCandidate(
+                source_ref=candidate.source_ref,
+                token_estimate=candidate.token_estimate,
+                retention_reason="current_user_intent",
+                safe_summary=candidate.safe_summary,
+            )
+        )
+        MemoryOffloadDecision(source_ref=candidate.source_ref, offload_allowed=False, reason_code="memory_offload.not_mid_subtask")
+        if compaction.strategy.value == "compact_safe_summary":
+            compacted.append(
+                candidate.model_copy(
+                    update={
+                        "safe_summary": candidate.safe_summary[:600],
+                        "token_estimate": min(candidate.token_estimate, max_tokens),
+                    }
+                )
+            )
+        else:
+            compacted.append(candidate)
+    return compacted
 
 
 def _freshness_for(text: str | None) -> WebSearchFreshness:

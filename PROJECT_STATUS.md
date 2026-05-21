@@ -9,6 +9,20 @@ accepted_docs: true
 current_governance_gate:
 Intent and Tool Worker Execution Slice Checkpoint
 
+## Personal Cognitive Operating Layer Memory + Context Checkpoint
+
+Marvex now has the first live Personal Cognitive Operating Layer slice. Core worker-backed turns can use an explicit local memory vault root, inject a real `session_ref`, recall approved derived memory through `SQLiteMemoryStore`, assemble the prompt with the actual user question plus bounded recalled memory content, and send persistent policy through the provider `instructions` channel instead of collapsing everything into one user blob.
+
+`packages.cognition_runtime` now calls the adaptive prompt harness path (`adaptive_context_policy_for_route` and `assemble_adaptive_prompt_harness`) for live turn assembly. Memory context sections carry real bounded memory text and provenance refs, not tombstone placeholders. The compaction, tool-result-clearing, and memory-offload decision models are called during candidate assembly so budget pressure produces safe summaries without mid-subtask mutation.
+
+`LocalMemoryLoop` writes only derived, policy-approved facts. It uses `AutonomyPolicy`/`memory_auto_write`, `MemoryWriteCandidate(source="future_policy")`, `MemoryPolicyDecision(decided_by="future_policy")`, `MemoryRecord(write_authorization="policy_approved")`, and the existing memory stores. Belief revision forgets the prior topic record before writing the replacement, so contradictory facts do not accumulate as duplicate current truth.
+
+The local memory vault is an explicit configurable path (`--memory-vault-root`) and is ignored by git via `.marvex-memory/`. The vault projection writes Obsidian-compatible Markdown under `wiki/summaries/` and creates `wiki/notes/` for human-editable notes. Markdown frontmatter carries source/provenance fields and `raw_secret_persisted: false`; generated bodies use `[[wikilinks]]`. The local SQLite memory store and Memory Tree index live under the same explicit vault root. Raw transcripts, raw prompts, raw provider output, raw tool payloads, tokens, credentials, and secrets remain forbidden.
+
+The developer-only `scripts/smoke_core_prompt_fidelity.py` proof runs the Core provider-worker path through the real `lmstudio_responses` adapter against a loopback Responses-compatible endpoint and captures the actual provider request structure. It proves the request has a system/instructions channel plus a user channel containing the real question, real recalled memory, and evidence-shaped memory context without requiring CI network access. A live external LM Studio/LiteLLM smoke remains host-dependent and manual.
+
+Still future after this checkpoint: broad tool library, production agentmemory daemon, real external connector live sync at scale, larger automatic extraction coverage, Voice product loop, Orb/shell UI, desktop agent, proactive behavior, and production-grade hybrid retrieval beyond the local Markdown plus SQLite index.
+
 ## Intent and Tool Worker Execution Slice Checkpoint
 
 Marvex now has a local end-to-end Intent + Tool/Capability execution slice across process boundaries. `services/intent_worker` is a runnable JSONL classification worker around `packages.intent_runtime.classify_intent`, exposes start/stop/status/health/version/classify, returns `SafeIntentProjection` plus backend metadata, clamps input through the runtime request model, and does not execute tools, approve actions, call providers, or persist raw input by default.
