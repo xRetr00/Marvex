@@ -197,3 +197,15 @@ Blocked without explicit future approval: new product features, new dependencies
 Recommended next goal: Voice Worker Process Boundary and Local Microphone Runtime. Keep the in-process VoiceRuntime contracts stable, add an explicit worker/service contract, and prove local capture/playback process boundaries without Orb/Face UI, desktop overlay, vision, proactive behavior, or raw audio/transcript persistence by default.
 
 Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.
+
+## Cognition Runtime and Agentic Turn Loop Checkpoint
+
+Marvex now has a Cognition Runtime bounded foundation and a bounded Agentic Turn Loop in the local Core service entrypoint. Cognition Runtime assembles intent, route-adaptive context, memory evidence refs, web evidence refs, prompt plan projections, and a safe step plan without importing provider adapters, worker internals, or subprocesses.
+
+The live Core worker-backed turn now uses the Assistant Turn Spine shape instead of a one-shot reflex route. Core receives a turn, runs cognition assembly, drives a bounded plan/act/observe/finalize loop through existing ProviderWorker and ToolWorker JSONL IPC, returns real calculator results, and emits safe telemetry under one trace id.
+
+The developer-only `scripts/smoke_core_real_provider_adapter.py` proof runs the same Core turn path through ProviderWorker, ProviderRuntime, and the `lmstudio_responses` adapter against a loopback Responses-compatible endpoint. This proves the non-fake provider adapter boundary in the agentic loop without adding a CI network dependency. A live external LM Studio or LiteLLM model smoke remains host-dependent and must still be run manually when that runtime is available.
+
+Grounding is enforced for fresh and grounded turns. Core searches without asking when grounding is required, validates citation ids against evidence refs, returns cited answers when evidence exists, and returns an evidence-missing response instead of fabricating when no evidence exists. Demo memory evidence can be injected for local runtime smokes to prove memory refs flow into grounded answers.
+
+approval resume works for risky actions through explicit approval request ids and approve, deny, or cancel decisions. Approve resumes the same trace_id/turn_id through the policy-controlled worker boundary; deny and cancel return structured blocked results. Broad dangerous shell/file execution adapters, desktop/browser/computer execution, voice product shell, proactive behavior, remote production daemon behavior, richer approval UX, and generic provider routing/model selection remain future work.

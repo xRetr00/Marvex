@@ -828,3 +828,15 @@ Protected boundaries:
 Adopted worker dependency: `sounddevice==0.5.5`, isolated behind `SoundDeviceAudioAdapter`. CI uses `FakeLocalAudioAdapter` for deterministic device/capture/playback tests because physical microphone and speaker hardware are host-local.
 
 Blocked: hidden recording, raw audio/transcript/generated-audio persistence by default, hidden downloads, arbitrary path writes, remote worker exposure, always-running 24/7 wakeword supervision without explicit visible control, real model downloads in automated validation, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior. Approved VoiceWorker work may implement explicit user-triggered local model downloads and local-only persistent worker supervision behind the worker contract.
+
+## Cognition Runtime and Core Agentic Turn Loop Gates
+
+The Cognition Runtime gate is enforced by `scripts/check_cognition_runtime_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+Cognition Runtime owns pure turn assembly only: runtime intent projection, route-adaptive context, memory evidence refs, web evidence refs, prompt plan projection, and a bounded step plan. It must not import provider adapters, worker internals, subprocesses, services, or raw persistence APIs. Safe projections remain the public surface.
+
+The Core Agentic Turn Loop gate is enforced by `scripts/check_core_agentic_turn_loop_boundaries.py` and is part of `scripts/run_all_checks.py`.
+
+Core drives the bounded Agentic Turn Loop through existing worker IPC and injected runtime ports. The loop has a hard max-step cap, an explicit projection, deterministic finalize, approval pause/resume, and grounding enforcement. For fresh or grounded turns, grounding is enforced through evidence refs and citation validation; no-evidence paths return evidence-missing text instead of fabricated answers. Approval resume works through explicit approve, deny, and cancel decisions without bypassing CapabilityRuntime policy primitives.
+
+Blocked: unbounded loops, hidden background autonomy, raw prompt/context/provider/tool/search payload persistence by default, provider adapter imports inside Cognition Runtime, worker-internal imports inside Cognition Runtime, packages/core ownership expansion, and fabricated grounded answers without validated evidence.

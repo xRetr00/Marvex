@@ -16,6 +16,7 @@ apps/control_plane_web/vite.config.d.ts
 marvex.egg-info/
 .claude/
 .claude_cache/
+.uv-cache/
 Agent.md
 .codex_commit_git/
 .codex_alt_git/

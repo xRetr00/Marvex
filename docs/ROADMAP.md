@@ -6,7 +6,7 @@ Marvex is built as correct Assistant OS infrastructure first. The roadmap is a g
 
 Several surfaces that were once future-only now exist as bounded internal foundations. Contract approval still lives in `docs/CONTRACT_APPROVALS.md`.
 
-Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, assistant loop primitives, assistant turn integration, the local IntentWorker process boundary, and the local ToolWorker process boundary.
+Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, Cognition Runtime, assistant loop primitives, assistant turn integration, the bounded Agentic Turn Loop in the local Core service entrypoint, the local IntentWorker process boundary, and the local ToolWorker process boundary.
 
 The current cleanup phase is governance reconciliation, boundary hardening, and foundation cleanup before adding new capability surfaces.
 
@@ -29,6 +29,8 @@ Every bounded foundation must have:
 ## Phase 3: Process Readiness
 
 Future process work remains explicit and gated. Service placeholders stay README-only until matching service contracts are listed in `docs/CONTRACT_APPROVALS.md` and a service-owned entrypoint task exists. The approved `services/core` exception is limited to the minimal local CoreService entrypoint. `services/intent_worker` and `services/tool_worker` are local JSONL process boundaries for classification and approved capability execution only. Local APIs must bind locally, require auth for protected endpoints, and remain HTTP/auth/JSON adapters only.
+
+The current Core entrypoint is allowed to compose Cognition Runtime, ProviderWorker, ToolWorker, web-search ports, grounding validation, policy approval pause/resume, and telemetry into a bounded Agentic Turn Loop. This is still infrastructure, not permission for hidden daemon behavior, arbitrary tools, desktop/browser/computer execution, or raw payload persistence.
 
 ## Phase 4: Future Product Surfaces
 
