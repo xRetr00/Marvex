@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+import subprocess
 
 from packages.capability_runtime.approvals import ApprovalDecision
 from packages.capability_runtime.autonomy import (
@@ -193,7 +194,7 @@ class ToolWorkerController:
             decided_by="policy",
             raw_decision_payload_persisted=False,
         )
-        if capability_id == "builtin.calculator":
+        if capability_id.startswith("builtin."):
             result = self._builtins.execute_request(
                 CapabilityExecutionRequest(
                     schema_version=SCHEMA_VERSION,
@@ -202,7 +203,7 @@ class ToolWorkerController:
                     turn_id=turn_id,
                     proposal=proposal,
                     permission_decision=permission,
-                    arguments=dict(arguments),
+                    arguments=self._builtin_arguments(capability_id, arguments),
                     raw_arguments_persisted=False,
                 )
             ).result
@@ -239,6 +240,11 @@ class ToolWorkerController:
                 "approval_decision": approval.decision,
             },
         )
+
+    def _builtin_arguments(self, capability_id: str, arguments: dict[str, object]) -> dict[str, object]:
+        if capability_id != "builtin.repo_status":
+            return dict(arguments)
+        return {**_repo_status_arguments(), **dict(arguments)}
 
     def _risk_level(self, capability: str) -> ToolRiskLevel:
         if capability in {"file_write", "file_delete", "external_upload_send", "shell_command_execution"}:
@@ -296,3 +302,24 @@ class ToolWorkerController:
             ),
             metadata={"reason": reason, "raw_payload_persisted": False},
         )
+
+
+def _repo_status_arguments() -> dict[str, object]:
+    try:
+        branch = subprocess.run(
+            ["git", "branch", "--show-current"],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        ).stdout.strip() or "unknown"
+        status = subprocess.run(
+            ["git", "status", "--short"],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        ).stdout
+        return {"branch": branch[:120], "clean": status.strip() == "", "short_status": status[:4000]}
+    except Exception:
+        return {"branch": "unknown", "clean": False, "short_status": ""}
