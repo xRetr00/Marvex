@@ -14,6 +14,14 @@ ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "services/provider_worker/models.py",
     "services/provider_worker/controller.py",
     "services/provider_worker/main.py",
+    "services/intent_worker/__init__.py",
+    "services/intent_worker/models.py",
+    "services/intent_worker/controller.py",
+    "services/intent_worker/main.py",
+    "services/tool_worker/__init__.py",
+    "services/tool_worker/models.py",
+    "services/tool_worker/controller.py",
+    "services/tool_worker/main.py",
 }
 
 ALLOWED_IMPORT_PREFIXES = (

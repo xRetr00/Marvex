@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# file size justification: the approved Core service entrypoint is constrained by
+# service placeholder gates to this file, so local IPC composition helpers live
+# here until a later approved service split expands the allowed file set.
+
 import argparse
 import json
 import subprocess
@@ -15,13 +19,20 @@ from packages.assistant_runtime.input_normalization import (
     build_turn_input_from_event,
 )
 from packages.contracts import (
+    AssistantFinalResponse,
+    AssistantFinishReason,
+    AssistantResponseType,
     AssistantTurnInput,
     AssistantTurnResult,
     ErrorCode,
     ErrorEnvelope,
     FinishReason,
+    OutputChannelIntent,
     ProviderRequest,
     ProviderResponse,
+    StageStatus,
+    StageSummary,
+    ToolResultRef,
 )
 from packages.core import CoreService
 from packages.core.orchestration.assistant_provider_stage import (
@@ -159,6 +170,97 @@ class _ProviderWorkerProcessProvider:
         raise RuntimeError("ProviderWorker response was invalid.")
 
 
+class _IntentWorkerProcessClassifier:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+        python_executable: str = sys.executable,
+    ) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._python_executable = python_executable
+
+    def classify(self, turn_input: AssistantTurnInput) -> dict[str, object]:
+        command = {
+            "command": "classify",
+            "trace_id": turn_input.trace_id,
+            "turn_id": turn_input.turn_id,
+            "user_input_summary": turn_input.user_visible_input or "",
+        }
+        completed = subprocess.run(
+            [
+                self._python_executable,
+                "-m",
+                "services.intent_worker.main",
+                "--jsonl",
+            ],
+            input=json.dumps(command) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=(self._timeout_seconds or 15) + 5,
+        )
+        if completed.returncode != 0:
+            raise ConnectionError("IntentWorker process unavailable.")
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        if not lines:
+            raise ConnectionError("IntentWorker returned no response.")
+        payload = json.loads(lines[0])
+        if not isinstance(payload, dict) or payload.get("classification") is None:
+            raise RuntimeError("IntentWorker response was invalid.")
+        return payload
+
+
+class _ToolWorkerProcessExecutor:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+        python_executable: str = sys.executable,
+    ) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._python_executable = python_executable
+
+    def execute(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        action: str,
+        capability: str,
+        resource_type: str,
+    ) -> dict[str, object]:
+        command = {
+            "command": "execute",
+            "trace_id": turn_input.trace_id,
+            "turn_id": turn_input.turn_id,
+            "capability_id": "fake.status",
+            "action": action,
+            "capability": capability,
+            "resource_type": resource_type,
+            "arguments": {"input_present": bool(turn_input.user_visible_input)},
+        }
+        completed = subprocess.run(
+            [
+                self._python_executable,
+                "-m",
+                "services.tool_worker.main",
+                "--jsonl",
+            ],
+            input=json.dumps(command) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=(self._timeout_seconds or 15) + 5,
+        )
+        if completed.returncode != 0:
+            raise ConnectionError("ToolWorker process unavailable.")
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        if not lines:
+            raise ConnectionError("ToolWorker returned no response.")
+        payload = json.loads(lines[0])
+        if not isinstance(payload, dict) or payload.get("result") is None:
+            raise RuntimeError("ToolWorker response was invalid.")
+        return payload
+
+
 class _CoreServiceProviderWorkerTurnExecutor:
     def __init__(
         self,
@@ -173,17 +275,127 @@ class _CoreServiceProviderWorkerTurnExecutor:
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )
+        self._intent_classifier = _IntentWorkerProcessClassifier(
+            timeout_seconds=timeout_seconds,
+        )
+        self._tool_executor = _ToolWorkerProcessExecutor(
+            timeout_seconds=timeout_seconds,
+        )
         self._model = model
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+        try:
+            intent_response = self._intent_classifier.classify(turn_input)
+        except Exception:
+            return _entrypoint_error_result(
+                turn_input,
+                reason="intent_worker_unavailable",
+                message="Intent classification failed.",
+            )
+        intent_projection = dict(intent_response["classification"])
+        intent_kind = str(
+            dict(intent_projection.get("selected_intent", {})).get("intent_kind", "")
+        )
+        metadata: dict[str, object] = {
+            "intent_boundary": "intent_worker_process",
+            "intent": intent_projection,
+            "intent_backend": intent_response.get("backend_name"),
+        }
+        if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
+            return _entrypoint_text_result(
+                turn_input,
+                text="I need clarification before continuing.",
+                metadata=metadata,
+                stage_name="intent_preflight",
+            )
+        if intent_projection.get("risk_signal") == "unsafe_request" or intent_kind in {
+            "unsafe_or_injection_suspected",
+            "unsafe_risky",
+        }:
+            return _entrypoint_error_result(
+                turn_input,
+                reason="unsafe_intent_blocked",
+                message="Request blocked by intent safety preflight.",
+                metadata=metadata,
+            )
+        if intent_kind == "capability_tool":
+            return self._run_tool_path(
+                turn_input,
+                metadata=metadata,
+                action="read",
+                capability="read",
+                resource_type="local_status",
+            )
+        if intent_kind == "risky_action":
+            return self._run_tool_path(
+                turn_input,
+                metadata=metadata,
+                action="delete local file",
+                capability="file_delete",
+                resource_type="file",
+            )
+
         result = run_assistant_provider_stage_turn(
             turn_input,
             provider=self._provider,
             model=self._model,
         )
         metadata = dict(result.metadata)
+        metadata.update(
+            {
+                "intent_boundary": "intent_worker_process",
+                "intent": intent_projection,
+                "intent_backend": intent_response.get("backend_name"),
+            }
+        )
         metadata["provider_boundary"] = "provider_worker_process"
         return result.model_copy(update={"metadata": metadata})
+
+    def _run_tool_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        action: str,
+        capability: str,
+        resource_type: str,
+    ) -> AssistantTurnResult:
+        try:
+            tool_response = self._tool_executor.execute(
+                turn_input,
+                action=action,
+                capability=capability,
+                resource_type=resource_type,
+            )
+        except Exception:
+            return _entrypoint_error_result(
+                turn_input,
+                reason="tool_worker_unavailable",
+                message="Tool execution failed.",
+                metadata=metadata,
+            )
+        combined_metadata = dict(metadata)
+        combined_metadata["tool_boundary"] = "tool_worker_process"
+        combined_metadata["tool"] = tool_response
+        if tool_response.get("ok") is not True:
+            return _entrypoint_error_result(
+                turn_input,
+                reason="tool_execution_blocked",
+                message="Capability execution blocked by policy.",
+                metadata=combined_metadata,
+            )
+        return _entrypoint_text_result(
+            turn_input,
+            text="Capability completed.",
+            metadata=combined_metadata,
+            stage_name="tool_execution",
+            tool_result_refs=[
+                ToolResultRef(
+                    ref_type="tool_result",
+                    ref_id=f"{turn_input.turn_id}:capability:result",
+                )
+            ],
+        )
 
 
 class _HealthOnlyTurnExecutor:
@@ -211,6 +423,97 @@ class _HealthOnlyTurnExecutor:
             ),
             metadata={},
         )
+
+
+def _entrypoint_text_result(
+    turn_input: AssistantTurnInput,
+    *,
+    text: str,
+    metadata: dict[str, object],
+    stage_name: str,
+    tool_result_refs: list[ToolResultRef] | None = None,
+) -> AssistantTurnResult:
+    return AssistantTurnResult(
+        schema_version=turn_input.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        assistant_final_response=AssistantFinalResponse(
+            schema_version=turn_input.schema_version,
+            response_type=AssistantResponseType.TEXT,
+            text=text,
+            payload_ref=None,
+            output_channel_intent=OutputChannelIntent.DEFAULT,
+            safe_for_display=True,
+            safe_for_speech=True,
+            memory_write_candidate_hint=False,
+            finish_reason=AssistantFinishReason.STOP,
+            metadata={},
+        ),
+        output_events=[],
+        stage_summaries=[
+            _stage_summary("input_normalization", StageStatus.COMPLETED),
+            _stage_summary(stage_name, StageStatus.COMPLETED),
+            _stage_summary("final_response_assembly", StageStatus.COMPLETED),
+        ],
+        provider_turn_refs=[],
+        tool_result_refs=list(tool_result_refs or []),
+        memory_result_refs=[],
+        session_result_ref=None,
+        error=None,
+        metadata=metadata,
+    )
+
+
+def _entrypoint_error_result(
+    turn_input: AssistantTurnInput,
+    *,
+    reason: str,
+    message: str,
+    metadata: dict[str, object] | None = None,
+) -> AssistantTurnResult:
+    error_id = f"{turn_input.turn_id}:core-service-entrypoint:{reason}"
+    return AssistantTurnResult(
+        schema_version=turn_input.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        assistant_final_response=None,
+        output_events=[],
+        stage_summaries=[
+            _stage_summary("input_normalization", StageStatus.COMPLETED),
+            _stage_summary("intent_preflight", StageStatus.FAILED, error_ref=error_id),
+        ],
+        provider_turn_refs=[],
+        tool_result_refs=[],
+        memory_result_refs=[],
+        session_result_ref=None,
+        error=ErrorEnvelope(
+            schema_version=turn_input.schema_version,
+            trace_id=turn_input.trace_id,
+            error_id=error_id,
+            code=ErrorCode.VALIDATION_ERROR,
+            message=message,
+            recoverable=False,
+            source="core_service_entrypoint",
+            details={"reason": reason},
+        ),
+        metadata=dict(metadata or {}),
+    )
+
+
+def _stage_summary(
+    stage_name: str,
+    status: StageStatus,
+    *,
+    error_ref: str | None = None,
+) -> StageSummary:
+    return StageSummary(
+        stage_name=stage_name,
+        status=status,
+        started_at=None,
+        completed_at=None,
+        ref=None,
+        error_ref=error_ref,
+    )
 
 
 def _create_foundation_turn_executor(

@@ -16,11 +16,18 @@ Approved service-owned entrypoint exceptions:
 
 - `services/core`
 - `services/provider_worker`
+- `services/intent_worker`
+- `services/tool_worker`
 
 `services/core` may contain only `README.md`, `__init__.py`, and `main.py` for
 the approved minimal local CoreService entrypoint. `services/provider_worker`
 may contain only `README.md`, `__init__.py`, `models.py`, `controller.py`, and
 `main.py` for the approved local ProviderWorker JSONL process boundary.
+`services/intent_worker` may contain only `README.md`, `__init__.py`,
+`models.py`, `controller.py`, and `main.py` for the approved local
+IntentWorker JSONL classification boundary. `services/tool_worker` may contain
+only `README.md`, `__init__.py`, `models.py`, `controller.py`, and `main.py`
+for the approved local ToolWorker JSONL boundary that wraps CapabilityRuntime.
 Arbitrary runtime/business logic, nested modules, adapter imports outside
 approved boundaries, remote binding, and hidden autostart remain forbidden under
 service entrypoint folders.
@@ -35,8 +42,8 @@ Service placeholders are not a substitute for runtime architecture boundaries. R
 | --- | --- | --- |
 | `services/core` | `CoreService` | approved minimal local entrypoint only |
 | `services/provider_worker` | `ProviderWorker` | approved local ProviderWorker entrypoint only |
-| `services/tool_worker` | `ToolWorker` | placeholder |
-| `services/intent_worker` | `IntentWorker` | placeholder |
+| `services/tool_worker` | `ToolWorker` | approved local ToolWorker entrypoint only |
+| `services/intent_worker` | `IntentWorker` | approved local IntentWorker entrypoint only |
 | `services/voice_worker` | `VoiceWorker` | placeholder |
 | `services/desktop_agent` | `DesktopAgent` | placeholder |
 | `services/shell` | `Shell` | placeholder |

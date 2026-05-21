@@ -1,13 +1,23 @@
 # Project Status
 
-current_phase: voice_worker_runtime_boundary_checkpoint
+current_phase: intent_tool_worker_execution_slice_checkpoint
 
-implementation_status: voice_worker_runtime_boundary_checkpoint
+implementation_status: intent_tool_worker_execution_slice_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Voice Worker Runtime Boundary Checkpoint
+Intent and Tool Worker Execution Slice Checkpoint
+
+## Intent and Tool Worker Execution Slice Checkpoint
+
+Marvex now has a local end-to-end Intent + Tool/Capability execution slice across process boundaries. `services/intent_worker` is a runnable JSONL classification worker around `packages.intent_runtime.classify_intent`, exposes start/stop/status/health/version/classify, returns `SafeIntentProjection` plus backend metadata, clamps input through the runtime request model, and does not execute tools, approve actions, call providers, or persist raw input by default.
+
+`services/tool_worker` is a runnable JSONL capability execution worker around `packages.capability_runtime`. It exposes start/stop/status/health/version/execute, evaluates the existing `AutonomyPolicy`/`AutonomyMode.AUTO_MARVEX` policy path, executes only the existing safe deterministic fake/status capability when policy allows, returns safe result/projection/audit records, and returns structured blocked results for unapproved side effects such as file delete/write without persisting raw arguments or output.
+
+`services/core/main.py` now preflights provider-worker turns through the IntentWorker subprocess before deciding the route. Simple chat still flows through the existing ProviderWorker subprocess. Capability/tool intent flows through the ToolWorker subprocess. Clarification intent returns a clarification response. Unsafe or injection-suspected intent is blocked before provider/tool execution. Risky actions reach the ToolWorker policy path and are blocked without approval. Trace and turn IDs propagate across Core, IntentWorker, ToolWorker, and the structured Core result.
+
+This checkpoint does not add a broad tool library, shell/file/browser/desktop execution adapters, memory writes, remote service mode, production daemon supervision, richer approval UX, proactive behavior, voice product loop, desktop agent, or shell/orb UI.
 
 ## Voice Worker Runtime Boundary Checkpoint
 

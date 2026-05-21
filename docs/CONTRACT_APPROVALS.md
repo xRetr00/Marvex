@@ -90,7 +90,9 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - marketplace runtime: bounded foundation; read-only metadata/proposals only.
 - session runtime: bounded foundation; safe refs only.
 - intent/prompt harness seams: bounded foundation; safe projections and bounded prompt plans only.
-- service placeholders: future service contract; README-only.
+- intent worker process: approved local JSONL classification boundary; no providers, no approvals, no execution.
+- tool worker process: approved local JSONL CapabilityRuntime execution boundary; policy/approval enforced before safe execution.
+- service placeholders: future service contract; README-only except approved local CoreService, ProviderWorker, IntentWorker, and ToolWorker entrypoint files.
 - telemetry event service: future service contract; README-only.
 - policy permission service: future service contract; README-only.
 - voice runtime foundation: bounded implementation foundation for in-process voice I/O orchestration only; no separate service process, visual shell, hidden recording, or raw audio/transcript persistence by default.

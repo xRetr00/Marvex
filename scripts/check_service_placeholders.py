@@ -13,10 +13,12 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
-SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker"}
+SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker", "intent_worker", "tool_worker"}
 ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "core": {"README.md", "__init__.py", "main.py"},
     "provider_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
+    "intent_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
+    "tool_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
 }
 ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "__future__",
@@ -152,6 +154,16 @@ def _scan_provider_worker_entrypoint(service, failures: list[str]) -> None:
         )
 
 
+def _scan_worker_entrypoint(service, failures: list[str]) -> None:
+    allowed_files = ALLOWED_SERVICE_ENTRYPOINT_FILES[service.name]
+    entries = {path.name for path in service.iterdir() if path.name != "__pycache__"}
+    unexpected_entries = sorted(entries - allowed_files)
+    if unexpected_entries:
+        failures.append(
+            f"{service.relative_to(ROOT).as_posix()} contains non-entrypoint files: {unexpected_entries}"
+        )
+
+
 def main() -> int:
     failures = []
     if not SERVICES.is_dir():
@@ -176,6 +188,8 @@ def main() -> int:
             _scan_core_service_entrypoint(service, failures)
         if service.name == "provider_worker" and entrypoint_allowed:
             _scan_provider_worker_entrypoint(service, failures)
+        if service.name in {"intent_worker", "tool_worker"} and entrypoint_allowed:
+            _scan_worker_entrypoint(service, failures)
 
     if failures:
         for failure in failures:

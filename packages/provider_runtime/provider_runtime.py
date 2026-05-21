@@ -1,11 +1,12 @@
 from dataclasses import dataclass
 
-from packages.adapters.providers.fake import FakeProvider
-from packages.adapters.providers.litellm import LiteLLMProvider
-from packages.adapters.providers.litellm import LiteLLMProviderConfig
-from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
-from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProviderConfig
 from packages.ports.provider import ProviderPort
+
+FakeProvider = None
+LiteLLMProvider = None
+LiteLLMProviderConfig = None
+LMStudioResponsesProvider = None
+LMStudioResponsesProviderConfig = None
 
 
 @dataclass(frozen=True)
@@ -29,8 +30,11 @@ _STRUCTURED_OUTPUT_PROVIDER_NAMES = frozenset({"litellm", "lmstudio_responses"})
 def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
     _validate_provider_specific_config(config)
     if config.provider_name == "fake":
-        return FakeProvider()
+        provider_class = _fake_provider_class()
+        return provider_class()
     if config.provider_name == "litellm":
+        provider_class = _litellm_provider_class()
+        config_class = _litellm_provider_config_class()
         provider_config_kwargs = {
             "base_url": _clean_optional_string(config.base_url),
             "timeout_seconds": config.timeout_seconds,
@@ -39,13 +43,15 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
             key: value for key, value in provider_config_kwargs.items() if value is not None
         }
         if provider_config_kwargs:
-            return LiteLLMProvider(
-                LiteLLMProviderConfig(
+            return provider_class(
+                config_class(
                     **provider_config_kwargs,
                 )
             )
-        return LiteLLMProvider()
+        return provider_class()
     if config.provider_name == "lmstudio_responses":
+        provider_class = _lmstudio_responses_provider_class()
+        config_class = _lmstudio_responses_provider_config_class()
         provider_config_kwargs = {}
         if _has_lmstudio_responses_api_key(config):
             provider_config_kwargs["api_key"] = str(config.lmstudio_responses_api_key)
@@ -55,11 +61,46 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         if config.timeout_seconds is not None:
             provider_config_kwargs["timeout"] = config.timeout_seconds
         if provider_config_kwargs:
-            return LMStudioResponsesProvider(
-                config=LMStudioResponsesProviderConfig(**provider_config_kwargs)
+            return provider_class(
+                config=config_class(**provider_config_kwargs)
             )
-        return LMStudioResponsesProvider()
+        return provider_class()
     raise ValueError(f"unsupported provider: {config.provider_name}")
+
+
+def _fake_provider_class():
+    global FakeProvider
+    if FakeProvider is None:
+        from packages.adapters.providers.fake import FakeProvider
+    return FakeProvider
+
+
+def _litellm_provider_class():
+    global LiteLLMProvider
+    if LiteLLMProvider is None:
+        from packages.adapters.providers.litellm import LiteLLMProvider
+    return LiteLLMProvider
+
+
+def _litellm_provider_config_class():
+    global LiteLLMProviderConfig
+    if LiteLLMProviderConfig is None:
+        from packages.adapters.providers.litellm import LiteLLMProviderConfig
+    return LiteLLMProviderConfig
+
+
+def _lmstudio_responses_provider_class():
+    global LMStudioResponsesProvider
+    if LMStudioResponsesProvider is None:
+        from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+    return LMStudioResponsesProvider
+
+
+def _lmstudio_responses_provider_config_class():
+    global LMStudioResponsesProviderConfig
+    if LMStudioResponsesProviderConfig is None:
+        from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProviderConfig
+    return LMStudioResponsesProviderConfig
 
 
 def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
