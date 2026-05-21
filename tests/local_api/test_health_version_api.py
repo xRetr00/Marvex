@@ -105,6 +105,33 @@ def test_local_api_config_defaults_to_loopback_only():
     assert config.port == 8765
 
 
+def test_local_api_config_rejects_remote_host_without_opt_in():
+    import pytest
+
+    from packages.local_api import LocalApiConfig
+
+    with pytest.raises(ValueError, match="loopback-only"):
+        LocalApiConfig(host="192.0.2.10")
+
+
+def test_local_api_config_allows_remote_host_when_opted_in():
+    from packages.local_api import LocalApiConfig
+
+    config = LocalApiConfig(host="192.0.2.10", allow_remote=True)
+
+    assert config.host == "192.0.2.10"
+    assert config.allow_remote is True
+
+
+def test_local_api_config_rejects_empty_host():
+    import pytest
+
+    from packages.local_api import LocalApiConfig
+
+    with pytest.raises(ValueError, match="non-empty"):
+        LocalApiConfig(host="   ", allow_remote=True)
+
+
 def test_local_api_source_has_no_provider_or_assistant_execution():
     source = "\n".join(
         path.read_text(encoding="utf-8")

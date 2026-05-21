@@ -51,9 +51,14 @@ class CoreServiceEntrypointConfig:
     worker_provider: str | None = None
     base_url: str | None = None
     timeout_seconds: float | None = None
+    allow_remote: bool = False
 
     def local_api_config(self) -> LocalApiConfig:
-        return LocalApiConfig(host=self.host, port=self.port)
+        return LocalApiConfig(
+            host=self.host,
+            port=self.port,
+            allow_remote=self.allow_remote,
+        )
 
 
 @dataclass(frozen=True)
@@ -300,7 +305,8 @@ def run_core_service(
     server_factory: ServerFactory = make_server,
 ) -> int:
     effective_config = config or CoreServiceEntrypointConfig()
-    _validate_loopback(effective_config.host)
+    if not effective_config.allow_remote:
+        _validate_loopback(effective_config.host)
     local_api_config = effective_config.local_api_config()
     if not effective_config.local_auth_token or not effective_config.local_auth_token.strip():
         raise ValueError("local_auth_token is required for Core service startup")
@@ -374,7 +380,7 @@ def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Core service local entrypoint. Defaults to loopback 127.0.0.1; "
-            "remote bind modes are not supported."
+            "pass --allow-remote to bind a non-loopback host (bearer auth required)."
         )
     )
     mode = parser.add_mutually_exclusive_group(required=True)
@@ -396,7 +402,12 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--host",
         default=DEFAULT_HOST,
-        help="Loopback bind host. Defaults to 127.0.0.1.",
+        help="Bind host. Defaults to 127.0.0.1. Use --allow-remote for non-loopback.",
+    )
+    parser.add_argument(
+        "--allow-remote",
+        action="store_true",
+        help="Permit binding a non-loopback host. Requires --local-auth-token.",
     )
     parser.add_argument(
         "--port",
@@ -463,6 +474,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         worker_provider=args.worker_provider,
         base_url=args.base_url,
         timeout_seconds=args.timeout,
+        allow_remote=args.allow_remote,
     )
     if args.turn_once is not None:
         return run_turn_once(

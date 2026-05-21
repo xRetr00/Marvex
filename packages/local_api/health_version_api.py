@@ -38,13 +38,23 @@ LOCAL_TURN_REQUEST_FIELDS = {
 }
 
 
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+
+def is_loopback_host(host: str) -> bool:
+    return host in _LOOPBACK_HOSTS
+
+
 @dataclass(frozen=True)
 class LocalApiConfig:
     host: str = "127.0.0.1"
     port: int = 8765
+    allow_remote: bool = False
 
     def __post_init__(self) -> None:
-        if self.host not in {"127.0.0.1", "localhost", "::1"}:
+        if not self.host or not self.host.strip():
+            raise ValueError("host must be a non-empty string")
+        if not is_loopback_host(self.host) and not self.allow_remote:
             raise ValueError("host must be loopback-only")
         if not isinstance(self.port, int) or self.port < 1 or self.port > 65535:
             raise ValueError("port must be between 1 and 65535")

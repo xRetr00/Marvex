@@ -218,6 +218,56 @@ def test_core_service_entrypoint_rejects_remote_bind_configuration():
         raise AssertionError("Core service entrypoint must reject remote binds")
 
 
+def test_core_service_entrypoint_allows_remote_bind_when_opted_in():
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    captured: dict[str, object] = {}
+
+    class _StubServer:
+        def __init__(self, app) -> None:
+            self.app = app
+
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            captured["closed"] = True
+
+    def server_factory(host, port, app):
+        captured["host"] = host
+        return _StubServer(app)
+
+    exit_code = run_core_service(
+        config=CoreServiceEntrypointConfig(
+            host="192.0.2.10",
+            local_auth_token=EXPECTED_TOKEN,
+            allow_remote=True,
+        ),
+        server_factory=server_factory,
+    )
+
+    assert exit_code == 0
+    assert captured["host"] == "192.0.2.10"
+    assert captured["closed"] is True
+
+
+def test_core_service_entrypoint_remote_bind_still_requires_auth_token():
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    try:
+        run_core_service(
+            config=CoreServiceEntrypointConfig(
+                host="192.0.2.10",
+                allow_remote=True,
+            ),
+            server_factory=lambda *_args: None,
+        )
+    except ValueError as exc:
+        assert "local_auth_token is required" in str(exc)
+    else:
+        raise AssertionError("remote bind must require an auth token")
+
+
 def test_core_service_entrypoint_boundary_gate_passes():
     completed = subprocess.run(
         [sys.executable, "scripts/check_service_placeholders.py"],

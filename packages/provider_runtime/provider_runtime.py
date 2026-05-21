@@ -1,5 +1,10 @@
 from dataclasses import dataclass
 
+from packages.adapters.providers.fake import FakeProvider
+from packages.adapters.providers.litellm import LiteLLMProvider
+from packages.adapters.providers.litellm import LiteLLMProviderConfig
+from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProviderConfig
 from packages.ports.provider import ProviderPort
 
 
@@ -19,36 +24,6 @@ class _StructuredOutputRequestContext:
 
 
 _STRUCTURED_OUTPUT_PROVIDER_NAMES = frozenset({"litellm", "lmstudio_responses"})
-
-
-def FakeProvider(*args, **kwargs):
-    from packages.adapters.providers.fake import FakeProvider
-
-    return FakeProvider(*args, **kwargs)
-
-
-def LiteLLMProvider(*args, **kwargs):
-    from packages.adapters.providers.litellm import LiteLLMProvider
-
-    return LiteLLMProvider(*args, **kwargs)
-
-
-def LiteLLMProviderConfig(*args, **kwargs):
-    from packages.adapters.providers.litellm import LiteLLMProviderConfig
-
-    return LiteLLMProviderConfig(*args, **kwargs)
-
-
-def LMStudioResponsesProvider(*args, **kwargs):
-    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
-
-    return LMStudioResponsesProvider(*args, **kwargs)
-
-
-def LMStudioResponsesProviderConfig(*args, **kwargs):
-    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProviderConfig
-
-    return LMStudioResponsesProviderConfig(*args, **kwargs)
 
 
 def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
