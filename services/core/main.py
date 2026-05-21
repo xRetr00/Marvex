@@ -411,6 +411,53 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if "file_read_list_search" in plan_intents:
             loop.step("tool")
             return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "mcp_needed" in plan_intents or "mcp_skill" in plan_intents:
+            loop.step("tool")
+            return self._run_mcp_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "memory" in plan_intents or "memory_tree_needed" in plan_intents:
+            loop.step("grounded_answer")
+            return self._run_memory_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "skill_needed" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="skill",
+                text="Skill instructions can be loaded only from configured local safe sources; install and launch remain disabled.",
+                projection={"local_skill_loader_available": False, "install_launch_enabled": False},
+            )
+        if "connector_account" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="connector",
+                text="Connector account actions require explicit configuration and approval; live OAuth is not started.",
+                projection={"live_oauth_started": False, "approval_required": True},
+            )
+        if "settings_control_plane" in plan_intents:
+            loop.step("tool")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="settings",
+                text="Control-plane settings are available as safe status only from this turn path.",
+                projection={"approval_resume_supported": True, "raw_payload_persisted": False},
+            )
+        if "browser_computer_use" in plan_intents:
+            loop.step("approval", stop_reason="waiting_for_human_approval")
+            return self._run_safe_projection_path(
+                turn_input,
+                metadata=metadata,
+                loop=loop,
+                route_name="browser",
+                text="Browser/computer-use execution is gated and not run in CI.",
+                projection={"live_browser_executed": False, "approval_required": True},
+                stop_reason="waiting_for_human_approval",
+            )
         if "web_search" in plan_intents or "grounded_answer" in plan_intents:
             loop.step("web_search")
             loop.step("grounded_answer")
@@ -608,6 +655,75 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     update={"text": f"File preview from {file_path}: {preview}"}
                 )
             }
+        )
+
+    def _run_mcp_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        return self._run_tool_path(
+            turn_input,
+            metadata=metadata,
+            cognition=cognition,
+            loop=loop,
+            action="call mcp tool echo",
+            capability="mcp_execute",
+            resource_type="mcp_tool",
+            capability_id="mcp.local.echo",
+            arguments={
+                "server_id": "local",
+                "tool_name": "echo",
+                "allowed_server_ids": ["local"],
+                "allowed_tool_names": ["echo"],
+                "message": "bounded-local-mcp-fixture",
+            },
+        )
+
+    def _run_memory_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        if cognition.memory_evidence_refs:
+            return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        loop.step("finalize", stop_reason="finalized")
+        memory_projection = {
+            "memory_records_recalled": len(tuple(cognition.memory_evidence_refs)),
+            "memory_store_available": self._memory_loop is not None,
+            "raw_memory_content_persisted": False,
+        }
+        return _entrypoint_text_result(
+            turn_input,
+            text="Memory route executed with no matching approved memory evidence.",
+            metadata=_with_loop_metadata({**metadata, "memory": memory_projection}, loop, self._trace_reader, turn_input),
+            stage_name="memory",
+        )
+
+    def _run_safe_projection_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        loop: "_AgenticLoopProjection",
+        route_name: str,
+        text: str,
+        projection: dict[str, object],
+        stop_reason: str = "finalized",
+    ) -> AssistantTurnResult:
+        if loop.stop_reason == "not_stopped":
+            loop.step("finalize", stop_reason=stop_reason)
+        return _entrypoint_text_result(
+            turn_input,
+            text=text,
+            metadata=_with_loop_metadata({**metadata, route_name: projection}, loop, self._trace_reader, turn_input),
+            stage_name=route_name,
         )
 
     def _run_approval_path(
