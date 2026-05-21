@@ -313,6 +313,69 @@ def test_tool_worker_uses_configurable_autonomy_and_governance_audit() -> None:
     assert abuse["error"]["code"] == "hard_block"
 
 
+def test_tool_worker_executes_allowlisted_local_mcp_fixture_and_denies_unlisted_tool() -> None:
+    allowed = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-mcp-allowed",
+                "turn_id": "turn-mcp-allowed",
+                "capability_id": "mcp.local.echo",
+                "action": "call mcp tool echo",
+                "capability": "mcp_execute",
+                "resource_type": "mcp_tool",
+                "arguments": {
+                    "server_id": "local",
+                    "tool_name": "echo",
+                    "allowed_server_ids": ["local"],
+                    "allowed_tool_names": ["echo"],
+                    "message": "safe bounded message",
+                },
+            }
+        ]
+    )[0]
+    denied = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-mcp-denied",
+                "turn_id": "turn-mcp-denied",
+                "capability_id": "mcp.local.echo",
+                "action": "call mcp tool echo",
+                "capability": "mcp_execute",
+                "resource_type": "mcp_tool",
+                "arguments": {
+                    "server_id": "local",
+                    "tool_name": "echo",
+                    "allowed_server_ids": ["local"],
+                    "allowed_tool_names": [],
+                    "message": "safe bounded message",
+                },
+            }
+        ]
+    )[0]
+
+    assert allowed["ok"] is True
+    assert allowed["result"]["capability_ref"]["identifier"] == "mcp.local.echo"
+    assert allowed["result"]["status"] == "succeeded"
+    assert allowed["result"]["safe_result"] == {
+        "content_count": 1,
+        "content_types": ["text"],
+        "is_error": False,
+        "structured_content_present": False,
+    }
+    assert allowed["projection"]["executed_fake_capability_count"] == 0
+    assert allowed["metadata"]["mcp"]["server_id"] == "local"
+    assert allowed["metadata"]["mcp"]["transport"] == "stdio"
+    assert allowed["metadata"]["mcp"]["allowlist_policy"]["allowed_tool_count"] == 1
+
+    assert denied["ok"] is False
+    assert denied["blocked"] is True
+    assert denied["result"]["status"] == "denied"
+    assert denied["result"]["safe_result"]["reason_code"] == "not_allowlisted"
+    assert denied["error"]["code"] == "not_allowlisted"
+
+
 def test_tool_worker_returns_structured_error_for_invalid_command() -> None:
     responses = run_worker_jsonl([{"command": "execute", "trace_id": "trace-invalid"}])
 
