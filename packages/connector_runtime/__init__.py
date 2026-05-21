@@ -1,3 +1,14 @@
+from .auto_fetch_scheduler import (
+    ConnectionSyncState,
+    FetchedPage,
+    KVStore,
+    ProviderSyncConfig,
+    SchedulerTickResult,
+    SchedulerTickStatus,
+    default_sync_config,
+    effective_interval_secs,
+    make_autofetch_run_summary,
+)
 from .models import (
     AutoFetchJobRef,
     AutoFetchPolicy,
@@ -37,13 +48,22 @@ __all__ = [
     "ConnectorSyncRequest",
     "ConnectorSyncResult",
     "ConnectorSyncRunResult",
+    "ConnectionSyncState",
+    "FetchedPage",
+    "KVStore",
     "OAuthConnectionRef",
     "OAuthConnectionStatus",
+    "ProviderSyncConfig",
+    "SchedulerTickResult",
+    "SchedulerTickStatus",
     "SourceIngestionPolicy",
     "SourceLastSyncStatus",
     "SourceSyncInterval",
     "SourceSyncMode",
     "default_connector_manifests",
+    "default_sync_config",
+    "effective_interval_secs",
+    "make_autofetch_run_summary",
 ]
 
 
