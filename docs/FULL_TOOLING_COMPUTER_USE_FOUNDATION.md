@@ -35,6 +35,16 @@ CapabilityRuntime now models `ToolRiskLevel`, `ToolSideEffectLevel`, `Capability
 
 Safe built-ins include calculator, UTC time/date, capability diagnostics, and injected read-only repo status snapshots. Session and memory diagnostics remain represented as safe projection capability context rather than direct runtime reads in this checkpoint.
 
+The live ToolWorker dispatch now executes real safe capabilities beyond the calculator:
+
+- built-ins route through `BuiltinToolCatalog` instead of the fake adapter;
+- `file.read`, `file.list`, and `file.search` are read-only, bounded, and sandboxed to an explicit configured root;
+- allowlisted MCP calls route through `McpSdkAdapter` with a local deterministic stdio fixture in CI;
+- `governance_audit.classify_governance_action` is integrated into live dispatch alongside configurable `AutonomyPolicy` mode selection;
+- non-allowlisted MCP tools, file traversal, unsafe requests, and side-effect actions return structured blocked or approval-required results instead of fake success.
+
+Browser, shell, connectors, skill install/launch, remote MCP launch/install, file write/delete, and arbitrary network execution remain gated or disabled-by-default surfaces. Browser/computer-use paths return safe policy projections in CI; real live browser execution remains runtime-only behind a future explicit flag and approval UX.
+
 ## Blocked
 
 - Browser-use execution backend is blocked because current adoption would import agentic browser task autonomy before Marvex has UI-backed approval and mature tool-loop governance.
@@ -46,5 +56,7 @@ Safe built-ins include calculator, UTC time/date, capability diagnostics, and in
 `tests/capability_runtime/test_full_tooling_policy_models.py` covers approval, risk, context delivery, loop guards, and telemetry-safe summaries.
 
 `tests/tooling_adapters` covers built-ins, Playwright browser adapter models, Browser-use disabled seam, OpenAI Computer Use proposal seam, provider tool-call proposals, and ownership gates.
+
+`tests/tool_worker/test_tool_worker.py` proves real builtins, sandboxed file read/list/search, local MCP allowlisted calls, non-allowlisted denial, configurable autonomy, governance audit integration, and hard-block behavior through the ToolWorker JSONL boundary.
 
 `scripts/check_full_tooling_boundaries.py` is included in `python scripts/run_all_checks.py`.

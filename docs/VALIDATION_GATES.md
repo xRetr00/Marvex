@@ -851,4 +851,8 @@ The Core Agentic Turn Loop gate is enforced by `scripts/check_core_agentic_turn_
 
 Core drives the bounded Agentic Turn Loop through existing worker IPC and injected runtime ports. The loop has a hard max-step cap, an explicit projection, deterministic finalize, approval pause/resume, and grounding enforcement. For fresh or grounded turns, grounding is enforced through evidence refs and citation validation; no-evidence paths return evidence-missing text instead of fabricated answers. Approval resume works through explicit approve, deny, and cancel decisions without bypassing CapabilityRuntime policy primitives.
 
+The worker-backed live turn now consumes `cognition.intent_plan` as the plan/act routing source. Capability, file, MCP, memory, skill, connector, settings, browser/computer-use, web/grounded, risky, unsafe, clarification, and provider-simple-chat routes have explicit execution or safe policy-projection paths; non-provider intents must not silently fall through to a bare provider call. Trace ids are preserved through Core, intent/cognition metadata, ToolWorker/MCP/file results, and final loop projection.
+
+The canonical intent route is `packages.intent_runtime` with `SafeIntentProjection` and an offline deterministic encoder seam. Legacy `IntentDecision` route-family ports/adapters are compatibility-only and must not be imported by Core or Cognition Runtime.
+
 Blocked: unbounded loops, hidden background autonomy, raw prompt/context/provider/tool/search payload persistence by default, provider adapter imports inside Cognition Runtime, worker-internal imports inside Cognition Runtime, packages/core ownership expansion, and fabricated grounded answers without validated evidence.
