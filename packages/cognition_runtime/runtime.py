@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import contextlib
+import io
 from typing import Any
 
 from packages.capability_runtime import CapabilityEligibilityDecision, CapabilityKind, CapabilityRef
@@ -226,7 +228,8 @@ class CognitionRuntime:
     def _intent_planner_or_default(self) -> Any:
         if self._intent_planner is not None:
             return self._intent_planner
-        from packages.intent_runtime.hybrid import HybridIntentRuntime
+        with contextlib.redirect_stderr(io.StringIO()):
+            from packages.intent_runtime.hybrid import HybridIntentRuntime
 
         self._intent_planner = HybridIntentRuntime.default()
         return self._intent_planner

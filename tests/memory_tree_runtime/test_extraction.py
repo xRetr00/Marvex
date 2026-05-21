@@ -1,5 +1,9 @@
 """Tests for memory_tree_runtime extraction: entities, facts, preferences,
 relations, topic hotness, and daily digest — all derived-safe with provenance.
+
+file size justification: this regression suite covers the full memory
+extraction contract in one fixture-heavy file so derived-safe provenance,
+digest, entity, fact, preference, and relation assertions stay together.
 """
 
 from __future__ import annotations

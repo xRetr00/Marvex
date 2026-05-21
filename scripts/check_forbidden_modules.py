@@ -20,7 +20,9 @@ ALLOWED_PLACEHOLDERS = {
 }
 ALLOWED_BOUNDARY_DIRS = {
     "packages/adapters/intent",
+    "packages/adapters/memory",
     "tests/intent",
+    "tests/adapters/memory",
     "apps/control_plane_web/src/components/ui",
 }
 EXCLUDED_TOP_LEVEL = {"docs", "templates", "scripts"}

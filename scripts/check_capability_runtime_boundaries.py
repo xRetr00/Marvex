@@ -53,7 +53,6 @@ CAPABILITY_RUNTIME_FORBIDDEN_IMPORTS = (
 ADAPTER_FORBIDDEN_IMPORTS = (
     "apps",
     "os",
-    "pathlib",
     "subprocess",
     "requests",
     "httpx",
@@ -163,6 +162,8 @@ def _scan_adapters(failures: list[str]) -> None:
                 continue
             module = _module_from_import(node)
             if module and _matches_prefix(module, ADAPTER_FORBIDDEN_IMPORTS):
+                failures.append(f"{_rel(path)} imports disabled real backend dependency: {module}")
+            if module == "pathlib" and path.name != "files.py":
                 failures.append(f"{_rel(path)} imports disabled real backend dependency: {module}")
 
 

@@ -5,8 +5,6 @@ from __future__ import annotations
 # here until a later approved service split expands the allowed file set.
 
 import argparse
-import contextlib
-import io
 import json
 import re
 import subprocess
@@ -354,7 +352,6 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         cognition = CognitionRuntime(
             intent_classifier=_fixed_intent_classifier(intent_response["classification"]),
-            intent_planner=_CoreIntentPlanner(intent_response["classification"]),
             memory_store=self._memory_loop.memory_store if self._memory_loop is not None else None,
             memory_tree_runtime=self._memory_tree_runtime,
             web_search_provider=self._web_search_provider,
@@ -1236,17 +1233,6 @@ def _fixed_intent_classifier(classification: object) -> Callable[[object], objec
         )
 
     return classify
-
-
-class _CoreIntentPlanner:
-    def __init__(self, classification: object) -> None:
-        self._classification = classification
-
-    def plan(self, request: object) -> object:
-        with contextlib.redirect_stderr(io.StringIO()):
-            from packages.intent_runtime.hybrid import HybridIntentRuntime
-
-        return HybridIntentRuntime.default().plan(request)
 
 
 def _create_foundation_turn_executor(
