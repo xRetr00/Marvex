@@ -67,6 +67,26 @@ def test_ddgs_adapter_uses_real_package_boundary_with_mocked_client() -> None:
     assert bundle.safe_projection()["provider"] == "ddgs"
 
 
+def test_ddgs_adapter_clamps_long_snippets_to_safe_projection_limit() -> None:
+    class LongSnippetDDGSClient:
+        def text(self, query, max_results=5):
+            return [
+                {
+                    "title": "Long DDGS result",
+                    "href": "https://example.test/long-ddgs",
+                    "body": "x" * 1200,
+                }
+            ]
+
+    adapter = DDGSWebSearchAdapter(ddgs_client=LongSnippetDDGSClient())
+    query = WebSearchQuery(query="latest browser-use version", freshness=WebSearchFreshness.CURRENT)
+
+    bundle = adapter.search(query)
+
+    assert len(bundle.results[0].snippet) == 800
+    assert len(bundle.evidence_refs[0].snippet) == 800
+
+
 def test_provider_selector_prefers_configured_searxng_then_ddgs_fallback() -> None:
     searxng = SearXNGWebSearchAdapter(base_url="https://searxng.test", http_client=FakeHttpClient())
     ddgs = DDGSWebSearchAdapter(ddgs_client=FakeDDGSClient())

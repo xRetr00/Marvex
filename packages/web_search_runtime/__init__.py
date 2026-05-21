@@ -114,12 +114,12 @@ class WebSearchProviderSelector(CapabilityRuntimeModel):
 
 def _result_from_searxng(item: dict[str, Any], freshness: WebSearchFreshness) -> WebSearchResult:
     url = str(item.get("url") or item.get("href") or "")
-    return WebSearchResult(title=str(item.get("title") or "Untitled result"), url=url, domain=_domain(url), snippet=str(item.get("content") or item.get("body") or ""), freshness=freshness, published_at=item.get("publishedDate"))
+    return WebSearchResult(title=_bounded_text(item.get("title") or "Untitled result", 300), url=url, domain=_domain(url), snippet=_bounded_text(item.get("content") or item.get("body") or "", 800), freshness=freshness, published_at=item.get("publishedDate"))
 
 
 def _result_from_ddgs(item: dict[str, Any], freshness: WebSearchFreshness) -> WebSearchResult:
     url = str(item.get("href") or item.get("url") or "")
-    return WebSearchResult(title=str(item.get("title") or "Untitled result"), url=url, domain=_domain(url), snippet=str(item.get("body") or item.get("content") or ""), freshness=freshness)
+    return WebSearchResult(title=_bounded_text(item.get("title") or "Untitled result", 300), url=url, domain=_domain(url), snippet=_bounded_text(item.get("body") or item.get("content") or "", 800), freshness=freshness)
 
 
 def _bundle(query: WebSearchQuery, provider: str, rows: tuple[WebSearchResult, ...]) -> WebSearchGroundingBundle:
@@ -130,6 +130,11 @@ def _bundle(query: WebSearchQuery, provider: str, rows: tuple[WebSearchResult, .
 def _domain(url: str) -> str:
     parsed = urlparse(url)
     return parsed.netloc or "unknown"
+
+
+def _bounded_text(value: object, limit: int) -> str:
+    text = str(value)
+    return text[:limit]
 
 
 class FreshnessDecision(CapabilityRuntimeModel):

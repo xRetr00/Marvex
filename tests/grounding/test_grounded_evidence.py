@@ -39,6 +39,27 @@ def test_web_search_evidence_injects_safe_prompt_section() -> None:
     assert prompt.raw_prompt_persisted is False
 
 
+def test_web_search_evidence_context_candidate_clamps_summary_to_context_limit() -> None:
+    query = WebSearchQuery(query="latest browser-use version", freshness=WebSearchFreshness.CURRENT)
+    refs = tuple(
+        WebSearchEvidenceRef(
+            evidence_id=f"web.evidence.{index}",
+            source_url=f"https://example.test/release-{index}",
+            domain="example.test",
+            title=f"Browser-use release {index}",
+            snippet="x" * 800,
+            freshness=WebSearchFreshness.CURRENT,
+        )
+        for index in range(1, 6)
+    )
+    bundle = WebSearchGroundingBundle(query=query, provider="ddgs", results=(), evidence_refs=refs)
+
+    candidate = web_search_bundle_to_context_candidate(bundle)
+
+    assert len(candidate.safe_summary) == 1200
+    assert candidate.safe_summary.startswith("[web.evidence.1]")
+
+
 def test_grounded_citation_validation_rejects_hallucinated_citations() -> None:
     bundle = _bundle()
     valid = GroundedAnswerDraft(text="The source says it is current [web.evidence.1].", citation_ids=("web.evidence.1",))
