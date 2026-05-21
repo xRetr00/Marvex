@@ -244,6 +244,8 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.MEMORY
     if any(part in lowered for part in ("open yt", "youtube", "go to ", "open ", "browser")):
         return IntentKind.BROWSER_COMPUTER_USE
+    if "mcp" in lowered and "skill" in lowered:
+        return IntentKind.MCP_SKILL
     if "mcp" in lowered:
         return IntentKind.MCP_NEEDED
     if "skill" in lowered:

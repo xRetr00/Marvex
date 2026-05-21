@@ -26,6 +26,7 @@ def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -
         "what changed in my memory tree about Marvex?": IntentKind.MEMORY_TREE_NEEDED,
         "what do you remember about my preferences": IntentKind.MEMORY,
         "list MCP tools": IntentKind.MCP_NEEDED,
+        "use the MCP skill echo": IntentKind.MCP_SKILL,
         "install this MCP server": IntentKind.MCP_NEEDED,
         "delete this file": IntentKind.RISKY_ACTION,
         "send this file outside": IntentKind.RISKY_ACTION,

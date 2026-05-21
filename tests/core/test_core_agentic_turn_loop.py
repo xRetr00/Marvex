@@ -164,6 +164,15 @@ def test_core_routes_non_provider_intent_kinds_without_generic_provider_fallthro
             ),
         ),
         (
+            "use the MCP skill echo",
+            "mcp_skill",
+            "tool",
+            lambda result: (
+                result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "mcp.local.echo"
+                and result.metadata["tool"]["projection"]["executed_fake_capability_count"] == 0
+            ),
+        ),
+        (
             "what do you remember about my preferences",
             "memory",
             "memory",
