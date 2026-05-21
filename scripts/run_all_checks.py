@@ -61,6 +61,9 @@ CHECKS = [
     "check_local_service_startup_boundaries.py",
     "check_process_runtime_boundaries.py",
     "check_vaxil_boundary.py",
+    "check_agentmemory_backend_boundaries.py",
+    "check_connector_autofetch_boundaries.py",
+    "check_memory_extraction_boundaries.py",
 ]
 
 
