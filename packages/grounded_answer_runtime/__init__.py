@@ -54,7 +54,7 @@ def web_search_bundle_to_context_candidate(bundle: WebSearchGroundingBundle) -> 
     lines = []
     for ref in bundle.evidence_refs[:5]:
         lines.append(f"[{ref.evidence_id}] {ref.title} - {ref.source_url} - {ref.snippet}")
-    safe_summary = "\n".join(lines) or "No web evidence available."
+    safe_summary = _bounded_text("\n".join(lines) or "No web evidence available.", 1200)
     return ContextCandidate.from_safe_summary(
         ContextSourceRef(kind=ContextSourceKind.WEB_SEARCH_EVIDENCE, identifier=identifier),
         safe_summary,
@@ -67,6 +67,10 @@ def web_search_bundle_to_context_candidate(bundle: WebSearchGroundingBundle) -> 
 def _slug(value: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", value.lower()).strip("-")
     return slug[:80] or "query"
+
+
+def _bounded_text(value: str, limit: int) -> str:
+    return value[:limit]
 
 
 def _memory_citation_id(ref: EvidenceLink) -> str:
