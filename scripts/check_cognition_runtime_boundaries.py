@@ -16,6 +16,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "dataclasses",
     "datetime",
     "io",
+    "os",
     "pathlib",
     "packages.cognition_runtime",
     "packages.capability_runtime",

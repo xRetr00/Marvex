@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import io
+import os
 from typing import Any
 
 from packages.capability_runtime import CapabilityEligibilityDecision, CapabilityKind, CapabilityRef
@@ -228,11 +229,26 @@ class CognitionRuntime:
     def _intent_planner_or_default(self) -> Any:
         if self._intent_planner is not None:
             return self._intent_planner
-        with contextlib.redirect_stderr(io.StringIO()):
+        with contextlib.redirect_stderr(io.StringIO()), _suppress_stderr_fd():
             from packages.intent_runtime.hybrid import HybridIntentRuntime
 
         self._intent_planner = HybridIntentRuntime.default()
         return self._intent_planner
+
+
+@contextlib.contextmanager
+def _suppress_stderr_fd():
+    try:
+        saved_fd = os.dup(2)
+        with open(os.devnull, "w", encoding="utf-8") as devnull:
+            os.dup2(devnull.fileno(), 2)
+            try:
+                yield
+            finally:
+                os.dup2(saved_fd, 2)
+                os.close(saved_fd)
+    except OSError:
+        yield
 
 
 def _web_search_required(intent_ref: IntentRef, hybrid_details: dict[str, object]) -> bool:
