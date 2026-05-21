@@ -130,6 +130,28 @@ def test_core_safe_tool_turn_returns_real_calculator_result() -> None:
     assert result.metadata["agentic_loop"]["executed_count"] == 1
 
 
+def test_core_file_read_turn_executes_intent_plan_step_through_tool_worker(tmp_path: Path) -> None:
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "notes.txt").write_text("Marvex file executor evidence", encoding="utf-8")
+
+    result = run_core_turn(
+        "read file notes.txt",
+        trace_id="trace-core-file-read",
+        turn_id="turn-core-file-read",
+        extra=["--file-capability-root", str(root)],
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "Marvex file executor evidence" in result.assistant_final_response.text
+    assert result.metadata["cognition"]["intent_kind"] == "file_read_list_search"
+    assert result.metadata["intent_plan"]["step_kinds"] == ["file_read_list_search"]
+    assert result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "file.read"
+    assert result.metadata["tool"]["result"]["trace_id"] == "trace-core-file-read"
+    assert result.metadata["agentic_loop"]["executed_count"] == 1
+
+
 def test_core_approval_required_can_resume_approve_deny_and_cancel() -> None:
     paused = run_core_turn(
         "delete this file",

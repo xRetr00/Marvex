@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import math
 import re
 from typing import Literal
 
@@ -46,8 +47,63 @@ class IntentPlan(CapabilityRuntimeModel):
     clarification_stop: bool = False
 
 
+class SemanticEncoding(CapabilityRuntimeModel):
+    backend_name: str
+    dimensions: tuple[float, ...]
+
+
+class DeterministicLocalIntentEncoder:
+    backend_name = "deterministic_local_encoder"
+
+    def encode(self, text: str) -> SemanticEncoding:
+        buckets = [0.0] * 64
+        normalized = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+        padded = f"  {normalized}  "
+        for index in range(max(0, len(padded) - 2)):
+            gram = padded[index : index + 3]
+            bucket = sum((offset + 1) * ord(character) for offset, character in enumerate(gram)) % len(buckets)
+            buckets[bucket] += 1.0
+        norm = math.sqrt(sum(value * value for value in buckets)) or 1.0
+        return SemanticEncoding(backend_name=self.backend_name, dimensions=tuple(value / norm for value in buckets))
+
+
+class EncodedSemanticRouteLayer:
+    selection_strategy = "encoded_route_cosine"
+
+    def __init__(self, *, encoder: DeterministicLocalIntentEncoder, routes: tuple[semantic_router.Route, ...]) -> None:
+        self._encoder = encoder
+        self._routes = routes
+        self._encoded_routes = tuple(
+            (
+                route,
+                tuple(self._encoder.encode(utterance).dimensions for utterance in tuple(route.utterances)),
+            )
+            for route in routes
+        )
+
+    @property
+    def backend_name(self) -> str:
+        return self._encoder.backend_name
+
+    def select(self, text: str) -> tuple[IntentKind, float]:
+        encoded = self._encoder.encode(text).dimensions
+        best_kind = IntentKind.CLARIFICATION
+        best_score = 0.0
+        for route, utterance_vectors in self._encoded_routes:
+            score = max((_cosine(encoded, vector) for vector in utterance_vectors), default=0.0)
+            if score > best_score:
+                best_kind = IntentKind(route.name)
+                best_score = score
+        return best_kind, best_score
+
+
 class HybridIntentRuntime:
-    def __init__(self, *, capabilities: dict[str, CapabilityAvailability] | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        capabilities: dict[str, CapabilityAvailability] | None = None,
+        semantic_encoder: DeterministicLocalIntentEncoder | None = None,
+    ) -> None:
         self._capabilities = capabilities or {
             "web_search": CapabilityAvailability(),
             "calculator": CapabilityAvailability(),
@@ -57,6 +113,10 @@ class HybridIntentRuntime:
             "file_read_list_search": CapabilityAvailability(),
         }
         self._routes = _semantic_routes()
+        self._semantic_layer = EncodedSemanticRouteLayer(
+            encoder=semantic_encoder or DeterministicLocalIntentEncoder(),
+            routes=self._routes,
+        )
 
     @classmethod
     def default(cls, *, capabilities: dict[str, CapabilityAvailability] | None = None) -> "HybridIntentRuntime":
@@ -65,9 +125,16 @@ class HybridIntentRuntime:
     def classify(self, request: IntentClassificationRequest) -> IntentClassificationResult:
         text = request.user_input_summary.strip()
         deterministic = _deterministic_intent(text)
-        semantic_kind, semantic_score = _semantic_select(text, self._routes)
-        selected = semantic_kind if semantic_score >= 0.35 else deterministic
-        if deterministic in {IntentKind.GROUNDED_ANSWER, IntentKind.UNSAFE_OR_INJECTION_SUSPECTED, IntentKind.CLARIFICATION}:
+        semantic_kind, semantic_score = self._semantic_layer.select(text)
+        selected = semantic_kind if semantic_score >= 0.42 else deterministic
+        if deterministic in {
+            IntentKind.GROUNDED_ANSWER,
+            IntentKind.FILE_READ_LIST_SEARCH,
+            IntentKind.RISKY_ACTION,
+            IntentKind.UNSAFE_OR_INJECTION_SUSPECTED,
+            IntentKind.UNSAFE_RISKY,
+            IntentKind.CLARIFICATION,
+        }:
             selected = deterministic
         selector = SingleSelection(index=_kind_index(selected), reason=f"llamaindex.selector.{selected.value}")
         if selected == IntentKind.PROVIDER_SIMPLE_CHAT and _freshness_needed(text):
@@ -86,12 +153,14 @@ class HybridIntentRuntime:
             score=score,
             risk_signal=risk_signal,
             risk_level=risk_level,
-            reason_code="hybrid.semantic_router" if semantic_score >= 0.35 else "hybrid.llamaindex_selector",
-            backend_name="hybrid_intent_runtime",
+            reason_code="hybrid.semantic_encoder" if semantic_score >= 0.42 else "hybrid.llamaindex_selector",
+            backend_name=f"hybrid_intent_runtime.{self._semantic_layer.backend_name}",
             hybrid_details={
                 "deterministic_candidate": deterministic.value,
                 "semantic_candidate": semantic_kind.value,
                 "semantic_router_route_count": len(self._routes),
+                "semantic_encoder_backend_name": self._semantic_layer.backend_name,
+                "semantic_selection_strategy": self._semantic_layer.selection_strategy,
                 "semantic_router_hybrid_extra_available": _semantic_router_hybrid_extra_available(),
                 "llamaindex_selector_used": isinstance(selector, SingleSelection),
                 "llamaindex_selection_index": selector.index,
@@ -136,7 +205,7 @@ def _semantic_routes() -> tuple[semantic_router.Route, ...]:
     return (
         semantic_router.Route(name=IntentKind.CAPABILITY_TOOL.value, utterances=("2+2", "compute arithmetic", "calculator")),
         semantic_router.Route(name=IntentKind.WEB_SEARCH.value, utterances=("search latest version", "current docs", "recent release")),
-        semantic_router.Route(name=IntentKind.BROWSER_COMPUTER_USE.value, utterances=("open youtube", "go to website", "browser page")),
+        semantic_router.Route(name=IntentKind.BROWSER_COMPUTER_USE.value, utterances=("open youtube", "go to website", "browser page", "navigate webpage")),
         semantic_router.Route(name=IntentKind.MEMORY_TREE_NEEDED.value, utterances=("memory tree changes", "source grounded memory evidence")),
         semantic_router.Route(name=IntentKind.MCP_NEEDED.value, utterances=("list mcp tools", "mcp server tool")),
         semantic_router.Route(name=IntentKind.SKILL_NEEDED.value, utterances=("use skill", "skill package")),
@@ -145,15 +214,7 @@ def _semantic_routes() -> tuple[semantic_router.Route, ...]:
 
 
 def _semantic_select(text: str, routes: tuple[semantic_router.Route, ...]) -> tuple[IntentKind, float]:
-    tokens = _tokens(text)
-    best_kind = IntentKind.CLARIFICATION
-    best_score = 0.0
-    for route in routes:
-        score = max((_overlap(tokens, _tokens(utterance)) for utterance in route.utterances), default=0.0)
-        if score > best_score:
-            best_kind = IntentKind(route.name)
-            best_score = score
-    return best_kind, best_score
+    return EncodedSemanticRouteLayer(encoder=DeterministicLocalIntentEncoder(), routes=routes).select(text)
 
 
 def _deterministic_intent(text: str) -> IntentKind:
@@ -222,3 +283,7 @@ def _overlap(left: set[str], right: set[str]) -> float:
     if not left or not right:
         return 0.0
     return len(left & right) / max(1, min(len(left), len(right)))
+
+
+def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
+    return max(0.0, min(1.0, sum(a * b for a, b in zip(left, right, strict=True))))

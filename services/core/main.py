@@ -5,6 +5,8 @@ from __future__ import annotations
 # here until a later approved service split expands the allowed file set.
 
 import argparse
+import contextlib
+import io
 import json
 import re
 import subprocess
@@ -89,6 +91,7 @@ class CoreServiceEntrypointConfig:
     web_base_url: str | None = None
     demo_memory_evidence: bool = False
     memory_vault_root: str | None = None
+    file_capability_root: str | None = None
     resume_approval: str | None = None
     approval_decision: str | None = None
     timeout_seconds: float | None = None
@@ -303,6 +306,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         web_search_provider: object | None = None,
         memory_tree_runtime: object | None = None,
         memory_loop: LocalMemoryLoop | None = None,
+        file_capability_root: str | None = None,
         resume_approval: str | None = None,
         approval_decision: str | None = None,
         base_url: str | None = None,
@@ -324,6 +328,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._web_search_provider = web_search_provider
         self._memory_tree_runtime = memory_tree_runtime
         self._memory_loop = memory_loop
+        self._file_capability_root = file_capability_root
         self._resume_approval = resume_approval
         self._approval_decision = approval_decision
 
@@ -365,8 +370,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "intent_backend": intent_response.get("backend_name"),
             "assistant_turn_spine": "used",
             "cognition": cognition.safe_projection().model_dump(mode="json"),
+            "intent_plan": _intent_plan_projection(cognition.intent_plan),
         }
         loop.step("plan")
+        plan_intents = _intent_plan_kinds(cognition.intent_plan)
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
             loop.step("clarify", stop_reason="finalized")
             return _entrypoint_text_result(
@@ -386,7 +393,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 message="Request blocked by intent safety preflight.",
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
-        if intent_kind == "capability_tool":
+        if "capability_tool" in plan_intents:
             loop.step("tool")
             return self._run_tool_path(
                 turn_input,
@@ -399,9 +406,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 capability_id="builtin.calculator",
                 arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
-        if intent_kind == "risky_action":
+        if "risky_action" in plan_intents:
             return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if intent_kind in {"web_search", "grounded_answer"}:
+        if "file_read_list_search" in plan_intents:
+            loop.step("tool")
+            return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+        if "web_search" in plan_intents or "grounded_answer" in plan_intents:
             loop.step("web_search")
             loop.step("grounded_answer")
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
@@ -558,6 +568,46 @@ class _CoreServiceProviderWorkerTurnExecutor:
             text=draft.text,
             metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             stage_name="grounded_answer",
+        )
+
+    def _run_file_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        if not self._file_capability_root:
+            loop.step("finalize", stop_reason="blocked")
+            return _entrypoint_error_result(
+                turn_input,
+                reason="file_capability_root_required",
+                message="File read/list/search requires an explicit configured root.",
+                metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+            )
+        file_path = _file_path_from_input(turn_input.user_visible_input)
+        result = self._run_tool_path(
+            turn_input,
+            metadata=metadata,
+            cognition=cognition,
+            loop=loop,
+            action="read file",
+            capability="file_read",
+            resource_type="file",
+            capability_id="file.read",
+            arguments={"root": self._file_capability_root, "path": file_path, "max_preview_chars": 1200},
+        )
+        if result.error is not None or result.assistant_final_response is None:
+            return result
+        safe_result = dict(dict(result.metadata.get("tool", {})).get("result", {})).get("safe_result", {})
+        preview = str(dict(safe_result).get("preview", ""))
+        return result.model_copy(
+            update={
+                "assistant_final_response": result.assistant_final_response.model_copy(
+                    update={"text": f"File preview from {file_path}: {preview}"}
+                )
+            }
         )
 
     def _run_approval_path(
@@ -1018,6 +1068,35 @@ def _memory_write_projection(memory_write: object | None) -> dict[str, object]:
     }
 
 
+def _intent_plan_kinds(intent_plan: object) -> tuple[str, ...]:
+    steps = tuple(getattr(intent_plan, "steps", ()) or ())
+    return tuple(
+        str(getattr(getattr(step, "intent_kind", ""), "value", getattr(step, "intent_kind", "")))
+        for step in steps
+    )
+
+
+def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
+    steps = tuple(getattr(intent_plan, "steps", ()) or ())
+    return {
+        "primary_intent": str(getattr(getattr(intent_plan, "primary_intent", ""), "value", getattr(intent_plan, "primary_intent", ""))),
+        "step_count": len(steps),
+        "step_kinds": [
+            str(getattr(getattr(step, "intent_kind", ""), "value", getattr(step, "intent_kind", "")))
+            for step in steps
+        ],
+        "raw_payload_persisted": False,
+    }
+
+
+def _file_path_from_input(text: str | None) -> str:
+    value = (text or "").strip()
+    match = re.search(r"(?:read|inspect)\s+file\s+(.+)$", value, flags=re.IGNORECASE)
+    if match:
+        return match.group(1).strip().strip("\"'")
+    return value.strip().strip("\"'") or "."
+
+
 def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
     projection = dict(classification)
 
@@ -1047,15 +1126,11 @@ class _CoreIntentPlanner:
     def __init__(self, classification: object) -> None:
         self._classification = classification
 
-    def plan(self, _request: object) -> dict[str, object]:
-        selected = dict(dict(self._classification).get("selected_intent", {}))
-        intent_kind = str(selected.get("intent_kind", "provider_simple_chat"))
-        return {
-            "primary_intent": intent_kind,
-            "secondary_intents": (),
-            "steps": ({"step_id": f"step.{intent_kind}", "intent_kind": intent_kind},),
-            "clarification_stop": intent_kind == "clarification",
-        }
+    def plan(self, request: object) -> object:
+        with contextlib.redirect_stderr(io.StringIO()):
+            from packages.intent_runtime.hybrid import HybridIntentRuntime
+
+        return HybridIntentRuntime.default().plan(request)
 
 
 def _create_foundation_turn_executor(
@@ -1113,6 +1188,7 @@ def _create_turn_executor(
         web_search_provider=_web_search_provider_from_config(config),
         memory_tree_runtime=_memory_tree_from_config(config),
         memory_loop=_memory_loop_from_config(config),
+        file_capability_root=config.file_capability_root,
         resume_approval=config.resume_approval,
         approval_decision=config.approval_decision,
         base_url=config.base_url,
@@ -1320,6 +1396,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Explicit local root for derived memory SQLite index and Obsidian-compatible wiki vault.",
     )
     parser.add_argument(
+        "--file-capability-root",
+        default=None,
+        help="Explicit local root for read-only file read/list/search capabilities.",
+    )
+    parser.add_argument(
         "--session-id",
         default=None,
         help="Session id for --turn-once memory recall/write wiring.",
@@ -1371,6 +1452,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         web_base_url=args.web_base_url,
         demo_memory_evidence=args.demo_memory_evidence,
         memory_vault_root=args.memory_vault_root,
+        file_capability_root=args.file_capability_root,
         resume_approval=args.resume_approval,
         approval_decision=args.approval_decision,
         timeout_seconds=args.timeout,
