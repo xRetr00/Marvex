@@ -152,12 +152,26 @@ attempt to enforce actual agent tool usage.
 Manual smoke scripts:
 
 - `smoke_providers.py`
+- `smoke_core_real_provider_adapter.py`
+- `smoke_core_real_web_adapter.py`
 - `smoke_voice_worker_wakeword_supervisor.py`
 - `spike_lmstudio_structured_output.py`
 
 `smoke_providers.py` is developer-only manual verification for provider paths.
 It is intentionally excluded from `run_all_checks.py` and must not become a CI
 dependency.
+
+`smoke_core_real_provider_adapter.py` is developer-only manual verification for
+the Core agentic loop through ProviderWorker, ProviderRuntime, and the
+`lmstudio_responses` adapter against a loopback Responses-compatible endpoint.
+It proves the non-fake adapter boundary in the Core turn path, but it is not a
+live external LM Studio model proof.
+
+`smoke_core_real_web_adapter.py` is developer-only manual verification for the
+Core grounded-answer loop through the real `SearXNGWebSearchAdapter` against a
+loopback SearXNG-compatible JSON endpoint. It proves the configured web-search
+adapter boundary in the Core turn path, but it is not a live internet search
+proof.
 
 `smoke_voice_worker_wakeword_supervisor.py` is developer-only manual
 verification for explicit wakeword worker supervision against a locally

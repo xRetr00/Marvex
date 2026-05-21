@@ -27,6 +27,8 @@ CHECKS = [
     "check_full_tooling_boundaries.py",
     "check_agent_execution_loop_boundaries.py",
     "check_control_plane_boundaries.py",
+    "check_cognition_runtime_boundaries.py",
+    "check_core_agentic_turn_loop_boundaries.py",
     "check_intent_context_prompt_boundaries.py",
     "check_hybrid_intent_web_search_governance.py",
     "check_adaptive_context_learning_governance.py",

@@ -23,8 +23,10 @@ from packages.capability_runtime.models import (
     ToolSideEffectLevel,
 )
 from packages.capability_runtime.proposals import CapabilityCallProposal
+from packages.capability_runtime.requests import CapabilityExecutionRequest
 from packages.capability_runtime.results import CapabilityExecutionSummary, CapabilityResultEnvelope, SafeCapabilityProjection
 from packages.contracts import HealthCheck, HealthStatus, VersionInfo
+from packages.adapters.capabilities.builtins import BuiltinToolCatalog
 
 from .models import (
     SCHEMA_VERSION,
@@ -50,6 +52,7 @@ class ToolWorkerController:
         self._state = ToolWorkerState.INITIALIZED
         self._started_at = datetime.now(UTC)
         self._adapter = DeterministicFakeCapabilityAdapter()
+        self._builtins = BuiltinToolCatalog.default()
 
     def start(self, *, trace_id: str = "tool-worker-start") -> ToolWorkerCommandResult:
         self._state = ToolWorkerState.RUNNING
@@ -190,11 +193,32 @@ class ToolWorkerController:
             decided_by="policy",
             raw_decision_payload_persisted=False,
         )
-        result, summary = self._adapter.dispatch(
-            proposal=proposal,
-            permission_decision=permission,
-            arguments={key: True for key in arguments},
-        )
+        if capability_id == "builtin.calculator":
+            result = self._builtins.execute_request(
+                CapabilityExecutionRequest(
+                    schema_version=SCHEMA_VERSION,
+                    request_id=f"{proposal.proposal_id}:request",
+                    trace_id=trace_id,
+                    turn_id=turn_id,
+                    proposal=proposal,
+                    permission_decision=permission,
+                    arguments=dict(arguments),
+                    raw_arguments_persisted=False,
+                )
+            ).result
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1,
+                denied_count=0,
+                executed_fake_count=0,
+            )
+        else:
+            result, summary = self._adapter.dispatch(
+                proposal=proposal,
+                permission_decision=permission,
+                arguments={key: True for key in arguments},
+            )
         result = result.model_copy(update={"result_id": f"{turn_id}:capability:result"})
         summary = CapabilityExecutionSummary.from_result(
             result,
