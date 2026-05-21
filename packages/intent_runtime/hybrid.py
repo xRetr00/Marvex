@@ -130,6 +130,13 @@ class HybridIntentRuntime:
         if deterministic in {
             IntentKind.GROUNDED_ANSWER,
             IntentKind.FILE_READ_LIST_SEARCH,
+            IntentKind.MEMORY,
+            IntentKind.MEMORY_TREE_NEEDED,
+            IntentKind.MCP_NEEDED,
+            IntentKind.MCP_SKILL,
+            IntentKind.SKILL_NEEDED,
+            IntentKind.CONNECTOR_ACCOUNT,
+            IntentKind.SETTINGS_CONTROL_PLANE,
             IntentKind.RISKY_ACTION,
             IntentKind.UNSAFE_OR_INJECTION_SUSPECTED,
             IntentKind.UNSAFE_RISKY,

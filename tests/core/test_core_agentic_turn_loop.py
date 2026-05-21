@@ -152,6 +152,66 @@ def test_core_file_read_turn_executes_intent_plan_step_through_tool_worker(tmp_p
     assert result.metadata["agentic_loop"]["executed_count"] == 1
 
 
+def test_core_routes_non_provider_intent_kinds_without_generic_provider_fallthrough() -> None:
+    cases = [
+        (
+            "list MCP tools",
+            "mcp_needed",
+            "tool",
+            lambda result: (
+                result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "mcp.local.echo"
+                and result.metadata["tool"]["projection"]["executed_fake_capability_count"] == 0
+            ),
+        ),
+        (
+            "what do you remember about my preferences",
+            "memory",
+            "memory",
+            lambda result: result.metadata["memory"]["raw_memory_content_persisted"] is False,
+        ),
+        (
+            "use skill safe-writing",
+            "skill_needed",
+            "skill",
+            lambda result: result.metadata["skill"]["install_launch_enabled"] is False,
+        ),
+        (
+            "connect my Gmail account",
+            "connector_account",
+            "connector",
+            lambda result: result.metadata["connector"]["live_oauth_started"] is False,
+        ),
+        (
+            "show control plane settings",
+            "settings_control_plane",
+            "settings",
+            lambda result: result.metadata["settings"]["approval_resume_supported"] is True,
+        ),
+        (
+            "open browser page",
+            "browser_computer_use",
+            "browser",
+            lambda result: result.metadata["browser"]["live_browser_executed"] is False,
+        ),
+    ]
+
+    for index, (prompt, intent_kind, metadata_key, extra_assertion) in enumerate(cases):
+        result = run_core_turn(
+            prompt,
+            trace_id=f"trace-core-route-{index}",
+            turn_id=f"turn-core-route-{index}",
+        )
+
+        assert result.assistant_final_response is not None, prompt
+        assert result.metadata["intent"]["selected_intent"]["intent_kind"] == intent_kind, prompt
+        assert result.metadata["intent_plan"]["step_kinds"] == [intent_kind], prompt
+        assert metadata_key in result.metadata, prompt
+        assert result.provider_turn_refs == [], prompt
+        assert "provider_boundary" not in result.metadata, prompt
+        assert result.metadata["agentic_loop"]["trace_id"] == f"trace-core-route-{index}", prompt
+        assert extra_assertion(result), prompt
+
+
 def test_core_approval_required_can_resume_approve_deny_and_cancel() -> None:
     paused = run_core_turn(
         "delete this file",
