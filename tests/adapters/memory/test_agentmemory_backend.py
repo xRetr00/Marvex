@@ -15,7 +15,7 @@ from urllib.parse import urlparse
 import pytest
 
 from packages.contracts import ConversationRef, SessionRef
-from packages.memory_runtime.models import MemoryRecord, MemoryRef
+from packages.memory_runtime.models import MemoryReadQuery, MemoryRecord, MemoryRef
 from packages.adapters.memory.config import (
     AgentMemoryBackendConfig,
     MemoryBackendConfig,
@@ -167,6 +167,31 @@ def test_store_sends_record_to_daemon(stub_server) -> None:
     assert state.stored[0]["title"] == "mem-001"
     assert state.stored[0]["project"] == "test-ns"
     assert "content" in state.stored[0]
+
+
+def test_agentmemory_backend_implements_memory_store_read_write_interface(stub_server) -> None:
+    url, _state = stub_server
+    backend = _backend(url)
+    record = _record("mem-core-001", "User preferred project codename is Lumen.")
+
+    backend.write_record(record)
+    result = backend.read(
+        MemoryReadQuery(
+            schema_version=record.schema_version,
+            query_id="query-core-001",
+            scope="session",
+            session_ref=record.session_ref,
+            conversation_ref=None,
+            max_records=3,
+            policy_status="approved",
+        )
+    )
+    inspected = tuple(backend.safe_inspect(max_records=5))
+
+    assert len(result.records) == 1
+    assert result.records[0].memory_ref.ref_id == "mem-core-001"
+    assert len(inspected) == 1
+    assert inspected[0]["raw_transcript_persisted"] is False
 
 
 def test_store_does_not_send_raw_credentials(stub_server) -> None:
