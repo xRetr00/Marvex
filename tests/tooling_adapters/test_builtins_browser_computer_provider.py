@@ -11,7 +11,9 @@ from packages.adapters.capabilities.browser import (
     BrowserExecutionRequest,
     BrowserResultEnvelope,
     BrowserSessionRef,
+    PlaywrightBrowserWorkflow,
     PlaywrightBrowserAdapterConfig,
+    PlaywrightSdkBoundary,
 )
 from packages.adapters.capabilities.browser_use import (
     BrowserUseAdapterConfig,
@@ -147,6 +149,65 @@ def test_playwright_browser_adapter_models_risk_and_requires_approval_for_action
     assert request.execution_request.execution_mode is CapabilityExecutionMode.APPROVED_EXECUTE
     assert result.raw_dom_persisted is False
     assert result.raw_screenshot_persisted is False
+
+
+def test_playwright_browser_workflow_uses_page_lifecycle_with_safe_results_only() -> None:
+    class _FakePage:
+        def __init__(self) -> None:
+            self.visited: list[str] = []
+
+        def goto(self, target: str, wait_until: str) -> None:
+            self.visited.append(f"{target}:{wait_until}")
+
+        def title(self) -> str:
+            return "Safe Page"
+
+        def inner_text(self, target: str) -> str:
+            return f"Safe extracted text from {target}"
+
+    page = _FakePage()
+    workflow = PlaywrightBrowserWorkflow(boundary=PlaywrightSdkBoundary(page=page))
+    session = BrowserSessionRef(session_id="browser-session-2")
+    navigate = BrowserActionProposal(
+        schema_version="1",
+        proposal_id="navigate-1",
+        trace_id="trace-browser-workflow",
+        turn_id="turn-browser-workflow",
+        session_ref=session,
+        action_kind=BrowserActionKind.NAVIGATE,
+        target="https://example.test",
+    )
+    extract = BrowserActionProposal(
+        schema_version="1",
+        proposal_id="extract-1",
+        trace_id="trace-browser-workflow",
+        turn_id="turn-browser-workflow",
+        session_ref=session,
+        action_kind=BrowserActionKind.EXTRACT_TEXT,
+        target="main",
+    )
+
+    nav_result = workflow.execute(
+        BrowserExecutionRequest.from_proposal(
+            request_id="navigate-request-1",
+            proposal=navigate,
+            permission_decision=_approved_permission(navigate),
+            approval_decision=_approval_decision(navigate),
+        )
+    )
+    extract_result = workflow.execute(
+        BrowserExecutionRequest.from_proposal(
+            request_id="extract-request-1",
+            proposal=extract,
+            permission_decision=_approved_permission(extract),
+        )
+    )
+
+    assert page.visited == ["https://example.test:domcontentloaded"]
+    assert nav_result.result.status == "succeeded"
+    assert nav_result.result.safe_result["raw_dom_persisted"] is False
+    assert extract_result.result.safe_result["text_character_count"] > 0
+    assert extract_result.raw_page_text_persisted is False
 
 
 def test_browser_use_seam_is_disabled_until_dependency_is_approved_for_execution() -> None:

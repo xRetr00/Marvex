@@ -186,6 +186,119 @@ def test_tool_worker_blocks_unapproved_write_execution() -> None:
     assert "secret.txt" not in serialized
 
 
+def test_tool_worker_file_write_requires_approval_then_writes_inside_sandbox(tmp_path: Path) -> None:
+    root = tmp_path / "sandbox"
+    root.mkdir()
+    responses = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-file-write-paused",
+                "turn_id": "turn-file-write-paused",
+                "capability_id": "file.write",
+                "action": "write file",
+                "capability": "file_write",
+                "resource_type": "file",
+                "arguments": {"root": str(root), "path": "note.txt", "content": "must-not-leak"},
+            },
+            {
+                "command": "execute",
+                "trace_id": "trace-file-write-approved",
+                "turn_id": "turn-file-write-approved",
+                "capability_id": "file.write",
+                "action": "write file",
+                "capability": "file_write",
+                "resource_type": "file",
+                "arguments": {
+                    "root": str(root),
+                    "path": "note.txt",
+                    "content": "safe approved content",
+                    "approval_request_id": "approval-turn-file-write-approved",
+                    "approval_decision": "approve",
+                },
+            },
+            {
+                "command": "execute",
+                "trace_id": "trace-file-write-traversal",
+                "turn_id": "turn-file-write-traversal",
+                "capability_id": "file.write",
+                "action": "write file",
+                "capability": "file_write",
+                "resource_type": "file",
+                "arguments": {
+                    "root": str(root),
+                    "path": "../outside.txt",
+                    "content": "must-not-leak",
+                    "approval_request_id": "approval-turn-file-write-traversal",
+                    "approval_decision": "approve",
+                },
+            },
+        ]
+    )
+    serialized = json.dumps(responses)
+
+    assert responses[0]["ok"] is False
+    assert responses[0]["result"]["status"] == "requires_human_approval"
+    assert responses[1]["ok"] is True
+    assert (root / "note.txt").read_text(encoding="utf-8") == "safe approved content"
+    assert responses[1]["result"]["safe_result"] == {
+        "operation": "write",
+        "path": "note.txt",
+        "bytes_written": len("safe approved content".encode("utf-8")),
+        "created": True,
+        "overwritten": False,
+        "raw_content_persisted": False,
+    }
+    assert responses[2]["ok"] is False
+    assert responses[2]["result"]["status"] == "denied"
+    assert responses[2]["error"]["code"] == "file.sandbox_violation"
+    assert "must-not-leak" not in serialized
+
+
+def test_tool_worker_shell_command_seam_is_approval_gated_and_blocked_by_default() -> None:
+    paused = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-shell-paused",
+                "turn_id": "turn-shell-paused",
+                "capability_id": "shell.command",
+                "action": "run command",
+                "capability": "shell_command_execution",
+                "resource_type": "shell",
+                "arguments": {"command": "echo must-not-leak"},
+            }
+        ]
+    )[0]
+    approved = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-shell-approved",
+                "turn_id": "turn-shell-approved",
+                "capability_id": "shell.command",
+                "action": "run command",
+                "capability": "shell_command_execution",
+                "resource_type": "shell",
+                "arguments": {
+                    "command": "echo must-not-leak",
+                    "approval_request_id": "approval-turn-shell-approved",
+                    "approval_decision": "approve",
+                },
+            }
+        ]
+    )[0]
+    serialized = json.dumps([paused, approved])
+
+    assert paused["ok"] is False
+    assert paused["result"]["status"] == "requires_human_approval"
+    assert approved["ok"] is False
+    assert approved["blocked"] is True
+    assert approved["result"]["status"] == "denied"
+    assert approved["result"]["safe_result"]["reason_code"] == "shell.execution_blocked_by_default"
+    assert "must-not-leak" not in serialized
+
+
 def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_path: Path) -> None:
     root = tmp_path / "sandbox"
     root.mkdir()

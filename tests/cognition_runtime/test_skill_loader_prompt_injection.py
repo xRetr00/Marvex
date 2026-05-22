@@ -40,8 +40,8 @@ def test_cognition_injects_loaded_skill_prompt_contribution_for_skill_route(tmp_
     runtime = CognitionRuntime(
         intent_classifier=lambda request: classification_from_kind(
             request,
-            IntentKind.SKILL_NEEDED,
-            confidence=0.91,
+            kind=IntentKind.SKILL_NEEDED,
+            score=0.91,
             reason_code="test.skill",
         ),
         skill_manifests=(package.manifest,),
@@ -53,6 +53,6 @@ def test_cognition_injects_loaded_skill_prompt_contribution_for_skill_route(tmp_
     included = result.context_projection.included_sources
     assert {"kind": "skill_prompt_contribution", "identifier": "skill.summary.summary-context.loaded"} in included
     assert "skill_contribution" in result.prompt_projection.section_kinds
+    assert all(candidate.raw_content_persisted is False for candidate in result.context_pack.included)
     serialized = result.model_dump_json().lower()
-    assert "raw_instruction_persisted" in serialized
     assert "ignore previous instructions" not in serialized

@@ -29,6 +29,7 @@ ALLOWED_IMPORTS = (
     "packages.skills_runtime",
     "pathlib",
     "pydantic",
+    "re",
     "typing",
 )
 FORBIDDEN_IMPORTS = (
