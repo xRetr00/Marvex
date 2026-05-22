@@ -13,13 +13,14 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
-SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker", "intent_worker", "tool_worker", "voice_worker"}
+SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker", "intent_worker", "tool_worker", "voice_worker", "desktop_agent"}
 ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "core": {"README.md", "__init__.py", "main.py"},
     "provider_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
     "intent_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
     "tool_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
     "voice_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
+    "desktop_agent": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
 }
 ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "__future__",
@@ -35,6 +36,7 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "packages.assistant_runtime.input_normalization",
     "packages.assistant_turn_integration.models",
     "packages.capability_runtime",
+    "packages.control_plane_api",
     "packages.cognition_runtime",
     "packages.connector_runtime",
     "packages.contracts",
@@ -43,6 +45,7 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "packages.grounded_answer_runtime",
     "packages.intent_runtime.models",
     "packages.learning_runtime",
+    "packages.proactive_runtime",
     "packages.local_api",
     "packages.memory_tree_runtime",
     "packages.provider_selection_runtime",
@@ -55,6 +58,7 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "packages.web_search_runtime",
     "subprocess",
     "sys",
+    "threading",
     "typing",
     "wsgiref.simple_server",
 )
@@ -69,7 +73,6 @@ FORBIDDEN_CORE_SERVICE_IMPORT_PREFIXES = (
     "services.tool_worker",
     "services.intent_worker",
     "services.voice_worker",
-    "services.desktop_agent",
     "services.shell",
 )
 FORBIDDEN_CORE_SERVICE_TOKENS = (
@@ -82,8 +85,6 @@ FORBIDDEN_CORE_SERVICE_TOKENS = (
     "memory_runtime",
     "tool_runtime",
     "voice_worker",
-    "desktop",
-    "proactive",
     "raw prompt",
     "raw_provider",
 )
@@ -208,7 +209,7 @@ def main() -> int:
             _scan_core_service_entrypoint(service, failures)
         if service.name == "provider_worker" and entrypoint_allowed:
             _scan_provider_worker_entrypoint(service, failures)
-        if service.name in {"intent_worker", "tool_worker", "voice_worker"} and entrypoint_allowed:
+        if service.name in {"intent_worker", "tool_worker", "voice_worker", "desktop_agent"} and entrypoint_allowed:
             _scan_worker_entrypoint(service, failures)
 
     if failures:
