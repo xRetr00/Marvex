@@ -1,0 +1,313 @@
+"""CI-offline tests for packages/dependency_runtime.
+
+All tests mock importlib.util.find_spec and the pip subprocess so no real
+network or pip calls are made.  This validates:
+  - missing dep → feature disabled
+  - present dep → feature enabled
+  - GET /control/deps shape
+  - POST /control/deps/install flow (fake pip runner)
+  - graceful degrade via unavailable_projection
+"""
+from __future__ import annotations
+
+import io
+import json
+from unittest.mock import patch
+from wsgiref.util import setup_testing_defaults
+
+import pytest
+
+from packages.dependency_runtime.detection import (
+    DEP_GROUPS,
+    DepGroup,
+    detect_all,
+    detect_dep,
+    detect_features,
+)
+from packages.dependency_runtime.feature_gate import (
+    is_feature_available,
+    require_feature,
+    unavailable_projection,
+)
+from packages.dependency_runtime.install import (
+    InstallRequest,
+    InstallResult,
+    InstallStatus,
+    runtime_install,
+)
+
+
+# ---------------------------------------------------------------------------
+# Detection tests — mock find_spec so no real packages needed
+# ---------------------------------------------------------------------------
+
+def _make_group(id: str, pkgs: tuple[str, ...], feature: str) -> DepGroup:
+    return DepGroup(id=id, label=id, feature=feature, packages=pkgs)
+
+
+def test_missing_dep_gives_installed_false() -> None:
+    group = _make_group("stt", ("moonshine",), "stt")
+    with patch("importlib.util.find_spec", return_value=None):
+        info = detect_dep(group)
+    assert info.installed is False
+    assert info.feature == "stt"
+    assert info.id == "stt"
+
+
+def test_present_dep_gives_installed_true() -> None:
+    group = _make_group("web_search", ("ddgs",), "web_search")
+    fake_spec = object()  # truthy non-None value
+    with patch("importlib.util.find_spec", return_value=fake_spec):
+        info = detect_dep(group)
+    assert info.installed is True
+
+
+def test_detect_all_returns_all_groups() -> None:
+    with patch("importlib.util.find_spec", return_value=None):
+        infos = detect_all()
+    assert len(infos) == len(DEP_GROUPS)
+    ids = {info.id for info in infos}
+    assert "tts" in ids
+    assert "stt" in ids
+    assert "wakeword" in ids
+    assert "web_search" in ids
+    assert "browser" in ids
+    assert "embeddings" in ids
+
+
+def test_detect_features_all_false_when_no_deps() -> None:
+    with patch("importlib.util.find_spec", return_value=None):
+        features = detect_features()
+    assert features.tts is False
+    assert features.stt is False
+    assert features.wakeword is False
+    assert features.web_search is False
+    assert features.browser is False
+    assert features.embeddings is False
+
+
+def test_detect_features_web_search_true_when_ddgs_present() -> None:
+    def _fake_find_spec(name: str):
+        return object() if name == "ddgs" else None
+
+    with patch("importlib.util.find_spec", side_effect=_fake_find_spec):
+        features = detect_features()
+    assert features.web_search is True
+    assert features.tts is False
+
+
+# ---------------------------------------------------------------------------
+# Feature gate tests
+# ---------------------------------------------------------------------------
+
+def test_require_feature_returns_false_when_missing() -> None:
+    with patch("importlib.util.find_spec", return_value=None):
+        result = require_feature("tts")
+    assert result is False
+
+
+def test_is_feature_available_returns_true_when_present() -> None:
+    def _fake_find_spec(name: str):
+        return object() if name in ("kokoro_onnx", "piper") else None
+
+    with patch("importlib.util.find_spec", side_effect=_fake_find_spec):
+        result = is_feature_available("tts")
+    assert result is True
+
+
+def test_unavailable_projection_shape() -> None:
+    proj = unavailable_projection("tts")
+    assert proj["status"] == "unavailable"
+    assert proj["feature"] == "tts"
+    assert proj["raw_payload_persisted"] is False
+
+
+# ---------------------------------------------------------------------------
+# Install tests — fake pip runner (no real pip/network)
+# ---------------------------------------------------------------------------
+
+def _fake_pip_ok(argv: list[str]) -> tuple[bool, str]:
+    return True, "pip_install_succeeded"
+
+
+def _fake_pip_fail(argv: list[str]) -> tuple[bool, str]:
+    return False, "pip_failed_fake"
+
+
+def test_install_unknown_dep_returns_blocked() -> None:
+    request = InstallRequest(id="nonexistent_dep", explicit_user_triggered=True)
+    result = runtime_install(request, pip_runner=_fake_pip_ok)
+    assert result.status == InstallStatus.BLOCKED
+    assert result.id == "nonexistent_dep"
+
+
+def test_install_known_dep_triggers_pip_and_returns_installing_when_still_absent() -> None:
+    request = InstallRequest(id="embeddings", explicit_user_triggered=True)
+    with patch("importlib.util.find_spec", return_value=None):
+        result = runtime_install(request, pip_runner=_fake_pip_ok)
+    # After fake pip success but find_spec still None → INSTALLING (not yet detectable)
+    assert result.status == InstallStatus.INSTALLING
+    assert result.id == "embeddings"
+    assert result.raw_payload_persisted is False
+
+
+def test_install_known_dep_with_pip_failure_returns_error() -> None:
+    request = InstallRequest(id="embeddings", explicit_user_triggered=True)
+    with patch("importlib.util.find_spec", return_value=None):
+        result = runtime_install(request, pip_runner=_fake_pip_fail)
+    assert result.status == InstallStatus.ERROR
+    assert "pip_failed_fake" in result.detail
+
+
+def test_install_already_installed_returns_installed() -> None:
+    request = InstallRequest(id="web_search", explicit_user_triggered=True)
+    fake_spec = object()
+    with patch("importlib.util.find_spec", return_value=fake_spec):
+        result = runtime_install(request, pip_runner=_fake_pip_ok)
+    assert result.status == InstallStatus.INSTALLED
+    assert result.detail == "already_installed"
+
+
+def test_install_result_is_safe_projection() -> None:
+    request = InstallRequest(id="embeddings", explicit_user_triggered=True)
+    with patch("importlib.util.find_spec", return_value=None):
+        result = runtime_install(request, pip_runner=_fake_pip_ok)
+    serialized = json.dumps(result.model_dump(mode="json"))
+    assert "authorization" not in serialized.lower()
+    assert result.raw_payload_persisted is False
+
+
+# ---------------------------------------------------------------------------
+# Control plane deps endpoint tests
+# ---------------------------------------------------------------------------
+
+def _app_with_deps():
+    from packages.control_plane_api import (
+        ControlPlaneSnapshot,
+        InMemoryApprovalStore,
+        create_control_plane_api_app,
+    )
+    store = InMemoryApprovalStore.from_requests(())
+    snapshot = ControlPlaneSnapshot.foundation_default(schema_version="1")
+    return create_control_plane_api_app(
+        approval_store=store,
+        snapshot=snapshot,
+        local_auth_token="test-token",
+        deps_pip_runner=_fake_pip_ok,
+    )
+
+
+def _call(app, path: str, *, method: str = "GET", token: str | None = "test-token", body: dict | None = None):
+    environ: dict[str, object] = {}
+    setup_testing_defaults(environ)
+    environ["REQUEST_METHOD"] = method
+    environ["PATH_INFO"] = path
+    if token is not None:
+        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+    raw = json.dumps(body or {}).encode("utf-8")
+    environ["wsgi.input"] = io.BytesIO(raw)
+    environ["CONTENT_LENGTH"] = str(len(raw))
+    captured: dict[str, object] = {}
+
+    def start_response(status, headers, exc_info=None):
+        captured["status"] = status
+
+    response = b"".join(app(environ, start_response)).decode("utf-8")
+    return captured["status"], json.loads(response)
+
+
+def test_get_control_deps_requires_auth() -> None:
+    app = _app_with_deps()
+    status, payload = _call(app, "/control/deps", token=None)
+    assert status == "401 Unauthorized"
+
+
+def test_get_control_deps_returns_correct_shape() -> None:
+    app = _app_with_deps()
+    with patch("importlib.util.find_spec", return_value=None):
+        status, payload = _call(app, "/control/deps")
+    assert status == "200 OK"
+    assert "deps" in payload
+    assert "features" in payload
+    assert payload["raw_payload_persisted"] is False
+    # All features absent → all False
+    features = payload["features"]
+    assert features["tts"] is False
+    assert features["stt"] is False
+    assert features["web_search"] is False
+    # Shape: each dep has id, label, group, installed, feature
+    for dep in payload["deps"]:
+        assert "id" in dep
+        assert "label" in dep
+        assert "installed" in dep
+        assert "feature" in dep
+
+
+def test_get_control_deps_shows_web_search_available_when_ddgs_present() -> None:
+    app = _app_with_deps()
+
+    def _fake_find_spec(name: str):
+        return object() if name == "ddgs" else None
+
+    with patch("importlib.util.find_spec", side_effect=_fake_find_spec):
+        status, payload = _call(app, "/control/deps")
+    assert status == "200 OK"
+    assert payload["features"]["web_search"] is True
+    assert payload["features"]["tts"] is False
+
+
+def test_post_control_deps_install_missing_id_returns_400() -> None:
+    app = _app_with_deps()
+    status, payload = _call(app, "/control/deps/install", method="POST", body={})
+    assert status == "400 Bad Request"
+
+
+def test_post_control_deps_install_unknown_id_returns_blocked() -> None:
+    app = _app_with_deps()
+    status, payload = _call(
+        app,
+        "/control/deps/install",
+        method="POST",
+        body={"id": "unknown_dep"},
+    )
+    assert status == "200 OK"
+    assert payload["status"] == "blocked"
+    assert payload["raw_payload_persisted"] is False
+
+
+def test_post_control_deps_install_known_dep_triggers_install_flow() -> None:
+    app = _app_with_deps()
+    with patch("importlib.util.find_spec", return_value=None):
+        status, payload = _call(
+            app,
+            "/control/deps/install",
+            method="POST",
+            body={"id": "embeddings"},
+        )
+    assert status == "200 OK"
+    assert payload["id"] == "embeddings"
+    assert payload["status"] in ("installing", "installed", "error")
+    assert payload["raw_payload_persisted"] is False
+
+
+def test_post_control_deps_install_already_installed_returns_installed() -> None:
+    app = _app_with_deps()
+    fake_spec = object()
+    with patch("importlib.util.find_spec", return_value=fake_spec):
+        status, payload = _call(
+            app,
+            "/control/deps/install",
+            method="POST",
+            body={"id": "web_search"},
+        )
+    assert status == "200 OK"
+    assert payload["status"] == "installed"
+
+
+def test_deps_endpoint_no_raw_or_secret_in_response() -> None:
+    app = _app_with_deps()
+    with patch("importlib.util.find_spec", return_value=None):
+        _, payload = _call(app, "/control/deps")
+    serialized = json.dumps(payload)
+    for forbidden in ("authorization", "bearer", "password", "secret", "api_key"):
+        assert forbidden not in serialized.lower()

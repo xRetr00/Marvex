@@ -13,6 +13,7 @@ from packages.memory_runtime import MemoryRef
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
 from .approvals import InMemoryApprovalStore
+from .deps import handle_deps_request
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
 from .state import handle_state_snapshot, handle_state_stream
 from .voice import handle_voice_control_request
@@ -52,6 +53,7 @@ def create_control_plane_api_app(
     voice_worker_control: Any | None = None,
     marketplace_proposal_store: MarketplaceProposalStore | None = None,
     state_bus: Any | None = None,
+    deps_pip_runner: Any | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -73,6 +75,11 @@ def create_control_plane_api_app(
         voice_response = handle_voice_control_request(method=method, path=path, environ=environ, voice_control=voice_control, voice_worker_control=voice_worker_control)
         if voice_response is not None:
             status, payload = voice_response
+            return _json_response(start_response, status, payload)
+
+        deps_response = handle_deps_request(method=method, path=path, environ=environ, pip_runner=deps_pip_runner)
+        if deps_response is not None:
+            status, payload = deps_response
             return _json_response(start_response, status, payload)
 
         if method == "GET" and path == f"{CONTROL_PREFIX}/approvals":

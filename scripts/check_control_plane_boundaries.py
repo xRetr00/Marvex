@@ -22,6 +22,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "packages.capability_runtime",
     "packages.contracts",
     "packages.control_plane_api",
+    "packages.dependency_runtime",
     "packages.local_api.auth_policy",
     "packages.marketplace_runtime",
     "packages.memory_runtime",
