@@ -29,6 +29,8 @@ dependencies = [
   "webrtcvad-wheels==2.0.14",
   "sherpa-onnx-core==1.13.2",
   "sounddevice==0.5.5",
+  "pywinauto>=0.6; sys_platform == \"win32\"",
+  "uiautomation>=2.0; sys_platform == \"win32\"",
 ]
 
 [project.optional-dependencies]
