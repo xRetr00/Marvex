@@ -2094,6 +2094,11 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Explicit local root for read-only file read/list/search capabilities.",
     )
     parser.add_argument(
+        "--skills-root",
+        default=None,
+        help="Optional local root containing safe skill directories with SKILL.md files.",
+    )
+    parser.add_argument(
         "--session-id",
         default=None,
         help="Session id for --turn-once; threads session_ref through memory recall.",
@@ -2159,6 +2164,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         timeout_seconds=args.timeout,
         allow_remote=args.allow_remote,
         telemetry_store_path=args.telemetry_store_path or None,
+        skills_root=args.skills_root,
     )
     if args.turn_once is not None:
         return run_turn_once(

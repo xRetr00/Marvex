@@ -28,6 +28,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.memory_runtime",
     "packages.memory_tree_runtime",
     "packages.prompt_harness_runtime",
+    "packages.skills_runtime",
     "packages.web_search_runtime",
     "pydantic",
     "re",
