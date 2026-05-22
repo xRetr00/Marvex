@@ -12,6 +12,7 @@ import sys
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from wsgiref.simple_server import make_server
 
@@ -20,6 +21,17 @@ from packages.assistant_runtime.input_normalization import (
     build_turn_input_from_event,
 )
 from packages.assistant_turn_integration.models import EndToEndAssistantTurnProjection
+from packages.capability_runtime import (
+    ApprovalPrompt,
+    AutonomyPolicy,
+    CapabilityApprovalRequest,
+    CapabilityKind,
+    CapabilityRef,
+    ToolRiskLevel,
+    ToolSideEffectLevel,
+)
+from packages.cognition_runtime import CognitionRuntime, CognitionTurnAssembly
+from packages.cognition_runtime import LocalMemoryLoop
 from packages.contracts import (
     AssistantFinalResponse,
     AssistantFinishReason,
@@ -38,24 +50,34 @@ from packages.contracts import (
     TraceLevel,
     TraceStage,
 )
-from packages.capability_runtime import (
-    ApprovalPrompt,
-    CapabilityApprovalRequest,
-    CapabilityKind,
-    CapabilityRef,
-    ToolRiskLevel,
-    ToolSideEffectLevel,
-)
-from packages.cognition_runtime import CognitionRuntime, CognitionTurnAssembly
-from packages.cognition_runtime import LocalMemoryLoop
-from packages.grounded_answer_runtime import GroundedAnswerDraft, validate_grounded_citations
 from packages.core import CoreService
 from packages.core.orchestration.assistant_provider_stage import (
     run_assistant_provider_stage_turn,
 )
+from packages.grounded_answer_runtime import GroundedAnswerDraft, validate_grounded_citations
+from packages.learning_runtime import (
+    FeedbackEvent,
+    FeedbackSignalKind,
+    LearningCandidateStore,
+    LearningLoop,
+    LearningPipelineRunner,
+    ToolOutcomeFeedback,
+)
 from packages.local_api import LocalApiConfig, create_health_version_api_app
 from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
-from packages.telemetry import InMemoryTraceReader, make_trace_event
+from packages.provider_selection_runtime import (
+    ModelCapabilityRequirement,
+    ProviderCandidate,
+    ProviderFallbackPolicy,
+    ProviderRetryPolicy,
+    ProviderSelectionRequest,
+    ProviderSelectionRuntime,
+)
+from packages.session_runtime import (
+    CurrentProcessSessionRegistry,
+    build_turn_linkage_from_assistant_turn_input,
+)
+from packages.telemetry import InMemoryTraceReader, PersistentTraceStore, make_trace_event
 from packages.web_search_runtime import (
     DDGSWebSearchAdapter,
     MultiProviderWebSearch,
@@ -78,6 +100,10 @@ STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
 ServerFactory = Callable[[str, int, Any], Any]
 
 
+DEFAULT_TELEMETRY_STORE_PATH = ".marvex-telemetry/traces.jsonl"
+_TURN_AUTONOMY_POLICY = AutonomyPolicy.for_mode("ask_before_risky")
+
+
 @dataclass(frozen=True)
 class CoreServiceEntrypointConfig:
     host: str = DEFAULT_HOST
@@ -96,6 +122,7 @@ class CoreServiceEntrypointConfig:
     approval_decision: str | None = None
     timeout_seconds: float | None = None
     allow_remote: bool = False
+    telemetry_store_path: str | None = None
 
     def local_api_config(self) -> LocalApiConfig:
         return LocalApiConfig(
@@ -311,7 +338,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
         approval_decision: str | None = None,
         base_url: str | None = None,
         timeout_seconds: float | None = None,
+        session_registry: CurrentProcessSessionRegistry | None = None,
+        provider_selection_runtime: ProviderSelectionRuntime | None = None,
+        learning_pipeline: LearningPipelineRunner | None = None,
+        persistent_trace_store: PersistentTraceStore | None = None,
     ) -> None:
+        self._provider_name = provider_name
+        self._base_url = base_url
+        self._timeout_seconds = timeout_seconds
         self._provider = _ProviderWorkerProcessProvider(
             provider_name=provider_name,
             base_url=base_url,
@@ -331,8 +365,30 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._file_capability_root = file_capability_root
         self._resume_approval = resume_approval
         self._approval_decision = approval_decision
+        self._session_registry = session_registry or CurrentProcessSessionRegistry()
+        self._provider_selection = provider_selection_runtime
+        self._learning_pipeline = learning_pipeline
+        self._persistent_trace_store = persistent_trace_store
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+        linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
+        self._session_registry.record_turn(linkage)
+        session_projection = _session_projection(self._session_registry, turn_input)
+
+        selected_provider_name, selected_model, selection_projection = _run_provider_selection(
+            self._provider_selection,
+            turn_input,
+            default_provider=self._provider_name,
+            default_model=self._model,
+        )
+        if selected_provider_name != self._provider_name:
+            self._provider = _ProviderWorkerProcessProvider(
+                provider_name=selected_provider_name,
+                base_url=self._base_url,
+                timeout_seconds=self._timeout_seconds,
+            )
+        self._model = selected_model
+
         _emit_core_event(
             self._trace_reader,
             turn_input,
@@ -340,6 +396,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "Core agentic turn received.",
             {"status": "received"},
         )
+        # Persist TURN_RECEIVED event to durable store (safe events only)
+        _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         try:
             intent_response = self._intent_classifier.classify(turn_input)
         except Exception:
@@ -370,6 +428,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "assistant_turn_spine": "used",
             "cognition": cognition.safe_projection().model_dump(mode="json"),
             "intent_plan": _intent_plan_projection(cognition.intent_plan),
+            "session": session_projection,
+            "provider_selection": selection_projection,
         }
         loop.step("plan")
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
@@ -474,6 +534,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         loop.step("finalize", stop_reason="finalized")
+        learning_projection = _run_learning_hook(
+            self._learning_pipeline,
+            turn_input,
+            succeeded=result.error is None,
+            intent_kind=intent_kind,
+        )
         metadata = dict(result.metadata)
         metadata.update(
             {
@@ -484,10 +550,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "cognition": cognition.safe_projection().model_dump(mode="json"),
                 "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
                 "memory_loop": _memory_write_projection(memory_write),
+                "session": session_projection,
+                "provider_selection": selection_projection,
+                "learning": learning_projection,
             }
         )
         metadata["provider_boundary"] = "provider_worker_process"
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
+        _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         return result.model_copy(update={"metadata": metadata})
 
     def _run_tool_path(
@@ -1320,6 +1390,107 @@ def _fixed_intent_classifier(classification: object) -> Callable[[object], objec
     return classify
 
 
+def _session_projection(
+    registry: CurrentProcessSessionRegistry,
+    turn_input: AssistantTurnInput,
+) -> dict[str, object]:
+    """Return safe session state for metadata; never includes transcript."""
+    if turn_input.session_ref is None:
+        return {"session_ref_present": False, "transcript_persisted": False}
+    proj = registry.read_session_projection(turn_input.session_ref)
+    if proj is None:
+        return {
+            "session_ref_present": True,
+            "session_ref_id": turn_input.session_ref.ref_id,
+            "turn_count": 0,
+            "transcript_persisted": False,
+        }
+    return proj.safe_projection()
+
+
+def _run_provider_selection(
+    runtime: ProviderSelectionRuntime | None,
+    turn_input: AssistantTurnInput,
+    *,
+    default_provider: str,
+    default_model: str,
+) -> tuple[str, str, dict[str, object]]:
+    """Run provider selection; fall back to defaults if disabled or error."""
+    if runtime is None:
+        return default_provider, default_model, {"provider_selection_enabled": False}
+    try:
+        request = ProviderSelectionRequest(
+            trace_id=turn_input.trace_id,
+            requirement=ModelCapabilityRequirement(
+                requested_capability="assistant_turn",
+                tool_calling_required=False,
+                min_context_length=0,
+                local_preferred=True,
+                cost_preference="balanced",
+            ),
+            autonomy_policy=_TURN_AUTONOMY_POLICY,
+            fallback_policy=ProviderFallbackPolicy(
+                provider_fallback_enabled=True,
+                side_effect_retry_requires_policy=True,
+            ),
+            retry_policy=ProviderRetryPolicy(max_retries=1, retry_side_effect_tools=False),
+        )
+        decision = runtime.select(request)
+        proj = decision.safe_projection().model_dump(mode="json")
+        proj["provider_selection_enabled"] = True
+        return decision.selected.provider_id, decision.selected.model, proj
+    except Exception:
+        return default_provider, default_model, {"provider_selection_enabled": False, "selection_error": True}
+
+
+def _run_learning_hook(
+    pipeline: LearningPipelineRunner | None,
+    turn_input: AssistantTurnInput,
+    *,
+    succeeded: bool,
+    intent_kind: str,
+) -> dict[str, object]:
+    """Record a safe post-turn feedback event; all candidates are review-required."""
+    if pipeline is None:
+        return {"learning_enabled": False}
+    try:
+        event = FeedbackEvent(
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            signal_kind=FeedbackSignalKind.TOOL_OUTCOME,
+            payload=ToolOutcomeFeedback(
+                tool_ref=f"intent.{intent_kind}",
+                succeeded=succeeded,
+                outcome_reason="turn_completed" if succeeded else "turn_failed",
+            ),
+        )
+        summary = pipeline.ingest_and_run((event,))
+        proj = summary.safe_projection().model_dump(mode="json")
+        proj["learning_enabled"] = True
+        return proj
+    except Exception:
+        return {"learning_enabled": False, "learning_error": True}
+
+
+def _persist_trace_events(
+    store: PersistentTraceStore | None,
+    reader: InMemoryTraceReader,
+    trace_id: str,
+) -> None:
+    """Write safe trace events from in-memory reader to persistent store."""
+    if store is None:
+        return
+    try:
+        raw_events = reader._events_by_trace_id.get(trace_id, ())  # type: ignore[attr-defined]
+        for event in raw_events:
+            try:
+                store.emit(event)
+            except Exception:
+                pass
+    except Exception:
+        pass
+
+
 def _create_foundation_turn_executor(
     *,
     trace_reader: InMemoryTraceReader,
@@ -1368,8 +1539,29 @@ def _create_turn_executor(
         if config.provider == "provider_worker"
         else config.provider
     )
+    effective_name = provider_name or "fake"
+    selection_runtime = ProviderSelectionRuntime(
+        candidates=(
+            ProviderCandidate(
+                provider_id=effective_name,
+                model=config.foundation_model,
+                supports_tools=False,
+                context_length=4096,
+                locality="local",
+                healthy=True,
+                cost_tier="free",
+            ),
+        )
+    )
+    learning_store = LearningCandidateStore()
+    learning_pipeline = LearningPipelineRunner(
+        store=learning_store,
+        autonomy_policy=_TURN_AUTONOMY_POLICY,
+        loop=LearningLoop.default(),
+    )
+    persistent_store = _persistent_store_from_config(config)
     return _CoreServiceProviderWorkerTurnExecutor(
-        provider_name=provider_name or "fake",
+        provider_name=effective_name,
         model=config.foundation_model,
         trace_reader=trace_reader,
         web_search_provider=_web_search_provider_from_config(config),
@@ -1380,7 +1572,24 @@ def _create_turn_executor(
         approval_decision=config.approval_decision,
         base_url=config.base_url,
         timeout_seconds=config.timeout_seconds,
+        session_registry=CurrentProcessSessionRegistry(),
+        provider_selection_runtime=selection_runtime,
+        learning_pipeline=learning_pipeline,
+        persistent_trace_store=persistent_store,
     )
+
+
+def _persistent_store_from_config(
+    config: CoreServiceEntrypointConfig,
+) -> PersistentTraceStore | None:
+    """Create PersistentTraceStore from config; returns None when path is empty."""
+    raw_path = (config.telemetry_store_path or "").strip()
+    if not raw_path:
+        return None
+    try:
+        return PersistentTraceStore(trace_file_path=Path(raw_path))
+    except Exception:
+        return None
 
 
 def create_core_service_app(
@@ -1390,13 +1599,41 @@ def create_core_service_app(
 ) -> tuple[Any, CoreService]:
     service = create_core_service(trace_reader=trace_reader, config=config)
     service.start()
+    persistent_store = _persistent_store_from_config(config)
+    effective_reader: Any = _CompositeTraceReader(
+        in_memory=trace_reader or InMemoryTraceReader(),
+        persistent=persistent_store,
+    )
     app = create_health_version_api_app(
         service,
         turn_handler=lambda request: service.submit_turn(request.assistant_turn_input),
-        trace_reader=trace_reader,
+        trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
     )
     return app, service
+
+
+class _CompositeTraceReader:
+    """Reads traces from persistent store first, falling back to in-memory."""
+
+    def __init__(
+        self,
+        *,
+        in_memory: InMemoryTraceReader,
+        persistent: PersistentTraceStore | None,
+    ) -> None:
+        self._in_memory = in_memory
+        self._persistent = persistent
+
+    def read_trace(self, trace_id: str) -> dict[str, Any] | None:
+        if self._persistent is not None:
+            try:
+                result = self._persistent.read_trace(trace_id)
+                if result is not None:
+                    return result
+            except Exception:
+                pass
+        return self._in_memory.read_trace(trace_id)
 
 
 def health_once_payload() -> dict[str, object]:
@@ -1590,7 +1827,15 @@ def _build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--session-id",
         default=None,
-        help="Session id for --turn-once memory recall/write wiring.",
+        help="Session id for --turn-once; threads session_ref through memory recall.",
+    )
+    parser.add_argument(
+        "--telemetry-store-path",
+        default=None,
+        help=(
+            "Path for safe persistent telemetry JSONL file "
+            "(e.g. .marvex-telemetry/traces.jsonl; omit to disable persistence)."
+        ),
     )
     parser.add_argument(
         "--resume-approval",
@@ -1644,6 +1889,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         approval_decision=args.approval_decision,
         timeout_seconds=args.timeout,
         allow_remote=args.allow_remote,
+        telemetry_store_path=args.telemetry_store_path or None,
     )
     if args.turn_once is not None:
         return run_turn_once(
