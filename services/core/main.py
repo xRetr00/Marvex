@@ -16,6 +16,15 @@ from pathlib import Path
 from typing import Any
 from wsgiref.simple_server import make_server
 
+from packages.adapters.connectors.github_connector import (
+    GITHUB_CONNECTOR_REF,
+    GITHUB_SYNC_CONFIG,
+    GitHubConnectorAdapter,
+    make_oauth_token_http_get,
+)
+from packages.adapters.connectors.scheduler import AutoFetchScheduler, FetchClient
+from packages.adapters.memory.agentmemory_backend import AgentMemoryBackend
+from packages.adapters.memory.config import AgentMemoryBackendConfig
 from packages.assistant_runtime.input_normalization import (
     build_text_input_event,
     build_turn_input_from_event,
@@ -32,6 +41,15 @@ from packages.capability_runtime import (
 )
 from packages.cognition_runtime import CognitionRuntime, CognitionTurnAssembly
 from packages.cognition_runtime import LocalMemoryLoop
+from packages.connector_runtime import (
+    AutoFetchPolicy,
+    AutoFetchSchedule,
+    ConnectorRef,
+    KVStore,
+    ProviderSyncConfig,
+    SchedulerTickStatus,
+    SourceSyncInterval,
+)
 from packages.contracts import (
     AssistantFinalResponse,
     AssistantFinishReason,
@@ -65,6 +83,13 @@ from packages.learning_runtime import (
 )
 from packages.local_api import LocalApiConfig, create_health_version_api_app
 from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
+from packages.memory_tree_runtime import (
+    CanonicalSourceMetadata as MemoryTreeSourceMetadata,
+    MemoryTreeRuntime,
+    SQLiteMemoryTreeIndex,
+    canonicalize_source_document as canonicalize_memory_tree_document,
+    chunk_document as chunk_memory_tree_document,
+)
 from packages.provider_selection_runtime import (
     ModelCapabilityRequirement,
     ProviderCandidate,
@@ -132,6 +157,13 @@ class CoreServiceEntrypointConfig:
     allow_remote: bool = False
     telemetry_store_path: str | None = None
     skills_root: str | None = None
+    connector_auto_fetch_enabled: bool = False
+    connector_kind: str = "github"
+    connector_oauth_token: str | None = None
+    memory_backend: str = "local"
+    agentmemory_daemon_url: str = "http://localhost:3111"
+    agentmemory_namespace: str = "marvex"
+    agentmemory_bearer_token: str | None = None
 
     def local_api_config(self) -> LocalApiConfig:
         return LocalApiConfig(
@@ -381,6 +413,114 @@ class _ToolWorkerProcessExecutor:
         return payload
 
 
+class _InMemoryConnectorKV(KVStore):
+    def __init__(self) -> None:
+        self._values: dict[str, str] = {}
+
+    def get(self, key: str) -> str | None:
+        return self._values.get(key)
+
+    def set(self, key: str, value: str) -> None:
+        self._values[key] = value
+
+
+class _CoreConnectorAutofetchRuntime:
+    def __init__(
+        self,
+        *,
+        connector_ref: ConnectorRef,
+        connection_id: str,
+        fetch_client: FetchClient,
+        provider_config: ProviderSyncConfig,
+        policy: AutoFetchPolicy,
+    ) -> None:
+        self._connector_ref = connector_ref
+        self._connection_id = connection_id
+        self._documents: tuple[Any, ...] = ()
+        self._chunks: tuple[Any, ...] = ()
+        self._scheduler = AutoFetchScheduler(
+            kv=_InMemoryConnectorKV(),
+            fetch_client=fetch_client,
+            provider_configs=(provider_config,),
+            ingest_callback=self._ingest_documents,
+        )
+        self._policy = policy
+        self._enabled = provider_config.auto_fetch_enabled
+
+    @property
+    def enabled(self) -> bool:
+        return self._enabled
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "connector_id": self._connector_ref.connector_id,
+            "auto_fetch_enabled": self._enabled,
+            "approval_required": True,
+            "live_oauth_started": False,
+            "memory_tree_updated": bool(self._documents),
+            "raw_credentials_persisted": False,
+            "raw_payload_persisted": False,
+        }
+
+    def run_once(self, *, now: datetime) -> dict[str, object]:
+        result = self._scheduler.tick(
+            policy=self._policy,
+            connection_id=self._connection_id,
+            now=now,
+        )
+        projection = result.safe_projection()
+        projection.update(
+            {
+                "connector_id": self._connector_ref.connector_id,
+                "status": "synced" if result.status == SchedulerTickStatus.SYNCED else result.status,
+                "auto_fetch_enabled": self._enabled,
+                "approval_required": True,
+                "live_oauth_started": self._enabled,
+                "memory_tree_updated": bool(self._documents),
+                "raw_credentials_persisted": False,
+                "raw_payload_persisted": False,
+            }
+        )
+        return projection
+
+    def merged_memory_tree(self, existing: object | None) -> MemoryTreeRuntime | object | None:
+        if not self._documents:
+            return existing
+        existing_documents = tuple(getattr(existing, "_documents", ()) or ())
+        existing_chunks = tuple(getattr(existing, "_chunks", ()) or ())
+        return MemoryTreeRuntime.with_documents(
+            documents=existing_documents + self._documents,
+            chunks=existing_chunks + self._chunks,
+        )
+
+    def _ingest_documents(self, documents: tuple[Any, ...], chunks: tuple[Any, ...]) -> None:
+        del chunks
+        memory_documents: list[Any] = []
+        memory_chunks: list[Any] = []
+        for document in documents:
+            metadata = getattr(document, "metadata", None)
+            if metadata is None:
+                continue
+            tree_metadata = MemoryTreeSourceMetadata(
+                source_id=str(getattr(metadata, "source_id", "connector")),
+                external_id=str(getattr(metadata, "external_id", "unknown")),
+                uri=str(getattr(metadata, "uri", "connector://unknown")),
+                title=str(getattr(metadata, "title", "Connector item")),
+                connector_ref=getattr(metadata, "connector_ref"),
+                captured_at=getattr(metadata, "captured_at", datetime.now(UTC)),
+            )
+            body = str(getattr(document, "markdown", ""))
+            tree_document = canonicalize_memory_tree_document(
+                metadata=tree_metadata,
+                markdown_body=body,
+                ingested_at=getattr(metadata, "captured_at", datetime.now(UTC)),
+            )
+            memory_documents.append(tree_document)
+            memory_chunks.extend(chunk_memory_tree_document(tree_document))
+        self._documents = self._documents + tuple(memory_documents)
+        self._chunks = self._chunks + tuple(memory_chunks)
+
+
 class _CoreServiceProviderWorkerTurnExecutor:
     def __init__(
         self,
@@ -402,6 +542,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         persistent_trace_store: PersistentTraceStore | None = None,
         skill_manifests: tuple[SkillManifest, ...] = (),
         skill_loader: SkillInstructionLoader | None = None,
+        connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -431,6 +572,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._persistent_trace_store = persistent_trace_store
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
+        self._connector_autofetch_runtime = connector_autofetch_runtime
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
         linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
@@ -563,14 +705,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         if "connector_account" in route_intents:
             loop.step("tool")
-            return self._run_safe_projection_path(
-                turn_input,
-                metadata=metadata,
-                loop=loop,
-                route_name="connector",
-                text="Connector account actions require explicit configuration and approval; live OAuth is not started.",
-                projection={"live_oauth_started": False, "approval_required": True},
-            )
+            return self._run_connector_path(turn_input, metadata=metadata, loop=loop)
         if "settings_control_plane" in route_intents:
             loop.step("tool")
             return self._run_safe_projection_path(
@@ -984,6 +1119,113 @@ class _CoreServiceProviderWorkerTurnExecutor:
             text=text,
             metadata=_with_loop_metadata({**metadata, route_name: projection}, loop, self._trace_reader, turn_input),
             stage_name=route_name,
+        )
+
+    def _run_connector_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        loop: "_AgenticLoopProjection",
+    ) -> AssistantTurnResult:
+        runtime = self._connector_autofetch_runtime
+        if runtime is None or not runtime.enabled:
+            loop.step("finalize", stop_reason="finalized")
+            projection = {
+                "auto_fetch_enabled": False,
+                "approval_required": True,
+                "explicit_opt_in_required": True,
+                "live_oauth_started": False,
+                "raw_credentials_persisted": False,
+                "raw_payload_persisted": False,
+            }
+            return _entrypoint_text_result(
+                turn_input,
+                text="Connector auto-fetch is disabled by default. Enable it explicitly before runtime sync.",
+                metadata=_with_loop_metadata(
+                    {**metadata, "connector": projection},
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+                stage_name="connector",
+            )
+
+        approval_request = _approval_request(turn_input)
+        if not self._resume_approval:
+            loop.step("approval", stop_reason="waiting_for_human_approval")
+            return _entrypoint_text_result(
+                turn_input,
+                text=f"Approval required before connector sync. approval_request_id={approval_request.approval_request_id}",
+                metadata=_with_loop_metadata(
+                    {
+                        **metadata,
+                        "connector": runtime.safe_projection(),
+                        "approval_request": approval_request.model_dump(mode="json"),
+                    },
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+                stage_name="connector",
+            )
+        if self._resume_approval != approval_request.approval_request_id:
+            loop.step("approval", stop_reason="blocked")
+            return _entrypoint_error_result(
+                turn_input,
+                reason="connector_approval_resume_mismatch",
+                message="Connector sync blocked because the approval request does not match this turn.",
+                metadata=_with_loop_metadata(
+                    {
+                        **metadata,
+                        "connector": runtime.safe_projection(),
+                        "approval": {
+                            "approval_request_id": self._resume_approval,
+                            "expected_approval_request_id": approval_request.approval_request_id,
+                            "decision": "mismatched",
+                        },
+                    },
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+            )
+        decision = (self._approval_decision or "").strip().lower()
+        if decision != "approve":
+            loop.step("approval", stop_reason="blocked")
+            return _entrypoint_error_result(
+                turn_input,
+                reason="connector_sync_not_approved",
+                message="Connector sync was not approved.",
+                metadata=_with_loop_metadata(
+                    {
+                        **metadata,
+                        "connector": runtime.safe_projection(),
+                        "approval": {
+                            "approval_request_id": self._resume_approval,
+                            "decision": decision or "missing",
+                        },
+                    },
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+            )
+        loop.step("approval")
+        loop.step("tool", executed=True)
+        projection = runtime.run_once(now=datetime.now(UTC))
+        self._memory_tree_runtime = runtime.merged_memory_tree(self._memory_tree_runtime)
+        loop.step("finalize", stop_reason="finalized", executed=True)
+        return _entrypoint_text_result(
+            turn_input,
+            text="Connector auto-fetch sync completed with derived-safe memory ingest.",
+            metadata=_with_loop_metadata(
+                {**metadata, "connector": projection},
+                loop,
+                self._trace_reader,
+                turn_input,
+            ),
+            stage_name="connector",
         )
 
     def _run_approval_path(
@@ -1432,7 +1674,54 @@ def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | No
 def _memory_loop_from_config(config: CoreServiceEntrypointConfig) -> LocalMemoryLoop | None:
     if not config.memory_vault_root:
         return None
+    if config.memory_backend == "agentmemory":
+        root = Path(config.memory_vault_root).expanduser().resolve()
+        root.mkdir(parents=True, exist_ok=True)
+        backend = AgentMemoryBackend(
+            AgentMemoryBackendConfig(
+                daemon_url=config.agentmemory_daemon_url,
+                namespace=config.agentmemory_namespace,
+                bearer_token=config.agentmemory_bearer_token,
+            )
+        )
+        return LocalMemoryLoop(
+            vault_root=root,
+            memory_store=backend,
+            tree_index=SQLiteMemoryTreeIndex(
+                memory_db_path=root / "memory_tree.sqlite",
+                local_user_root=root,
+            ),
+        )
     return LocalMemoryLoop.open(vault_root=config.memory_vault_root)
+
+
+def _connector_autofetch_runtime_from_config(
+    config: CoreServiceEntrypointConfig,
+) -> _CoreConnectorAutofetchRuntime | None:
+    if not config.connector_auto_fetch_enabled:
+        return None
+    if config.connector_kind != "github" or not config.connector_oauth_token:
+        return None
+    http_get = make_oauth_token_http_get(access_token=config.connector_oauth_token)
+    adapter = GitHubConnectorAdapter(http_get=http_get)
+    provider_config = GITHUB_SYNC_CONFIG.model_copy(update={"auto_fetch_enabled": True})
+    return _CoreConnectorAutofetchRuntime(
+        connector_ref=GITHUB_CONNECTOR_REF,
+        connection_id=GITHUB_CONNECTOR_REF.connector_id,
+        fetch_client=adapter.fetch_page,
+        provider_config=provider_config,
+        policy=_enabled_connector_autofetch_policy(GITHUB_CONNECTOR_REF),
+    )
+
+
+def _enabled_connector_autofetch_policy(connector_ref: ConnectorRef) -> AutoFetchPolicy:
+    return AutoFetchPolicy(
+        connector_ref=connector_ref,
+        control_state="enabled",
+        connector_enabled=True,
+        source_enabled=True,
+        schedule=AutoFetchSchedule(interval=SourceSyncInterval.HOURLY),
+    )
 
 
 def _skill_loader_from_config(config: CoreServiceEntrypointConfig) -> SkillInstructionLoader | None:
@@ -1523,7 +1812,7 @@ def _structured_provider_options(
     options = dict(provider_options or {})
     options.setdefault("structured_output_target_contract", "AssistantFinalResponse")
     options.setdefault("structured_output_required", True)
-    options.setdefault("raw_provider_output_persisted", False)
+    options.setdefault("raw_model_output_persisted", False)
     return options
 
 
@@ -1845,6 +2134,7 @@ def _create_turn_executor(
         persistent_trace_store=persistent_store,
         skill_manifests=_skill_manifests_from_config(config),
         skill_loader=skill_loader,
+        connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
     )
 
 
@@ -2089,6 +2379,27 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Local root for derived memory SQLite index and Obsidian-compatible wiki vault. Defaults to .marvex-memory so memory recall/write is on by default; pass an empty string to disable.",
     )
     parser.add_argument(
+        "--memory-backend",
+        choices=("local", "agentmemory"),
+        default="local",
+        help="Memory backend selector. agentmemory is optional, loopback-oriented, and disabled by default.",
+    )
+    parser.add_argument(
+        "--agentmemory-url",
+        default="http://localhost:3111",
+        help="Loopback agentmemory daemon URL used only with --memory-backend agentmemory.",
+    )
+    parser.add_argument(
+        "--agentmemory-namespace",
+        default="marvex",
+        help="agentmemory namespace/project used only with --memory-backend agentmemory.",
+    )
+    parser.add_argument(
+        "--agentmemory-bearer-token",
+        default=None,
+        help="Optional runtime-only bearer token for agentmemory; never persisted by Core.",
+    )
+    parser.add_argument(
         "--file-capability-root",
         default=None,
         help="Explicit local root for read-only file read/list/search capabilities.",
@@ -2097,6 +2408,22 @@ def _build_parser() -> argparse.ArgumentParser:
         "--skills-root",
         default=None,
         help="Optional local root containing safe skill directories with SKILL.md files.",
+    )
+    parser.add_argument(
+        "--connector-auto-fetch",
+        action="store_true",
+        help="Opt in to approval-gated connector auto-fetch runtime sync.",
+    )
+    parser.add_argument(
+        "--connector-kind",
+        choices=("github",),
+        default="github",
+        help="Connector backend for approval-gated auto-fetch runtime sync.",
+    )
+    parser.add_argument(
+        "--connector-oauth-token",
+        default=None,
+        help="Runtime-only OAuth bearer token for the selected connector; never persisted by Core.",
     )
     parser.add_argument(
         "--session-id",
@@ -2158,6 +2485,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         web_base_url=args.web_base_url,
         demo_memory_evidence=args.demo_memory_evidence,
         memory_vault_root=args.memory_vault_root,
+        memory_backend=args.memory_backend,
+        agentmemory_daemon_url=args.agentmemory_url,
+        agentmemory_namespace=args.agentmemory_namespace,
+        agentmemory_bearer_token=args.agentmemory_bearer_token,
         file_capability_root=args.file_capability_root,
         resume_approval=args.resume_approval,
         approval_decision=args.approval_decision,
@@ -2165,6 +2496,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         allow_remote=args.allow_remote,
         telemetry_store_path=args.telemetry_store_path or None,
         skills_root=args.skills_root,
+        connector_auto_fetch_enabled=args.connector_auto_fetch,
+        connector_kind=args.connector_kind,
+        connector_oauth_token=args.connector_oauth_token,
     )
     if args.turn_once is not None:
         return run_turn_once(
