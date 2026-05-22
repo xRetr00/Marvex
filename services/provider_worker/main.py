@@ -77,6 +77,20 @@ def handle_jsonl_command(
                     payload.get("lmstudio_responses_api_key")
                 ),
             )
+        if command == "structured_output":
+            return controller.map_structured_output(
+                provider_name=_provider_name(payload),
+                schema_version=_optional_string(payload.get("schema_version")) or SCHEMA_VERSION,
+                trace_id=trace_id,
+                turn_id=_optional_string(payload.get("turn_id")) or "turn-provider-worker",
+                target_contract=_optional_string(payload.get("target_contract")) or "",
+                raw_output_text=_optional_string(payload.get("raw_output_text")) or "",
+                base_url=_optional_string(payload.get("base_url")),
+                timeout_seconds=_optional_float(payload.get("timeout_seconds")),
+                lmstudio_responses_api_key=_optional_string(
+                    payload.get("lmstudio_responses_api_key")
+                ),
+            )
         return _validation_result(trace_id=trace_id, reason="unsupported_command")
     except Exception:
         return _validation_result(trace_id="trace-provider-worker-validation", reason="invalid_command")

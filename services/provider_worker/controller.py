@@ -7,6 +7,7 @@ from enum import Enum
 
 from packages.capability_runtime import AutonomyMode, AutonomyPolicy
 from packages.contracts import (
+    AssistantFinalResponse,
     ErrorCode,
     ErrorEnvelope,
     FinishReason,
@@ -17,6 +18,8 @@ from packages.contracts import (
     VersionInfo,
 )
 from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+from packages.provider_runtime.provider_runtime import map_provider_raw_output_to_structured_result
+from packages.provider_structured_output import validate_raw_structured_output
 from packages.provider_selection_runtime import (
     ModelCapabilityRequirement,
     ProviderCandidate,
@@ -363,4 +366,95 @@ class ProviderWorkerController:
             error=error,
             selection=selection,
             metadata={"payload_persisted": False},
+        )
+
+    def map_structured_output(
+        self,
+        *,
+        provider_name: str,
+        schema_version: str,
+        trace_id: str,
+        turn_id: str,
+        target_contract: str,
+        raw_output_text: str,
+        base_url: str | None = None,
+        timeout_seconds: float | None = None,
+        lmstudio_responses_api_key: str | None = None,
+    ) -> ProviderWorkerCommandResult:
+        if target_contract != "AssistantFinalResponse":
+            return self._error_result(
+                command="structured_output",
+                trace_id=trace_id,
+                error=ErrorEnvelope(
+                    schema_version=schema_version,
+                    trace_id=trace_id,
+                    error_id=f"{turn_id}:provider-worker:unsupported-structured-target",
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message="Structured output target is unsupported.",
+                    recoverable=False,
+                    source="provider_worker",
+                    details={"reason": "unsupported_structured_target"},
+                ),
+            )
+        try:
+            if provider_name == "fake":
+                structured = validate_raw_structured_output(
+                    schema_version=schema_version,
+                    trace_id=trace_id,
+                    turn_id=turn_id,
+                    target_contract=target_contract,
+                    raw_output_text=raw_output_text,
+                    target_model=AssistantFinalResponse,
+                    include_raw_preview=False,
+                )
+            else:
+                structured = map_provider_raw_output_to_structured_result(
+                    config=ProviderRuntimeConfig(
+                        provider_name=provider_name,
+                        lmstudio_responses_api_key=lmstudio_responses_api_key,
+                        base_url=base_url,
+                        timeout_seconds=timeout_seconds,
+                    ),
+                    schema_version=schema_version,
+                    trace_id=trace_id,
+                    turn_id=turn_id,
+                    target_contract=target_contract,
+                    raw_output_text=raw_output_text,
+                    target_model=AssistantFinalResponse,
+                    include_raw_preview=False,
+                )
+        except TimeoutError:
+            structured = None
+            error_code = ErrorCode.PROVIDER_TIMEOUT
+            reason = "provider_timeout"
+            message = "Provider structured output mapping timed out."
+        except Exception:
+            structured = None
+            error_code = ErrorCode.PROVIDER_ERROR
+            reason = "provider_error"
+            message = "Provider structured output mapping failed."
+        else:
+            return self._result(
+                command="structured_output",
+                ok=True,
+                trace_id=trace_id,
+                metadata={
+                    "structured_output": structured.model_dump(mode="json"),
+                    "raw_output_persisted": False,
+                },
+            )
+
+        return self._error_result(
+            command="structured_output",
+            trace_id=trace_id,
+            error=ErrorEnvelope(
+                schema_version=schema_version,
+                trace_id=trace_id,
+                error_id=f"{turn_id}:provider-worker:{reason}",
+                code=error_code,
+                message=message,
+                recoverable=True,
+                source="provider_worker",
+                details={"reason": reason},
+            ),
         )

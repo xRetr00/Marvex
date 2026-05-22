@@ -18,6 +18,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.capability_runtime",
     "packages.contracts",
     "packages.provider_runtime",
+    "packages.provider_structured_output",
     "packages.provider_selection_runtime",
     "pydantic",
     "sys",

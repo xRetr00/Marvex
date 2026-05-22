@@ -261,3 +261,39 @@ def test_provider_worker_safe_projection_redacts_secrets_and_raw_metadata():
     assert "must-not-leak" not in dumped
     assert "api_key" not in dumped
     assert "raw_provider_payload" not in dumped
+
+
+def test_provider_worker_maps_fake_raw_output_to_structured_result_offline():
+    payload = {
+        "schema_version": "0.1.1-draft",
+        "response_type": "text",
+        "text": "Validated structured worker response.",
+        "payload_ref": None,
+        "output_channel_intent": "default",
+        "safe_for_display": True,
+        "safe_for_speech": True,
+        "memory_write_candidate_hint": False,
+        "finish_reason": "stop",
+        "metadata": {},
+    }
+
+    responses = run_worker_jsonl(
+        [
+            {
+                "command": "structured_output",
+                "trace_id": "trace-worker-structured",
+                "turn_id": "turn-worker-structured",
+                "provider_name": "fake",
+                "target_contract": "AssistantFinalResponse",
+                "raw_output_text": json.dumps(payload),
+            }
+        ]
+    )
+
+    assert responses[0]["command"] == "structured_output"
+    assert responses[0]["ok"] is True
+    structured = responses[0]["metadata"]["structured_output"]
+    assert structured["state"] == "valid_structured_result"
+    assert structured["parsed_payload"]["text"] == "Validated structured worker response."
+    assert structured["raw_preview"] is None
+    assert "raw_output_text" not in json.dumps(responses[0]).lower()
