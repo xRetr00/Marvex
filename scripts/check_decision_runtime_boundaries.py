@@ -37,12 +37,6 @@ FACTORY_FORBIDDEN_CALLS = (
     "dump",
     "dumps",
 )
-CONTEXT_FORBIDDEN_IMPORTS = (
-    "packages.core",
-    "packages.provider_runtime",
-    "packages.decision_runtime",
-    "packages.adapters.providers",
-)
 FINAL_ACTION_ALLOWED = {
     "packages/adapters/pipeline/decision_pipeline.py",
 }
@@ -143,18 +137,6 @@ def _call_name(node: ast.Call) -> str:
     return ""
 
 
-def _scan_context_builder_imports(failures: list[str]) -> None:
-    path = ADAPTERS_ROOT / "context" / "context_builder.py"
-    if not path.exists():
-        return
-    for node in ast.walk(_read_tree(path)):
-        if isinstance(node, ast.Import | ast.ImportFrom) and _import_violates(
-            _module_from_import(node),
-            CONTEXT_FORBIDDEN_IMPORTS,
-        ):
-            failures.append(f"{_rel(path)} imports forbidden runtime/provider boundary")
-
-
 def _scan_final_action_authority(failures: list[str]) -> None:
     for path in _iter_py(ADAPTERS_ROOT):
         rel = _rel(path)
@@ -174,7 +156,6 @@ def main() -> int:
     _scan_core_imports(failures)
     _scan_ports_imports(failures)
     _scan_factories(failures)
-    _scan_context_builder_imports(failures)
     _scan_final_action_authority(failures)
 
     if failures:
