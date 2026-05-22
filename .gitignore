@@ -33,3 +33,4 @@ Agent.md
 .marvex-memory/
 Prompt.tmp.md
 UI_EXTERNAL_HELPERS/apps/shell/python-sidecars/
+apps/shell/build/
