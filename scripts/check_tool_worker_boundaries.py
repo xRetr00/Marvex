@@ -25,6 +25,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.contracts",
     "packages.desktop_agent_runtime.windows_uia",
     "pydantic",
+    "services.tool_worker",
     "sys",
     "typing",
 )

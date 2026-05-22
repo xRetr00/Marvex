@@ -21,6 +21,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.provider_structured_output",
     "packages.provider_selection_runtime",
     "pydantic",
+    "services.provider_worker",
     "sys",
     "typing",
 )

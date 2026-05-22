@@ -6,8 +6,8 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
-from .controller import ToolWorkerController
-from .models import ToolWorkerCommandResult
+from services.tool_worker.controller import ToolWorkerController
+from services.tool_worker.models import ToolWorkerCommandResult
 
 
 def run_health_once() -> int:

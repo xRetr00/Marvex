@@ -8,8 +8,8 @@ from typing import Any
 
 from packages.contracts import ErrorCode, ErrorEnvelope, ProviderRequest
 
-from .controller import ProviderWorkerController
-from .models import SCHEMA_VERSION, ProviderWorkerCommandResult
+from services.provider_worker.controller import ProviderWorkerController
+from services.provider_worker.models import SCHEMA_VERSION, ProviderWorkerCommandResult
 
 
 def run_health_once() -> int:

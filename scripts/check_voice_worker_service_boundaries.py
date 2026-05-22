@@ -16,6 +16,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "json",
     "packages.voice_worker_runtime",
     "pydantic",
+    "services.voice_worker",
     "sys",
     "typing",
 )

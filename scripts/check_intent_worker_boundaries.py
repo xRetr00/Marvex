@@ -21,6 +21,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.contracts",
     "packages.intent_runtime.models",
     "pydantic",
+    "services.intent_worker",
     "sys",
     "typing",
 )

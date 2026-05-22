@@ -5,6 +5,15 @@ ROOT = Path(__file__).resolve().parents[1]
 MAX_LINES = 500
 JUSTIFICATION = "file size justification"
 EXCLUDED_PARTS = {"node_modules", "dist", ".venv", ".uv-cache", "gen"}
+# Gitignored build outputs (PyInstaller work/dist dirs, packaged sidecars).
+EXCLUDED_PREFIXES = (
+    "apps/shell/build/",
+    "apps/shell/python-sidecars/",
+    "apps/shell/packaging/build/",
+    "apps/shell/packaging/dist/",
+    "apps/shell/src-tauri/target/",
+    "apps/shell/src-tauri/gen/",
+)
 EXCLUDED_FILENAMES = {"package-lock.json"}
 TEXT_SUFFIXES = {
     ".md",
@@ -29,6 +38,8 @@ def main() -> int:
         rel = rel_path.as_posix()
         rel_parts = rel_path.parts
         if any(part in EXCLUDED_PARTS or part.startswith("uv-cache") for part in rel_parts) or path.name in EXCLUDED_FILENAMES:
+            continue
+        if any(rel.startswith(prefix) for prefix in EXCLUDED_PREFIXES):
             continue
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue

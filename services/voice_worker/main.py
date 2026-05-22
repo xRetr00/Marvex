@@ -8,8 +8,8 @@ from collections.abc import Sequence
 from packages.voice_worker_runtime.controller import VoiceWorkerController
 from packages.voice_worker_runtime.worker_main import run_worker_contract_loop, run_worker_loop
 
-from .controller import VoiceWorkerServiceController
-from .models import SERVICE_NAME, SERVICE_VERSION
+from services.voice_worker.controller import VoiceWorkerServiceController
+from services.voice_worker.models import SERVICE_NAME, SERVICE_VERSION
 
 
 DEFAULT_HOST = "127.0.0.1"

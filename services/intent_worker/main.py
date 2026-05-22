@@ -8,8 +8,8 @@ from typing import Any
 
 from packages.contracts import ErrorCode, ErrorEnvelope
 
-from .controller import IntentWorkerController
-from .models import SCHEMA_VERSION, IntentWorkerCommandResult
+from services.intent_worker.controller import IntentWorkerController
+from services.intent_worker.models import SCHEMA_VERSION, IntentWorkerCommandResult
 
 
 def run_health_once() -> int:

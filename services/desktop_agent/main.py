@@ -6,8 +6,8 @@ import sys
 from collections.abc import Sequence
 from typing import Any
 
-from .controller import DesktopAgentController
-from .models import DesktopAgentCommandResult
+from services.desktop_agent.controller import DesktopAgentController
+from services.desktop_agent.models import DesktopAgentCommandResult
 
 
 def run_health_once() -> int:
