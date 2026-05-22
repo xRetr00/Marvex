@@ -44,6 +44,7 @@ from .models import (
     VersionInfo,
 )
 from .schema import contract_schemas
+from .state_event import AssistantStateEvent, AssistantStatusKind
 
 __all__ = [
     "AssistantFinalResponse",
@@ -88,4 +89,6 @@ __all__ = [
     "TurnOutput",
     "VersionInfo",
     "contract_schemas",
+    "AssistantStateEvent",
+    "AssistantStatusKind",
 ]

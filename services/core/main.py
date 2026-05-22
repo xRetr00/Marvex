@@ -16,6 +16,8 @@ from pathlib import Path
 from typing import Any
 from wsgiref.simple_server import make_server
 
+from packages.contracts.state_event import AssistantStatusKind
+from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
     GITHUB_CONNECTOR_REF,
     GITHUB_SYNC_CONFIG,
@@ -575,6 +577,25 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._skill_loader = skill_loader
         self._connector_autofetch_runtime = connector_autofetch_runtime
         self._structured_output_required = structured_output_required
+        self._state_bus: AssistantStateBus | None = None
+
+    def _publish(
+        self,
+        status: AssistantStatusKind,
+        *,
+        detail: str = "",
+        audio_level: float = 0.0,
+        trace_id: str | None = None,
+        session_ref: str | None = None,
+    ) -> None:
+        bus = self._state_bus or get_default_bus()
+        bus.publish_status(
+            status,
+            detail=detail,
+            audio_level=audio_level,
+            trace_id=trace_id,
+            session_ref=session_ref,
+        )
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
         linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
@@ -602,6 +623,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "Core agentic turn received.",
             {"status": "received"},
         )
+        self._publish(AssistantStatusKind.THINKING, detail="planning", trace_id=turn_input.trace_id)
         # Persist TURN_RECEIVED event to durable store (safe events only)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         try:
@@ -643,6 +665,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
         route_intents = tuple(dict.fromkeys((intent_kind, *plan_intents)))
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
+            self._publish(AssistantStatusKind.ASKING, detail="clarification_needed", trace_id=turn_input.trace_id)
             loop.step("clarify", stop_reason="finalized")
             return _entrypoint_text_result(
                 turn_input,
@@ -662,6 +685,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
         if "capability_tool" in route_intents:
+            self._publish(AssistantStatusKind.USING_TOOLS, detail="capability_tool", trace_id=turn_input.trace_id)
             loop.step("tool")
             return self._run_tool_path(
                 turn_input,
@@ -675,17 +699,21 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
         if "risky_action" in route_intents:
+            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="risky_action", trace_id=turn_input.trace_id)
             return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if "file_read_list_search" in route_intents:
+            self._publish(AssistantStatusKind.WORKING, detail="file_read", trace_id=turn_input.trace_id)
             loop.step("tool")
             return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if "mcp_needed" in route_intents or "mcp_skill" in route_intents:
+            self._publish(AssistantStatusKind.MCP, detail="mcp_tool", trace_id=turn_input.trace_id)
             loop.step("tool")
             return self._run_mcp_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if ("memory" in route_intents or "memory_tree_needed" in route_intents) and intent_kind not in {"grounded_answer", "web_search"}:
             loop.step("grounded_answer")
             return self._run_memory_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if "skill_needed" in route_intents:
+            self._publish(AssistantStatusKind.SKILLS, detail="skill_needed", trace_id=turn_input.trace_id)
             loop.step("tool")
             return self._run_safe_projection_path(
                 turn_input,
@@ -730,10 +758,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 stop_reason="waiting_for_human_approval",
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
+            self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
             loop.step("web_search")
             loop.step("grounded_answer")
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
 
+        self._publish(AssistantStatusKind.THINKING, detail="provider_turn", trace_id=turn_input.trace_id)
         loop.step("provider")
         provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
         result = run_assistant_provider_stage_turn(
@@ -769,6 +799,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata["provider_boundary"] = "provider_worker_process"
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
+        self._publish(AssistantStatusKind.IDLE, detail="turn_complete", trace_id=turn_input.trace_id)
         return result.model_copy(update={"metadata": metadata})
 
     def _run_tool_path(
@@ -2126,7 +2157,7 @@ def _create_turn_executor(
     )
     persistent_store = _persistent_store_from_config(config)
     skill_loader = _skill_loader_from_config(config)
-    return _CoreServiceProviderWorkerTurnExecutor(
+    executor = _CoreServiceProviderWorkerTurnExecutor(
         provider_name=effective_name,
         model=config.foundation_model,
         trace_reader=trace_reader,
@@ -2146,6 +2177,8 @@ def _create_turn_executor(
         skill_loader=skill_loader,
         connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
     )
+    executor._state_bus = get_default_bus()
+    return executor
 
 
 def _persistent_store_from_config(

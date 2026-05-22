@@ -14,6 +14,7 @@ from packages.telemetry.search import TraceSearchQuery, search_traces
 
 from .approvals import InMemoryApprovalStore
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
+from .state import handle_state_snapshot, handle_state_stream
 from .voice import handle_voice_control_request
 
 
@@ -50,6 +51,7 @@ def create_control_plane_api_app(
     voice_control: Any | None = None,
     voice_worker_control: Any | None = None,
     marketplace_proposal_store: MarketplaceProposalStore | None = None,
+    state_bus: Any | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -236,6 +238,11 @@ def create_control_plane_api_app(
             payload["policy_update_started"] = True
             payload["execution_started"] = False
             return _json_response(start_response, "200 OK", payload)
+        if method == "GET" and path == f"{CONTROL_PREFIX}/state":
+            _status, payload = handle_state_snapshot(state_bus=state_bus)
+            return _json_response(start_response, _status, payload)
+        if method == "GET" and path == f"{CONTROL_PREFIX}/state/stream":
+            return handle_state_stream(environ, start_response, state_bus=state_bus)
         if method == "GET" and path == f"{CONTROL_PREFIX}/diagnostics":
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, **_safe_mapping(diagnostics or {}), "raw_payload_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/snapshot":

@@ -14,7 +14,11 @@ PROJECT_STATUS = ROOT / "PROJECT_STATUS.md"
 CONTROL_API_ALLOWED_IMPORTS = (
     "__future__",
     "collections",
+    "datetime",
     "json",
+    "queue",
+    "threading",
+    "time",
     "packages.capability_runtime",
     "packages.contracts",
     "packages.control_plane_api",

@@ -15,6 +15,7 @@ from .models import (
     TurnOutput,
     VersionInfo,
 )
+from .state_event import AssistantStateEvent
 
 
 CONTRACT_MODELS = {
@@ -31,6 +32,7 @@ CONTRACT_MODELS = {
     "AssistantTurnInput": AssistantTurnInput,
     "AssistantTurnResult": AssistantTurnResult,
     "AssistantFinalResponse": AssistantFinalResponse,
+    "AssistantStateEvent": AssistantStateEvent,
 }
 
 

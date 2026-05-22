@@ -18,6 +18,7 @@ def test_contract_schemas_include_all_v1_contracts():
         "AssistantTurnInput",
         "AssistantTurnResult",
         "AssistantFinalResponse",
+        "AssistantStateEvent",
     }
 
 

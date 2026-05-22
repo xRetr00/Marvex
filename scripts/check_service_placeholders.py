@@ -50,6 +50,7 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "packages.runtime_composition",
     "packages.session_runtime",
     "packages.skills_runtime",
+    "packages.state_bus",
     "packages.telemetry",
     "packages.web_search_runtime",
     "subprocess",

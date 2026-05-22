@@ -439,6 +439,44 @@ Non-goals:
 - Telemetry persistence
 - UI, shell, desktop, or voice orchestration
 
+## AssistantStateEvent
+
+Purpose: Safe loopback state event emitted by the Core turn loop and consumed by
+a future desktop Shell status pill and waveform overlay.  `audio_level` is a
+derived RMS scalar (0.0–1.0) only; no raw audio, transcript, or sensitive payload
+is retained or transmitted.
+
+Contract status: draft/implementation pending final contract approval.  Schema
+version `0.1.1-draft`.
+
+Fields:
+
+- `schema_version`: string, required, non-empty.
+- `ts`: string, required, ISO 8601 UTC timestamp.
+- `status`: `AssistantStatusKind` enum, required.  Allowed values: `idle`,
+  `listening`, `thinking`, `working`, `using_tools`, `mcp`, `skills`,
+  `searching_web`, `talking`, `asking`, `needs_approval`.
+- `detail`: string, required, may be empty.  Short, safe, human-readable
+  context.
+- `audio_level`: float, required, 0.0–1.0.  Derived RMS scalar; never raw PCM.
+- `session_ref`: string or null, required, nullable.
+- `trace_id`: string or null, required, nullable.
+- `raw_audio_persisted`: `Literal[False]`, required, always `false`.
+
+Owner: `packages.contracts.state_event`.
+
+Can read: Shell, Control Plane API (loopback SSE stream), tests.
+
+Can write: Core turn loop (via state bus), future VoiceWorker safe projection.
+
+Safety rules:
+
+- `audio_level` is a bounded derived scalar only; raw PCM, raw audio data, raw
+  transcripts, and secrets must never appear in any state event field.
+- `raw_audio_persisted` must remain `false` at all times.
+- The state bus is in-process and loopback-only; no remote serialisation of raw
+  fields is permitted.
+
 ## Foundation Surface Contracts
 
 Some newer Marvex packages are bounded implementation foundations rather than public JSON contracts. Their existence does not broaden the provider-foundation contracts above and does not approve product expansion.
