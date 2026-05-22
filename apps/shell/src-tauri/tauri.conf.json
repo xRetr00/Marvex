@@ -58,16 +58,19 @@
   },
   "bundle": {
     "active": true,
-    "targets": ["nsis", "msi"],
+    "targets": [
+      "nsis",
+      "msi"
+    ],
     "icon": [
       "../../assets/icon.ico"
     ],
     "externalBin": [
-      "../dist/python/marvex-core/marvex-core",
-      "../dist/python/marvex-provider-worker/marvex-provider-worker",
-      "../dist/python/marvex-intent-worker/marvex-intent-worker",
-      "../dist/python/marvex-tool-worker/marvex-tool-worker",
-      "../dist/python/marvex-voice-worker/marvex-voice-worker"
+      "../dist/python/marvex-core",
+      "../dist/python/marvex-provider-worker",
+      "../dist/python/marvex-intent-worker",
+      "../dist/python/marvex-tool-worker",
+      "../dist/python/marvex-voice-worker"
     ],
     "windows": {
       "nsis": {
