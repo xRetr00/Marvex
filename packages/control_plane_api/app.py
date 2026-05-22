@@ -8,7 +8,7 @@ from urllib.parse import parse_qs
 from packages.contracts import ErrorCode, ErrorEnvelope
 from packages.local_api.auth_policy import validate_local_bearer_token
 from packages.capability_runtime import AutonomyMode, AutonomyPolicy, PolicyDecisionAuditRecord
-from packages.marketplace_runtime import McpAllowlistProposal, MarketplaceEnablementState
+from packages.marketplace_runtime import MarketplaceEnablementState, MarketplaceProposalStore
 from packages.memory_runtime import MemoryRef
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
@@ -47,8 +47,10 @@ def create_control_plane_api_app(
     learning_store: Any | None = None,
     voice_control: Any | None = None,
     voice_worker_control: Any | None = None,
+    marketplace_proposal_store: MarketplaceProposalStore | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
+    proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
 
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
         nonlocal runtime_policy
@@ -117,7 +119,7 @@ def create_control_plane_api_app(
             entry = _find_entry(mcp_marketplace, server_id)
             if entry is None:
                 return _json_response(start_response, "404 Not Found", _error("mcp_marketplace_entry_not_found", path))
-            proposal = McpAllowlistProposal.from_entry(entry, proposal_id=f"allowlist:{server_id}", requested_by="control_plane")
+            proposal = proposal_store.propose_mcp_allowlist(entry, requested_by="control_plane")
             return _json_response(start_response, "200 OK", proposal.safe_projection())
         if method == "GET" and path == f"{CONTROL_PREFIX}/marketplace/skills":
             entries = tuple(skills_marketplace.safe_projection()) if skills_marketplace is not None else ()
@@ -129,8 +131,11 @@ def create_control_plane_api_app(
             return _json_response(start_response, "200 OK", state.safe_projection())
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/marketplace/skills/") and path.endswith("/enable"):
             skill_id = path.removeprefix(f"{CONTROL_PREFIX}/marketplace/skills/").removesuffix("/enable").strip("/")
-            state = MarketplaceEnablementState.with_enabled(subject_id=skill_id, subject_kind="skill", reason_code="validated_local_manifest")
-            return _json_response(start_response, "200 OK", state.safe_projection())
+            entry = _find_skill_entry(skills_marketplace, skill_id)
+            if entry is None:
+                return _json_response(start_response, "404 Not Found", _error("skill_marketplace_entry_not_found", path))
+            proposal = proposal_store.propose_skill_enablement(entry, requested_by="control_plane")
+            return _json_response(start_response, "200 OK", proposal.safe_projection())
         if method == "GET" and path == f"{CONTROL_PREFIX}/memory":
             records = tuple(memory_store.safe_inspect()) if memory_store is not None and hasattr(memory_store, "safe_inspect") else ()
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, "records": records, "record_count": len(records), "raw_transcript_persisted": False})
@@ -415,6 +420,13 @@ def _first(params: dict[str, list[str]], key: str) -> str | None:
 def _find_entry(catalog: Any | None, server_id: str) -> Any | None:
     for entry in getattr(catalog, "entries", ()) if catalog is not None else ():
         if getattr(entry, "server_id", None) == server_id:
+            return entry
+    return None
+
+
+def _find_skill_entry(catalog: Any | None, skill_id: str) -> Any | None:
+    for entry in getattr(catalog, "entries", ()) if catalog is not None else ():
+        if getattr(entry, "skill_id", None) == skill_id:
             return entry
     return None
 

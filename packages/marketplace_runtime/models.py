@@ -231,6 +231,100 @@ class MarketplaceEnablementState(MarketplaceModel):
         return self.model_dump()
 
 
+class MarketplaceEnablementProposal(MarketplaceModel):
+    schema_version: str = "1"
+    proposal_id: str = Field(..., min_length=1)
+    subject_id: str = Field(..., min_length=1)
+    subject_kind: MarketplaceSubjectKind
+    requested_by: Literal["control_plane", "local_config"]
+    reason_code: str = Field(..., min_length=1)
+    review_required: Literal[True] = True
+    requires_human_approval: Literal[True] = True
+    feeds_mcp_allowlist: bool = False
+    feeds_skill_enablement: bool = False
+    mcp_allowlist_proposal: McpAllowlistProposal | None = None
+    enablement_applied: Literal[False] = False
+    execution_started: Literal[False] = False
+    install_started: Literal[False] = False
+    launch_started: Literal[False] = False
+    auto_execution_allowed: Literal[False] = False
+    raw_payload_persisted: Literal[False] = False
+
+    @model_validator(mode="after")
+    def _validate_feed(self) -> MarketplaceEnablementProposal:
+        if self.subject_kind == "mcp_server":
+            if not self.feeds_mcp_allowlist or self.mcp_allowlist_proposal is None:
+                raise ValueError("mcp_server proposals must feed MCP allowlist review")
+            return self
+        if self.subject_kind == "skill":
+            if not self.feeds_skill_enablement or self.mcp_allowlist_proposal is not None:
+                raise ValueError("skill proposals must feed skill enablement review only")
+            return self
+        raise ValueError("marketplace enablement proposals support only mcp_server or skill")
+
+    def safe_projection(self) -> dict[str, object]:
+        payload = self.model_dump(mode="json")
+        payload["mcp_allowlist_proposal"] = (
+            self.mcp_allowlist_proposal.safe_projection()
+            if self.mcp_allowlist_proposal is not None
+            else None
+        )
+        return payload
+
+
+class MarketplaceProposalStore:
+    def __init__(self) -> None:
+        self._proposals: list[MarketplaceEnablementProposal] = []
+
+    def propose_mcp_allowlist(
+        self,
+        entry: McpMarketplaceEntry,
+        *,
+        requested_by: Literal["control_plane", "local_config"],
+    ) -> MarketplaceEnablementProposal:
+        validation = validate_mcp_server_manifest(entry)
+        if not validation.valid:
+            raise ValueError("invalid MCP marketplace entry cannot be proposed")
+        allowlist = McpAllowlistProposal.from_entry(
+            entry,
+            proposal_id=f"allowlist:{entry.server_id}",
+            requested_by=requested_by,
+        )
+        proposal = MarketplaceEnablementProposal(
+            proposal_id=f"marketplace.mcp.{_proposal_id_part(entry.server_id)}",
+            subject_id=entry.server_id,
+            subject_kind="mcp_server",
+            requested_by=requested_by,
+            reason_code="review_required_mcp_allowlist",
+            feeds_mcp_allowlist=True,
+            mcp_allowlist_proposal=allowlist,
+        )
+        self._proposals.append(proposal)
+        return proposal
+
+    def propose_skill_enablement(
+        self,
+        entry: SkillMarketplaceEntry,
+        *,
+        requested_by: Literal["control_plane", "local_config"],
+    ) -> MarketplaceEnablementProposal:
+        if not entry.validation.valid:
+            raise ValueError("invalid skill marketplace entry cannot be proposed")
+        proposal = MarketplaceEnablementProposal(
+            proposal_id=f"marketplace.skill.{_proposal_id_part(entry.skill_id)}",
+            subject_id=entry.skill_id,
+            subject_kind="skill",
+            requested_by=requested_by,
+            reason_code="review_required_skill_enablement",
+            feeds_skill_enablement=True,
+        )
+        self._proposals.append(proposal)
+        return proposal
+
+    def list_review_required(self) -> tuple[MarketplaceEnablementProposal, ...]:
+        return tuple(self._proposals)
+
+
 def validate_mcp_server_manifest(entry: McpMarketplaceEntry) -> MarketplaceValidationResult:
     reasons: list[str] = []
     for tool in entry.tool_summaries:
@@ -260,3 +354,8 @@ def _reject_unsafe_text(value: str) -> None:
 
 def _normalized(value: str) -> str:
     return "".join(character for character in value.lower() if character.isalnum())
+
+
+def _proposal_id_part(value: str) -> str:
+    safe = "".join(character if character in _SAFE_ID_CHARS else "-" for character in value)
+    return safe.strip(".-:_/") or "unknown"

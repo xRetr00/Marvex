@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from packages.marketplace_runtime import (
+    MarketplaceProposalStore,
     MarketplaceEnablementState,
     SkillMarketplaceCatalog,
     SkillMarketplaceEntry,
@@ -79,3 +80,19 @@ def test_skill_enable_disable_state_is_policy_ready_not_execution() -> None:
     assert state.enabled is True
     assert state.execution_started is False
     assert state.safe_projection()["requires_validation"] is True
+
+
+def test_marketplace_proposal_store_creates_review_required_skill_proposal() -> None:
+    entry = SkillMarketplaceEntry.from_manifest(_manifest(), source="approved_local")
+    store = MarketplaceProposalStore()
+
+    proposal = store.propose_skill_enablement(entry, requested_by="control_plane")
+
+    projection = proposal.safe_projection()
+    assert projection["subject_kind"] == "skill"
+    assert projection["subject_id"] == "test.safe_skill"
+    assert projection["review_required"] is True
+    assert projection["feeds_skill_enablement"] is True
+    assert projection["enablement_applied"] is False
+    assert projection["execution_started"] is False
+    assert store.list_review_required()[0] == proposal

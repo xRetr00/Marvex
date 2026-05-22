@@ -311,6 +311,8 @@ def test_control_plane_marketplace_endpoints_are_read_only_and_auth_protected() 
     assert payload["entries"][0]["install_allowed"] is False
     assert proposal_status == "200 OK"
     assert proposal["requires_human_approval"] is True
+    assert proposal["review_required"] is True
+    assert proposal["enablement_applied"] is False
     assert proposal["install_started"] is False
     assert proposal["launch_started"] is False
     assert disable_status == "200 OK"
@@ -329,7 +331,10 @@ def test_control_plane_skills_marketplace_preview_and_enable_are_safe() -> None:
     assert payload["entries"][0]["script_execution_allowed"] is False
     assert payload["previews"][0]["raw_instruction_persisted"] is False
     assert enable_status == "200 OK"
-    assert enable_payload["enabled"] is True
+    assert enable_payload["subject_kind"] == "skill"
+    assert enable_payload["review_required"] is True
+    assert enable_payload["feeds_skill_enablement"] is True
+    assert enable_payload["enablement_applied"] is False
     assert enable_payload["execution_started"] is False
     assert disable_status == "200 OK"
     assert disable_payload["enabled"] is False

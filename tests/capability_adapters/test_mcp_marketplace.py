@@ -8,6 +8,7 @@ from packages.marketplace_runtime import (
     McpMarketplaceEntry,
     McpRegistryToolSummary,
     MarketplaceEnablementState,
+    MarketplaceProposalStore,
     validate_mcp_server_manifest,
 )
 
@@ -81,3 +82,20 @@ def test_mcp_marketplace_rejects_install_commands_and_raw_payloads() -> None:
             transport_summaries=("stdio",),
             install_command="npm install unsafe",
         )
+
+
+def test_marketplace_proposal_store_creates_review_required_mcp_allowlist_proposal() -> None:
+    entry = _entry()
+    store = MarketplaceProposalStore()
+
+    proposal = store.propose_mcp_allowlist(entry, requested_by="control_plane")
+
+    projection = proposal.safe_projection()
+    assert projection["subject_kind"] == "mcp_server"
+    assert projection["subject_id"] == entry.server_id
+    assert projection["review_required"] is True
+    assert projection["feeds_mcp_allowlist"] is True
+    assert projection["enablement_applied"] is False
+    assert projection["execution_started"] is False
+    assert projection["mcp_allowlist_proposal"]["requires_human_approval"] is True
+    assert store.list_review_required()[0] == proposal
