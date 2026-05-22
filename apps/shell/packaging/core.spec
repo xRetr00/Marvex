@@ -2,7 +2,7 @@ from pathlib import Path
 
 from PyInstaller.building.build_main import Analysis, COLLECT, EXE, PYZ
 
-ROOT = Path(__file__).resolve().parents[3]
+ROOT = Path(SPECPATH).resolve().parents[2]
 ENTRYPOINT = ROOT / "services" / "core" / "main.py"
 DIST_DIR = ROOT / "apps" / "shell" / "dist" / "python"
 BUILD_DIR = ROOT / "apps" / "shell" / "build" / "pyinstaller" / "core"
