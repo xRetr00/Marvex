@@ -6,7 +6,6 @@ from __future__ import annotations
 
 import json
 import time
-import urllib.error
 import urllib.parse
 import urllib.request
 from datetime import UTC, datetime
@@ -102,7 +101,6 @@ class SearXNGWebSearchAdapter(CapabilityRuntimeModel):
 # DDGS adapter with bounded retry/backoff for rate-limit robustness
 # ---------------------------------------------------------------------------
 
-_DDGS_RETRY_STATUS_CODES: frozenset[int] = frozenset({429, 503})
 _DDGS_MAX_RETRIES: int = 3
 _DDGS_BACKOFF_BASE_SECONDS: float = 1.0
 
@@ -183,7 +181,6 @@ class WikipediaWebSearchAdapter(CapabilityRuntimeModel):
     http_fetch: Any | None = None
 
     def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
-        # Phase 1: OpenSearch to discover titles (up to max_results candidates)
         opensearch_params = urllib.parse.urlencode({
             "action": "opensearch",
             "search": query.query,
@@ -202,23 +199,20 @@ class WikipediaWebSearchAdapter(CapabilityRuntimeModel):
         if not isinstance(opensearch_payload, list) or len(opensearch_payload) < 4:
             return _bundle(query, "wikipedia", ())
 
-        titles: list[str] = list(opensearch_payload[1])
-        descriptions: list[str] = list(opensearch_payload[2])
-        article_urls: list[str] = list(opensearch_payload[3])
+        titles: list[Any] = opensearch_payload[1]
+        descriptions: list[Any] = opensearch_payload[2]
+        article_urls: list[Any] = opensearch_payload[3]
 
         rows: list[WebSearchResult] = []
-        for idx in range(min(len(titles), query.max_results)):
-            title = _bounded_text(titles[idx] if idx < len(titles) else "Wikipedia article", 300)
-            description = _bounded_text(descriptions[idx] if idx < len(descriptions) else "", 800)
-            url = article_urls[idx] if idx < len(article_urls) else (self.article_base + urllib.parse.quote(title.replace(" ", "_")))
-            url = _bounded_text(url, 1200)
+        for title_raw, desc_raw, url_raw in list(zip(titles, descriptions, article_urls))[: query.max_results]:
+            title = _bounded_text(title_raw, 300)
             if not title:
                 continue
             rows.append(WebSearchResult(
                 title=title,
-                url=url,
+                url=_bounded_text(url_raw, 1200),
                 domain=_WIKIPEDIA_DOMAIN,
-                snippet=description,
+                snippet=_bounded_text(desc_raw, 800),
                 freshness=query.freshness,
             ))
 

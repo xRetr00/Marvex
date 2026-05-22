@@ -2,12 +2,17 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from packages.web_search_runtime import (
     DDGSWebSearchAdapter,
     MultiProviderWebSearch,
     SearXNGWebSearchAdapter,
+    WebSearchEvidenceRef,
     WebSearchFreshness,
+    WebSearchGroundingBundle,
     WebSearchQuery,
+    WebSearchResult,
     WikipediaWebSearchAdapter,
 )
 
@@ -105,7 +110,6 @@ class _RateLimitThenSuccessDDGS:
     def __init__(self, fail_count: int = 1) -> None:
         self.call_count = 0
         self.fail_count = fail_count
-        self.sleep_calls: list[float] = []
 
     def text(self, query: str, max_results: int = 5) -> list[dict[str, str]]:
         self.call_count += 1
@@ -135,13 +139,9 @@ def test_ddgs_adapter_gives_up_after_max_retries() -> None:
     adapter = DDGSWebSearchAdapter(ddgs_client=client, max_retries=2, backoff_base_seconds=0.001, sleep_fn=sleep_calls.append)
     query = WebSearchQuery(query="test", freshness=WebSearchFreshness.ANY)
 
-    raised = False
-    try:
+    with pytest.raises(RuntimeError):
         adapter.search(query)
-    except RuntimeError:
-        raised = True
 
-    assert raised
     assert len(sleep_calls) == 2  # slept before retry 1 and retry 2
 
 
@@ -154,13 +154,9 @@ def test_ddgs_adapter_does_not_retry_non_rate_limit_errors() -> None:
     adapter = DDGSWebSearchAdapter(ddgs_client=_ImmediateFailDDGS(), max_retries=3, backoff_base_seconds=0.01, sleep_fn=sleep_calls.append)
     query = WebSearchQuery(query="test", freshness=WebSearchFreshness.ANY)
 
-    raised = False
-    try:
+    with pytest.raises(ValueError):
         adapter.search(query)
-    except ValueError:
-        raised = True
 
-    assert raised
     assert len(sleep_calls) == 0  # no retry for non-rate-limit errors
 
 
@@ -171,15 +167,14 @@ def test_ddgs_adapter_does_not_retry_non_rate_limit_errors() -> None:
 class _EmptyProvider:
     provider_name = "empty"
 
-    def search(self, query: WebSearchQuery) -> "WebSearchGroundingBundle":
-        from packages.web_search_runtime import WebSearchGroundingBundle
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         return WebSearchGroundingBundle(query=query, provider="empty", results=(), evidence_refs=())
 
 
 class _RaisingProvider:
     provider_name = "raising"
 
-    def search(self, query: WebSearchQuery) -> "WebSearchGroundingBundle":
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         raise RuntimeError("provider unavailable")
 
 
@@ -189,12 +184,7 @@ class _GoodProvider:
     def __init__(self, title: str = "Good result") -> None:
         self._title = title
 
-    def search(self, query: WebSearchQuery) -> "WebSearchGroundingBundle":
-        from packages.web_search_runtime import (
-            WebSearchEvidenceRef,
-            WebSearchGroundingBundle,
-            WebSearchResult,
-        )
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         result = WebSearchResult(title=self._title, url="https://example.test/good", domain="example.test", snippet="Good snippet", freshness=query.freshness)
         ref = WebSearchEvidenceRef(evidence_id="web.evidence.1", source_url=result.url, domain=result.domain, title=result.title, snippet=result.snippet, freshness=result.freshness)
         return WebSearchGroundingBundle(query=query, provider="good", results=(result,), evidence_refs=(ref,))
@@ -280,6 +270,3 @@ def test_web_search_provider_from_config_multi_with_searxng() -> None:
     assert isinstance(provider, MultiProviderWebSearch)
     assert len(provider.providers) == 3
     assert isinstance(provider.providers[2], SearXNGWebSearchAdapter)
-
-
-import pytest  # noqa: E402 — imported at end to keep test functions readable above
