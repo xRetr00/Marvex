@@ -129,9 +129,12 @@ class SafeIntentProjection(CapabilityRuntimeModel):
     turn_id: str
     selected_intent: dict[str, str]
     confidence_bucket: IntentConfidenceBucket
+    confidence_score: float | None = None
     risk_signal: IntentRiskSignal
     clarification_needed: ClarificationNeededDecision
     route_reason_code: str
+    semantic_backend_name: str | None = None
+    selected_route_confidence: float | None = None
     raw_input_persisted: Literal[False] = False
 
 
@@ -164,9 +167,12 @@ class IntentClassificationResult(CapabilityRuntimeModel):
             turn_id=self.turn_id,
             selected_intent=self.selected_intent.safe_projection(),
             confidence_bucket=self.confidence.bucket,
+            confidence_score=self.confidence.score,
             risk_signal=self.risk_signal,
             clarification_needed=self.clarification,
             route_reason_code=self.route_decision.reason_code,
+            semantic_backend_name=str(self.hybrid_details.get("semantic_encoder_backend_name") or self.backend_name),
+            selected_route_confidence=float(self.hybrid_details.get("selected_route_confidence", self.confidence.score)),
         )
 
 

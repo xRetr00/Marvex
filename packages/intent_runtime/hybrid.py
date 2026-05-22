@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import importlib.util
 import math
+import os
 import re
 from typing import Literal
 
@@ -56,21 +57,57 @@ class DeterministicLocalIntentEncoder:
     backend_name = "deterministic_local_encoder"
 
     def encode(self, text: str) -> SemanticEncoding:
-        buckets = [0.0] * 64
-        normalized = re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
-        padded = f"  {normalized}  "
-        for index in range(max(0, len(padded) - 2)):
-            gram = padded[index : index + 3]
-            bucket = sum((offset + 1) * ord(character) for offset, character in enumerate(gram)) % len(buckets)
-            buckets[bucket] += 1.0
-        norm = math.sqrt(sum(value * value for value in buckets)) or 1.0
-        return SemanticEncoding(backend_name=self.backend_name, dimensions=tuple(value / norm for value in buckets))
+        tokens = _semantic_tokens(text)
+        values = [0.0] * len(_SEMANTIC_FEATURES)
+        for index, feature in enumerate(_SEMANTIC_FEATURES):
+            values[index] = sum(_TOKEN_FEATURES.get(token, {}).get(feature, 0.0) for token in tokens)
+        norm = math.sqrt(sum(value * value for value in values)) or 1.0
+        return SemanticEncoding(backend_name=self.backend_name, dimensions=tuple(value / norm for value in values))
+
+
+class FastEmbedIntentEncoder:
+    backend_name = "fastembed_text_embedding"
+
+    def __init__(self, *, model_name: str | None = None) -> None:
+        try:
+            from fastembed import TextEmbedding
+        except Exception as exc:  # pragma: no cover - optional runtime dependency
+            raise RuntimeError("fastembed is not installed") from exc
+        self._model = TextEmbedding(model_name=model_name or "BAAI/bge-small-en-v1.5")
+
+    def encode(self, text: str) -> SemanticEncoding:
+        vector = tuple(float(value) for value in next(iter(self._model.embed([text]))))
+        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+        return SemanticEncoding(backend_name=self.backend_name, dimensions=tuple(value / norm for value in vector))
+
+
+class OpenAICompatibleEmbeddingIntentEncoder:
+    backend_name = "openai_compatible_embedding"
+
+    def __init__(self, *, base_url: str, model: str, timeout_seconds: float = 10.0) -> None:
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+        self._timeout_seconds = timeout_seconds
+
+    def encode(self, text: str) -> SemanticEncoding:
+        import httpx
+
+        response = httpx.post(
+            f"{self._base_url}/embeddings",
+            json={"model": self._model, "input": text},
+            timeout=self._timeout_seconds,
+        )
+        response.raise_for_status()
+        payload = response.json()
+        vector = tuple(float(value) for value in payload["data"][0]["embedding"])
+        norm = math.sqrt(sum(value * value for value in vector)) or 1.0
+        return SemanticEncoding(backend_name=self.backend_name, dimensions=tuple(value / norm for value in vector))
 
 
 class EncodedSemanticRouteLayer:
     selection_strategy = "encoded_route_cosine"
 
-    def __init__(self, *, encoder: DeterministicLocalIntentEncoder, routes: tuple[semantic_router.Route, ...]) -> None:
+    def __init__(self, *, encoder: DeterministicLocalIntentEncoder | FastEmbedIntentEncoder | OpenAICompatibleEmbeddingIntentEncoder, routes: tuple[semantic_router.Route, ...]) -> None:
         self._encoder = encoder
         self._routes = routes
         self._encoded_routes = tuple(
@@ -87,22 +124,26 @@ class EncodedSemanticRouteLayer:
 
     def select(self, text: str) -> tuple[IntentKind, float]:
         encoded = self._encoder.encode(text).dimensions
-        best_kind = IntentKind.CLARIFICATION
+        best_kind = IntentKind.PROVIDER_SIMPLE_CHAT
         best_score = 0.0
         for route, utterance_vectors in self._encoded_routes:
             score = max((_cosine(encoded, vector) for vector in utterance_vectors), default=0.0)
             if score > best_score:
                 best_kind = IntentKind(route.name)
                 best_score = score
+        if best_score < 0.05:
+            return IntentKind.PROVIDER_SIMPLE_CHAT, 0.0
         return best_kind, best_score
 
 
 class HybridIntentRuntime:
+    semantic_confidence_threshold = 0.58
+
     def __init__(
         self,
         *,
         capabilities: dict[str, CapabilityAvailability] | None = None,
-        semantic_encoder: DeterministicLocalIntentEncoder | None = None,
+        semantic_encoder: DeterministicLocalIntentEncoder | FastEmbedIntentEncoder | OpenAICompatibleEmbeddingIntentEncoder | None = None,
     ) -> None:
         self._capabilities = capabilities or {
             "web_search": CapabilityAvailability(),
@@ -114,7 +155,7 @@ class HybridIntentRuntime:
         }
         self._routes = _semantic_routes()
         self._semantic_layer = EncodedSemanticRouteLayer(
-            encoder=semantic_encoder or DeterministicLocalIntentEncoder(),
+            encoder=semantic_encoder or _configured_semantic_encoder(),
             routes=self._routes,
         )
 
@@ -126,7 +167,19 @@ class HybridIntentRuntime:
         text = request.user_input_summary.strip()
         deterministic = _deterministic_intent(text)
         semantic_kind, semantic_score = self._semantic_layer.select(text)
-        selected = semantic_kind if semantic_score >= 0.42 else deterministic
+        threshold = self.semantic_confidence_threshold
+        selected = deterministic
+        route_gating_reason = "deterministic.signal"
+        fallback_reason = ""
+        semantic_override_allowed = (
+            deterministic == IntentKind.PROVIDER_SIMPLE_CHAT
+            and semantic_kind != IntentKind.PROVIDER_SIMPLE_CHAT
+            and semantic_score >= threshold
+            and _explicit_route_signal(text, semantic_kind)
+        )
+        if semantic_override_allowed:
+            selected = semantic_kind
+            route_gating_reason = "semantic.confident_explicit_signal"
         if deterministic in {
             IntentKind.GROUNDED_ANSWER,
             IntentKind.FILE_READ_LIST_SEARCH,
@@ -143,16 +196,29 @@ class HybridIntentRuntime:
             IntentKind.CLARIFICATION,
         }:
             selected = deterministic
+            route_gating_reason = "deterministic.authoritative_signal"
+        if selected == IntentKind.PROVIDER_SIMPLE_CHAT:
+            fallback_reason = "provider.default_unmatched_or_low_confidence"
+            route_gating_reason = "provider.safe_default"
         selector = SingleSelection(index=_kind_index(selected), reason=f"llamaindex.selector.{selected.value}")
         if selected == IntentKind.PROVIDER_SIMPLE_CHAT and _freshness_needed(text):
             selected = IntentKind.WEB_SEARCH
+            route_gating_reason = "freshness.required"
+            fallback_reason = ""
         capability = self._capability_for(selected)
         availability = self._capabilities.get(capability, CapabilityAvailability())
         if selected == IntentKind.WEB_SEARCH and availability.status != "enabled":
             selected = IntentKind.CLARIFICATION
             score = 0.31
+            route_gating_reason = "capability.unavailable_clarification"
+            fallback_reason = ""
+        elif selected != IntentKind.PROVIDER_SIMPLE_CHAT and availability.status != "enabled":
+            selected = IntentKind.PROVIDER_SIMPLE_CHAT
+            score = 0.7
+            route_gating_reason = "capability.unavailable_provider_fallback"
+            fallback_reason = "provider.capability_unavailable"
         else:
-            score = max(semantic_score, 0.86 if deterministic == selected else 0.62)
+            score = 0.7 if selected == IntentKind.PROVIDER_SIMPLE_CHAT else max(semantic_score, 0.86 if deterministic == selected else 0.62)
         risk_signal, risk_level = _risk_for(selected, text)
         result = classification_from_kind(
             request,
@@ -160,11 +226,16 @@ class HybridIntentRuntime:
             score=score,
             risk_signal=risk_signal,
             risk_level=risk_level,
-            reason_code="hybrid.semantic_encoder" if semantic_score >= 0.42 else "hybrid.llamaindex_selector",
+            reason_code="hybrid.semantic_encoder" if route_gating_reason.startswith("semantic.") else "hybrid.llamaindex_selector",
             backend_name=f"hybrid_intent_runtime.{self._semantic_layer.backend_name}",
             hybrid_details={
                 "deterministic_candidate": deterministic.value,
                 "semantic_candidate": semantic_kind.value,
+                "selected_route_confidence": semantic_score if selected == semantic_kind else score,
+                "semantic_confidence_threshold": threshold,
+                "route_gating_reason": route_gating_reason,
+                "route_fallback_reason": fallback_reason,
+                "fallback_reason": fallback_reason,
                 "semantic_router_route_count": len(self._routes),
                 "semantic_encoder_backend_name": self._semantic_layer.backend_name,
                 "semantic_selection_strategy": self._semantic_layer.selection_strategy,
@@ -210,6 +281,7 @@ class HybridIntentRuntime:
 
 def _semantic_routes() -> tuple[semantic_router.Route, ...]:
     return (
+        semantic_router.Route(name=IntentKind.PROVIDER_SIMPLE_CHAT.value, utterances=("hello", "hi there", "tell me a joke", "explain why", "normal conversation", "can we continue")),
         semantic_router.Route(name=IntentKind.CAPABILITY_TOOL.value, utterances=("2+2", "compute arithmetic", "calculator")),
         semantic_router.Route(name=IntentKind.WEB_SEARCH.value, utterances=("search latest version", "current docs", "recent release")),
         semantic_router.Route(name=IntentKind.BROWSER_COMPUTER_USE.value, utterances=("open youtube", "go to website", "browser page", "navigate webpage")),
@@ -242,8 +314,6 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.MEMORY_TREE_NEEDED
     if any(part in lowered for part in ("remember", "memory", "preference")):
         return IntentKind.MEMORY
-    if any(part in lowered for part in ("open yt", "youtube", "go to ", "open ", "browser")):
-        return IntentKind.BROWSER_COMPUTER_USE
     if "mcp" in lowered and "skill" in lowered:
         return IntentKind.MCP_SKILL
     if "mcp" in lowered:
@@ -254,11 +324,27 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.CONNECTOR_ACCOUNT
     if any(part in lowered for part in ("control plane", "settings", "approval", "telemetry")):
         return IntentKind.SETTINGS_CONTROL_PLANE
+    if any(part in lowered for part in ("open yt", "youtube", "go to ", "open ", "browser")):
+        return IntentKind.BROWSER_COMPUTER_USE
     if any(part in lowered for part in ("read file", "list files", "search files", "inspect file")):
         return IntentKind.FILE_READ_LIST_SEARCH
     if any(part in lowered for part in ("delete", "send", "upload", "install", "write", "run command")):
         return IntentKind.RISKY_ACTION
     return IntentKind.PROVIDER_SIMPLE_CHAT
+
+
+def _explicit_route_signal(text: str, kind: IntentKind) -> bool:
+    lowered = text.lower()
+    signals = {
+        IntentKind.CAPABILITY_TOOL: ("compute", "calculate", "calculator", "+", "-", "*", "/"),
+        IntentKind.WEB_SEARCH: ("search", "latest", "current", "recent", "version", "release", "docs"),
+        IntentKind.BROWSER_COMPUTER_USE: ("open", "go to", "browser", "navigate", "webpage", "youtube"),
+        IntentKind.MEMORY_TREE_NEEDED: ("memory tree", "source grounded", "evidence"),
+        IntentKind.MCP_NEEDED: ("mcp", "server tool"),
+        IntentKind.SKILL_NEEDED: ("skill",),
+        IntentKind.SETTINGS_CONTROL_PLANE: ("control plane", "settings", "approval", "telemetry"),
+    }
+    return any(signal in lowered for signal in signals.get(kind, ()))
 
 
 def _risk_for(kind: IntentKind, text: str) -> tuple[IntentRiskSignal, ToolRiskLevel]:
@@ -296,3 +382,102 @@ def _overlap(left: set[str], right: set[str]) -> float:
 
 def _cosine(left: tuple[float, ...], right: tuple[float, ...]) -> float:
     return max(0.0, min(1.0, sum(a * b for a, b in zip(left, right, strict=True))))
+
+
+def _configured_semantic_encoder() -> DeterministicLocalIntentEncoder | FastEmbedIntentEncoder | OpenAICompatibleEmbeddingIntentEncoder:
+    backend = os.environ.get("MARVEX_INTENT_ENCODER", "").strip().lower()
+    if backend == "fastembed":
+        return FastEmbedIntentEncoder(model_name=os.environ.get("MARVEX_INTENT_FASTEMBED_MODEL"))
+    if backend in {"openai_compatible_embedding", "lmstudio_embedding", "lmstudio_embeddings"}:
+        return OpenAICompatibleEmbeddingIntentEncoder(
+            base_url=os.environ.get("MARVEX_INTENT_EMBEDDING_BASE_URL", "http://127.0.0.1:1234/v1"),
+            model=os.environ.get("MARVEX_INTENT_EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5"),
+            timeout_seconds=float(os.environ.get("MARVEX_INTENT_EMBEDDING_TIMEOUT", "10")),
+        )
+    return DeterministicLocalIntentEncoder()
+
+
+def _semantic_tokens(text: str) -> tuple[str, ...]:
+    return tuple(re.findall(r"[a-z0-9]+", text.lower()))
+
+
+_SEMANTIC_FEATURES = (
+    "provider",
+    "tool",
+    "web",
+    "fresh",
+    "browser",
+    "memory",
+    "mcp",
+    "skill",
+    "settings",
+    "file",
+    "risk",
+    "unsafe",
+    "grounded",
+)
+
+
+_TOKEN_FEATURES: dict[str, dict[str, float]] = {
+    "hello": {"provider": 1.0},
+    "hi": {"provider": 1.0},
+    "hey": {"provider": 1.0},
+    "joke": {"provider": 1.0},
+    "explain": {"provider": 0.8},
+    "conversation": {"provider": 1.0},
+    "continue": {"provider": 0.7},
+    "compute": {"tool": 1.0},
+    "calculate": {"tool": 1.0},
+    "calculator": {"tool": 1.0},
+    "arithmetic": {"tool": 1.0},
+    "search": {"web": 1.0},
+    "web": {"web": 0.8, "grounded": 0.3},
+    "latest": {"fresh": 1.0, "web": 0.7},
+    "current": {"fresh": 1.0, "web": 0.6},
+    "recent": {"fresh": 1.0, "web": 0.6},
+    "version": {"fresh": 0.8, "web": 0.6},
+    "release": {"fresh": 0.8, "web": 0.6},
+    "docs": {"fresh": 0.7, "web": 0.8},
+    "grounded": {"grounded": 1.0},
+    "citation": {"grounded": 1.0},
+    "citations": {"grounded": 1.0},
+    "cite": {"grounded": 1.0},
+    "evidence": {"grounded": 0.8, "memory": 0.3},
+    "open": {"browser": 0.8},
+    "go": {"browser": 0.4},
+    "browser": {"browser": 1.0},
+    "navigate": {"browser": 1.0},
+    "webpage": {"browser": 1.0},
+    "youtube": {"browser": 1.0},
+    "yt": {"browser": 1.0},
+    "memory": {"memory": 1.0},
+    "remember": {"memory": 1.0},
+    "preference": {"memory": 1.0},
+    "preferences": {"memory": 1.0},
+    "tree": {"memory": 0.8},
+    "mcp": {"mcp": 1.0},
+    "server": {"mcp": 0.4},
+    "tool": {"tool": 0.4, "mcp": 0.3},
+    "tools": {"tool": 0.4, "mcp": 0.4},
+    "skill": {"skill": 1.0},
+    "settings": {"settings": 1.0},
+    "approval": {"settings": 0.8},
+    "telemetry": {"settings": 0.8},
+    "control": {"settings": 0.5},
+    "plane": {"settings": 0.5},
+    "file": {"file": 1.0},
+    "files": {"file": 1.0},
+    "read": {"file": 0.7},
+    "list": {"file": 0.5, "mcp": 0.2},
+    "inspect": {"file": 0.7},
+    "delete": {"risk": 1.0},
+    "send": {"risk": 1.0},
+    "upload": {"risk": 1.0},
+    "install": {"risk": 0.8, "mcp": 0.3},
+    "run": {"risk": 0.5},
+    "ignore": {"unsafe": 1.0},
+    "prompt": {"unsafe": 0.8},
+    "injection": {"unsafe": 1.0},
+    "credentials": {"unsafe": 1.0},
+    "exfiltrate": {"unsafe": 1.0},
+}

@@ -172,7 +172,7 @@ def _search_payload() -> dict[str, Any]:
         "results": [
             {
                 "title": "Current browser-use release",
-                "url": "https://example.test/browser-use-release",
+                "url": "https://docs.marvex.local/browser-use-release",
                 "content": "Current browser-use release evidence.",
                 "publishedDate": "2026-05-21",
             }

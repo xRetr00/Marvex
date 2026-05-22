@@ -371,6 +371,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         }
         loop.step("plan")
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
+        route_intents = tuple(dict.fromkeys((intent_kind, *plan_intents)))
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
             loop.step("clarify", stop_reason="finalized")
             return _entrypoint_text_result(
@@ -390,7 +391,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 message="Request blocked by intent safety preflight.",
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
-        if "capability_tool" in plan_intents:
+        if "capability_tool" in route_intents:
             loop.step("tool")
             return self._run_tool_path(
                 turn_input,
@@ -403,18 +404,18 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 capability_id="builtin.calculator",
                 arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
-        if "risky_action" in plan_intents:
+        if "risky_action" in route_intents:
             return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if "file_read_list_search" in plan_intents:
+        if "file_read_list_search" in route_intents:
             loop.step("tool")
             return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if "mcp_needed" in plan_intents or "mcp_skill" in plan_intents:
+        if "mcp_needed" in route_intents or "mcp_skill" in route_intents:
             loop.step("tool")
             return self._run_mcp_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if "memory" in plan_intents or "memory_tree_needed" in plan_intents:
+        if ("memory" in route_intents or "memory_tree_needed" in route_intents) and intent_kind not in {"grounded_answer", "web_search"}:
             loop.step("grounded_answer")
             return self._run_memory_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        if "skill_needed" in plan_intents:
+        if "skill_needed" in route_intents:
             loop.step("tool")
             return self._run_safe_projection_path(
                 turn_input,
@@ -424,7 +425,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 text="Skill instructions can be loaded only from configured local safe sources; install and launch remain disabled.",
                 projection={"local_skill_loader_available": False, "install_launch_enabled": False},
             )
-        if "connector_account" in plan_intents:
+        if "connector_account" in route_intents:
             loop.step("tool")
             return self._run_safe_projection_path(
                 turn_input,
@@ -434,7 +435,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 text="Connector account actions require explicit configuration and approval; live OAuth is not started.",
                 projection={"live_oauth_started": False, "approval_required": True},
             )
-        if "settings_control_plane" in plan_intents:
+        if "settings_control_plane" in route_intents:
             loop.step("tool")
             return self._run_safe_projection_path(
                 turn_input,
@@ -444,7 +445,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 text="Control-plane settings are available as safe status only from this turn path.",
                 projection={"approval_resume_supported": True, "raw_payload_persisted": False},
             )
-        if "browser_computer_use" in plan_intents:
+        if "browser_computer_use" in route_intents:
             loop.step("approval", stop_reason="waiting_for_human_approval")
             return self._run_safe_projection_path(
                 turn_input,
@@ -455,7 +456,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 projection={"live_browser_executed": False, "approval_required": True},
                 stop_reason="waiting_for_human_approval",
             )
-        if "web_search" in plan_intents or "grounded_answer" in plan_intents:
+        if "web_search" in route_intents or "grounded_answer" in route_intents:
             loop.step("web_search")
             loop.step("grounded_answer")
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
@@ -553,6 +554,26 @@ class _CoreServiceProviderWorkerTurnExecutor:
     ) -> AssistantTurnResult:
         web_refs = tuple(cognition.web_evidence_refs)
         if not web_refs and not cognition.memory_evidence_refs:
+            provider_result = self._run_provider_answer_path(
+                turn_input,
+                metadata={
+                    **metadata,
+                    "grounding": {
+                        "web_search_executed": cognition.web_search_required,
+                        "citation_validation": "citation.evidence_missing",
+                        "fabricated": False,
+                    },
+                },
+                cognition=cognition,
+                loop=loop,
+                stage_name="grounded_answer",
+                provider_options={
+                    "grounding_evidence_missing": True,
+                    "raw_evidence_persisted": False,
+                },
+            )
+            if provider_result.assistant_final_response is not None:
+                return provider_result
             loop.step("finalize", stop_reason="finalized")
             grounded = {
                 "web_search_executed": cognition.web_search_required,
@@ -568,13 +589,20 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         memory_citation_ids = tuple(_memory_citation_id(ref) for ref in tuple(cognition.memory_evidence_refs)[:4])
         citation_ids = tuple(ref.evidence_id for ref in web_refs[:4]) + memory_citation_ids
-        web_text = "; ".join(f"{ref.title} ({ref.domain}) [{ref.evidence_id}]" for ref in web_refs[:4])
-        memory_text = "; ".join(f"Memory evidence ({getattr(ref, 'source_id', 'memory')}) [{citation}]" for ref, citation in zip(tuple(cognition.memory_evidence_refs)[:4], memory_citation_ids, strict=False))
-        evidence_text = "; ".join(part for part in (web_text, memory_text) if part)
-        draft = GroundedAnswerDraft(
-            text=f"Grounded answer from available evidence: {evidence_text}.",
-            citation_ids=citation_ids,
+        provider_result = self._run_provider_answer_path(
+            turn_input,
+            metadata=metadata,
+            cognition=cognition,
+            loop=loop,
+            stage_name="grounded_answer",
+            provider_options={
+                "grounded_answer_required": True,
+                "grounded_citation_ids": list(citation_ids[:4]),
+                "raw_evidence_persisted": False,
+            },
         )
+        response_text = provider_result.assistant_final_response.text if provider_result.assistant_final_response is not None else ""
+        draft = GroundedAnswerDraft(text=response_text or "Evidence is missing for this grounded answer.", citation_ids=_citation_ids_from_text(response_text, allowed=citation_ids))
         validation = validate_grounded_citations(
             draft,
             evidence_refs=web_refs,
@@ -584,7 +612,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if not validation.valid:
             loop.step("finalize", stop_reason="finalized")
             metadata = {
-                **metadata,
+                **provider_result.metadata,
                 "grounding": {
                     "web_search_executed": cognition.web_search_required,
                     "citation_validation": validation.reason_code,
@@ -597,9 +625,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
                 stage_name="grounded_answer",
             )
-        loop.step("finalize", stop_reason="finalized")
         metadata = {
-            **metadata,
+            **provider_result.metadata,
             "grounding": {
                 "web_search_executed": cognition.web_search_required,
                 "citation_validation": validation.reason_code,
@@ -607,12 +634,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "evidence_ref_count": len(cognition.evidence_refs),
             },
         }
-        return _entrypoint_text_result(
-            turn_input,
-            text=draft.text,
-            metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
-            stage_name="grounded_answer",
-        )
+        return provider_result.model_copy(update={"metadata": metadata})
 
     def _run_file_path(
         self,
@@ -690,18 +712,55 @@ class _CoreServiceProviderWorkerTurnExecutor:
     ) -> AssistantTurnResult:
         if cognition.memory_evidence_refs:
             return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
-        loop.step("finalize", stop_reason="finalized")
         memory_projection = {
-            "memory_records_recalled": len(tuple(cognition.memory_evidence_refs)),
+            "memory_records_recalled": _included_context_count(cognition, "memory_projection"),
             "memory_store_available": self._memory_loop is not None,
             "raw_memory_content_persisted": False,
         }
-        return _entrypoint_text_result(
+        return self._run_provider_answer_path(
             turn_input,
-            text="Memory route executed with no matching approved memory evidence.",
-            metadata=_with_loop_metadata({**metadata, "memory": memory_projection}, loop, self._trace_reader, turn_input),
+            metadata={**metadata, "memory": memory_projection},
+            cognition=cognition,
+            loop=loop,
             stage_name="memory",
+            provider_options={"memory_context_requested": True, "raw_memory_persisted": False},
         )
+
+    def _run_provider_answer_path(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+        stage_name: str,
+        provider_options: dict[str, object] | None = None,
+    ) -> AssistantTurnResult:
+        provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
+        result = run_assistant_provider_stage_turn(
+            provider_turn_input,
+            provider=self._provider,
+            model=self._model,
+            instructions=provider_instructions,
+            provider_options=provider_options,
+            telemetry_sink=self._trace_reader,
+        )
+        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        if result.error is not None:
+            loop.step("finalize", stop_reason="failed")
+        else:
+            loop.step("finalize", stop_reason="finalized")
+        combined_metadata = dict(result.metadata)
+        combined_metadata.update(
+            {
+                **metadata,
+                "provider_boundary": "provider_worker_process",
+                "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
+                "model_answer_stage": stage_name,
+                "memory_loop": _memory_write_projection(memory_write),
+            }
+        )
+        return result.model_copy(update={"metadata": _with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input)})
 
     def _run_safe_projection_path(
         self,
@@ -964,8 +1023,8 @@ class _FakeCoreWebSearchProvider:
     def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         result = WebSearchResult(
             title="Current browser-use release",
-            url="https://example.test/browser-use-release",
-            domain="example.test",
+            url="local://fake-search/browser-use-release",
+            domain="local.fake-search",
             snippet="Current browser-use release evidence.",
             freshness=query.freshness,
         )
@@ -1124,6 +1183,22 @@ def _memory_citation_id(ref: object) -> str:
     chunk_id = str(getattr(ref, "chunk_id", "unknown"))
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", chunk_id).strip("-")
     return f"memory.evidence.{safe}"
+
+
+def _citation_ids_from_text(text: str, *, allowed: tuple[str, ...]) -> tuple[str, ...]:
+    allowed_set = set(allowed)
+    found = tuple(re.findall(r"\[((?:web|memory)\.evidence\.[A-Za-z0-9_.:-]+)\]", text))
+    return tuple(citation for citation in found if citation in allowed_set)
+
+
+def _included_context_count(cognition: CognitionTurnAssembly, kind: str) -> int:
+    return len(
+        [
+            source
+            for source in cognition.context_projection.included_sources
+            if str(dict(source).get("kind", "")) == kind
+        ]
+    )
 
 
 def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> object | None:

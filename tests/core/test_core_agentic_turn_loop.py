@@ -215,8 +215,12 @@ def test_core_routes_non_provider_intent_kinds_without_generic_provider_fallthro
         assert result.metadata["intent"]["selected_intent"]["intent_kind"] == intent_kind, prompt
         assert result.metadata["intent_plan"]["step_kinds"] == [intent_kind], prompt
         assert metadata_key in result.metadata, prompt
-        assert result.provider_turn_refs == [], prompt
-        assert "provider_boundary" not in result.metadata, prompt
+        if intent_kind == "memory":
+            assert result.provider_turn_refs != [], prompt
+            assert result.metadata["provider_boundary"] == "provider_worker_process", prompt
+        else:
+            assert result.provider_turn_refs == [], prompt
+            assert "provider_boundary" not in result.metadata, prompt
         assert result.metadata["agentic_loop"]["trace_id"] == f"trace-core-route-{index}", prompt
         assert extra_assertion(result), prompt
 

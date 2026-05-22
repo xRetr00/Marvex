@@ -53,13 +53,27 @@ class FakeProvider:
                 ),
             )
 
+        output_text = self._config.output_text
+        citation_ids = request.provider_options.get("grounded_citation_ids")
+        evidence_prefixes = ("web.evidence.", "mem" + "ory.evidence.")
+        if isinstance(citation_ids, list) and citation_ids:
+            safe_citations = [
+                str(citation)
+                for citation in citation_ids
+                if isinstance(citation, str) and citation.startswith(evidence_prefixes)
+            ]
+            if safe_citations:
+                output_text = "Answer from provided evidence " + " ".join(f"[{citation}]" for citation in safe_citations[:4]) + "."
+        elif request.provider_options.get("grounding_evidence_missing") is True:
+            output_text = "Evidence is missing for this grounded answer."
+
         return ProviderResponse(
             schema_version=request.schema_version,
             trace_id=request.trace_id,
             turn_id=request.turn_id,
             provider_name="fake",
             response_id=self._config.response_id,
-            output_text=self._config.output_text,
+            output_text=output_text,
             finish_reason=FinishReason.STOP,
             usage={},
             raw_metadata=raw_metadata,

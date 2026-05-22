@@ -5,7 +5,6 @@ from typing import Any
 from packages.adapters.capabilities.mcp import McpAllowlist, McpClientSession, McpServerRef
 from packages.adapters.providers.fake.fake_provider import FakeProvider, FakeProviderConfig
 from packages.adapters.providers.tool_calls import ProviderToolCallSource
-from packages.assistant_runtime import build_text_success_turn_result
 from packages.assistant_runtime.provider_stage import run_provider_stage_turn
 from packages.context_runtime import ContextSourceKind
 from packages.contracts import AssistantTurnInput, AssistantTurnResult, ConversationRef, TraceStage
@@ -80,7 +79,14 @@ def run_end_to_end_assistant_turn(
     elif intent.selected_intent.intent_kind == IntentKind.CAPABILITY_TOOL:
         assistant_result, tool_projection, lifecycle_projection = _handle_calculator_turn(turn_input, model=model, instructions=instructions, previous_response_id=previous_response_id, telemetry_sink=telemetry_sink)
     elif intent.selected_intent.intent_kind == IntentKind.GROUNDED_ANSWER:
-        assistant_result, tool_projection, lifecycle_projection = _handle_grounded_answer_turn(turn_input, context_pack)
+        assistant_result, tool_projection, lifecycle_projection = _handle_grounded_answer_turn(
+            turn_input,
+            context_pack,
+            model=model,
+            instructions=instructions,
+            previous_response_id=previous_response_id,
+            telemetry_sink=telemetry_sink,
+        )
     else:
         provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text="I can continue with the selected safe context.")), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={}, telemetry_sink=telemetry_sink)
         assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "prompt_section_count": prompt_result.safe_projection().section_count, "context_included_count": context_pack.safe_projection().included_count}}})
@@ -124,17 +130,40 @@ def run_end_to_end_assistant_turn(
     return integrated
 
 
-def _handle_grounded_answer_turn(turn_input: AssistantTurnInput, context_pack: Any) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
+def _handle_grounded_answer_turn(
+    turn_input: AssistantTurnInput,
+    context_pack: Any,
+    *,
+    model: str,
+    instructions: str | None,
+    previous_response_id: str | None,
+    telemetry_sink: TelemetrySink,
+) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
     web_ids = _web_evidence_ids(context_pack)
     memory_links = _memory_evidence_links(context_pack)
     citation_ids = web_ids + tuple(_memory_citation_id(link) for link in memory_links)
     if not citation_ids:
         reason_code = "citation.evidence_missing"
-        assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text="Evidence is missing for this grounded answer.", metadata={"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}})
+        assistant_result = run_provider_stage_turn(
+            turn_input,
+            provider=FakeProvider(),
+            model=model,
+            instructions=instructions,
+            previous_response_id=previous_response_id,
+            provider_options={"grounding_evidence_missing": True, "raw_evidence_persisted": False},
+            telemetry_sink=telemetry_sink,
+        ).model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}}})
         return assistant_result, {"pending_approval_count": 0, "provider_continuation_ready": False, "final_response_ready": True, "result_status": "evidence_missing", "web_evidence_count": 0, "memory_evidence_count": 0, "citation_validation": reason_code, "raw_payload_persisted": False}, {"tool_result_delivery_ready": False, "raw_payload_persisted": False}
-    text = "Grounded answer uses available evidence " + " ".join(f"[{citation}]" for citation in citation_ids[:4]) + "."
     reason_code = _validate_citation_ids(citation_ids[:4], allowed_ids=citation_ids)
-    assistant_result = build_text_success_turn_result(schema_version=turn_input.schema_version, trace_id=turn_input.trace_id, turn_id=turn_input.turn_id, text=text, metadata={"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}})
+    assistant_result = run_provider_stage_turn(
+        turn_input,
+        provider=FakeProvider(),
+        model=model,
+        instructions=instructions,
+        previous_response_id=previous_response_id,
+        provider_options={"grounded_citation_ids": list(citation_ids[:4]), "raw_evidence_persisted": False},
+        telemetry_sink=telemetry_sink,
+    ).model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "citation_validation": reason_code}}})
     return assistant_result, {"pending_approval_count": 0, "provider_continuation_ready": True, "final_response_ready": True, "result_status": "succeeded", "web_evidence_count": len(web_ids), "memory_evidence_count": len(memory_links), "citation_validation": reason_code, "raw_payload_persisted": False}, {"tool_result_delivery_ready": True, "raw_payload_persisted": False}
 
 

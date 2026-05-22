@@ -80,3 +80,70 @@ def test_multi_intent_plan_composes_search_repo_read_and_grounded_answer_steps()
     assert plan.steps[0].execution_mode == CapabilityExecutionMode.PROPOSAL_ONLY
     assert plan.steps[1].risk_level == ToolRiskLevel.LOW
     assert plan.clarification_stop is False
+
+
+def test_hybrid_confidence_gating_defaults_normal_conversation_to_provider_simple_chat() -> None:
+    runtime = HybridIntentRuntime.default()
+
+    prompts = (
+        "Hello through ProviderWorker",
+        "Hey there",
+        "Thanks, got it",
+        "Can we continue this conversation?",
+    )
+
+    for text in prompts:
+        result = runtime.classify(_request(text))
+        assert result.selected_intent.intent_kind == IntentKind.PROVIDER_SIMPLE_CHAT, text
+        assert result.hybrid_details["semantic_candidate"] == IntentKind.PROVIDER_SIMPLE_CHAT.value
+
+
+def test_hybrid_confidence_gating_ambiguous_inputs_fallback_to_provider_simple_chat() -> None:
+    runtime = HybridIntentRuntime.default()
+
+    prompts = (
+        "hmm maybe",
+        "not sure what to do next",
+        "just checking in",
+        "something unrelated",
+    )
+
+    for text in prompts:
+        result = runtime.classify(_request(text))
+        assert result.selected_intent.intent_kind == IntentKind.PROVIDER_SIMPLE_CHAT, text
+        assert result.selected_intent.intent_kind not in {
+            IntentKind.GROUNDED_ANSWER,
+            IntentKind.WEB_SEARCH,
+            IntentKind.MEMORY,
+            IntentKind.CAPABILITY_TOOL,
+            IntentKind.MCP_NEEDED,
+        }
+
+
+def test_hybrid_confidence_gating_keeps_specialized_routes_for_clear_signals() -> None:
+    runtime = HybridIntentRuntime.default()
+
+    examples = {
+        "grounded answer with citations for this claim": IntentKind.GROUNDED_ANSWER,
+        "search latest browser-use version": IntentKind.WEB_SEARCH,
+        "compute 88+12": IntentKind.CAPABILITY_TOOL,
+        "what do you remember about my preferences": IntentKind.MEMORY,
+        "list MCP tools": IntentKind.MCP_NEEDED,
+    }
+
+    for text, expected in examples.items():
+        result = runtime.classify(_request(text))
+        assert result.selected_intent.intent_kind == expected, text
+
+
+def test_hybrid_details_expose_confidence_gate_and_fallback_metadata() -> None:
+    runtime = HybridIntentRuntime.default()
+
+    result = runtime.classify(_request("Hello through ProviderWorker"))
+
+    assert result.selected_intent.intent_kind == IntentKind.PROVIDER_SIMPLE_CHAT
+    assert "semantic_encoder_backend_name" in result.hybrid_details
+    assert "semantic_confidence_threshold" in result.hybrid_details
+    assert "selected_route_confidence" in result.hybrid_details
+    assert "route_gating_reason" in result.hybrid_details
+    assert "fallback_reason" in result.hybrid_details
