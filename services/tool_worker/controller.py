@@ -6,6 +6,7 @@ from __future__ import annotations
 # adapters/runtime boundaries.
 
 import asyncio
+import importlib.util
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
@@ -49,6 +50,7 @@ from packages.adapters.capabilities.mcp import (
     McpServerRef,
     McpTransport,
 )
+from packages.desktop_agent_runtime.windows_uia import collect_projection as collect_desktop_uia_projection
 
 from .models import (
     SCHEMA_VERSION,
@@ -359,6 +361,24 @@ class ToolWorkerController:
                     safe_message="Shell execution remains blocked because no robust sandbox is configured.",
                 ),
             )
+        elif capability_id == "browser_use.task":
+            result = _browser_use_result(request)
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
+                executed_fake_count=0,
+            )
+        elif capability_id == "computer_use.action":
+            result = _computer_use_result(request)
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
+                executed_fake_count=0,
+            )
         elif capability_id.startswith("mcp."):
             mcp_result = self._execute_mcp(request)
             result = mcp_result.result
@@ -648,3 +668,55 @@ def _mcp_metadata(server_ref: McpServerRef, policy: McpAllowlistPolicy) -> dict[
         "allowlist_policy": policy.safe_projection(),
         "arbitrary_server_execution_allowed": False,
     }
+
+
+def _browser_use_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
+    package_present = importlib.util.find_spec("browser_use") is not None
+    task_present = bool(str(request.arguments.get("task") or request.arguments.get("task_summary") or "").strip())
+    return CapabilityResultEnvelope(
+        schema_version=request.schema_version,
+        result_id=f"{request.request_id}:result",
+        trace_id=request.trace_id,
+        turn_id=request.turn_id,
+        capability_ref=request.proposal.capability_ref,
+        status="succeeded" if package_present and task_present else "denied",
+        safe_result={
+            "adapter": "browser-use",
+            "package_importable": package_present,
+            "task_present": task_present,
+            "approval_required": True,
+            "approved_execution": request.approval_decision is not None,
+            "direct_sdk_execution_without_approval": False,
+            "raw_browser_payload_persisted": False,
+            "raw_dom_persisted": False,
+            "raw_screenshot_persisted": False,
+        },
+        raw_input_persisted=False,
+        raw_output_persisted=False,
+    )
+
+
+def _computer_use_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
+    projection = collect_desktop_uia_projection(max_text_chars=160, max_control_depth=4)
+    return CapabilityResultEnvelope(
+        schema_version=request.schema_version,
+        result_id=f"{request.request_id}:result",
+        trace_id=request.trace_id,
+        turn_id=request.turn_id,
+        capability_ref=request.proposal.capability_ref,
+        status="succeeded",
+        safe_result={
+            "adapter": "windows-desktop-computer-use",
+            "uia_projection_available": bool(projection.get("available")),
+            "ufo_external_process": "operator_configured",
+            "omniparser_external_process": "operator_configured",
+            "approval_required": True,
+            "approved_execution": request.approval_decision is not None,
+            "credential_entry_allowed": False,
+            "arbitrary_desktop_control_allowed": False,
+            "raw_screen_persisted": False,
+            "raw_action_payload_persisted": False,
+        },
+        raw_input_persisted=False,
+        raw_output_persisted=False,
+    )
