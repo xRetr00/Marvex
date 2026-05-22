@@ -94,6 +94,7 @@ def _executor(provider: _JsonProvider) -> _CoreServiceProviderWorkerTurnExecutor
         provider_name="fake",
         model="fake-model",
         trace_reader=InMemoryTraceReader(),
+        structured_output_required=True,
     )
     executor._provider = provider
     executor._intent_classifier = _FixedIntentClassifier()

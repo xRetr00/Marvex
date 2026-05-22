@@ -543,6 +543,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         skill_manifests: tuple[SkillManifest, ...] = (),
         skill_loader: SkillInstructionLoader | None = None,
         connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
+        structured_output_required: bool = False,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -573,6 +574,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
         self._connector_autofetch_runtime = connector_autofetch_runtime
+        self._structured_output_required = structured_output_required
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
         linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
@@ -1018,19 +1020,27 @@ class _CoreServiceProviderWorkerTurnExecutor:
         provider_options: dict[str, object] | None = None,
     ) -> AssistantTurnResult:
         provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
-        effective_provider_options = _structured_provider_options(provider_options)
+        structured_requested = self._structured_output_required or bool(
+            dict(provider_options or {}).get("structured_output_required")
+        )
+        effective_provider_options = (
+            _structured_provider_options(provider_options)
+            if structured_requested
+            else dict(provider_options or {})
+        )
         result = run_assistant_provider_stage_turn(
             provider_turn_input,
             provider=self._provider,
             model=self._model,
-            instructions=_structured_provider_instructions(provider_instructions),
+            instructions=_structured_provider_instructions(provider_instructions) if structured_requested else provider_instructions,
             provider_options=effective_provider_options,
             telemetry_sink=self._trace_reader,
         )
-        result = self._apply_structured_output_if_requested(
-            result,
-            target_contract=str(effective_provider_options.get("structured_output_target_contract") or ""),
-        )
+        if structured_requested:
+            result = self._apply_structured_output_if_requested(
+                result,
+                target_contract=str(effective_provider_options.get("structured_output_target_contract") or ""),
+            )
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         if result.error is not None:
             loop.step("finalize", stop_reason="failed")

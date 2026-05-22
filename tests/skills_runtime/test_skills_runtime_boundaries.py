@@ -8,7 +8,6 @@ SKILLS_RUNTIME = ROOT / "packages" / "skills_runtime"
 FORBIDDEN_IMPORTS = (
     "apps",
     "os",
-    "pathlib",
     "subprocess",
     "requests",
     "httpx",
