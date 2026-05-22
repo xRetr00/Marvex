@@ -54,6 +54,7 @@ This registry describes where each Marvex surface sits in the architecture so gr
 | future voice product behavior | future product surface | future voice shell/orb/desktop surfaces | VoiceWorker does not imply Orb, Face UI, desktop overlay, final visual assistant shell, vision, proactive behavior, hidden recording, or remote worker exposure. |
 | future desktop agent | future product surface | future desktop agent | No desktop control, OS automation, credential extraction, or overlay behavior. |
 | future shell/orb ui | future product surface | future shell/orb UI beyond approved Shell | No Orb product behavior. Shell behavior outside the approved loopback Tauri tray/overlay/Spotlight surface remains future work. The approved Shell surface uses a Siri-style waveform overlay only. |
+| future orb ui | future product surface | future Orb UI | Compatibility marker for governance gates: Orb remains future product behavior and is not part of the approved Shell waveform surface. |
 | future proactive behavior | future product surface | future proactive worker | No autonomous/proactive behavior or background assistant actions. |
 | future vision | future product surface | future vision worker | No vision/screen understanding product path. |
 
