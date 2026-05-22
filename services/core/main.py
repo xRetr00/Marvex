@@ -73,6 +73,7 @@ from packages.provider_selection_runtime import (
     ProviderSelectionRequest,
     ProviderSelectionRuntime,
 )
+from packages.provider_structured_output import validate_raw_structured_output
 from packages.session_runtime import (
     CurrentProcessSessionRegistry,
     build_turn_linkage_from_assistant_turn_input,
@@ -228,6 +229,55 @@ class _ProviderWorkerProcessProvider:
                 error=error,
             )
         raise RuntimeError("ProviderWorker response was invalid.")
+
+    def map_raw_output_to_structured_result(
+        self,
+        *,
+        schema_version: str,
+        trace_id: str,
+        turn_id: str,
+        target_contract: str,
+        raw_output_text: str,
+    ) -> dict[str, object] | None:
+        command: dict[str, object] = {
+            "command": "structured_output",
+            "schema_version": schema_version,
+            "trace_id": trace_id,
+            "turn_id": turn_id,
+            "provider_name": self._provider_name,
+            "target_contract": target_contract,
+            "raw_output_text": raw_output_text,
+        }
+        if self._base_url is not None:
+            command["base_url"] = self._base_url
+        if self._timeout_seconds is not None:
+            command["timeout_seconds"] = self._timeout_seconds
+        stop_command = {"command": "stop", "trace_id": trace_id}
+        completed = subprocess.run(
+            [
+                self._python_executable,
+                "-m",
+                "services.provider_worker.main",
+                "--jsonl",
+            ],
+            input=json.dumps(command) + "\n" + json.dumps(stop_command) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=(self._timeout_seconds or 15) + 5,
+        )
+        if completed.returncode != 0:
+            return None
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        if not lines:
+            return None
+        payload = json.loads(lines[0])
+        if not isinstance(payload, dict) or payload.get("ok") is not True:
+            return None
+        metadata = payload.get("metadata")
+        if not isinstance(metadata, dict):
+            return None
+        structured = metadata.get("structured_output")
+        return dict(structured) if isinstance(structured, dict) else None
 
 
 class _IntentWorkerProcessClassifier:
@@ -809,13 +859,18 @@ class _CoreServiceProviderWorkerTurnExecutor:
         provider_options: dict[str, object] | None = None,
     ) -> AssistantTurnResult:
         provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
+        effective_provider_options = _structured_provider_options(provider_options)
         result = run_assistant_provider_stage_turn(
             provider_turn_input,
             provider=self._provider,
             model=self._model,
-            instructions=provider_instructions,
-            provider_options=provider_options,
+            instructions=_structured_provider_instructions(provider_instructions),
+            provider_options=effective_provider_options,
             telemetry_sink=self._trace_reader,
+        )
+        result = self._apply_structured_output_if_requested(
+            result,
+            target_contract=str(effective_provider_options.get("structured_output_target_contract") or ""),
         )
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         if result.error is not None:
@@ -833,6 +888,59 @@ class _CoreServiceProviderWorkerTurnExecutor:
             }
         )
         return result.model_copy(update={"metadata": _with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input)})
+
+    def _apply_structured_output_if_requested(
+        self,
+        result: AssistantTurnResult,
+        *,
+        target_contract: str,
+    ) -> AssistantTurnResult:
+        if target_contract != "AssistantFinalResponse" or result.assistant_final_response is None:
+            return result
+        raw_output_text = result.assistant_final_response.text
+        structured = _map_structured_output(
+            provider=self._provider,
+            schema_version=result.schema_version,
+            trace_id=result.trace_id,
+            turn_id=result.turn_id,
+            target_contract=target_contract,
+            raw_output_text=raw_output_text,
+        )
+        projection = _structured_output_projection(structured)
+        metadata = {**result.metadata, "structured_output": projection}
+        if structured.get("state") == "valid_structured_result":
+            payload = structured.get("parsed_payload")
+            try:
+                final_response = AssistantFinalResponse.model_validate(payload)
+            except Exception:
+                projection = {
+                    **projection,
+                    "state": "invalid_structured_output",
+                    "validated": False,
+                    "sanitized_error_code": "VALIDATION_FAILED",
+                }
+                return result.model_copy(
+                    update={
+                        "assistant_final_response": result.assistant_final_response.model_copy(
+                            update={"text": "Provider output could not be validated as structured data."}
+                        ),
+                        "metadata": {**result.metadata, "structured_output": projection},
+                    }
+                )
+            return result.model_copy(
+                update={
+                    "assistant_final_response": final_response,
+                    "metadata": metadata,
+                }
+            )
+        return result.model_copy(
+            update={
+                "assistant_final_response": result.assistant_final_response.model_copy(
+                    update={"text": "Provider output could not be validated as structured data."}
+                ),
+                "metadata": metadata,
+            }
+        )
 
     def _run_safe_projection_path(
         self,
@@ -1318,6 +1426,76 @@ def _prompt_fidelity_projection(
         "memory_content_present": "Recalled memory" in joined,
         "evidence_content_present": "Evidence" in joined or "evidence" in joined,
         "raw_prompt_persisted": False,
+    }
+
+
+def _structured_provider_options(
+    provider_options: dict[str, object] | None,
+) -> dict[str, object]:
+    options = dict(provider_options or {})
+    options.setdefault("structured_output_target_contract", "AssistantFinalResponse")
+    options.setdefault("structured_output_required", True)
+    options.setdefault("raw_provider_output_persisted", False)
+    return options
+
+
+def _structured_provider_instructions(instructions: str | None) -> str:
+    guidance = (
+        "Return only a JSON object matching AssistantFinalResponse with fields: "
+        "schema_version, response_type, text, payload_ref, output_channel_intent, "
+        "safe_for_display, safe_for_speech, memory_write_candidate_hint, finish_reason, metadata. "
+        "Do not wrap the JSON in markdown."
+    )
+    return f"{instructions}\n\n{guidance}" if instructions else guidance
+
+
+def _map_structured_output(
+    *,
+    provider: object,
+    schema_version: str,
+    trace_id: str,
+    turn_id: str,
+    target_contract: str,
+    raw_output_text: str,
+) -> dict[str, object]:
+    mapper = getattr(provider, "map_raw_output_to_structured_result", None)
+    if callable(mapper):
+        try:
+            mapped = mapper(
+                schema_version=schema_version,
+                trace_id=trace_id,
+                turn_id=turn_id,
+                target_contract=target_contract,
+                raw_output_text=raw_output_text,
+            )
+            if isinstance(mapped, dict):
+                return dict(mapped)
+            if hasattr(mapped, "model_dump"):
+                return dict(mapped.model_dump(mode="json"))
+        except Exception:
+            pass
+    result = validate_raw_structured_output(
+        schema_version=schema_version,
+        trace_id=trace_id,
+        turn_id=turn_id,
+        target_contract=target_contract,
+        raw_output_text=raw_output_text,
+        target_model=AssistantFinalResponse,
+        include_raw_preview=False,
+    )
+    return dict(result.model_dump(mode="json"))
+
+
+def _structured_output_projection(structured: dict[str, object]) -> dict[str, object]:
+    state = str(structured.get("state") or "invalid_structured_output")
+    return {
+        "requested": True,
+        "target_contract": str(structured.get("target_contract") or "AssistantFinalResponse"),
+        "state": state,
+        "validated": state == "valid_structured_result",
+        "sanitized_error_code": structured.get("sanitized_error_code"),
+        "raw_output_persisted": False,
+        "raw_preview_present": bool(structured.get("raw_preview")),
     }
 
 

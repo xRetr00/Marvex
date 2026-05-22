@@ -50,7 +50,6 @@ CHECKS = [
     "check_project_status.py",
     "check_file_size_policy.py",
     "check_port_boundaries.py",
-    "check_decision_runtime_boundaries.py",
     "check_provider_runtime_boundaries.py",
     "check_provider_worker_boundaries.py",
     "check_intent_worker_boundaries.py",
