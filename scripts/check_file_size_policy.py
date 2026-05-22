@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_LINES = 500
 JUSTIFICATION = "file size justification"
-EXCLUDED_PARTS = {"node_modules", "dist", ".venv"}
+EXCLUDED_PARTS = {"node_modules", "dist", ".venv", ".uv-cache"}
 EXCLUDED_FILENAMES = {"package-lock.json"}
 TEXT_SUFFIXES = {
     ".md",
@@ -28,7 +28,7 @@ def main() -> int:
         rel_path = path.relative_to(ROOT)
         rel = rel_path.as_posix()
         rel_parts = rel_path.parts
-        if any(part in EXCLUDED_PARTS for part in rel_parts) or path.name in EXCLUDED_FILENAMES:
+        if any(part in EXCLUDED_PARTS or part.startswith("uv-cache") for part in rel_parts) or path.name in EXCLUDED_FILENAMES:
             continue
         if not path.is_file() or path.suffix.lower() not in TEXT_SUFFIXES:
             continue
