@@ -27,13 +27,13 @@ ALLOWED_IMPORTS = (
     "enum",
     "packages.capability_runtime",
     "packages.skills_runtime",
+    "pathlib",
     "pydantic",
     "typing",
 )
 FORBIDDEN_IMPORTS = (
     "apps",
     "os",
-    "pathlib",
     "subprocess",
     "requests",
     "httpx",
