@@ -66,11 +66,11 @@
       "../../assets/icon.ico"
     ],
     "externalBin": [
-      "../dist/python/marvex-core",
-      "../dist/python/marvex-provider-worker",
-      "../dist/python/marvex-intent-worker",
-      "../dist/python/marvex-tool-worker",
-      "../dist/python/marvex-voice-worker"
+      "../python-sidecars/marvex-core",
+      "../python-sidecars/marvex-provider-worker",
+      "../python-sidecars/marvex-intent-worker",
+      "../python-sidecars/marvex-tool-worker",
+      "../python-sidecars/marvex-voice-worker"
     ],
     "windows": {
       "nsis": {
