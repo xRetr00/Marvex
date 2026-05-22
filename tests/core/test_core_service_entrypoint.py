@@ -201,6 +201,93 @@ def test_core_service_entrypoint_starts_local_api_and_shuts_down_cleanly():
     assert error.source == "local_api"
 
 
+def test_core_service_entrypoint_starts_control_plane_state_api():
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    captured: dict[str, object] = {}
+
+    class MainServer:
+        def serve_forever(self) -> None:
+            raise KeyboardInterrupt
+
+        def server_close(self) -> None:
+            captured["main_closed"] = True
+
+    class ControlServer:
+        def __init__(self, app) -> None:
+            self.app = app
+
+        def serve_forever(self) -> None:
+            state_status, state_payload = _call_app(
+                self.app,
+                "/control/state",
+                auth=f"Bearer {EXPECTED_TOKEN}",
+            )
+            stream_status, stream_payload = _call_first_stream_frame(
+                self.app,
+                "/control/state/stream",
+                auth=f"Bearer {EXPECTED_TOKEN}",
+            )
+            captured["control_state"] = (state_status, state_payload)
+            captured["control_stream"] = (stream_status, stream_payload)
+
+        def server_close(self) -> None:
+            captured["control_closed"] = True
+
+    def main_server_factory(host, port, app):
+        captured["main_host"] = host
+        captured["main_port"] = port
+        return MainServer()
+
+    def control_server_factory(host, port, app):
+        captured["control_host"] = host
+        captured["control_port"] = port
+        return ControlServer(app)
+
+    exit_code = run_core_service(
+        config=CoreServiceEntrypointConfig(
+            local_auth_token=EXPECTED_TOKEN,
+            port=9877,
+            control_port=9878,
+        ),
+        server_factory=main_server_factory,
+        control_server_factory=control_server_factory,
+    )
+
+    assert exit_code == 0
+    assert captured["control_host"] == "127.0.0.1"
+    assert captured["control_port"] == 9878
+    assert captured["control_closed"] is True
+
+    state_status, state_payload = captured["control_state"]
+    assert state_status == "200 OK"
+    assert state_payload["status"] == "idle"
+    assert state_payload["raw_audio_persisted"] is False
+
+    stream_status, stream_payload = captured["control_stream"]
+    assert stream_status == "200 OK"
+    assert stream_payload["status"] == "idle"
+    assert stream_payload["raw_audio_persisted"] is False
+
+
+def _call_first_stream_frame(app, path: str, *, auth: str) -> tuple[str, dict]:
+    environ: dict[str, object] = {}
+    setup_testing_defaults(environ)
+    environ["REQUEST_METHOD"] = "GET"
+    environ["PATH_INFO"] = path
+    environ["HTTP_AUTHORIZATION"] = auth
+    environ["CONTENT_LENGTH"] = "0"
+    environ["wsgi.input"] = BytesIO(b"")
+    captured: dict[str, object] = {}
+
+    def start_response(status, _headers, exc_info=None):
+        captured["status"] = status
+
+    frame = next(iter(app(environ, start_response))).decode("utf-8")
+    payload = json.loads(frame.removeprefix("data: ").strip())
+    return str(captured["status"]), payload
+
+
 def test_core_service_entrypoint_rejects_remote_bind_configuration():
     from services.core.main import CoreServiceEntrypointConfig, run_core_service
 
