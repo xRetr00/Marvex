@@ -367,7 +367,7 @@ remain blocked until separate tasks approve them.
 ## Decision Runtime Boundary
 
 Decision runtime owns decision pipeline wiring and execution helpers. CLI and
-Core must not import decision runtime modules directly for diagnostic behavior.
+Core must not import the legacy decision-pipeline adapter directly for diagnostic behavior; live turn decisions are owned by CognitionRuntime and Core routing.
 Decision factories are composition helpers only: no dev components, payload
 shaping, routing behavior, validation behavior, policy behavior, or business
 decisions.
