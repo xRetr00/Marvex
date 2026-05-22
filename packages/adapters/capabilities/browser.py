@@ -3,7 +3,10 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any, Literal
 
-from playwright.sync_api import Browser, BrowserContext, Page
+try:  # playwright is a runtime-optional dependency (downloaded via the Deps tab)
+    from playwright.sync_api import Browser, BrowserContext, Page
+except ModuleNotFoundError:  # pragma: no cover - exercised in light/frozen builds
+    Browser = BrowserContext = Page = None
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from packages.capability_runtime import (

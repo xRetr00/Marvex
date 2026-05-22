@@ -7,8 +7,14 @@ import os
 import re
 from typing import Literal
 
-import semantic_router
-from llama_index.core.selectors import SingleSelection
+try:  # semantic-router is runtime-optional; classify_intent falls back to deterministic
+    import semantic_router
+except ModuleNotFoundError:  # pragma: no cover - exercised in light/frozen builds
+    semantic_router = None
+try:  # llama-index is runtime-optional
+    from llama_index.core.selectors import SingleSelection
+except ModuleNotFoundError:  # pragma: no cover
+    SingleSelection = None
 from pydantic import Field
 
 from packages.capability_runtime import CapabilityExecutionMode, ToolRiskLevel
