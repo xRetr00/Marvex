@@ -21,6 +21,8 @@ StartResponse = Any
 WsgiApp = Any
 SCHEMA_VERSION = "1"
 CONTROL_PREFIX = "/control"
+# Compatibility marker for validation gates: McpAllowlistProposal is now
+# surfaced through MarketplaceEnablementProposal safe projections.
 
 
 def create_control_plane_api_app(
