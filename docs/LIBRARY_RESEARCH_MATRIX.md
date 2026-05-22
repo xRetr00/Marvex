@@ -52,7 +52,7 @@ Awesome-list inclusion is discovery evidence only. It is not approval.
 | intent routing | Research before implementation | semantic routing, structured-output classifiers | IntentRuntime adapter |
 | structured outputs/constrained generation | Research before implementation | OpenAI Structured Outputs / Instructor / Guardrails-style validation | provider-stage bridge adapter |
 | voice STT/TTS | Research only; do not implement yet | OpenAI Audio / faster-whisper / Piper successor | VoiceRuntime/OutputRuntime adapter |
-| desktop automation | Research only; do not implement yet | PyAutoGUI / Playwright / OS accessibility / MCP desktop servers | DesktopAgent adapter behind policy |
+| desktop automation | Approved for DesktopAgent perception adapter; research remains required for broader automation | pywinauto / Python-UIAutomation-for-Windows / Playwright / OS accessibility / MCP desktop servers | DesktopAgent adapter behind policy |
 | agent observability/evals | Research before implementation | Phoenix / Braintrust / OpenTelemetry GenAI-style tooling | Telemetry/EventRuntime and test tooling adapters |
 
 ## Strong Future Decision Candidates
@@ -78,6 +78,9 @@ These are strong future decision candidates, not approved dependencies:
 - OpenAI Audio / faster-whisper / Piper successor for future voice research.
 - PyAutoGUI / Playwright / OS accessibility / MCP desktop servers for future
   DesktopAgent research.
+- pywinauto and Python-UIAutomation-for-Windows (`uiautomation`) are adopted
+  only for the approved Windows DesktopAgent perception adapter with platform
+  markers and adapter isolation.
 
 ## Adapter-Only / Pattern-Only Candidates
 

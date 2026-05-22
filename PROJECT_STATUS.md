@@ -9,6 +9,10 @@ accepted_docs: true
 current_governance_gate:
 Intent and Tool Worker Execution Slice Checkpoint
 
+## Desktop Agent Computer-Use Proactive Checkpoint
+
+DesktopAgent, computer-use, and Proactive surfaces are now approved in bounded form. DesktopAgent is a local-only perception worker that returns safe focused-window and screenpipe-recall projections only. Computer-use is opt-in and approval-required through ToolWorker/CapabilityRuntime. Proactive behavior is proposal-only, visible, local-only, and gated by learning preferences; it does not execute hidden background actions.
+
 ## Windows Shell Product Surface Checkpoint
 
 Marvex now has an approved Shell contract for the Tauri v2 Windows shell under `apps/shell`. The shell is a product surface and local supervisor only: it generates an in-memory local bearer token, starts the approved Core and worker entrypoints as windowless child processes, exposes a tray-resident app with chat, a top-left state pill/waveform overlay, and a Spotlight/approval surface, and consumes loopback Core and Control Plane contracts. The shell does not implement provider, intent, tool, voice, cognition, memory, policy, desktop-agent, vision, or proactive behavior.
