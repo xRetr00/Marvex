@@ -1569,8 +1569,8 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--memory-vault-root",
-        default=None,
-        help="Explicit local root for derived memory SQLite index and Obsidian-compatible wiki vault.",
+        default=".marvex-memory",
+        help="Local root for derived memory SQLite index and Obsidian-compatible wiki vault. Defaults to .marvex-memory so memory recall/write is on by default; pass an empty string to disable.",
     )
     parser.add_argument(
         "--file-capability-root",
