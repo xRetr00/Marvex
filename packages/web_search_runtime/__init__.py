@@ -1,9 +1,17 @@
 
+# file size justification: multi-provider web search runtime (Wikipedia, DDGS retry,
+# multi-fallback, SearXNG) plus freshness/grounding models live in this single
+# governed module per the web-search boundary contract.
 from __future__ import annotations
 
+import json
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any, Protocol
+from typing import Any, Callable, Protocol
 from urllib.parse import urlparse
 
 import httpx
@@ -69,6 +77,10 @@ class WebSearchProvider(Protocol):
         ...
 
 
+# ---------------------------------------------------------------------------
+# SearXNG adapter (no API key required; self-hosted)
+# ---------------------------------------------------------------------------
+
 class SearXNGWebSearchAdapter(CapabilityRuntimeModel):
     provider_name: str = "searxng"
     base_url: str
@@ -86,19 +98,166 @@ class SearXNGWebSearchAdapter(CapabilityRuntimeModel):
         return _bundle(query, "searxng", rows)
 
 
+# ---------------------------------------------------------------------------
+# DDGS adapter with bounded retry/backoff for rate-limit robustness
+# ---------------------------------------------------------------------------
+
+_DDGS_RETRY_STATUS_CODES: frozenset[int] = frozenset({429, 503})
+_DDGS_MAX_RETRIES: int = 3
+_DDGS_BACKOFF_BASE_SECONDS: float = 1.0
+
+
 class DDGSWebSearchAdapter(CapabilityRuntimeModel):
     provider_name: str = "ddgs"
     ddgs_client: Any | None = None
+    max_retries: int = _DDGS_MAX_RETRIES
+    backoff_base_seconds: float = _DDGS_BACKOFF_BASE_SECONDS
+    # Injectable sleep callable for testability (real runtime uses time.sleep)
+    sleep_fn: Any | None = None
 
     def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         client = self.ddgs_client
         if client is None:
             from ddgs import DDGS
-
             client = DDGS()
-        rows = tuple(_result_from_ddgs(item, query.freshness) for item in tuple(client.text(query.query, max_results=query.max_results)))
-        return _bundle(query, "ddgs", rows)
+        sleep_fn: Callable[[float], None] = self.sleep_fn or time.sleep
+        last_exc: Exception | None = None
+        for attempt in range(self.max_retries + 1):
+            try:
+                rows = tuple(
+                    _result_from_ddgs(item, query.freshness)
+                    for item in tuple(client.text(query.query, max_results=query.max_results))
+                )
+                return _bundle(query, "ddgs", rows)
+            except Exception as exc:  # noqa: BLE001
+                last_exc = exc
+                exc_str = str(exc).lower()
+                is_rate_limit = (
+                    "429" in exc_str
+                    or "rate" in exc_str
+                    or "ratelimit" in exc_str
+                    or "too many" in exc_str
+                    or "503" in exc_str
+                )
+                if not is_rate_limit or attempt >= self.max_retries:
+                    break
+                wait = self.backoff_base_seconds * (2 ** attempt)
+                sleep_fn(wait)
+        if last_exc is not None:
+            raise last_exc
+        return _bundle(query, "ddgs", ())
 
+
+# ---------------------------------------------------------------------------
+# Wikipedia adapter — free, no API key, stdlib urllib only
+# ---------------------------------------------------------------------------
+
+_WIKIPEDIA_API_BASE: str = "https://en.wikipedia.org/w/api.php"
+_WIKIPEDIA_ARTICLE_BASE: str = "https://en.wikipedia.org/wiki/"
+_WIKIPEDIA_DOMAIN: str = "en.wikipedia.org"
+_WIKIPEDIA_USER_AGENT: str = "Marvex-Assistant-OS/1.0 (open-source; no-api-key; stdlib urllib)"
+
+
+def _wikipedia_fetch(url: str, *, http_fetch: Callable[[str], bytes] | None) -> bytes:
+    """Fetch URL bytes via injectable HTTP callable (for offline testing) or urllib."""
+    if http_fetch is not None:
+        return http_fetch(url)
+    req = urllib.request.Request(url, headers={"User-Agent": _WIKIPEDIA_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=10) as resp:  # noqa: S310 — stdlib, not shell
+        return resp.read()
+
+
+class WikipediaWebSearchAdapter(CapabilityRuntimeModel):
+    """Free, open-content Wikipedia search via the MediaWiki OpenSearch API.
+
+    Uses Python stdlib ``urllib`` only — no new dependency.
+    Bounded snippets only; no raw HTML or full article text is persisted.
+    api_key_required is always False (Wikipedia is openly accessible).
+    """
+
+    provider_name: str = "wikipedia"
+    api_base: str = _WIKIPEDIA_API_BASE
+    article_base: str = _WIKIPEDIA_ARTICLE_BASE
+    api_key_required: bool = False
+    # Injectable HTTP fetch callable for offline tests (signature: (url: str) -> bytes)
+    http_fetch: Any | None = None
+
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
+        # Phase 1: OpenSearch to discover titles (up to max_results candidates)
+        opensearch_params = urllib.parse.urlencode({
+            "action": "opensearch",
+            "search": query.query,
+            "limit": query.max_results,
+            "namespace": "0",
+            "format": "json",
+        })
+        opensearch_url = f"{self.api_base}?{opensearch_params}"
+        try:
+            raw = _wikipedia_fetch(opensearch_url, http_fetch=self.http_fetch)
+            opensearch_payload: list[Any] = json.loads(raw.decode("utf-8"))
+        except Exception:  # noqa: BLE001
+            return _bundle(query, "wikipedia", ())
+
+        # OpenSearch returns [query, [titles], [descriptions], [urls]]
+        if not isinstance(opensearch_payload, list) or len(opensearch_payload) < 4:
+            return _bundle(query, "wikipedia", ())
+
+        titles: list[str] = list(opensearch_payload[1])
+        descriptions: list[str] = list(opensearch_payload[2])
+        article_urls: list[str] = list(opensearch_payload[3])
+
+        rows: list[WebSearchResult] = []
+        for idx in range(min(len(titles), query.max_results)):
+            title = _bounded_text(titles[idx] if idx < len(titles) else "Wikipedia article", 300)
+            description = _bounded_text(descriptions[idx] if idx < len(descriptions) else "", 800)
+            url = article_urls[idx] if idx < len(article_urls) else (self.article_base + urllib.parse.quote(title.replace(" ", "_")))
+            url = _bounded_text(url, 1200)
+            if not title:
+                continue
+            rows.append(WebSearchResult(
+                title=title,
+                url=url,
+                domain=_WIKIPEDIA_DOMAIN,
+                snippet=description,
+                freshness=query.freshness,
+            ))
+
+        return _bundle(query, "wikipedia", tuple(rows))
+
+
+# ---------------------------------------------------------------------------
+# Multi-provider fallback: tries providers in order, returns first non-empty
+# ---------------------------------------------------------------------------
+
+class MultiProviderWebSearch(CapabilityRuntimeModel):
+    """Tries an ordered list of free/open-source providers; returns first non-empty bundle.
+
+    Falls back to the next provider when one raises or returns zero results.
+    All configured providers must be free and require no API key.
+    """
+
+    provider_name: str = "multi"
+    providers: tuple[Any, ...] = ()
+
+    def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
+        last_bundle: WebSearchGroundingBundle | None = None
+        for provider in self.providers:
+            try:
+                bundle = provider.search(query)
+                if bundle.results:
+                    return bundle
+                last_bundle = bundle
+            except Exception:  # noqa: BLE001
+                continue
+        # All providers empty or failed — return last empty bundle or empty multi bundle
+        if last_bundle is not None:
+            return last_bundle
+        return _bundle(query, "multi", ())
+
+
+# ---------------------------------------------------------------------------
+# Provider selector (legacy; kept for backward compat)
+# ---------------------------------------------------------------------------
 
 class WebSearchProviderSelector(CapabilityRuntimeModel):
     searxng: SearXNGWebSearchAdapter | None = None
@@ -111,6 +270,10 @@ class WebSearchProviderSelector(CapabilityRuntimeModel):
             return self.ddgs
         raise RuntimeError("web_search_provider_unavailable")
 
+
+# ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
 
 def _result_from_searxng(item: dict[str, Any], freshness: WebSearchFreshness) -> WebSearchResult:
     url = str(item.get("url") or item.get("href") or "")
@@ -136,6 +299,10 @@ def _bounded_text(value: object, limit: int) -> str:
     text = str(value)
     return text[:limit]
 
+
+# ---------------------------------------------------------------------------
+# Freshness policy
+# ---------------------------------------------------------------------------
 
 class FreshnessDecision(CapabilityRuntimeModel):
     freshness_needed: bool

@@ -58,12 +58,14 @@ from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
 from packages.telemetry import InMemoryTraceReader, make_trace_event
 from packages.web_search_runtime import (
     DDGSWebSearchAdapter,
+    MultiProviderWebSearch,
     SearXNGWebSearchAdapter,
     WebSearchEvidenceRef,
     WebSearchFreshness,
     WebSearchGroundingBundle,
     WebSearchQuery,
     WebSearchResult,
+    WikipediaWebSearchAdapter,
 )
 
 
@@ -1210,6 +1212,14 @@ def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> obj
         if not config.web_base_url:
             raise ValueError("web_base_url is required for searxng web search")
         return SearXNGWebSearchAdapter(base_url=config.web_base_url)
+    if config.web_search == "wikipedia":
+        return WikipediaWebSearchAdapter()
+    if config.web_search == "multi":
+        # Ordered fallback: ddgs then wikipedia then searxng (if configured)
+        ordered: list[object] = [DDGSWebSearchAdapter(), WikipediaWebSearchAdapter()]
+        if config.web_base_url:
+            ordered.append(SearXNGWebSearchAdapter(base_url=config.web_base_url))
+        return MultiProviderWebSearch(providers=tuple(ordered))
     return _FakeCoreWebSearchProvider()
 
 
@@ -1553,9 +1563,9 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--web-search",
-        choices=("fake", "none", "ddgs", "searxng"),
+        choices=("fake", "none", "ddgs", "searxng", "wikipedia", "multi"),
         default="fake",
-        help="Web search provider for grounded runtime turns. Defaults to deterministic fake.",
+        help="Web search provider for grounded runtime turns. Defaults to deterministic fake. 'wikipedia' uses the free MediaWiki API (no key). 'multi' tries ddgs then wikipedia then searxng-if-configured.",
     )
     parser.add_argument(
         "--web-base-url",
