@@ -13,12 +13,13 @@ SERVICE_CONTRACTS = {
     "desktop_agent": "DesktopAgent",
     "shell": "Shell",
 }
-SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker", "intent_worker", "tool_worker"}
+SERVICE_ENTRYPOINT_TASKS = {"core", "provider_worker", "intent_worker", "tool_worker", "voice_worker"}
 ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "core": {"README.md", "__init__.py", "main.py"},
     "provider_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
     "intent_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
     "tool_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
+    "voice_worker": {"README.md", "__init__.py", "models.py", "controller.py", "main.py"},
 }
 ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "__future__",
@@ -206,7 +207,7 @@ def main() -> int:
             _scan_core_service_entrypoint(service, failures)
         if service.name == "provider_worker" and entrypoint_allowed:
             _scan_provider_worker_entrypoint(service, failures)
-        if service.name in {"intent_worker", "tool_worker"} and entrypoint_allowed:
+        if service.name in {"intent_worker", "tool_worker", "voice_worker"} and entrypoint_allowed:
             _scan_worker_entrypoint(service, failures)
 
     if failures:

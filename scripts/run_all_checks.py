@@ -63,6 +63,7 @@ CHECKS = [
     "check_agentmemory_backend_boundaries.py",
     "check_connector_autofetch_boundaries.py",
     "check_memory_extraction_boundaries.py",
+    "check_voice_worker_service_boundaries.py",
 ]
 
 
