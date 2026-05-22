@@ -9,6 +9,7 @@ import json
 import re
 import subprocess
 import sys
+import threading
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -17,6 +18,11 @@ from typing import Any
 from wsgiref.simple_server import make_server
 
 from packages.contracts.state_event import AssistantStatusKind
+from packages.control_plane_api import (
+    ControlPlaneSnapshot,
+    InMemoryApprovalStore,
+    create_control_plane_api_app,
+)
 from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
     GITHUB_CONNECTOR_REF,
@@ -128,6 +134,7 @@ from packages.web_search_runtime import (
 
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
+DEFAULT_CONTROL_PORT = 8766
 DEFAULT_FOUNDATION_MODEL = "fake-model"
 DEFAULT_PROVIDER = "fake"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
@@ -143,6 +150,7 @@ _TURN_AUTONOMY_POLICY = AutonomyPolicy.for_mode("ask_before_risky")
 class CoreServiceEntrypointConfig:
     host: str = DEFAULT_HOST
     port: int = DEFAULT_PORT
+    control_port: int = DEFAULT_CONTROL_PORT
     local_auth_token: str | None = None
     foundation_model: str = DEFAULT_FOUNDATION_MODEL
     provider: str = DEFAULT_PROVIDER
@@ -166,12 +174,22 @@ class CoreServiceEntrypointConfig:
     agentmemory_daemon_url: str = "http://localhost:3111"
     agentmemory_namespace: str = "marvex"
     agentmemory_bearer_token: str | None = None
+    desktop_agent_enabled: bool = False
 
     def local_api_config(self) -> LocalApiConfig:
         return LocalApiConfig(
             host=self.host,
             port=self.port,
             allow_remote=self.allow_remote,
+        )
+
+    def control_api_config(self) -> LocalApiConfig:
+        # The Control Plane is a shell-only local control surface. Keep it on
+        # loopback even if Core is explicitly bound remotely for diagnostics.
+        return LocalApiConfig(
+            host=DEFAULT_HOST,
+            port=self.control_port,
+            allow_remote=False,
         )
 
 
@@ -415,6 +433,45 @@ class _ToolWorkerProcessExecutor:
         return payload
 
 
+class _DesktopAgentProcessClient:
+    def __init__(
+        self,
+        *,
+        timeout_seconds: float | None = None,
+        python_executable: str = sys.executable,
+    ) -> None:
+        self._timeout_seconds = timeout_seconds
+        self._python_executable = python_executable
+
+    def perceive(self, turn_input: AssistantTurnInput, *, content_budget_chars: int = 1200) -> dict[str, object]:
+        command = {
+            "command": "perceive",
+            "trace_id": turn_input.trace_id,
+            "content_budget_chars": content_budget_chars,
+        }
+        completed = subprocess.run(
+            [
+                self._python_executable,
+                "-m",
+                "services.desktop_agent.main",
+                "--jsonl",
+            ],
+            input=json.dumps(command) + "\n",
+            text=True,
+            capture_output=True,
+            timeout=(self._timeout_seconds or 15) + 5,
+        )
+        if completed.returncode != 0:
+            raise ConnectionError("DesktopAgent process unavailable.")
+        lines = [line for line in completed.stdout.splitlines() if line.strip()]
+        if not lines:
+            raise ConnectionError("DesktopAgent returned no response.")
+        payload = json.loads(lines[0])
+        if not isinstance(payload, dict):
+            raise RuntimeError("DesktopAgent response was invalid.")
+        return payload
+
+
 class _InMemoryConnectorKV(KVStore):
     def __init__(self) -> None:
         self._values: dict[str, str] = {}
@@ -546,6 +603,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         skill_loader: SkillInstructionLoader | None = None,
         connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
         structured_output_required: bool = False,
+        desktop_agent_enabled: bool = False,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -577,6 +635,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._skill_loader = skill_loader
         self._connector_autofetch_runtime = connector_autofetch_runtime
         self._structured_output_required = structured_output_required
+        self._desktop_agent_enabled = desktop_agent_enabled
+        self._desktop_agent = _DesktopAgentProcessClient(timeout_seconds=timeout_seconds)
         self._state_bus: AssistantStateBus | None = None
 
     def _publish(
@@ -661,6 +721,13 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "session": session_projection,
             "provider_selection": selection_projection,
         }
+        desktop_context = _run_desktop_agent_context(
+            self._desktop_agent,
+            turn_input,
+            enabled=self._desktop_agent_enabled,
+        )
+        if desktop_context is not None:
+            metadata["desktop_agent"] = desktop_context
         loop.step("plan")
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
         route_intents = tuple(dict.fromkeys((intent_kind, *plan_intents)))
@@ -747,15 +814,36 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 projection={"approval_resume_supported": True, "raw_payload_persisted": False},
             )
         if "browser_computer_use" in route_intents:
-            loop.step("approval", stop_reason="waiting_for_human_approval")
-            return self._run_safe_projection_path(
+            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="computer_use", trace_id=turn_input.trace_id)
+            if not self._resume_approval:
+                return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            if (self._approval_decision or "").strip().lower() != "approve":
+                return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            loop.step("tool")
+            tool_response = self._tool_executor.execute(
                 turn_input,
-                metadata=metadata,
-                loop=loop,
-                route_name="browser",
-                text="Browser/computer-use execution is gated and not run in CI.",
-                projection={"live_browser_executed": False, "approval_required": True},
-                stop_reason="waiting_for_human_approval",
+                action=turn_input.user_visible_input or "browser computer-use action",
+                capability="browser_click_type",
+                resource_type="browser",
+                capability_id="browser_use.task",
+                arguments={
+                    "task": turn_input.user_visible_input or "browser computer-use action",
+                    "approval_request_id": self._resume_approval,
+                    "approval_decision": self._approval_decision or "",
+                },
+            )
+            loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
+            return _entrypoint_text_result(
+                turn_input,
+                text="Computer-use request completed through the approval-gated ToolWorker boundary.",
+                metadata=_with_loop_metadata(
+                    {**metadata, "tool_boundary": "tool_worker_process", "computer_use": tool_response},
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+                stage_name="computer_use",
+                tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:computer-use:result")],
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
             self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
@@ -765,7 +853,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
         self._publish(AssistantStatusKind.THINKING, detail="provider_turn", trace_id=turn_input.trace_id)
         loop.step("provider")
-        provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
+        provider_turn_input, provider_instructions = _turn_input_with_prompt(
+            turn_input,
+            cognition,
+            desktop_context=desktop_context,
+        )
         result = run_assistant_provider_stage_turn(
             provider_turn_input,
             provider=self._provider,
@@ -796,6 +888,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "learning": learning_projection,
             }
         )
+        if desktop_context is not None:
+            metadata["desktop_agent"] = desktop_context
         metadata["provider_boundary"] = "provider_worker_process"
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
@@ -1629,9 +1723,48 @@ def _calculator_expression(text: str | None) -> str:
     return match.group(0) if match else "0+0"
 
 
+def _run_desktop_agent_context(
+    client: _DesktopAgentProcessClient,
+    turn_input: AssistantTurnInput,
+    *,
+    enabled: bool,
+) -> dict[str, object] | None:
+    if not enabled:
+        return None
+    try:
+        response = client.perceive(turn_input)
+    except Exception:
+        return {
+            "enabled": True,
+            "available": False,
+            "reason_code": "desktop_agent_unavailable",
+            "raw_screen_persisted": False,
+            "raw_keystrokes_persisted": False,
+        }
+    snapshot = dict(response.get("snapshot") or {})
+    content = str(snapshot.get("items") and "" or "")
+    items = snapshot.get("items")
+    if isinstance(items, list):
+        lines = [str(dict(item).get("safe_text") or "") for item in items if isinstance(item, dict)]
+        content = "\n".join(line for line in lines if line)
+    return {
+        "enabled": True,
+        "available": response.get("ok") is True,
+        "content": content[:1200],
+        "local_only": True,
+        "content_projection_only": True,
+        "raw_screen_persisted": False,
+        "raw_keystrokes_persisted": False,
+        "raw_audio_persisted": False,
+        "raw_transcript_persisted": False,
+    }
+
+
 def _turn_input_with_prompt(
     turn_input: AssistantTurnInput,
     cognition: CognitionTurnAssembly,
+    *,
+    desktop_context: dict[str, object] | None = None,
 ) -> tuple[AssistantTurnInput, str | None]:
     system_text = "\n".join(
         section.safe_content
@@ -1643,6 +1776,10 @@ def _turn_input_with_prompt(
         for section in cognition.prompt_result.plan.sections
         if section.included and section.kind.value not in {"system_policy", "approval_state"}
     )
+    if desktop_context and desktop_context.get("available") is True:
+        content = str(desktop_context.get("content") or "").strip()
+        if content:
+            prompt_text = prompt_text + "\n\nDesktop Agent safe content projection:\n" + content
     return turn_input.model_copy(update={"user_visible_input": prompt_text}), (system_text or None)
 
 
@@ -2176,6 +2313,7 @@ def _create_turn_executor(
         skill_manifests=_skill_manifests_from_config(config),
         skill_loader=skill_loader,
         connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
+        desktop_agent_enabled=config.desktop_agent_enabled,
     )
     executor._state_bus = get_default_bus()
     return executor
@@ -2213,6 +2351,21 @@ def create_core_service_app(
         local_auth_token=config.local_auth_token,
     )
     return app, service
+
+
+def create_control_plane_service_app(
+    *,
+    config: CoreServiceEntrypointConfig,
+    trace_reader: Any | None = None,
+    state_bus: AssistantStateBus | None = None,
+) -> Any:
+    return create_control_plane_api_app(
+        approval_store=InMemoryApprovalStore(),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token=config.local_auth_token or "",
+        trace_reader=trace_reader,
+        state_bus=state_bus or get_default_bus(),
+    )
 
 
 class _CompositeTraceReader:
@@ -2259,11 +2412,13 @@ def run_core_service(
     *,
     config: CoreServiceEntrypointConfig | None = None,
     server_factory: ServerFactory = make_server,
+    control_server_factory: ServerFactory | None = None,
 ) -> int:
     effective_config = config or CoreServiceEntrypointConfig()
     if not effective_config.allow_remote:
         _validate_loopback(effective_config.host)
     local_api_config = effective_config.local_api_config()
+    control_api_config = effective_config.control_api_config()
     if not effective_config.local_auth_token or not effective_config.local_auth_token.strip():
         raise ValueError("local_auth_token is required for Core service startup")
 
@@ -2272,12 +2427,28 @@ def run_core_service(
         config=effective_config,
         trace_reader=trace_reader,
     )
+    state_bus = get_default_bus()
+    control_app = create_control_plane_service_app(
+        config=effective_config,
+        trace_reader=trace_reader,
+        state_bus=state_bus,
+    )
     httpd = server_factory(local_api_config.host, local_api_config.port, app)
+    effective_control_server_factory = control_server_factory
+    if effective_control_server_factory is None and server_factory is make_server:
+        effective_control_server_factory = make_server
+    control_httpd = (
+        effective_control_server_factory(control_api_config.host, control_api_config.port, control_app)
+        if effective_control_server_factory is not None
+        else None
+    )
+    control_thread = _start_background_server(control_httpd, "marvex-control-plane") if control_httpd is not None else None
     print(
         STARTUP_MESSAGE_PREFIX
         + json.dumps(
             {
                 "base_url": f"http://{local_api_config.host}:{local_api_config.port}",
+                "control_base_url": f"http://{control_api_config.host}:{control_api_config.port}/control",
                 "auth_required": True,
                 "auth_token_present": True,
                 "token_value_logged": False,
@@ -2292,9 +2463,35 @@ def run_core_service(
     except KeyboardInterrupt:
         pass
     finally:
+        _shutdown_server(control_httpd)
+        if control_thread is not None:
+            control_thread.join(timeout=2)
         service.shutdown()
         httpd.server_close()
     return 0
+
+
+def _start_background_server(server: Any, name: str) -> threading.Thread:
+    thread = threading.Thread(target=server.serve_forever, name=name, daemon=True)
+    thread.start()
+    return thread
+
+
+def _shutdown_server(server: Any | None) -> None:
+    if server is None:
+        return
+    shutdown = getattr(server, "shutdown", None)
+    if callable(shutdown):
+        try:
+            shutdown()
+        except Exception:
+            pass
+    close = getattr(server, "server_close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:
+            pass
 
 
 def run_turn_once(
@@ -2375,6 +2572,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Loopback bind port. Defaults to 8765.",
     )
     parser.add_argument(
+        "--control-port",
+        default=DEFAULT_CONTROL_PORT,
+        type=int,
+        help="Loopback Control Plane bind port. Defaults to 8766.",
+    )
+    parser.add_argument(
         "--local-auth-token",
         default=None,
         help="Bearer token required for protected local Core service endpoints.",
@@ -2441,6 +2644,11 @@ def _build_parser() -> argparse.ArgumentParser:
         "--agentmemory-bearer-token",
         default=None,
         help="Optional runtime-only bearer token for agentmemory; never persisted by Core.",
+    )
+    parser.add_argument(
+        "--desktop-agent",
+        action="store_true",
+        help="Opt in to local-only DesktopAgent safe focused-window content projections for this turn.",
     )
     parser.add_argument(
         "--file-capability-root",
@@ -2519,6 +2727,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     config = CoreServiceEntrypointConfig(
         host=args.host,
         port=args.port,
+        control_port=args.control_port,
         local_auth_token=args.local_auth_token,
         foundation_model=args.model,
         provider=args.provider,
@@ -2542,6 +2751,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         connector_auto_fetch_enabled=args.connector_auto_fetch,
         connector_kind=args.connector_kind,
         connector_oauth_token=args.connector_oauth_token,
+        desktop_agent_enabled=args.desktop_agent,
     )
     if args.turn_once is not None:
         return run_turn_once(
