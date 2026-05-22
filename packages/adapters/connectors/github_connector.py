@@ -15,7 +15,9 @@ No credentials, secrets, or raw account content are persisted.
 """
 
 import hashlib
+import json
 from typing import Any, Callable, Literal
+from urllib import error, request
 
 from packages.connector_runtime.auto_fetch_scheduler import (
     FetchedPage,
@@ -122,6 +124,7 @@ def _safe_body(raw_body: str | None) -> str:
 
 _GITHUB_API = "https://api.github.com"
 _DEFAULT_PER_PAGE = 20
+_DEFAULT_TIMEOUT_SECONDS = 10.0
 
 
 class GitHubConnectorAdapter:
@@ -230,6 +233,36 @@ def probe_authlib() -> dict[str, Any]:
 
     backend = AuthlibOAuthBackend()
     return backend.safe_import_probe()
+
+
+def make_oauth_token_http_get(
+    *,
+    access_token: str,
+    timeout_seconds: float = _DEFAULT_TIMEOUT_SECONDS,
+    urlopen: Callable[..., Any] = request.urlopen,
+) -> HttpGetFn:
+    """
+    Build a runtime-only GitHub HTTP GET function that injects OAuth bearer auth.
+
+    The token is held only in this closure, never returned in projections, and
+    never written by the adapter. Tests can inject ``urlopen`` to avoid network.
+    """
+    if not access_token.strip():
+        raise ValueError("GitHub OAuth token is required for live connector fetch")
+
+    def _http_get(url: str, headers: dict[str, str]) -> dict[str, Any]:
+        resolved_headers = dict(headers)
+        resolved_headers["Authorization"] = f"Bearer {access_token}"
+        req = request.Request(url, headers=resolved_headers, method="GET")
+        try:
+            with urlopen(req, timeout=timeout_seconds) as response:
+                payload = response.read()
+        except error.URLError as exc:
+            raise ConnectionError("GitHub connector HTTP request failed") from exc
+        parsed = json.loads(payload.decode("utf-8"))
+        return {"items": parsed} if isinstance(parsed, list) else parsed
+
+    return _http_get
 
 
 # ---------------------------------------------------------------------------
