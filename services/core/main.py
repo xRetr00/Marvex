@@ -816,7 +816,20 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if "browser_computer_use" in route_intents:
             self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="computer_use", trace_id=turn_input.trace_id)
             if not self._resume_approval:
-                return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+                return self._run_approval_path(
+                    turn_input,
+                    metadata={
+                        **metadata,
+                        "browser": {
+                            "live_browser_executed": False,
+                            "approval_required": True,
+                            "raw_dom_persisted": False,
+                            "raw_screenshot_persisted": False,
+                        },
+                    },
+                    cognition=cognition,
+                    loop=loop,
+                )
             if (self._approval_decision or "").strip().lower() != "approve":
                 return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
             loop.step("tool")
@@ -2428,6 +2441,7 @@ def run_core_service(
         trace_reader=trace_reader,
     )
     state_bus = get_default_bus()
+    state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
     control_app = create_control_plane_service_app(
         config=effective_config,
         trace_reader=trace_reader,

@@ -6,6 +6,7 @@ from typing import Literal, Union
 from pydantic import BaseModel, ConfigDict, Field
 
 from packages.capability_runtime import AutonomyAction, AutonomyPolicy, PolicyDecisionAuditRecord, ToolRiskLevel, evaluate_autonomy_action
+from packages.proactive_runtime import ProactivePreferencePolicy, ProactiveSignal
 
 
 class LearningModel(BaseModel):
@@ -170,6 +171,27 @@ class LearningCandidateStore:
 
     def apply(self, candidate_id: str) -> None:
         self._applied_candidate_ids = self._applied_candidate_ids + (candidate_id,)
+
+
+class ProactivePreferenceStore:
+    def __init__(self, policy: ProactivePreferencePolicy | None = None) -> None:
+        self._policy = policy or ProactivePreferencePolicy.default()
+
+    @property
+    def policy(self) -> ProactivePreferencePolicy:
+        return self._policy
+
+    def apply_user_signal(self, *, topic: str, signal: ProactiveSignal) -> ProactivePreferencePolicy:
+        self._policy = self._policy.apply_signal(topic=topic, signal=signal)
+        return self._policy
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "topic_preference_count": len(self._policy.topic_preferences),
+            "hidden_background_actions_allowed": False,
+            "raw_feedback_persisted": False,
+            "raw_payload_persisted": False,
+        }
 
 
 class LearningPipelineRunner:
