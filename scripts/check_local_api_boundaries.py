@@ -26,6 +26,10 @@ ALLOWED_SERVICE_ENTRYPOINT_FILES = {
     "services/voice_worker/models.py",
     "services/voice_worker/controller.py",
     "services/voice_worker/main.py",
+    "services/desktop_agent/__init__.py",
+    "services/desktop_agent/models.py",
+    "services/desktop_agent/controller.py",
+    "services/desktop_agent/main.py",
 }
 
 ALLOWED_IMPORT_PREFIXES = (
