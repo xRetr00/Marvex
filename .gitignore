@@ -34,3 +34,16 @@ Agent.md
 Prompt.tmp.md
 UI_EXTERNAL_HELPERS/apps/shell/python-sidecars/
 apps/shell/build/
+UI_EXTERNAL_Helpers/
+apps/shell/python-sidecars/
+*.exe
+*.msi
+*.dll
+*.so
+*.dylib
+*.log
+*.tmp
+*.bak
+*.swp
+*.swo
+*.swn
