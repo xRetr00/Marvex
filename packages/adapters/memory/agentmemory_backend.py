@@ -26,6 +26,7 @@ from typing import Any
 from packages.contracts import ConversationRef, SessionRef
 from packages.memory_runtime.models import (
     MemoryForgetResult,
+    MemoryReadQuery,
     MemoryReadResult,
     MemoryRecord,
     MemoryRef,
@@ -236,6 +237,70 @@ class AgentMemoryBackend:
         MemoryRecord validator already rejects such content).
         """
         self._post("/agentmemory/remember", _record_to_wire(record, namespace=self._cfg.namespace))
+
+    def write_record(self, record: MemoryRecord) -> None:
+        """MemoryStore-compatible write method used by Core/Cognition wiring."""
+        self.store(record)
+
+    def read_by_session(self, session_ref: SessionRef) -> MemoryReadResult:
+        records = tuple(
+            record
+            for record in self.list_recent().records
+            if record.session_ref == session_ref
+        )
+        return MemoryReadResult(
+            schema_version=SCHEMA_VERSION,
+            query_ref=f"session:{session_ref.ref_id}",
+            records=records,
+            truncated=False,
+        )
+
+    def read_by_conversation(self, conversation_ref: ConversationRef) -> MemoryReadResult:
+        records = tuple(
+            record
+            for record in self.list_recent().records
+            if record.conversation_ref == conversation_ref
+        )
+        return MemoryReadResult(
+            schema_version=SCHEMA_VERSION,
+            query_ref=f"conversation:{conversation_ref.ref_id}",
+            records=records,
+            truncated=False,
+        )
+
+    def read(self, query: MemoryReadQuery) -> MemoryReadResult:
+        """MemoryStore-compatible scoped read method used by CognitionRuntime."""
+        if query.scope == "session":
+            if query.session_ref is None:
+                raise ValueError("session-scoped memory reads require session_ref")
+            result = self.read_by_session(query.session_ref)
+        else:
+            if query.conversation_ref is None:
+                raise ValueError("conversation-scoped memory reads require conversation_ref")
+            result = self.read_by_conversation(query.conversation_ref)
+        records = tuple(result.records)
+        return MemoryReadResult(
+            schema_version=SCHEMA_VERSION,
+            query_ref=query.query_id,
+            records=records[: query.max_records],
+            truncated=len(records) > query.max_records,
+        )
+
+    def safe_inspect(self, *, max_records: int = 50) -> tuple[dict[str, object], ...]:
+        records = tuple(self.list_recent().records)[: max(1, max_records)]
+        return tuple(
+            {
+                "memory_ref": record.memory_ref.ref_id,
+                "scope": record.scope,
+                "memory_kind": record.memory_kind,
+                "session_ref": record.session_ref.ref_id if record.session_ref else None,
+                "conversation_ref": record.conversation_ref.ref_id if record.conversation_ref else None,
+                "content_preview": record.content[:160],
+                "tag_count": len(record.tags),
+                "raw_transcript_persisted": False,
+            }
+            for record in records
+        )
 
     def recall(self, query: str, *, max_results: int = 10) -> MemoryReadResult:
         """Hybrid-search the daemon and return mapped MemoryRecords."""

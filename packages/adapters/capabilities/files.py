@@ -158,4 +158,42 @@ def _relative_to(root: Path, target: Path) -> str:
 def _bounded_int(value: object, *, default: int, lower: int, upper: int) -> int:
     if isinstance(value, int):
         return max(lower, min(upper, value))
-    return default
+        return default
+
+
+class SandboxedFileWriteExecutor(CapabilityRuntimeModel):
+    max_content_bytes: int = Field(default=16_384, ge=1, le=65_536)
+
+    def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
+        root, target, relative = _resolve(request.arguments)
+        content = request.arguments.get("content")
+        if not isinstance(content, str):
+            raise FileCapabilityError("file.content_required")
+        encoded = content.encode("utf-8")
+        if len(encoded) > self.max_content_bytes:
+            raise FileCapabilityError("file.content_too_large")
+        overwrite = bool(request.arguments.get("overwrite", False))
+        existed = target.exists()
+        if existed and not overwrite:
+            raise FileCapabilityError("file.exists")
+        if target.parent != root and not target.parent.exists():
+            raise FileCapabilityError("file.parent_missing")
+        target.write_text(content, encoding="utf-8")
+        return CapabilityResultEnvelope(
+            schema_version=request.schema_version,
+            result_id=f"{request.request_id}:result",
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            capability_ref=request.proposal.capability_ref,
+            status="succeeded",
+            safe_result={
+                "operation": "write",
+                "path": relative,
+                "bytes_written": len(encoded),
+                "created": not existed,
+                "overwritten": existed,
+                "raw_content_persisted": False,
+            },
+            raw_input_persisted=False,
+            raw_output_persisted=False,
+        )

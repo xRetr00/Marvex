@@ -42,7 +42,7 @@ from packages.capability_runtime.requests import CapabilityExecutionRequest
 from packages.capability_runtime.results import CapabilityExecutionSummary, CapabilityResultEnvelope, SafeCapabilityProjection
 from packages.contracts import HealthCheck, HealthStatus, VersionInfo
 from packages.adapters.capabilities.builtins import BuiltinToolCatalog
-from packages.adapters.capabilities.files import FileCapabilityError, ReadOnlyFileExecutor
+from packages.adapters.capabilities.files import FileCapabilityError, ReadOnlyFileExecutor, SandboxedFileWriteExecutor
 from packages.adapters.capabilities.mcp import (
     McpAllowlistPolicy,
     McpSdkAdapter,
@@ -76,6 +76,7 @@ class ToolWorkerController:
         self._adapter = DeterministicFakeCapabilityAdapter()
         self._builtins = BuiltinToolCatalog.default()
         self._files = ReadOnlyFileExecutor()
+        self._file_writer = SandboxedFileWriteExecutor()
 
     def start(self, *, trace_id: str = "tool-worker-start") -> ToolWorkerCommandResult:
         self._state = ToolWorkerState.RUNNING
@@ -155,6 +156,9 @@ class ToolWorkerController:
         )
 
         blocking_decision = _blocking_decision(governance.decision, audit.decision)
+        approval_resume = _approved_resume(arguments, turn_id=turn_id)
+        if blocking_decision == PolicyDecision.APPROVAL_REQUIRED and approval_resume:
+            blocking_decision = PolicyDecision.ALLOW
         if blocking_decision != PolicyDecision.ALLOW:
             status = "requires_human_approval" if blocking_decision == PolicyDecision.APPROVAL_REQUIRED else "denied"
             result = CapabilityResultEnvelope(
@@ -238,6 +242,7 @@ class ToolWorkerController:
             turn_id=turn_id,
             proposal=proposal,
             permission_decision=permission,
+            approval_decision=approval if approval_resume else None,
             arguments=self._execution_arguments(capability_id, arguments),
             raw_arguments_persisted=False,
         )
@@ -285,6 +290,74 @@ class ToolWorkerController:
                 eligible_count=1,
                 denied_count=0,
                 executed_fake_count=0,
+            )
+        elif capability_id == "file.write":
+            try:
+                result = self._file_writer.execute(request)
+            except FileCapabilityError as exc:
+                result = self._files.denial_result(request, code=exc.code)
+                summary = CapabilityExecutionSummary.from_result(
+                    result,
+                    readiness_count=1,
+                    eligible_count=0,
+                    denied_count=1,
+                    executed_fake_count=0,
+                )
+                return self._result(
+                    command="execute",
+                    ok=False,
+                    trace_id=trace_id,
+                    blocked=True,
+                    result=result.model_copy(update={"result_id": f"{turn_id}:capability:result"}),
+                    projection=SafeCapabilityProjection.from_summary(summary),
+                    policy_audit=_policy_projection(governance, audit),
+                    error=ToolWorkerError(
+                        trace_id=trace_id,
+                        turn_id=turn_id,
+                        code=exc.code,
+                        safe_message="File capability execution blocked.",
+                    ),
+                )
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1,
+                denied_count=0,
+                executed_fake_count=0,
+            )
+        elif capability_id == "shell.command":
+            result = CapabilityResultEnvelope(
+                schema_version=request.schema_version,
+                result_id=f"{request.request_id}:result",
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                capability_ref=request.proposal.capability_ref,
+                status="denied",
+                safe_result={"reason_code": "shell.execution_blocked_by_default"},
+                raw_input_persisted=False,
+                raw_output_persisted=False,
+            )
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=0,
+                denied_count=1,
+                executed_fake_count=0,
+            )
+            return self._result(
+                command="execute",
+                ok=False,
+                trace_id=trace_id,
+                blocked=True,
+                result=result.model_copy(update={"result_id": f"{turn_id}:capability:result"}),
+                projection=SafeCapabilityProjection.from_summary(summary),
+                policy_audit=_policy_projection(governance, audit),
+                error=ToolWorkerError(
+                    trace_id=trace_id,
+                    turn_id=turn_id,
+                    code="shell.execution_blocked_by_default",
+                    safe_message="Shell execution remains blocked because no robust sandbox is configured.",
+                ),
             )
         elif capability_id.startswith("mcp."):
             mcp_result = self._execute_mcp(request)
@@ -497,6 +570,13 @@ def _blocking_decision(governance_decision: GovernanceDecisionType, autonomy_dec
     if autonomy_decision != PolicyDecision.ALLOW:
         return autonomy_decision
     return PolicyDecision.ALLOW
+
+
+def _approved_resume(arguments: dict[str, object], *, turn_id: str) -> bool:
+    return (
+        str(arguments.get("approval_request_id") or "") == f"approval-{turn_id}"
+        and str(arguments.get("approval_decision") or "").lower() == "approve"
+    )
 
 
 def _policy_projection(governance: object, autonomy: object) -> dict[str, object]:

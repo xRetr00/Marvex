@@ -65,7 +65,7 @@ class LocalMemoryLoop:
         self,
         *,
         vault_root: str | Path,
-        memory_store: SQLiteMemoryStore,
+        memory_store: Any,
         tree_index: SQLiteMemoryTreeIndex,
         autonomy_policy: AutonomyPolicy | None = None,
     ) -> None:
@@ -86,7 +86,7 @@ class LocalMemoryLoop:
         )
 
     @property
-    def memory_store(self) -> SQLiteMemoryStore:
+    def memory_store(self) -> Any:
         return self._store
 
     @property

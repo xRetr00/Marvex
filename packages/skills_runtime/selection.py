@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Literal
 
 from pydantic import model_validator
@@ -118,7 +119,10 @@ def select_skills_for_intent(
 ) -> tuple[SkillEligibilityDecision, ...]:
     intent_value = getattr(intent_kind, "value", str(intent_kind))
     terms = {intent_value.replace("_", " "), intent_value}
-    terms.update(term.lower() for term in context_terms)
+    for term in context_terms:
+        lowered = term.lower()
+        terms.add(lowered)
+        terms.update(part for part in re.findall(r"[a-z0-9][a-z0-9._:-]{2,}", lowered))
     decisions: list[SkillEligibilityDecision] = []
     for index, manifest in enumerate(manifests, start=1):
         validation = SkillValidationResult.from_manifest(manifest)
