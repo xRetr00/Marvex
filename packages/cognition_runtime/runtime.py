@@ -35,6 +35,7 @@ from packages.prompt_harness_runtime.models import (
     ToolResultClearingDecision,
     decide_compaction,
 )
+from packages.skills_runtime import SkillManifest, SkillPromptContribution, select_skills_for_intent
 from packages.web_search_runtime import WebSearchFreshness, WebSearchQuery
 
 from .models import CognitionEvidenceRef, CognitionStep, CognitionStepPlan, CognitionTurnAssembly
@@ -49,6 +50,8 @@ class CognitionRuntime:
         memory_store: Any | None = None,
         memory_tree_runtime: Any | None = None,
         web_search_provider: Any | None = None,
+        skill_manifests: tuple[SkillManifest, ...] = (),
+        skill_loader: Any | None = None,
         max_steps: int = 5,
     ) -> None:
         self._intent_classifier = intent_classifier or classify_intent
@@ -56,6 +59,8 @@ class CognitionRuntime:
         self._memory_store = memory_store
         self._memory_tree_runtime = memory_tree_runtime
         self._web_search_provider = web_search_provider
+        self._skill_manifests = skill_manifests
+        self._skill_loader = skill_loader
         self._max_steps = min(max(1, max_steps), 6)
 
     def assemble_turn(self, turn_input: Any) -> CognitionTurnAssembly:
@@ -159,6 +164,7 @@ class CognitionRuntime:
                 intent_tags=(IntentKind.CAPABILITY_TOOL.value,),
             )
             candidates.append(ContextCandidate.from_capability_schema(eligibility, token_estimate=8))
+        candidates.extend(self._skill_context_candidates(turn_input, intent_ref))
         for memory_record in self._memory_context_records(turn_input):
             candidates.append(_safe_memory_candidate(turn_input, intent_ref, memory_record))
         memory_refs = self._memory_tree_refs(turn_input) if grounding_required or intent_ref.intent_kind == IntentKind.MEMORY_TREE_NEEDED else ()
@@ -178,6 +184,47 @@ class CognitionRuntime:
         if web_bundle is not None:
             candidates.append(web_search_bundle_to_context_candidate(web_bundle))
         return candidates, web_bundle, web_refs, memory_refs
+
+    def _skill_context_candidates(
+        self,
+        turn_input: Any,
+        intent_ref: IntentRef,
+    ) -> tuple[ContextCandidate, ...]:
+        if intent_ref.intent_kind not in {IntentKind.SKILL_NEEDED, IntentKind.MCP_SKILL}:
+            return ()
+        if not self._skill_manifests:
+            return ()
+        decisions = select_skills_for_intent(
+            intent_kind=intent_ref.intent_kind,
+            context_terms=(_bounded_input_summary(turn_input.user_visible_input).lower(),),
+            manifests=self._skill_manifests,
+        )
+        candidates: list[ContextCandidate] = []
+        for decision in decisions:
+            if not decision.eligible or decision.manifest is None:
+                continue
+            for contribution in self._loaded_skill_contributions(decision.manifest):
+                context = contribution.as_bounded_context()
+                candidates.append(
+                    ContextCandidate.from_safe_summary(
+                        ContextSourceRef(
+                            kind=ContextSourceKind.SKILL_PROMPT_CONTRIBUTION,
+                            identifier=f"skill.{contribution.skill_ref.skill_id}.{contribution.contribution_id}",
+                        ),
+                        context,
+                        token_estimate=_estimate_tokens(context),
+                        intent_tags=(intent_ref.intent_kind.value,),
+                    )
+                )
+        return tuple(candidates)
+
+    def _loaded_skill_contributions(self, manifest: SkillManifest) -> tuple[SkillPromptContribution, ...]:
+        if self._skill_loader is not None and hasattr(self._skill_loader, "load_prompt_contributions"):
+            try:
+                return tuple(self._skill_loader.load_prompt_contributions(manifest))
+            except Exception:
+                return ()
+        return manifest.prompt_contributions
 
     def _memory_context_ref(self, turn_input: Any) -> str | None:
         records = self._memory_context_records(turn_input)

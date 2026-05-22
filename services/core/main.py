@@ -78,6 +78,13 @@ from packages.session_runtime import (
     CurrentProcessSessionRegistry,
     build_turn_linkage_from_assistant_turn_input,
 )
+from packages.skills_runtime import (
+    SkillInstructionLoader,
+    SkillManifest,
+    SkillRef,
+    SkillResourceKind,
+    SkillResourceRef,
+)
 from packages.telemetry import InMemoryTraceReader, PersistentTraceStore, make_trace_event
 from packages.web_search_runtime import (
     DDGSWebSearchAdapter,
@@ -124,6 +131,7 @@ class CoreServiceEntrypointConfig:
     timeout_seconds: float | None = None
     allow_remote: bool = False
     telemetry_store_path: str | None = None
+    skills_root: str | None = None
 
     def local_api_config(self) -> LocalApiConfig:
         return LocalApiConfig(
@@ -392,6 +400,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         provider_selection_runtime: ProviderSelectionRuntime | None = None,
         learning_pipeline: LearningPipelineRunner | None = None,
         persistent_trace_store: PersistentTraceStore | None = None,
+        skill_manifests: tuple[SkillManifest, ...] = (),
+        skill_loader: SkillInstructionLoader | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -419,6 +429,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._provider_selection = provider_selection_runtime
         self._learning_pipeline = learning_pipeline
         self._persistent_trace_store = persistent_trace_store
+        self._skill_manifests = skill_manifests
+        self._skill_loader = skill_loader
 
     def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
         linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
@@ -465,6 +477,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             memory_store=self._memory_loop.memory_store if self._memory_loop is not None else None,
             memory_tree_runtime=self._memory_tree_runtime,
             web_search_provider=self._web_search_provider,
+            skill_manifests=self._skill_manifests,
+            skill_loader=self._skill_loader,
         ).assemble_turn(turn_input)
         loop = _AgenticLoopProjection(
             trace_id=turn_input.trace_id,
@@ -535,7 +549,17 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 loop=loop,
                 route_name="skill",
                 text="Skill instructions can be loaded only from configured local safe sources; install and launch remain disabled.",
-                projection={"local_skill_loader_available": False, "install_launch_enabled": False},
+                projection={
+                    "local_skill_loader_available": self._skill_loader is not None,
+                    "loaded_skill_contribution_count": _included_context_count(
+                        cognition,
+                        "skill_prompt_contribution",
+                    ),
+                    "install_launch_enabled": False,
+                    "script_execution_allowed": False,
+                    "remote_loading_allowed": False,
+                    "raw_instruction_persisted": False,
+                },
             )
         if "connector_account" in route_intents:
             loop.step("tool")
@@ -1411,6 +1435,70 @@ def _memory_loop_from_config(config: CoreServiceEntrypointConfig) -> LocalMemory
     return LocalMemoryLoop.open(vault_root=config.memory_vault_root)
 
 
+def _skill_loader_from_config(config: CoreServiceEntrypointConfig) -> SkillInstructionLoader | None:
+    if not config.skills_root:
+        return None
+    root = Path(config.skills_root)
+    if not root.is_dir():
+        return None
+    return SkillInstructionLoader(local_skill_root=root)
+
+
+def _skill_manifests_from_config(config: CoreServiceEntrypointConfig) -> tuple[SkillManifest, ...]:
+    if not config.skills_root:
+        return ()
+    root = Path(config.skills_root)
+    if not root.is_dir():
+        return ()
+    manifests: list[SkillManifest] = []
+    for skill_dir in sorted(path for path in root.iterdir() if path.is_dir()):
+        manifest = _skill_manifest_from_directory(root, skill_dir)
+        if manifest is not None:
+            manifests.append(manifest)
+    return tuple(manifests)
+
+
+def _skill_manifest_from_directory(root: Path, skill_dir: Path) -> SkillManifest | None:
+    instruction_path = skill_dir / "SKILL.md"
+    if not instruction_path.is_file():
+        return None
+    skill_id = _safe_skill_id(skill_dir.name)
+    if not skill_id:
+        return None
+    try:
+        instruction_path.resolve().relative_to(root.resolve())
+    except ValueError:
+        return None
+    description = _skill_description_from_file(instruction_path)
+    return SkillManifest(
+        schema_version="1",
+        skill_ref=SkillRef(skill_id=skill_id),
+        display_name=skill_id.replace("-", " ").replace("_", " ").title(),
+        description=description,
+        instruction_ref=SkillResourceRef(
+            kind=SkillResourceKind.INSTRUCTION,
+            uri=f"local://skills/{skill_id}/SKILL.md",
+        ),
+    )
+
+
+def _skill_description_from_file(path: Path) -> str:
+    try:
+        for line in path.read_text(encoding="utf-8", errors="replace")[:600].splitlines():
+            text = line.strip(" #\t")
+            if text:
+                return text[:240]
+    except OSError:
+        return "Local skill instruction."
+    return "Local skill instruction."
+
+
+def _safe_skill_id(value: str) -> str | None:
+    if not value or any(character not in "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_" for character in value):
+        return None
+    return value
+
+
 def _prompt_fidelity_projection(
     cognition: CognitionTurnAssembly,
     provider_turn_input: AssistantTurnInput,
@@ -1738,6 +1826,7 @@ def _create_turn_executor(
         loop=LearningLoop.default(),
     )
     persistent_store = _persistent_store_from_config(config)
+    skill_loader = _skill_loader_from_config(config)
     return _CoreServiceProviderWorkerTurnExecutor(
         provider_name=effective_name,
         model=config.foundation_model,
@@ -1754,6 +1843,8 @@ def _create_turn_executor(
         provider_selection_runtime=selection_runtime,
         learning_pipeline=learning_pipeline,
         persistent_trace_store=persistent_store,
+        skill_manifests=_skill_manifests_from_config(config),
+        skill_loader=skill_loader,
     )
 
 
