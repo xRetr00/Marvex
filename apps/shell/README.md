@@ -1,0 +1,48 @@
+# Marvex Shell
+
+Marvex Shell is the Tauri v2 Windows product surface. It is a loopback client and supervisor for the existing bounded backend contracts; it does not implement provider, intent, tool, voice, memory, cognition, or policy logic.
+
+## Layout
+
+- `src-tauri/`: Rust Tauri supervisor, tray, windows, single-instance, autostart, global shortcut, state stream client, and local proxy commands.
+- `src/`: React/Vite shell surfaces for chat, top-left state pill/waveform, and Spotlight approvals/results.
+- `packaging/`: PyInstaller specs for backend sidecar executables.
+- `scripts/`: Python sidecar build commands.
+
+## Development
+
+```powershell
+npm install
+npm run test
+npm run build
+cargo test --manifest-path apps\shell\src-tauri\Cargo.toml
+cargo build --manifest-path apps\shell\src-tauri\Cargo.toml
+```
+
+The dev shell falls back to `uv run python -m ...` when bundled sidecar executables are absent.
+
+## Packaging
+
+```powershell
+uv run python -m PyInstaller --noconfirm apps\shell\packaging\core.spec
+.\apps\shell\scripts\build-python-runtime.ps1
+npm run build
+npm run tauri build
+```
+
+The Tauri bundle declares the PyInstaller outputs as `externalBin` sidecars and produces Windows NSIS/MSI installers. The shell generates its local bearer token at runtime, passes it to Core, uses it for protected loopback calls, and never writes or logs the token value.
+
+## Operator Smoke
+
+After installing the packaged app:
+
+1. Launch Marvex from Start Menu or the installer finish action.
+2. Confirm no backend terminal windows are visible.
+3. Confirm the tray menu opens chat, Spotlight, voice pause/resume, and quit.
+4. Send a chat message and confirm a real Core `/v1/turns` response.
+5. Trigger assistant/voice state and confirm the top-left pill and waveform react to `/control/state/stream`.
+6. Trigger an approval and confirm Spotlight accepts button or voice decisions.
+7. Reboot or log out/in and confirm autostart.
+8. Quit from tray and confirm child processes are stopped.
+
+This smoke requires the runtime Control Plane `/control/state` and `/control/state/stream` endpoints to be available.

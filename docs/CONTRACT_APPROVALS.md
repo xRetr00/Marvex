@@ -45,7 +45,7 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 | IntentWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | VoiceWorker | 0.1.1-draft | approved | user | 2026-05-19 | yes |
 | DesktopAgent | 0.1.1-draft | draft | none | none | no |
-| Shell | 0.1.1-draft | draft | none | none | no |
+| Shell | 0.1.1-draft | approved | user | 2026-05-22 | yes |
 | MemoryService | 0.1.1-draft | draft | none | none | no |
 | TelemetryEventService | 0.1.1-draft | draft | none | none | no |
 | PolicyPermissionService | 0.1.1-draft | draft | none | none | no |
@@ -97,4 +97,5 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - policy permission service: future service contract; README-only.
 - voice runtime foundation: bounded implementation foundation for in-process voice I/O orchestration only; no separate service process, visual shell, hidden recording, or raw audio/transcript persistence by default.
 - voice worker runtime: approved implementation surface for local-only VoiceWorker process, lifecycle, safe worker commands/events, microphone/playback adapters, model asset readiness, and protected Control Plane projections; no hidden recording, remote exposure, raw audio/transcript persistence, Orb/shell UI, desktop agent, vision, or proactive behavior.
-- future desktop agent, shell/orb UI, proactive behavior, and vision: future service contract or forbidden product behavior for now unless a later goal explicitly approves them.
+- shell: approved product surface for the local Windows tray supervisor, chat/control UI host, status pill/waveform overlay, Spotlight/approval surface, autostart, single-instance, and installer. It is a loopback client only and must not implement provider, intent, tool, voice, cognition, memory, policy, desktop-agent, vision, or proactive logic.
+- future desktop agent, proactive behavior, and vision: future service contract or forbidden product behavior for now unless a later goal explicitly approves them.

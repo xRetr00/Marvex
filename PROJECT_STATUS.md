@@ -9,6 +9,14 @@ accepted_docs: true
 current_governance_gate:
 Intent and Tool Worker Execution Slice Checkpoint
 
+## Windows Shell Product Surface Checkpoint
+
+Marvex now has an approved Shell contract for the Tauri v2 Windows shell under `apps/shell`. The shell is a product surface and local supervisor only: it generates an in-memory local bearer token, starts the approved Core and worker entrypoints as windowless child processes, exposes a tray-resident app with chat, a top-left state pill/waveform overlay, and a Spotlight/approval surface, and consumes loopback Core and Control Plane contracts. The shell does not implement provider, intent, tool, voice, cognition, memory, policy, desktop-agent, vision, or proactive behavior.
+
+The shell is additive to the Python backend. Core turn requests still go through `/v1/turns`, approvals still go through protected Control Plane approval APIs, and assistant/voice visual state is consumed from `/control/state` and `/control/state/stream` when those Control Plane endpoints are present. The waveform is bound to `AssistantStateEvent.audio_level`; no random waveform production is used for listening/talking states. Tokens are not persisted or logged by shell code.
+
+Packaging support lives under `apps/shell/packaging` and `apps/shell/scripts` with PyInstaller specs for the local sidecar executables and Tauri bundler `externalBin` declarations for the Windows installer path. Operator GUI/audio/package smoke remains a local runtime smoke because it requires WebView2, Windows shell integration, physical audio state, and the packaged installer.
+
 ## Personal Cognitive Operating Layer Memory + Context Checkpoint
 
 Marvex now has the first live Personal Cognitive Operating Layer slice. Core worker-backed turns can use an explicit local memory vault root, inject a real `session_ref`, recall approved derived memory through `SQLiteMemoryStore`, assemble the prompt with the actual user question plus bounded recalled memory content, and send persistent policy through the provider `instructions` channel instead of collapsing everything into one user blob.

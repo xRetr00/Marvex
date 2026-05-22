@@ -8,8 +8,15 @@ __pycache__/
 venv/
 apps/control_plane_web/node_modules/
 apps/control_plane_web/dist/
+apps/shell/node_modules/
+apps/shell/dist/
+apps/shell/src-tauri/target/
+apps/shell/src-tauri/gen/
+apps/shell/packaging/build/
+apps/shell/packaging/dist/
 
 apps/control_plane_web/*.tsbuildinfo
+apps/shell/*.tsbuildinfo
 apps/control_plane_web/vite.config.js
 apps/control_plane_web/vite.config.d.ts
 .venv/
@@ -17,6 +24,9 @@ marvex.egg-info/
 .claude/
 .claude_cache/
 .uv-cache/
+uv-cache-temp/
+uv-cache-*/
+.npm-cache/
 Agent.md
 .codex_commit_git/
 .codex_alt_git/

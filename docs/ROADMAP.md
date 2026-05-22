@@ -6,7 +6,7 @@ Marvex is built as correct Assistant OS infrastructure first. The roadmap is a g
 
 Several surfaces that were once future-only now exist as bounded internal foundations. Contract approval still lives in `docs/CONTRACT_APPROVALS.md`.
 
-Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, the local derived memory loop with Obsidian-compatible Markdown vault projection, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, Cognition Runtime, assistant loop primitives, assistant turn integration, the bounded Agentic Turn Loop in the local Core service entrypoint, the local IntentWorker process boundary, and the local ToolWorker process boundary.
+Implemented and classified foundations include provider foundation, assistant envelope contracts, telemetry, Local API, Control Plane API and web, CapabilityRuntime, tool execution foundations, MCP adapter, SkillsRuntime, MemoryRuntime with SQLiteMemoryStore, the local derived memory loop with Obsidian-compatible Markdown vault projection, MarketplaceRuntime, SessionRuntime, IntentRuntime, ContextRuntime, PromptHarnessRuntime, Cognition Runtime, assistant loop primitives, assistant turn integration, the bounded Agentic Turn Loop in the local Core service entrypoint, the local IntentWorker process boundary, the local ToolWorker process boundary, and the approved Tauri Shell product surface as a loopback client.
 
 The current cleanup phase is governance reconciliation, boundary hardening, and foundation cleanup before adding new capability surfaces.
 
@@ -38,7 +38,8 @@ Future product surfaces remain outside the current product surface until a match
 
 - voice worker
 - desktop agent
-- shell/orb UI
+- shell UI beyond the approved loopback Tauri tray/overlay/Spotlight surface
+- orb UI
 - vision
 - proactive behavior
 - arbitrary browser/computer automation

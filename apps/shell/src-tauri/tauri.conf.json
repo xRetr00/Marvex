@@ -1,0 +1,83 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Marvex",
+  "version": "0.1.0",
+  "identifier": "com.marvex.shell",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:5174",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Marvex",
+        "url": "/",
+        "width": 1120,
+        "height": 760,
+        "minWidth": 820,
+        "minHeight": 560,
+        "visible": false
+      },
+      {
+        "label": "overlay",
+        "title": "Marvex Status",
+        "url": "/overlay",
+        "width": 280,
+        "height": 120,
+        "x": 16,
+        "y": 16,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": true
+      },
+      {
+        "label": "spotlight",
+        "title": "Marvex Spotlight",
+        "url": "/spotlight",
+        "width": 780,
+        "height": 420,
+        "center": true,
+        "decorations": false,
+        "transparent": true,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "resizable": false,
+        "visible": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi"],
+    "icon": [
+      "../../assets/icon.ico"
+    ],
+    "externalBin": [
+      "../dist/python/marvex-core/marvex-core",
+      "../dist/python/marvex-provider-worker/marvex-provider-worker",
+      "../dist/python/marvex-intent-worker/marvex-intent-worker",
+      "../dist/python/marvex-tool-worker/marvex-tool-worker",
+      "../dist/python/marvex-voice-worker/marvex-voice-worker"
+    ],
+    "windows": {
+      "nsis": {
+        "installerIcon": "../../assets/icon.ico",
+        "installMode": "perMachine",
+        "displayLanguageSelector": false
+      },
+      "wix": {
+        "language": "en-US"
+      }
+    }
+  }
+}

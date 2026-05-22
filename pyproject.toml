@@ -49,5 +49,6 @@ pythonpath = ["."]
 [dependency-groups]
 dev = [
     "pip>=26,<27",
+    "pyinstaller==6.17.0",
     "pytest>=8,<9",
 ]

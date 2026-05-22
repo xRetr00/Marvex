@@ -39,7 +39,8 @@ REQUIRED_SURFACES = (
     "future voice",
     "voice worker runtime",
     "future desktop agent",
-    "future shell/orb ui",
+    "shell product surface",
+    "future orb ui",
     "future proactive behavior",
     "future vision",
 )
