@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
-import { getSupervisorStatus } from "@/lib/shellCommands";
+import { getSetupStatus, startSetup } from "@/lib/shellCommands";
 import { markSetupDone } from "@/lib/modeStore";
 
 /** Friendly text for the first-run runtime (uv venv) bootstrap phases. */
@@ -12,25 +12,37 @@ const RUNTIME_PHASE_TEXT: Record<string, string> = {
   "installing packages": "Installing the Marvex runtime (first launch only)...",
 };
 
+function isFailedPhase(phase: string): boolean {
+  return phase.endsWith("_failed") || phase.endsWith("_incomplete") || phase === "uv_unavailable";
+}
+
 /**
  * On first launch the Rust supervisor builds a real Python venv with uv before
  * any service can answer. Wait for that "runtime" phase to reach ready/dev so
- * the deps check below can actually reach Core. Returns the final phase string.
+ * the deps check below can actually reach Core. Auto-retries once on failure.
+ * Returns the final phase string.
  */
 async function waitForRuntimeReady(setText: (text: string) => void): Promise<string> {
+  let retried = false;
   for (let attempt = 0; attempt < 600; attempt++) {
-    let runtime = "ready";
+    let phase = "ready";
     try {
-      const status = await getSupervisorStatus();
-      runtime = status.runtime ?? "ready";
+      phase = (await getSetupStatus()).runtime_phase;
     } catch {
       return "ready"; // not running under Tauri (web/dev) — proceed
     }
-    if (runtime === "ready" || runtime === "dev") return runtime;
-    if (runtime.endsWith("_failed") || runtime.endsWith("_incomplete") || runtime === "uv_unavailable") {
-      return runtime;
+    if (phase === "ready" || phase === "dev") return phase;
+    if (isFailedPhase(phase)) {
+      if (!retried) {
+        retried = true;
+        setText("Retrying runtime setup...");
+        try { await startSetup(); } catch { /* ignore */ }
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        continue;
+      }
+      return phase;
     }
-    setText(RUNTIME_PHASE_TEXT[runtime] ?? "Preparing Marvex...");
+    setText(RUNTIME_PHASE_TEXT[phase] ?? "Preparing Marvex...");
     await new Promise((resolve) => setTimeout(resolve, 1000));
   }
   return "ready";

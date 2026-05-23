@@ -40,6 +40,72 @@ fn supervisor_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, St
     Ok(json!(state.supervisor.status.snapshot()))
 }
 
+/// Structured first-run/setup status: runtime bootstrap phase, per-service
+/// status, an overall `ready` flag, and the runtime manifest when present.
+#[tauri::command]
+fn get_setup_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+    let state = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+    let snapshot = state.supervisor.status.snapshot();
+    let runtime_phase = snapshot.get("runtime").cloned().unwrap_or_else(|| "unknown".to_string());
+    let runtime_ok = matches!(runtime_phase.as_str(), "ready" | "dev");
+    let core_running = snapshot.get("core").map(|s| s.starts_with("running")).unwrap_or(false);
+    let manifest = std::fs::read_to_string(state.supervisor.runtime_manifest_path())
+        .ok()
+        .and_then(|text| serde_json::from_str::<Value>(&text).ok());
+    Ok(json!({
+        "schema_version": "1",
+        "runtime_phase": runtime_phase,
+        "ready": runtime_ok && core_running,
+        "launched": state.supervisor.is_launched(),
+        "services": snapshot,
+        "manifest": manifest,
+    }))
+}
+
+/// Re-attempt the runtime bootstrap (no-op once services are running). Returns
+/// the refreshed setup status.
+#[tauri::command]
+fn start_setup(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+    {
+        let state = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+        state.supervisor.retry_setup();
+    }
+    get_setup_status(state)
+}
+
+/// Alias of `start_setup` for callers that think in terms of "start the backend".
+#[tauri::command]
+fn start_backend(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+    start_setup(state)
+}
+
+/// Health of the Core daemon (loopback /health on 8765).
+#[tauri::command]
+fn backend_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+    match http::http_get("127.0.0.1", 8765, "/health", Some(&token)) {
+        Ok(response) => {
+            let body: Value = serde_json::from_str(&response.body).unwrap_or_else(|_| json!({"raw": false}));
+            Ok(json!({"reachable": response.status == 200, "status_code": response.status, "health": body}))
+        }
+        Err(err) => Ok(json!({"reachable": false, "error": err})),
+    }
+}
+
+/// Health of the GUI/shell process itself (always ok while this command runs).
+#[tauri::command]
+fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+    let snapshot = state.lock().map_err(|_| "shell state unavailable".to_string())?.supervisor.status.snapshot();
+    let services_running = snapshot.iter().filter(|(name, value)| *name != "runtime" && value.starts_with("running")).count();
+    Ok(json!({
+        "schema_version": "1",
+        "component": "marvex-shell",
+        "status": "ok",
+        "services_running": services_running,
+        "runtime_phase": snapshot.get("runtime").cloned().unwrap_or_else(|| "unknown".to_string()),
+    }))
+}
+
 #[tauri::command]
 fn submit_chat_turn(text: String, state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
     let text = text.trim().to_string();
@@ -130,6 +196,11 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             shell_runtime_config,
             supervisor_status,
+            get_setup_status,
+            start_setup,
+            start_backend,
+            backend_health,
+            gui_health,
             submit_chat_turn,
             control_request,
             set_overlay_click_through,

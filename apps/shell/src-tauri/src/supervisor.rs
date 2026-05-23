@@ -6,14 +6,20 @@ use std::{
     process::{Child, Command, Stdio},
     sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex},
     thread,
-    time::Duration,
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
+use serde_json::json;
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+const MANIFEST_SCHEMA_VERSION: &str = "1";
+const MARVEX_VERSION: &str = "0.1.0";
+const CORE_PORT: u16 = 8765;
+const CONTROL_PORT: u16 = 8766;
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
@@ -42,20 +48,43 @@ impl SupervisorStatus {
         }
     }
 
+    pub fn get(&self, name: &str) -> Option<String> {
+        self.inner.lock().ok().and_then(|inner| inner.get(name).cloned())
+    }
+
     pub fn snapshot(&self) -> BTreeMap<String, String> {
         self.inner.lock().map(|inner| inner.clone()).unwrap_or_default()
     }
 }
 
-/// Per-process runtime layout. The Python services run from a real uv-managed
-/// virtual environment created on first launch, so any dependency installed
-/// later (via the Deps tab -> `uv pip install`) is importable. This is the key
-/// difference from the previous frozen-PyInstaller sidecars, whose sealed
-/// sys.path made runtime-installed packages impossible to import.
+/// Outcome of the runtime (venv) bootstrap.
+enum RuntimeOutcome {
+    /// Installed product venv is ready; carries the venv root.
+    Ready(PathBuf),
+    /// Dev checkout (no bundled wheel) — services use the `uv run` fallback.
+    Dev,
+    /// Bootstrap failed; services are not spawned so a retry can re-attempt.
+    Failed,
+}
+
+struct RuntimeConfig {
+    token: String,
+    log_dir: PathBuf,
+    data_dir: PathBuf,
+    resource_dir: Option<PathBuf>,
+}
+
+/// Per-process runtime. The Python services run from a real uv-managed virtual
+/// environment created on first launch, so any dependency installed later (via
+/// the Deps tab -> `uv pip install`) is importable. This differs from frozen
+/// PyInstaller sidecars, whose sealed sys.path made runtime installs impossible.
 #[derive(Clone)]
 pub struct Supervisor {
     shutdown: Arc<AtomicBool>,
     pub status: Arc<SupervisorStatus>,
+    config: Arc<RuntimeConfig>,
+    launched: Arc<AtomicBool>,
+    bootstrapping: Arc<AtomicBool>,
 }
 
 impl Supervisor {
@@ -67,40 +96,68 @@ impl Supervisor {
     ) -> Result<Self, String> {
         fs::create_dir_all(&log_dir).map_err(|err| format!("log directory unavailable: {err}"))?;
         fs::create_dir_all(&data_dir).map_err(|err| format!("data directory unavailable: {err}"))?;
-        let shutdown = Arc::new(AtomicBool::new(false));
-        let status = Arc::new(SupervisorStatus::default());
+        let supervisor = Self {
+            shutdown: Arc::new(AtomicBool::new(false)),
+            status: Arc::new(SupervisorStatus::default()),
+            config: Arc::new(RuntimeConfig { token, log_dir, data_dir, resource_dir }),
+            launched: Arc::new(AtomicBool::new(false)),
+            bootstrapping: Arc::new(AtomicBool::new(false)),
+        };
+        supervisor.spawn_controller();
+        Ok(supervisor)
+    }
 
-        // Bootstrap the runtime (venv) and then launch services from a single
-        // controller thread so the GUI never blocks on first-run installation.
-        let controller_status = Arc::clone(&status);
-        let controller_shutdown = Arc::clone(&shutdown);
+    /// Bootstrap the runtime then launch services from a dedicated controller
+    /// thread so the GUI never blocks on first-run installation.
+    fn spawn_controller(&self) {
+        if self.bootstrapping.swap(true, Ordering::SeqCst) {
+            return; // a bootstrap attempt is already running
+        }
+        let config = Arc::clone(&self.config);
+        let status = Arc::clone(&self.status);
+        let shutdown = Arc::clone(&self.shutdown);
+        let launched = Arc::clone(&self.launched);
+        let bootstrapping = Arc::clone(&self.bootstrapping);
         thread::spawn(move || {
-            let venv = ensure_runtime(resource_dir.as_deref(), &data_dir, &log_dir, &controller_status);
-            let venv = Arc::new(venv);
-            if controller_shutdown.load(Ordering::SeqCst) {
+            let outcome = ensure_runtime(config.resource_dir.as_deref(), &config.data_dir, &config.log_dir, &status);
+            write_runtime_manifest(&config, &outcome, &status);
+            bootstrapping.store(false, Ordering::SeqCst);
+            if shutdown.load(Ordering::SeqCst) {
                 return;
             }
-            for spec in service_specs(&token) {
-                let service_shutdown = Arc::clone(&controller_shutdown);
-                let service_status = Arc::clone(&controller_status);
-                let service_log_dir = log_dir.clone();
-                let service_data_dir = data_dir.clone();
-                let service_resource_dir = resource_dir.clone();
+            let venv = match outcome {
+                RuntimeOutcome::Ready(venv) => Some(venv),
+                RuntimeOutcome::Dev => None,
+                RuntimeOutcome::Failed => return, // leave launched=false for retry
+            };
+            if launched.swap(true, Ordering::SeqCst) {
+                return; // services already running
+            }
+            let venv = Arc::new(venv);
+            for spec in service_specs(&config.token) {
+                let service_shutdown = Arc::clone(&shutdown);
+                let service_status = Arc::clone(&status);
+                let service_config = Arc::clone(&config);
                 let service_venv = Arc::clone(&venv);
-                thread::spawn(move || {
-                    supervise_service(
-                        spec,
-                        service_shutdown,
-                        service_status,
-                        service_log_dir,
-                        service_data_dir,
-                        service_resource_dir,
-                        service_venv,
-                    )
-                });
+                thread::spawn(move || supervise_service(spec, service_shutdown, service_status, service_config, service_venv));
             }
         });
-        Ok(Self { shutdown, status })
+    }
+
+    /// Re-attempt the runtime bootstrap when a previous attempt failed (e.g.
+    /// the first launch had no network). No-op once services are running.
+    pub fn retry_setup(&self) {
+        if !self.launched.load(Ordering::SeqCst) {
+            self.spawn_controller();
+        }
+    }
+
+    pub fn is_launched(&self) -> bool {
+        self.launched.load(Ordering::SeqCst)
+    }
+
+    pub fn runtime_manifest_path(&self) -> PathBuf {
+        self.config.data_dir.join("runtime").join("manifest.json")
     }
 
     pub fn shutdown(&self) {
@@ -118,7 +175,7 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             name: "core",
             module: "services.core.main",
             sidecar: "marvex-core",
-            args: vec!["--serve".into(), "--host".into(), "127.0.0.1".into(), "--port".into(), "8765".into(), "--local-auth-token".into(), token.into()],
+            args: vec!["--serve".into(), "--host".into(), "127.0.0.1".into(), "--port".into(), CORE_PORT.to_string(), "--local-auth-token".into(), token.into()],
             kind: ServiceKind::Core,
         },
         jsonl("provider_worker", "services.provider_worker.main", "marvex-provider-worker"),
@@ -147,6 +204,13 @@ fn jsonl(name: &'static str, module: &'static str, sidecar: &'static str) -> Ser
             start_command: format!(r#"{{"command":"start","trace_id":"trace-shell-{name}"}}"#),
             stop_command: format!(r#"{{"command":"stop","trace_id":"trace-shell-{name}"}}"#),
         },
+    }
+}
+
+fn service_kind_label(kind: &ServiceKind) -> &'static str {
+    match kind {
+        ServiceKind::Core => "http",
+        ServiceKind::JsonlWorker { .. } => "jsonl",
     }
 }
 
@@ -194,34 +258,32 @@ fn first_marvex_wheel(resource_dir: &Path) -> Option<PathBuf> {
 }
 
 /// Ensure a runnable Python environment exists, creating it on first launch.
-/// Returns the venv root if usable, otherwise None (callers fall back to the
-/// dev `uv run` path when running from a source checkout).
 fn ensure_runtime(
     resource_dir: Option<&Path>,
     data_dir: &Path,
     log_dir: &Path,
     status: &SupervisorStatus,
-) -> Option<PathBuf> {
+) -> RuntimeOutcome {
     let venv = venv_root(data_dir);
     if venv_script(&venv, "marvex-core").is_file() {
         status.set("runtime", "ready");
-        return Some(venv);
+        return RuntimeOutcome::Ready(venv);
     }
 
-    // First-run bootstrap requires a bundled uv + marvex wheel. When those are
-    // absent (dev checkout), signal "dev" so services use the `uv run` path.
+    // First-run bootstrap requires a bundled marvex wheel. When absent (dev
+    // checkout), signal "dev" so services use the `uv run` path.
     let wheel = match resource_dir.and_then(first_marvex_wheel) {
         Some(wheel) => wheel,
         None => {
             status.set("runtime", "dev");
-            return None;
+            return RuntimeOutcome::Dev;
         }
     };
     let uv = match find_uv(resource_dir) {
         Some(uv) => uv,
         None => {
             status.set("runtime", "uv_unavailable");
-            return None;
+            return RuntimeOutcome::Failed;
         }
     };
 
@@ -232,7 +294,7 @@ fn ensure_runtime(
     let venv_arg = venv.to_string_lossy().to_string();
     if !run_tool(&uv, &["venv".to_string(), venv_arg, "--python".to_string(), "3.11".to_string()], data_dir, &bootstrap_log) {
         status.set("runtime", "venv_failed");
-        return None;
+        return RuntimeOutcome::Failed;
     }
 
     status.set("runtime", "installing packages");
@@ -243,8 +305,7 @@ fn ensure_runtime(
         "--python".to_string(),
         python.to_string_lossy().to_string(),
     ];
-    // Prefer bundled wheels (offline) when present, but allow PyPI fallback for
-    // any wheel not vendored.
+    // Prefer bundled wheels (offline) when present, with PyPI fallback.
     if let Some(dir) = resource_dir {
         let wheels = dir.join("wheels");
         if wheels.is_dir() {
@@ -255,15 +316,15 @@ fn ensure_runtime(
     args.push(wheel.to_string_lossy().to_string());
     if !run_tool(&uv, &args, data_dir, &bootstrap_log) {
         status.set("runtime", "install_failed");
-        return None;
+        return RuntimeOutcome::Failed;
     }
 
     if venv_script(&venv, "marvex-core").is_file() {
         status.set("runtime", "ready");
-        Some(venv)
+        RuntimeOutcome::Ready(venv)
     } else {
         status.set("runtime", "install_incomplete");
-        None
+        RuntimeOutcome::Failed
     }
 }
 
@@ -288,6 +349,55 @@ fn run_tool(tool: &Path, args: &[String], cwd: &Path, log_path: &Path) -> bool {
     output.status.success()
 }
 
+/// Write `<data_dir>/runtime/manifest.json` describing the live runtime so the
+/// GUI, health checks and diagnostics have a single source of truth.
+fn write_runtime_manifest(config: &RuntimeConfig, outcome: &RuntimeOutcome, status: &SupervisorStatus) {
+    let runtime_dir = config.data_dir.join("runtime");
+    let _ = fs::create_dir_all(&runtime_dir);
+    let (phase, venv): (String, Option<PathBuf>) = match outcome {
+        RuntimeOutcome::Ready(venv) => ("ready".to_string(), Some(venv.clone())),
+        RuntimeOutcome::Dev => ("dev".to_string(), None),
+        RuntimeOutcome::Failed => (status.get("runtime").unwrap_or_else(|| "failed".to_string()), None),
+    };
+    let services: Vec<_> = service_specs(&config.token)
+        .iter()
+        .map(|spec| {
+            let exe = venv
+                .as_ref()
+                .map(|root| venv_script(root, spec.sidecar).to_string_lossy().to_string())
+                .unwrap_or_else(|| format!("uv run python -m {}", spec.module));
+            json!({
+                "name": spec.name,
+                "console_script": spec.sidecar,
+                "exe": exe,
+                "kind": service_kind_label(&spec.kind),
+                "port": if matches!(spec.kind, ServiceKind::Core) { Some(CORE_PORT) } else { None::<u16> },
+            })
+        })
+        .collect();
+    let manifest = json!({
+        "schema_version": MANIFEST_SCHEMA_VERSION,
+        "marvex_version": MARVEX_VERSION,
+        "runtime_phase": phase,
+        "created_at_unix_ms": now_unix_ms(),
+        "venv": venv.as_ref().map(|p| p.to_string_lossy().to_string()),
+        "python": venv.as_ref().map(|p| venv_script(p, "python").to_string_lossy().to_string()),
+        "uv": find_uv(config.resource_dir.as_deref()).map(|p| p.to_string_lossy().to_string()),
+        "endpoints": {
+            "core": format!("http://127.0.0.1:{CORE_PORT}"),
+            "control": format!("http://127.0.0.1:{CONTROL_PORT}/control"),
+        },
+        "services": services,
+    });
+    if let Ok(text) = serde_json::to_string_pretty(&manifest) {
+        let _ = fs::write(runtime_dir.join("manifest.json"), text);
+    }
+}
+
+fn now_unix_ms() -> u128 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Service supervision
 // ---------------------------------------------------------------------------
@@ -296,15 +406,13 @@ fn supervise_service(
     spec: ServiceSpec,
     shutdown: Arc<AtomicBool>,
     status: Arc<SupervisorStatus>,
-    log_dir: PathBuf,
-    data_dir: PathBuf,
-    resource_dir: Option<PathBuf>,
+    config: Arc<RuntimeConfig>,
     venv: Arc<Option<PathBuf>>,
 ) {
     let mut backoff_seconds = 1_u64;
     while !shutdown.load(Ordering::SeqCst) {
         status.set(spec.name, "starting");
-        match spawn_service(&spec, &log_dir, &data_dir, resource_dir.as_deref(), venv.as_deref()) {
+        match spawn_service(&spec, &config.log_dir, &config.data_dir, config.resource_dir.as_deref(), venv.as_deref()) {
             Ok(mut child) => {
                 status.set(spec.name, format!("running pid {}", child.id()));
                 if let ServiceKind::JsonlWorker { start_command, .. } = &spec.kind {
@@ -425,7 +533,7 @@ fn attach_log_pipe(name: &'static str, stream_name: &'static str, stream: Option
 
 #[cfg(test)]
 mod tests {
-    use super::{find_uv, service_specs, sidecar_path, venv_root, venv_script};
+    use super::{find_uv, service_kind_label, service_specs, sidecar_path, venv_root, venv_script, ServiceKind};
     use std::path::Path;
 
     #[test]
@@ -446,12 +554,21 @@ mod tests {
         let venv = venv_root(Path::new("/data"));
         assert!(venv.ends_with("runtime/venv") || venv.ends_with("runtime\\venv"));
         let core = venv_script(&venv, "marvex-core");
-        let core = core.to_string_lossy();
-        assert!(core.contains("marvex-core"));
+        assert!(core.to_string_lossy().contains("marvex-core"));
     }
 
     #[test]
     fn find_uv_falls_back_to_path_binary() {
         assert!(find_uv(None).is_some());
+    }
+
+    #[test]
+    fn service_kinds_are_labelled_for_manifest() {
+        let specs = service_specs("token");
+        let core = specs.iter().find(|s| s.name == "core").expect("core");
+        assert_eq!(service_kind_label(&core.kind), "http");
+        let provider = specs.iter().find(|s| s.name == "provider_worker").expect("provider");
+        assert_eq!(service_kind_label(&provider.kind), "jsonl");
+        assert!(matches!(core.kind, ServiceKind::Core));
     }
 }
