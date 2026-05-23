@@ -489,6 +489,16 @@ fn spawn_service(
             command.env("MARVEX_UV_PATH", uv);
         }
     }
+    // Point the control plane server at the built control_plane_web SPA so the
+    // shell's Control Plane window can load it same-origin. Prefer a bundled
+    // copy in the resource dir; fall back to the dev checkout dist.
+    let web_dist = resource_dir
+        .map(|dir| dir.join("control_plane_web"))
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(|| project_root().join("apps").join("control_plane_web").join("dist"));
+    if web_dist.is_dir() {
+        command.env("MARVEX_CONTROL_WEB_DIST", web_dist);
+    }
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);

@@ -239,6 +239,31 @@ fn hide_spotlight(app: AppHandle) -> Result<(), String> {
     Ok(())
 }
 
+/// Open (or focus) the full original Control Plane in its own window. The window
+/// loads the Control Plane server same-origin (so the SPA's relative `/control`
+/// calls work) and an init script injects the local bearer token into
+/// sessionStorage, matching the Control Plane web app's auth expectation.
+#[tauri::command]
+fn open_control_plane(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
+    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+    if let Some(window) = app.get_webview_window("control") {
+        window.show().map_err(|err| err.to_string())?;
+        return window.set_focus().map_err(|err| err.to_string());
+    }
+    let escaped = token.replace('\\', "\\\\").replace('\'', "\\'");
+    let init = format!("window.sessionStorage.setItem('marvex_control_plane_token', '{escaped}');");
+    let url = tauri::WebviewUrl::External(
+        "http://127.0.0.1:8766/".parse().map_err(|_| "invalid control plane url".to_string())?,
+    );
+    tauri::WebviewWindowBuilder::new(&app, "control", url)
+        .title("Marvex Control Plane")
+        .inner_size(1280.0, 860.0)
+        .initialization_script(&init)
+        .build()
+        .map_err(|err| err.to_string())?;
+    Ok(())
+}
+
 #[derive(Copy, Clone)]
 enum UiMode {
     Chat,
@@ -298,7 +323,8 @@ pub fn run() {
             show_chat,
             show_overlay,
             show_spotlight,
-            hide_spotlight
+            hide_spotlight,
+            open_control_plane
         ])
         .setup(|app| {
             let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;

@@ -101,3 +101,7 @@ export async function showChat(): Promise<void> {
 export async function showOverlay(): Promise<void> {
   await invoke("show_overlay");
 }
+
+export async function openControlPlane(): Promise<void> {
+  await invoke("open_control_plane");
+}
