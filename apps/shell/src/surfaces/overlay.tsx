@@ -9,6 +9,7 @@ import {
   waveformLevel,
 } from "../lib/assistantState";
 import { setOverlayClickThrough, showChat } from "../lib/shellCommands";
+import { makeHoverEdgeTrigger } from "../lib/overlayHover";
 import { persistMode } from "../lib/modeStore";
 import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
@@ -69,24 +70,35 @@ export function OverlaySurface() {
     return () => cleanup?.();
   }, []);
 
-  // Click-through everywhere except directly over the island. The same bounds
-  // check drives hover-to-expand so there's a single source of truth.
+  // Click-through everywhere except directly over the island. The bounds check
+  // is throttled to one rAF per frame and the click-through IPC call is
+  // edge-triggered (fires only on enter/leave), so moving the mouse no longer
+  // floods the Tauri bridge and freezes the app.
   useEffect(() => {
+    const trigger = makeHoverEdgeTrigger((over) => void setOverlayClickThrough(!over));
+    let frame = 0;
     const onMove = (event: MouseEvent) => {
-      const rect = islandRef.current?.getBoundingClientRect();
-      const over = Boolean(
-        rect &&
-          event.clientX >= rect.left &&
-          event.clientX <= rect.right &&
-          event.clientY >= rect.top &&
-          event.clientY <= rect.bottom,
-      );
-      setHovered(over);
-      void setOverlayClickThrough(!over);
+      if (frame) return;
+      frame = requestAnimationFrame(() => {
+        frame = 0;
+        const rect = islandRef.current?.getBoundingClientRect();
+        const over = Boolean(
+          rect &&
+            event.clientX >= rect.left &&
+            event.clientX <= rect.right &&
+            event.clientY >= rect.top &&
+            event.clientY <= rect.bottom,
+        );
+        setHovered(over);
+        trigger(over);
+      });
     };
     window.addEventListener("mousemove", onMove);
     void setOverlayClickThrough(true);
-    return () => window.removeEventListener("mousemove", onMove);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      if (frame) cancelAnimationFrame(frame);
+    };
   }, []);
 
   const audioLevel = waveformLevel(state);
@@ -117,6 +129,10 @@ export function OverlaySurface() {
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe0c2", display: "block" }}
               />
+              <MarvexWaveform audioLevel={0.12} width={36} height={16} active={false} />
+              <AnimatePresence mode="wait">
+                <TextShimmer text={statusText} key={statusText} />
+              </AnimatePresence>
             </div>
           }
           ringContent={
@@ -130,7 +146,7 @@ export function OverlaySurface() {
               }}
             >
               {/* Waveform always on the LEFT. */}
-              <MarvexWaveform audioLevel={isActive ? audioLevel : 0.12} width={isActive ? 120 : 64} height={22} />
+              <MarvexWaveform audioLevel={isActive ? audioLevel : 0.18} width={isActive ? 120 : 64} height={22} active={isActive || hovered} />
               <AnimatePresence mode="wait">
                 <TextShimmer text={isActive ? statusText : "Marvex"} key={isActive ? statusText : "marvex"} />
               </AnimatePresence>

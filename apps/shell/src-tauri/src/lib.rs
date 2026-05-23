@@ -334,6 +334,11 @@ pub fn run() {
                 });
             }
             if let Some(window) = app.get_webview_window("overlay") {
+                if let (Ok(Some(monitor)), Ok(size)) = (window.current_monitor(), window.outer_size()) {
+                    let m = monitor.size();
+                    let x = (m.width as i32) - (size.width as i32) - 16;
+                    let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
+                }
                 let _ = window.set_ignore_cursor_events(true);
             }
             Ok(())
