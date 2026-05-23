@@ -53,3 +53,5 @@ apps/shell/runtime/
 # setuptools build artifacts
 /build/
 *.egg-info/
+
+Screenshots/
