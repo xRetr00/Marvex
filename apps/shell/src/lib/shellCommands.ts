@@ -67,8 +67,14 @@ export async function getGuiHealth(): Promise<GuiHealth> {
   return invoke<GuiHealth>("gui_health");
 }
 
-export async function submitChatTurn(text: string): Promise<unknown> {
-  return invoke("submit_chat_turn", { text });
+export type ChatTurnMetadata = {
+  agent_profile_id?: string;
+  persona_profile_id?: string;
+  selected_voice_id?: string;
+};
+
+export async function submitChatTurn(text: string, metadata?: ChatTurnMetadata): Promise<unknown> {
+  return invoke("submit_chat_turn", { text, metadata });
 }
 
 export async function controlRequest(path: string, method = "GET", body?: unknown): Promise<unknown> {
@@ -89,4 +95,8 @@ export async function hideSpotlight(): Promise<void> {
 
 export async function showChat(): Promise<void> {
   await invoke("show_chat");
+}
+
+export async function showOverlay(): Promise<void> {
+  await invoke("show_overlay");
 }
