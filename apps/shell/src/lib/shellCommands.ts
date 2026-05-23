@@ -83,6 +83,10 @@ export async function showSpotlight(): Promise<void> {
   await invoke("show_spotlight");
 }
 
+export async function hideSpotlight(): Promise<void> {
+  await invoke("hide_spotlight");
+}
+
 export async function showChat(): Promise<void> {
   await invoke("show_chat");
 }

@@ -5,7 +5,6 @@ import {
   idleAssistantState,
   normalizeAssistantState,
   shouldShowOverlay,
-  statusLabel,
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
@@ -14,24 +13,25 @@ import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
 import { AnimatePresence, motion } from "framer-motion";
 
-// Inject shimmer keyframes once at module load — avoids a <style> tag on every render
+// Warm shimmer (Marvex cream gradient) for the status text. Injected once.
 if (typeof document !== "undefined" && !document.getElementById("marvex-shimmer-style")) {
   const style = document.createElement("style");
   style.id = "marvex-shimmer-style";
-  style.textContent = `@keyframes shimmer{0%{background-position:0% center}100%{background-position:200% center}}`;
+  style.textContent = `@keyframes marvex-shimmer{0%{background-position:0% center}100%{background-position:200% center}}`;
   document.head.appendChild(style);
 }
 
 const SHIMMER_STYLE: React.CSSProperties = {
-  background: "linear-gradient(90deg, #38bdf8 0%, #ffffff 40%, #38bdf8 80%)",
+  background: "linear-gradient(90deg, #ffe0c2 0%, #fff7ee 45%, #ffe0c2 85%)",
   backgroundSize: "200% auto",
   WebkitBackgroundClip: "text",
   WebkitTextFillColor: "transparent",
   backgroundClip: "text",
-  animation: "shimmer 2s linear infinite",
-  fontSize: "0.75rem",
-  fontWeight: 500,
-  letterSpacing: "0.03em",
+  animation: "marvex-shimmer 2.4s linear infinite",
+  fontSize: "0.72rem",
+  fontWeight: 600,
+  letterSpacing: "0.02em",
+  whiteSpace: "nowrap",
 };
 
 function TextShimmer({ text }: { text: string }) {
@@ -41,7 +41,7 @@ function TextShimmer({ text }: { text: string }) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      transition={{ duration: 0.3 }}
+      transition={{ duration: 0.25 }}
       style={SHIMMER_STYLE}
     >
       {text}
@@ -51,7 +51,8 @@ function TextShimmer({ text }: { text: string }) {
 
 export function OverlaySurface() {
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
-  const interactiveRef = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
+  const islandRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     let cleanup: VoidFunction | undefined;
@@ -67,17 +68,20 @@ export function OverlaySurface() {
     return () => cleanup?.();
   }, []);
 
+  // Click-through everywhere except directly over the island. The same bounds
+  // check drives hover-to-expand so there's a single source of truth.
   useEffect(() => {
     const onMove = (event: MouseEvent) => {
-      const rect = interactiveRef.current?.getBoundingClientRect();
-      const overInteractive = Boolean(
+      const rect = islandRef.current?.getBoundingClientRect();
+      const over = Boolean(
         rect &&
           event.clientX >= rect.left &&
           event.clientX <= rect.right &&
           event.clientY >= rect.top &&
           event.clientY <= rect.bottom,
       );
-      void setOverlayClickThrough(!overInteractive);
+      setHovered(over);
+      void setOverlayClickThrough(!over);
     };
     window.addEventListener("mousemove", onMove);
     void setOverlayClickThrough(true);
@@ -87,66 +91,47 @@ export function OverlaySurface() {
   const audioLevel = waveformLevel(state);
   const isActive = shouldShowOverlay(state);
   const statusText = displayDetail(state);
-
-  const dynamicIslandView = isActive ? "ring" : "idle";
+  const expanded = isActive || hovered;
+  const view = expanded ? "ring" : "idle";
 
   return (
-    <div className="overlay-shell" ref={interactiveRef}>
-      <div
-        style={{
-          display: "flex",
-          flexDirection: "column",
-          alignItems: "center",
-          gap: "8px",
-          padding: "12px",
-        }}
-      >
+    <div className="overlay-shell">
+      <div ref={islandRef} style={{ width: "fit-content" }}>
         <DynamicIsland
-          view={dynamicIslandView}
+          view={view}
           idleContent={
-            <div style={{ padding: "8px 16px", display: "flex", alignItems: "center", justifyContent: "center" }}>
-              <div style={{ width: "8px", height: "8px", borderRadius: "50%", background: "#38bdf8", opacity: 0.6 }} />
+            <div style={{ padding: "7px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+              <motion.span
+                animate={{ opacity: [0.45, 0.9, 0.45] }}
+                transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
+                style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe0c2", display: "block" }}
+              />
             </div>
           }
           ringContent={
             <div
               style={{
                 display: "flex",
-                flexDirection: "column",
+                flexDirection: "row",
                 alignItems: "center",
-                gap: "6px",
-                padding: "8px 16px",
-                width: "100%",
+                gap: 10,
+                padding: "7px 14px 7px 12px",
               }}
             >
-              <MarvexWaveform audioLevel={audioLevel} width={200} height={32} />
+              {/* Waveform always on the LEFT. */}
+              <MarvexWaveform audioLevel={isActive ? audioLevel : 0.12} width={isActive ? 120 : 64} height={22} />
               <AnimatePresence mode="wait">
-                <TextShimmer text={statusText} key={statusText} />
+                <TextShimmer text={isActive ? statusText : "Marvex"} key={isActive ? statusText : "marvex"} />
               </AnimatePresence>
             </div>
           }
         />
-
-        {isActive && (
-          <motion.div
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            style={{
-              color: "rgba(255,255,255,0.5)",
-              fontSize: "0.65rem",
-              textAlign: "center",
-            }}
-          >
-            {statusLabel(state.status)}
-          </motion.div>
-        )}
       </div>
     </div>
   );
 }
 
-// Keep WaveformCanvas export for backward compat (tests may import it)
+// Kept for backward compat (tests import WaveformCanvas).
 export function WaveformCanvas({ state }: { state: AssistantStateEvent }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
@@ -161,8 +146,7 @@ export function WaveformCanvas({ state }: { state: AssistantStateEvent }) {
       const height = canvas.height;
       const level = waveformLevel(state, frame / 10);
       context.clearRect(0, 0, width, height);
-      context.strokeStyle =
-        state.status === "needs_approval" ? "#f97316" : "#38bdf8";
+      context.strokeStyle = state.status === "needs_approval" ? "#e54d2e" : "#ffe0c2";
       context.lineWidth = 2;
       context.beginPath();
       for (let x = 0; x < width; x += 4) {

@@ -1,58 +1,121 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
-/* Dark is the only theme — also expose a `dark:` variant for components that use it. */
+/* Dark is the primary theme. Also expose a `dark:` variant for components. */
 @custom-variant dark (&:is(.dark *));
 
 /* ---------------------------------------------------------------------------
-   Marvex dark design tokens (shadcn-compatible). Deep teal-slate base with a
-   sky/cyan accent. Stored as full color values so `var(--primary)` works in
-   arbitrary utilities (e.g. the dock limelight shadow).
+   Marvex design tokens (shadcn-compatible). Warm cream/tan accent on a deep
+   neutral base — ported from UI_EXTERNAL_Helpers/theme.css. The app runs
+   dark-first (index.html sets class="dark"), but light values are kept so the
+   tokens degrade gracefully.
 --------------------------------------------------------------------------- */
 :root {
-  --background: #0c171c;
-  --foreground: #eef6f7;
-  --card: #12222a;
-  --card-foreground: #eef6f7;
-  --popover: #0f1d23;
-  --popover-foreground: #eef6f7;
-  --primary: #38bdf8;
-  --primary-foreground: #04161d;
-  --secondary: #182c34;
-  --secondary-foreground: #eef6f7;
-  --muted: #16262d;
-  --muted-foreground: #8fa6ad;
-  --accent: #134e57;
-  --accent-foreground: #eef6f7;
-  --destructive: #ef4444;
-  --destructive-foreground: #fef2f2;
-  --border: #213840;
-  --input: #20343c;
-  --ring: #38bdf8;
+  --card: #fcfcfc;
+  --ring: #644a40;
+  --input: #d8d8d8;
+  --muted: #efefef;
+  --accent: #e8e8e8;
+  --border: #d8d8d8;
   --radius: 0.625rem;
+  --chart-1: #644a40;
+  --chart-2: #ffdfb5;
+  --chart-3: #e8e8e8;
+  --chart-4: #ffe6c4;
+  --chart-5: #66493e;
+  --popover: #fcfcfc;
+  --primary: #644a40;
+  --sidebar: #fbfbfb;
+  --secondary: #ffdfb5;
+  --background: #f9f9f9;
+  --foreground: #202020;
+  --destructive: #e54d2e;
+  --sidebar-ring: #b5b5b5;
+  --sidebar-accent: #f7f7f7;
+  --sidebar-border: #ebebeb;
+  --card-foreground: #202020;
+  --sidebar-primary: #343434;
+  --muted-foreground: #646464;
+  --accent-foreground: #202020;
+  --popover-foreground: #202020;
+  --primary-foreground: #ffffff;
+  --sidebar-foreground: #252525;
+  --secondary-foreground: #582d1d;
+  --destructive-foreground: #ffffff;
+  --sidebar-accent-foreground: #343434;
+  --sidebar-primary-foreground: #fbfbfb;
+}
+
+.dark {
+  --card: #191919;
+  --ring: #ffe0c2;
+  --input: #484848;
+  --muted: #222222;
+  --accent: #2a2a2a;
+  --border: #2a2823;
+  --radius: 0.625rem;
+  --chart-1: #ffe0c2;
+  --chart-2: #393028;
+  --chart-3: #2a2a2a;
+  --chart-4: #42382e;
+  --chart-5: #ffe0c1;
+  --popover: #191919;
+  --primary: #ffe0c2;
+  --sidebar: #18181b;
+  --secondary: #393028;
+  --background: #111111;
+  --foreground: #eeeeee;
+  --destructive: #e54d2e;
+  --sidebar-ring: #d4d4d8;
+  --sidebar-accent: #27272a;
+  --sidebar-border: #27272a;
+  --card-foreground: #eeeeee;
+  --sidebar-primary: #ffe0c2;
+  --muted-foreground: #b4b4b4;
+  --accent-foreground: #eeeeee;
+  --popover-foreground: #eeeeee;
+  --primary-foreground: #2a1e16;
+  --sidebar-foreground: #f4f4f5;
+  --secondary-foreground: #ffe0c2;
+  --destructive-foreground: #ffffff;
+  --sidebar-accent-foreground: #f4f4f5;
+  --sidebar-primary-foreground: #2a1e16;
 }
 
 /* Map shadcn tokens onto Tailwind v4 color/radius utilities. */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-border: var(--border);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
   --color-destructive: var(--destructive);
   --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -67,59 +130,51 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--background); color: var(--foreground); }
-/* Overlay + spotlight windows are transparent (Tauri transparent:true). */
-body:has(.overlay-shell), body:has(.spotlight-shell) { background: transparent; }
+/* Overlay + spotlight windows are fully transparent (Tauri transparent:true)
+   so only the island / panel chrome is visible — never a window rectangle. */
+html:has(.overlay-shell), body:has(.overlay-shell),
+html:has(.spotlight-shell), body:has(.spotlight-shell) {
+  background: transparent !important;
+}
 button, input { font: inherit; }
 
-.app-shell {
-  min-height: 100vh;
-  display: grid;
-  grid-template-columns: 72px 1fr;
-}
-
+/* ---- Dynamic Island overlay ----------------------------------------------
+   No panel/background here — the island component paints its own pill. The
+   shell is just a transparent, top-left aligned hit area. */
 .overlay-shell {
-  width: 260px;
-  margin: 10px;
-  padding: 10px 12px;
-  color: white;
-  border-radius: 8px;
-  background: rgba(12, 24, 28, .78);
-  backdrop-filter: blur(14px);
-  box-shadow: 0 16px 40px rgba(0,0,0,.22);
+  width: 100vw;
+  height: 100vh;
+  background: transparent;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-start;
+  padding: 6px;
+  overflow: hidden;
 }
 
-.status-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 700;
-}
-
-.status-dot { width: 8px; height: 8px; border-radius: 99px; background: #38bdf8; }
-.status-needs_approval { background: #f97316; }
-.status-idle { background: #94a3b8; }
-.overlay-detail { margin-top: 4px; color: #d6e7ea; font-size: 12px; }
-.waveform { display: block; margin-top: 6px; width: 220px; height: 34px; }
-
+/* ---- Spotlight: right-anchored island toast ------------------------------ */
 .spotlight-shell {
-  min-height: 100vh;
-  display: grid;
-  place-items: start center;
-  padding-top: 12vh;
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  align-items: flex-start;
+  justify-content: flex-end;
+  padding: 14px;
   background: transparent;
 }
 
 .spotlight-panel {
-  width: min(720px, calc(100vw - 32px));
-  border-radius: 14px;
-  background: rgba(12, 24, 28, .92);
-  border: 1px solid rgba(56, 189, 248, .14);
-  box-shadow: 0 24px 70px rgba(0,0,0,.45);
-  backdrop-filter: blur(18px);
-  padding: 22px;
+  width: min(420px, calc(100vw - 28px));
+  border-radius: 22px;
+  background: color-mix(in srgb, var(--card) 88%, transparent);
+  border: 1px solid var(--border);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+  backdrop-filter: blur(22px);
+  padding: 18px;
   color: var(--foreground);
 }
 
-.spotlight-panel h1 { margin: 0 0 10px; font-size: 22px; color: var(--foreground); }
-.spotlight-panel p { margin: 0; color: var(--muted-foreground); line-height: 1.5; }
+.spotlight-panel h1 { margin: 0 0 8px; font-size: 18px; color: var(--foreground); }
+.spotlight-panel p { margin: 0; color: var(--muted-foreground); line-height: 1.5; font-size: 13px; }
+
+@keyframes marvex-shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }

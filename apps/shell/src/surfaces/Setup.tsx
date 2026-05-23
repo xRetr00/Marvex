@@ -5,6 +5,7 @@ import AnimatedProgressBar from "@/components/animated-progress-bar";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
 import { getSetupStatus, startSetup } from "@/lib/shellCommands";
 import { markSetupDone } from "@/lib/modeStore";
+import { ScrambleText } from "@/components/scramble-text";
 
 /** Friendly text for the first-run runtime (uv venv) bootstrap phases. */
 const RUNTIME_PHASE_TEXT: Record<string, string> = {
@@ -120,22 +121,22 @@ export function SetupPage({ onComplete }: SetupProps) {
   }, [onComplete]);
 
   return (
-    <div className="fixed inset-0 bg-[#08151a] flex items-center justify-center">
+    <div className="fixed inset-0 flex items-center justify-center" style={{ background: "var(--background)", color: "var(--foreground)" }}>
       <div className="w-full max-w-md px-8 space-y-8">
         {/* Logo */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-3">
           <img src="/assets/Marvex_WordMark_NoBackground.png" alt="Marvex" className="h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <span className="text-white text-2xl font-bold tracking-tight">Marvex</span>
+          <ScrambleText text="Marvex" className="text-2xl font-bold tracking-tight" style={{ color: "var(--primary)" }} />
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-2">
-          <p className="text-white/60 text-sm text-center">
+          <p className="text-sm text-center" style={{ color: "var(--muted-foreground)" }}>
             {phase === "loading" && (bootText ?? "Checking dependencies...")}
             {phase === "installing" && "Installing required components..."}
             {phase === "done" && "Setup complete. Starting Marvex..."}
             {phase === "error" && (error ?? "Something went wrong.")}
           </p>
-          <AnimatedProgressBar value={progress} color="#38bdf8" className="rounded-full" />
+          <AnimatedProgressBar value={progress} color="var(--primary)" className="rounded-full" />
         </motion.div>
 
         <AnimatePresence>

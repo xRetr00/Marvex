@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { listen } from "../lib/tauriBridge";
+import { hideSpotlight } from "../lib/shellCommands";
 import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
 import type { TurnStage } from "../lib/localTurn";
 import { motion, AnimatePresence } from "framer-motion";
@@ -45,6 +46,18 @@ export function SpotlightSurface() {
     body: "Waiting for assistant activity.",
   });
   const [pending, setPending] = useState(false);
+  const hovering = useRef(false);
+
+  // Toast behaviour: transient cards (info/result/agenda) auto-dismiss; an
+  // approval stays until the user decides. Hovering pauses the dismissal.
+  useEffect(() => {
+    if (payload.kind === "approval") return;
+    const ttl = payload.kind === "agenda" ? 9000 : payload.kind === "result" ? 7000 : 5000;
+    const timer = setTimeout(() => {
+      if (!hovering.current) void hideSpotlight();
+    }, ttl);
+    return () => clearTimeout(timer);
+  }, [payload]);
 
   useEffect(() => {
     void fetchPendingApprovals()
@@ -78,10 +91,12 @@ export function SpotlightSurface() {
         <motion.section
           key={payload.kind}
           className="spotlight-panel"
-          initial={{ opacity: 0, scale: 0.97, y: 8 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 0.97, y: 8 }}
-          transition={{ type: "spring", duration: 0.4, bounce: 0.12 }}
+          onMouseEnter={() => { hovering.current = true; }}
+          onMouseLeave={() => { hovering.current = false; }}
+          initial={{ opacity: 0, scale: 0.92, x: 60, filter: "blur(6px)" }}
+          animate={{ opacity: 1, scale: 1, x: 0, filter: "blur(0px)" }}
+          exit={{ opacity: 0, scale: 0.92, x: 60, filter: "blur(6px)" }}
+          transition={{ type: "spring", duration: 0.45, bounce: 0.18 }}
         >
           {payload.kind === "approval" && <ApprovalView approval={payload.approval} pending={pending} setPending={setPending} />}
           {payload.kind === "result" && <RichMessage text={payload.body} stages={payload.stages} />}

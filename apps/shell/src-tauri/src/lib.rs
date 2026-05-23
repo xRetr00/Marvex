@@ -170,11 +170,32 @@ fn show_chat(app: AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|err| err.to_string())
 }
 
+/// Anchor the spotlight to the top-right corner of the active monitor so it
+/// reads like a notification/Siri panel sliding in from the island side.
+fn position_spotlight_top_right(window: &tauri::WebviewWindow) {
+    if let (Ok(Some(monitor)), Ok(size)) = (window.current_monitor(), window.outer_size()) {
+        let m = monitor.size();
+        let margin: i32 = 16;
+        let x = (m.width as i32) - (size.width as i32) - margin;
+        let y = margin;
+        let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), y));
+    }
+}
+
 #[tauri::command]
 fn show_spotlight(app: AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("spotlight").ok_or_else(|| "spotlight window unavailable".to_string())?;
     window.show().map_err(|err| err.to_string())?;
+    position_spotlight_top_right(&window);
     window.set_focus().map_err(|err| err.to_string())
+}
+
+#[tauri::command]
+fn hide_spotlight(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("spotlight") {
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
 }
 
 pub fn run() {
@@ -205,7 +226,8 @@ pub fn run() {
             control_request,
             set_overlay_click_through,
             show_chat,
-            show_spotlight
+            show_spotlight,
+            hide_spotlight
         ])
         .setup(|app| {
             let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;
@@ -261,11 +283,14 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .separator()
         .text("quit", "Quit")
         .build()?;
-    TrayIconBuilder::with_id("marvex-shell")
+    let mut builder = TrayIconBuilder::with_id("marvex-shell")
         .tooltip("Marvex")
         .menu(&menu)
-        .show_menu_on_left_click(true)
-        .build(app)?;
+        .show_menu_on_left_click(true);
+    if let Some(icon) = app.default_window_icon().cloned() {
+        builder = builder.icon(icon);
+    }
+    builder.build(app)?;
     Ok(())
 }
 
