@@ -231,6 +231,13 @@ fn venv_script(venv: &Path, name: &str) -> PathBuf {
     }
 }
 
+/// Resolve an installed sidecar console-script path inside a venv, returning
+/// `None` when the venv is absent or the script is not present on disk (so the
+/// caller falls back to the dev `uv run` path).
+fn sidecar_path(venv: Option<&Path>, name: &str) -> Option<PathBuf> {
+    venv.map(|root| venv_script(root, name)).filter(|path| path.is_file())
+}
+
 /// Resolve the `uv` binary: prefer the bundled copy in the resource dir, then
 /// fall back to `uv` on PATH (dev machines).
 fn find_uv(resource_dir: Option<&Path>) -> Option<PathBuf> {
@@ -461,10 +468,7 @@ fn spawn_service(
 ) -> Result<Child, String> {
     // Tier 1: Setuptools console scripts (preferred, production)
     // Tier 3: Dev fallback `uv run python -m <module>` (source checkout)
-    let mut command = if let Some(exe) = venv
-        .map(|root| venv_script(root, spec.sidecar))
-        .filter(|path| path.is_file())
-    {
+    let mut command = if let Some(exe) = sidecar_path(venv, spec.sidecar) {
         let mut command = Command::new(exe);
         command.args(&spec.args);
         command.current_dir(data_dir);

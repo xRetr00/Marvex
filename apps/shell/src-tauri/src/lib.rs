@@ -84,9 +84,9 @@ fn start_backend(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String
 
 /// Health of the Core daemon (loopback /health on 8765).
 #[tauri::command]
-fn backend_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
-    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
-    match http::http_get("127.0.0.1", 8765, "/health", Some(&token)) {
+async fn backend_health(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
+    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
+    match http::http_get("127.0.0.1", 8765, "/health", Some(&token)).await {
         Ok(response) => {
             let body: Value = serde_json::from_str(&response.body).unwrap_or_else(|_| json!({"raw": false}));
             Ok(json!({"reachable": response.status == 200, "status_code": response.status, "health": body}))
@@ -110,37 +110,51 @@ fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn submit_chat_turn(text: String, metadata: Option<Value>, state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+async fn submit_chat_turn(text: String, metadata: Option<Value>, state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("chat text must be non-empty".to_string());
     }
-    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+    let (token, session_id) = {
+        let guard = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+        (guard.token.clone(), session_id_from_metadata(&metadata))
+    };
     let now = monotonic_id();
     let trace_id = format!("trace-shell-chat-{now}");
     let turn_id = format!("turn-shell-chat-{now}");
     let body = json!({
         "schema_version": "0.1.1-draft",
-        "execution_mode": "assistant_runtime_fake_provider",
         "assistant_turn_input": {
             "schema_version": "0.1.1-draft",
             "trace_id": trace_id,
             "turn_id": turn_id,
             "input_event_id": format!("event-shell-chat-{now}"),
-            "session_ref": {"ref_type": "session", "ref_id": "shell-session"},
+            "session_ref": {"ref_type": "session", "ref_id": session_id},
             "identity_ref": null,
             "user_visible_input": text,
             "assistant_mode": "default",
             "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
             "metadata": safe_shell_turn_metadata(metadata)
         },
-        "model": "fake-model",
+        "model": null,
         "instructions": null,
         "previous_response_id": null,
         "provider_options": {}
     });
-    let response = http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body)?;
+    let response = http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body).await?;
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
+fn session_id_from_metadata(metadata: &Option<Value>) -> String {
+    if let Some(Value::Object(map)) = metadata {
+        if let Some(Value::String(id)) = map.get("session_id") {
+            let trimmed = id.trim();
+            if !trimmed.is_empty() {
+                return trimmed.to_string();
+            }
+        }
+    }
+    "shell-session".to_string()
 }
 
 fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
@@ -160,16 +174,16 @@ fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
 }
 
 #[tauri::command]
-fn control_request(path: String, method: String, body: Option<Value>, state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+async fn control_request(path: String, method: String, body: Option<Value>, state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
     if !path.starts_with('/') || path.contains("://") {
         return Err("control path must be local".to_string());
     }
-    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
     let full_path = format!("/control{path}");
     let response = if method.eq_ignore_ascii_case("POST") {
-        http::http_post_json("127.0.0.1", 8766, &full_path, Some(&token), &body.unwrap_or_else(|| json!({})))?
+        http::http_post_json("127.0.0.1", 8766, &full_path, Some(&token), &body.unwrap_or_else(|| json!({}))).await?
     } else {
-        http::http_get("127.0.0.1", 8766, &full_path, Some(&token))?
+        http::http_get("127.0.0.1", 8766, &full_path, Some(&token)).await?
     };
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Control Plane response: {err}"))
 }
@@ -328,8 +342,18 @@ pub fn run() {
             match event.id().as_ref() {
                 "open_chat" => { let _ = show_chat(app.clone()); }
                 "open_spotlight" => { let _ = show_spotlight(app.clone()); }
-                "pause_voice" => { let _ = control_request("/voice/worker/pause".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()); }
-                "resume_voice" => { let _ = control_request("/voice/worker/resume".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()); }
+                "pause_voice" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = control_request("/voice/worker/pause".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()).await;
+                    });
+                }
+                "resume_voice" => {
+                    let app = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        let _ = control_request("/voice/worker/resume".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()).await;
+                    });
+                }
                 "quit" => {
                     if let Some(state) = app.try_state::<Mutex<ShellState>>() {
                         if let Ok(state) = state.lock() {
