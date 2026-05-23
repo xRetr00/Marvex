@@ -12,6 +12,26 @@ import { ExpandableCard } from "@/components/expandable-card";
 import AgentPlan from "@/components/agent-plan";
 import { AlertBadge } from "@/components/alert-badge";
 import ButtonCopy from "@/components/button-copy";
+import { ScrambleText } from "@/components/scramble-text";
+
+// Reveal the answer with the Marvex scramble effect, tuned so the whole string
+// resolves in ~1.4s regardless of length (skip scramble for very long replies).
+function ScrambleAnswer({ text }: { text: string }) {
+  const len = text.length;
+  if (len > 1500) {
+    return <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{text}</p>;
+  }
+  const speed = Math.min(22, Math.max(4, Math.round(1400 / Math.max(1, len))));
+  return (
+    <ScrambleText
+      as="p"
+      text={text}
+      speed={speed}
+      scrambleDepth={5}
+      className="whitespace-pre-wrap text-sm leading-relaxed text-foreground"
+    />
+  );
+}
 
 function stageStatus(status: string): "complete" | "active" | "pending" {
   if (["completed", "succeeded", "ok", "done"].includes(status)) return "complete";
@@ -26,7 +46,7 @@ function prettyStage(name: string): string {
 function BlockView({ block }: { block: RichBlock }) {
   switch (block.type) {
     case "text":
-      return <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{block.text}</p>;
+      return <ScrambleAnswer text={block.text} />;
     case "info":
       return (
         <div className="rounded-xl border border-border bg-card/60 p-4">

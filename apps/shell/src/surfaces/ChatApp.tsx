@@ -19,6 +19,8 @@ import ChatInput from "@/components/prompt-input-dynamic-grow";
 import { Orb } from "@/components/chat-messages-for-ui/agent-simple-orb";
 import { Message, MessageContent } from "@/components/ui/message";
 import { RichMessage } from "@/components/marvex/RichMessage";
+import { RuntimeStatus } from "@/components/marvex/RuntimeStatus";
+import { AuroraBackground } from "@/components/marvex/AuroraBackground";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import SystemMonitor from "@/components/system-monitor/system-monitor";
 import {
@@ -202,9 +204,10 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
   const orbState = agentStateFromStatus(state.status);
 
   return (
-    <div className="flex flex-col h-screen min-h-0" style={{ background: "var(--background)", color: "var(--foreground)" }}>
+    <div className="flex flex-col h-screen min-h-0 relative z-[1]" style={{ background: "transparent", color: "var(--foreground)" }}>
+      <AuroraBackground />
       {/* Topbar */}
-      <header style={{ minHeight: 60, padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", background: "var(--card)" }}>
+      <header style={{ minHeight: 60, padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <img src="/assets/Marvex_App_192.png" alt="Marvex" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "contain" }}
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
@@ -282,7 +285,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
               )}
 
               {/* Composer */}
-              <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", background: "var(--card)" }}>
+              <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                   <button
                     title={sttAvailable ? "Microphone" : "STT unavailable"}
@@ -400,6 +403,9 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
           {activeTab === "deps" && (
             <motion.div key="deps" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflow: "auto", padding: 20 }}>
               <div style={{ maxWidth: 700, display: "flex", flexDirection: "column", gap: 16 }}>
+                {/* Real-time backend/runtime status */}
+                <RuntimeStatus />
+
                 {/* Feature status */}
                 {Object.keys(features).length > 0 && (
                   <section style={{ background: "var(--card)", borderRadius: 14, padding: 16, border: "1px solid var(--border)" }}>
@@ -472,7 +478,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
       </div>
 
       {/* Bottom dock */}
-      <footer style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "10px 16px", borderTop: "1px solid var(--border)", background: "var(--card)" }}>
+      <footer style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "10px 16px", borderTop: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
         <LimelightNav
           items={navItems}
           defaultActiveIndex={activeNavIndex}
