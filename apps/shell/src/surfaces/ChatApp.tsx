@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, SlidersHorizontal, Package, Mic, MicOff, RefreshCw, AlertTriangle, Activity, Bot, UserRound, Radio } from "lucide-react";
+import { MessageSquare, SlidersHorizontal, Package, Mic, MicOff, RefreshCw, AlertTriangle, Activity, Bot, UserRound, Radio, History } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
-import { finalTextFromTurnResult, stagesFromTurnResult, uiDirectivesFromTurnResult, type TurnStage, type UiDirective } from "@/lib/localTurn";
+import { type TurnStage, type UiDirective } from "@/lib/localTurn";
 import { getShellRuntimeConfig, showOverlay, submitChatTurn, getSupervisorStatus, getSetupStatus, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
+import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
+import { getActiveSessionId, loadMessages, saveMessages, newSession, setActiveSession, listSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchAgentCatalog, fetchPendingApprovals, fetchPersonaCatalog, selectActiveAgent, selectActivePersona, type AgentCatalog, type AgentProfile, type PersonaCatalog, type PersonaProfile } from "@/lib/controlPlaneClient";
 
 import { LimelightNav } from "@/components/dock";
@@ -33,11 +35,12 @@ import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui
 import { Button } from "@/components/ui/button";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
-type TabId = "chat" | "control" | "deps";
+type TabId = "chat" | "sessions" | "control" | "deps";
 type DepsState = "loading" | "ready" | "error";
 
 const TAB_TITLES: Record<TabId, string> = {
   chat: "Assistant Chat",
+  sessions: "Sessions",
   control: "Control Plane",
   deps: "Dependencies",
 };
@@ -119,9 +122,11 @@ function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listen
 export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
-  const [messages, setMessages] = useState<ChatMessage[]>([
-    { role: "system", text: "Marvex is ready. How can I help?" },
-  ]);
+  const sessionIdRef = useRef<string>(getActiveSessionId());
+  const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const restored = loadMessages(sessionIdRef.current) as ChatMessage[];
+    return restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }];
+  });
   const [pending, setPending] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("chat");
   const [showHello, setShowHello] = useState(true);
@@ -217,6 +222,11 @@ export function ChatApp() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, pending]);
 
+  // Persist the conversation so it survives shell close/reopen.
+  useEffect(() => {
+    saveMessages(sessionIdRef.current, messages as StoredMessage[]);
+  }, [messages]);
+
   const send = useCallback(async (text: string) => {
     if (!text.trim() || pending) return;
     setPending(true);
@@ -226,10 +236,13 @@ export function ChatApp() {
         agent_profile_id: selectedAgentId,
         persona_profile_id: selectedPersonaId,
         selected_voice_id: selectedVoice,
+        session_id: sessionIdRef.current,
       });
-      setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result), stages: stagesFromTurnResult(result), directives: uiDirectivesFromTurnResult(result) }]);
+      const outcome = outcomeFromTurnResult(result);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives }]);
     } catch (error) {
-      setMessages((prev) => [...prev, { role: "assistant", text: error instanceof Error ? error.message : "Request failed." }]);
+      const outcome = outcomeFromError(error);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
     } finally {
       setPending(false);
     }
@@ -286,9 +299,25 @@ export function ChatApp() {
 
   const navItems = useMemo(() => [
     { id: "chat", icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
+    { id: "sessions", icon: <History />, label: "Sessions", onClick: () => setActiveTab("sessions") },
     { id: "control", icon: <SlidersHorizontal />, label: "Control Plane", onClick: () => setActiveTab("control") },
     { id: "deps", icon: <Package />, label: "Deps", onClick: () => setActiveTab("deps") },
   ], []);
+
+  const startNewSession = useCallback(() => {
+    const id = newSession();
+    sessionIdRef.current = id;
+    setMessages([{ role: "system", text: "New chat started." }]);
+    setActiveTab("chat");
+  }, []);
+
+  const openSession = useCallback((id: string) => {
+    setActiveSession(id);
+    sessionIdRef.current = id;
+    const restored = loadMessages(id) as ChatMessage[];
+    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }]);
+    setActiveTab("chat");
+  }, []);
   const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
   const orbState = agentStateFromStatus(state.status);
   const activeAgent: AgentProfile | undefined = agentCatalog?.agents.find((agent) => agent.agent_id === selectedAgentId);
@@ -396,6 +425,27 @@ export function ChatApp() {
                     />
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          )}
+
+          {activeTab === "sessions" && (
+            <motion.div key="sessions" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflow: "auto", padding: 20 }}>
+              <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 10 }}>
+                <Button size="sm" variant="outline" onClick={startNewSession}>New chat</Button>
+                {listSessions().map((s: SessionMeta) => (
+                  <button
+                    key={s.id}
+                    onClick={() => openSession(s.id)}
+                    style={{ textAlign: "left", padding: "10px 12px", borderRadius: 10, background: s.id === sessionIdRef.current ? "var(--accent)" : "var(--secondary)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--foreground)" }}
+                  >
+                    <div style={{ fontSize: 13, fontWeight: 600 }}>{s.title || "New chat"}</div>
+                    <div style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{new Date(s.updatedAt).toLocaleString()}</div>
+                  </button>
+                ))}
+                {listSessions().length === 0 && (
+                  <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>No saved sessions yet.</span>
+                )}
               </div>
             </motion.div>
           )}

@@ -71,6 +71,7 @@ export type ChatTurnMetadata = {
   agent_profile_id?: string;
   persona_profile_id?: string;
   selected_voice_id?: string;
+  session_id?: string;
 };
 
 export async function submitChatTurn(text: string, metadata?: ChatTurnMetadata): Promise<unknown> {
