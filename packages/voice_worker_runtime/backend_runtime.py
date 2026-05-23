@@ -123,6 +123,7 @@ class VoiceWorkerBackendRuntime:
         self.audio_refs = audio_refs or VoiceWorkerAudioRefStore()
         self.generated_audio = generated_audio or VoiceWorkerGeneratedAudioSink()
         self._module_loader = module_loader or import_module
+        self._custom_wakeword_runner = wakeword_runner is not None
         self._stt_runner = stt_runner or VoiceWorkerSttModelRunner(
             asset_manager=self.asset_manager,
             audio_refs=self.audio_refs,
@@ -204,7 +205,7 @@ class VoiceWorkerBackendRuntime:
         del trace_id
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
-        blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        blocker = None if self._custom_wakeword_runner and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
         if blocker is not None:
             return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=backend_id, reason_code=blocker)
         return self._wakeword_runner(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]

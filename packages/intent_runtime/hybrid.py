@@ -206,7 +206,7 @@ class HybridIntentRuntime:
         if selected == IntentKind.PROVIDER_SIMPLE_CHAT:
             fallback_reason = "provider.default_unmatched_or_low_confidence"
             route_gating_reason = "provider.safe_default"
-        selector = SingleSelection(index=_kind_index(selected), reason=f"llamaindex.selector.{selected.value}")
+        selector = _single_selection(index=_kind_index(selected), selected=selected)
         if selected == IntentKind.PROVIDER_SIMPLE_CHAT and _freshness_needed(text):
             selected = IntentKind.WEB_SEARCH
             route_gating_reason = "freshness.required"
@@ -246,7 +246,7 @@ class HybridIntentRuntime:
                 "semantic_encoder_backend_name": self._semantic_layer.backend_name,
                 "semantic_selection_strategy": self._semantic_layer.selection_strategy,
                 "semantic_router_hybrid_extra_available": _semantic_router_hybrid_extra_available(),
-                "llamaindex_selector_used": isinstance(selector, SingleSelection),
+                "llamaindex_selector_used": SingleSelection is not None and isinstance(selector, SingleSelection),
                 "llamaindex_selection_index": selector.index,
                 "freshness_needed": _freshness_needed(text),
                 "capability": capability,
@@ -296,6 +296,13 @@ def _semantic_routes() -> tuple[semantic_router.Route, ...]:
         semantic_router.Route(name=IntentKind.SKILL_NEEDED.value, utterances=("use skill", "skill package")),
         semantic_router.Route(name=IntentKind.SETTINGS_CONTROL_PLANE.value, utterances=("control plane settings", "approval telemetry")),
     )
+
+
+def _single_selection(*, index: int, selected: IntentKind):
+    reason = f"llamaindex.selector.{selected.value}"
+    if SingleSelection is None:
+        return type("SelectionProjection", (), {"index": index, "reason": reason})()
+    return SingleSelection(index=index, reason=reason)
 
 
 def _semantic_select(text: str, routes: tuple[semantic_router.Route, ...]) -> tuple[IntentKind, float]:

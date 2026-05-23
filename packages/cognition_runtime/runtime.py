@@ -35,6 +35,7 @@ from packages.prompt_harness_runtime.models import (
     ToolResultClearingDecision,
     decide_compaction,
 )
+from packages.prompt_harness_runtime.provider_compiler import compile_provider_prompt
 from packages.skills_runtime import SkillManifest, SkillPromptContribution, select_skills_for_intent
 from packages.web_search_runtime import WebSearchFreshness, WebSearchQuery
 
@@ -99,6 +100,10 @@ class CognitionRuntime:
                 context_pack=context_pack,
             )
         )
+        provider_prompt_payload = compile_provider_prompt(
+            turn_input=turn_input,
+            prompt_result=prompt_result,
+        )
         evidence_refs = tuple(
             CognitionEvidenceRef(ref_type="web_evidence", ref_id=ref.evidence_id, source=ref.domain)
             for ref in web_refs
@@ -127,6 +132,7 @@ class CognitionRuntime:
             context_projection=context_pack.safe_projection(),
             prompt_result=prompt_result,
             prompt_projection=prompt_result.safe_projection(),
+            provider_prompt_payload=provider_prompt_payload,
             intent_plan=intent_plan,
             step_plan=step_plan,
             evidence_refs=evidence_refs,

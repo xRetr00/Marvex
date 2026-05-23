@@ -1783,21 +1783,14 @@ def _turn_input_with_prompt(
     *,
     desktop_context: dict[str, object] | None = None,
 ) -> tuple[AssistantTurnInput, str | None]:
-    system_text = "\n".join(
-        section.safe_content
-        for section in cognition.prompt_result.plan.sections
-        if section.included and section.kind.value in {"system_policy", "approval_state"}
-    )
-    prompt_text = "\n".join(
-        section.safe_content
-        for section in cognition.prompt_result.plan.sections
-        if section.included and section.kind.value not in {"system_policy", "approval_state"}
-    )
+    payload = cognition.provider_prompt_payload
+    prompt_text = str(getattr(payload, "input_text", "") or "")
+    instructions = getattr(payload, "instructions", None)
     if desktop_context and desktop_context.get("available") is True:
         content = str(desktop_context.get("content") or "").strip()
         if content:
-            prompt_text = prompt_text + "\n\nDesktop Agent safe content projection:\n" + content
-    return turn_input.model_copy(update={"user_visible_input": prompt_text}), (system_text or None)
+            prompt_text = prompt_text + "\n\nDesktop Agent safe content projection:\n" + content[:1200]
+    return turn_input.model_copy(update={"user_visible_input": prompt_text}), instructions
 
 
 # Builtin UI toolset the model can call to control what the shell renders. Kept

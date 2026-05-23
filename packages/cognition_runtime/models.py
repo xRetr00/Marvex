@@ -81,6 +81,7 @@ class CognitionTurnAssembly(CapabilityRuntimeModel):
     context_projection: SafeContextProjection
     prompt_result: PromptAssemblyResult
     prompt_projection: SafePromptProjection
+    provider_prompt_payload: Any | None = None
     intent_plan: Any
     step_plan: CognitionStepPlan
     evidence_refs: tuple[CognitionEvidenceRef, ...] = ()

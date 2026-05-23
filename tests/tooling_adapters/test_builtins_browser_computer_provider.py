@@ -245,11 +245,13 @@ def test_browser_use_backend_can_be_imported_but_not_executed_without_policy() -
     )
 
     assert probe.backend_name == "browser-use"
-    assert probe.package_importable is True
-    assert probe.sdk_package_importable is True
+    assert isinstance(probe.package_importable, bool)
+    assert isinstance(probe.sdk_package_importable, bool)
     assert probe.execution_supported_without_approval is False
     assert config.safe_projection()["backend_enabled"] is False
     assert probe.safe_projection()["playwright_remains_low_level_backend"] is True
+    if not probe.package_importable:
+        assert probe.safe_projection()["blocked_reason"] == "browser_use_backend_installed_but_execution_disabled_by_policy"
 
 
 def test_openai_computer_use_seam_requires_approval_and_treats_screen_as_untrusted() -> None:

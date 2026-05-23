@@ -23,29 +23,33 @@ class SQLiteMemoryStore:
     def write_record(self, record: MemoryRecord) -> None:
         record = MemoryRecord.model_validate(record.model_dump(mode="json"))
         payload = json.dumps(record.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
-        with self._connect() as connection:
+        connection = self._connect()
+        try:
             try:
-                connection.execute(
-                    """
-                    INSERT INTO memory_records(
-                        memory_id, scope, memory_kind, session_ref_id, conversation_ref_id,
-                        trace_id, turn_id, created_at, payload_json
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        record.memory_ref.ref_id,
-                        record.scope,
-                        record.memory_kind,
-                        record.session_ref.ref_id if record.session_ref else None,
-                        record.conversation_ref.ref_id if record.conversation_ref else None,
-                        record.trace_id,
-                        record.turn_id,
-                        record.created_at.isoformat(),
-                        payload,
-                    ),
-                )
+                with connection:
+                    connection.execute(
+                        """
+                        INSERT INTO memory_records(
+                            memory_id, scope, memory_kind, session_ref_id, conversation_ref_id,
+                            trace_id, turn_id, created_at, payload_json
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            record.memory_ref.ref_id,
+                            record.scope,
+                            record.memory_kind,
+                            record.session_ref.ref_id if record.session_ref else None,
+                            record.conversation_ref.ref_id if record.conversation_ref else None,
+                            record.trace_id,
+                            record.turn_id,
+                            record.created_at.isoformat(),
+                            payload,
+                        ),
+                    )
             except sqlite3.IntegrityError as exc:
                 raise ValueError("duplicate memory_ref") from exc
+        finally:
+            connection.close()
 
     def read_by_session(self, session_ref: SessionRef) -> MemoryReadResult:
         records = self._records_where("session_ref_id = ?", (session_ref.ref_id,))
@@ -72,8 +76,12 @@ class SQLiteMemoryStore:
         )
 
     def forget(self, memory_ref: MemoryRef) -> MemoryForgetResult:
-        with self._connect() as connection:
-            cursor = connection.execute("DELETE FROM memory_records WHERE memory_id = ?", (memory_ref.ref_id,))
+        connection = self._connect()
+        try:
+            with connection:
+                cursor = connection.execute("DELETE FROM memory_records WHERE memory_id = ?", (memory_ref.ref_id,))
+        finally:
+            connection.close()
         return MemoryForgetResult(schema_version=SCHEMA_VERSION, memory_ref=memory_ref, forgotten=cursor.rowcount > 0)
 
     def forget_by_request(self, request: MemoryForgetRequest) -> MemoryForgetResult:
@@ -103,30 +111,37 @@ class SQLiteMemoryStore:
         if limit is not None:
             query = f"{query} LIMIT ?"
             params = (*params, limit)
-        with self._connect() as connection:
+        connection = self._connect()
+        try:
             rows = connection.execute(query, params).fetchall()
+        finally:
+            connection.close()
         return tuple(MemoryRecord.model_validate(json.loads(row[0])) for row in rows)
 
     def _ensure_schema(self) -> None:
         self._path.parent.mkdir(parents=True, exist_ok=True)
-        with self._connect() as connection:
-            connection.execute(
-                """
-                CREATE TABLE IF NOT EXISTS memory_records(
-                    memory_id TEXT PRIMARY KEY,
-                    scope TEXT NOT NULL,
-                    memory_kind TEXT NOT NULL,
-                    session_ref_id TEXT,
-                    conversation_ref_id TEXT,
-                    trace_id TEXT NOT NULL,
-                    turn_id TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    payload_json TEXT NOT NULL
+        connection = self._connect()
+        try:
+            with connection:
+                connection.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS memory_records(
+                        memory_id TEXT PRIMARY KEY,
+                        scope TEXT NOT NULL,
+                        memory_kind TEXT NOT NULL,
+                        session_ref_id TEXT,
+                        conversation_ref_id TEXT,
+                        trace_id TEXT NOT NULL,
+                        turn_id TEXT NOT NULL,
+                        created_at TEXT NOT NULL,
+                        payload_json TEXT NOT NULL
+                    )
+                    """
                 )
-                """
-            )
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_records(session_ref_id)")
-            connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_conversation ON memory_records(conversation_ref_id)")
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_session ON memory_records(session_ref_id)")
+                connection.execute("CREATE INDEX IF NOT EXISTS idx_memory_conversation ON memory_records(conversation_ref_id)")
+        finally:
+            connection.close()
 
     def _connect(self) -> sqlite3.Connection:
         return sqlite3.connect(self._path)

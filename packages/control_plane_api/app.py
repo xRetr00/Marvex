@@ -13,6 +13,7 @@ from packages.memory_runtime import MemoryRef
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
 from .approvals import InMemoryApprovalStore
+from .agents import handle_agent_control_request
 from .deps import handle_deps_request
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
 from .state import handle_state_snapshot, handle_state_stream
@@ -54,6 +55,8 @@ def create_control_plane_api_app(
     marketplace_proposal_store: MarketplaceProposalStore | None = None,
     state_bus: Any | None = None,
     deps_pip_runner: Any | None = None,
+    agent_catalog_projection: dict[str, Any] | None = None,
+    persona_catalog_projection: dict[str, Any] | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -80,6 +83,12 @@ def create_control_plane_api_app(
         deps_response = handle_deps_request(method=method, path=path, environ=environ, pip_runner=deps_pip_runner)
         if deps_response is not None:
             status, payload = deps_response
+            return _json_response(start_response, status, payload)
+
+        agent_response = handle_agent_control_request(method=method, path=path, environ=environ, agent_catalog_projection=agent_catalog_projection, persona_catalog_projection=persona_catalog_projection)
+        if agent_response is not None:
+            status, payload = agent_response
+            payload = _safe_nested_mapping(payload)
             return _json_response(start_response, status, payload)
 
         if method == "GET" and path == f"{CONTROL_PREFIX}/approvals":
@@ -275,6 +284,8 @@ def _parse_runtime_policy_mode(environ: dict[str, Any]) -> AutonomyMode | None:
         return AutonomyMode(value)
     except Exception:
         return None
+
+
 
 
 def _parse_feedback_event_payload(environ: dict[str, Any]) -> dict[str, Any] | ErrorEnvelope:

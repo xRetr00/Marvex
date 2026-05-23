@@ -16,6 +16,7 @@ from packages.contracts import (
     TraceLevel,
     TraceStage,
 )
+from packages.prompt_harness_runtime.provider_compiler import ProviderPromptPayload
 from packages.telemetry import TelemetrySink, make_trace_event
 
 from .result_assembly import build_stage_summary, build_text_final_response
@@ -36,11 +37,12 @@ def run_provider_stage_turn(
     provider: AssistantRuntimeProvider,
     model: str,
     instructions: str | None = None,
+    provider_prompt: ProviderPromptPayload | None = None,
     previous_response_id: str | None = None,
     provider_options: dict[str, Any] | None = None,
     telemetry_sink: TelemetrySink | None = None,
 ) -> AssistantTurnResult:
-    if _blank(turn_input.user_visible_input):
+    if provider_prompt is None and _blank(turn_input.user_visible_input):
         return _error_result(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
@@ -55,8 +57,8 @@ def run_provider_stage_turn(
         trace_id=turn_input.trace_id,
         turn_id=turn_input.turn_id,
         model=model,
-        input_text=turn_input.user_visible_input or "",
-        instructions=instructions,
+        input_text=provider_prompt.input_text if provider_prompt is not None else turn_input.user_visible_input or "",
+        instructions=provider_prompt.instructions if provider_prompt is not None else instructions,
         previous_response_id=previous_response_id,
         provider_options=dict(provider_options or {}),
     )
