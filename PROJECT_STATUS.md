@@ -9,6 +9,18 @@ accepted_docs: true
 current_governance_gate:
 Intent and Tool Worker Execution Slice Checkpoint
 
+## Windows Shell Overhaul: Async Bridge, Presence, Control Plane Window, Always-On Voice Checkpoint
+
+The Tauri Windows shell (`apps/shell`) was reworked for responsiveness, presence, persistence, and an always-on voice posture:
+
+- Responsiveness: the shell's backend bridge is now async and non-blocking. The raw blocking `TcpStream` HTTP connector was replaced with async `reqwest`, and the networking Tauri commands (`submit_chat_turn`, `control_request`, `backend_health`) are `async`, so loopback I/O no longer runs on the main/UI thread. This fixes the whole-app freeze (chat, startup, and tray menu) and the overlay mousemove IPC flood (now edge-triggered) and idles the WebGL waveform GPU loop at rest.
+- Presence ("soul"): the dynamic island overlay is anchored top-right, shows live assistant state at idle, and expands the waveform on hover. Spotlight is no longer a manually-summoned mode/window — it is a content-sized card spawned from the island on events (e.g. `needs_approval`); the dock button, tray item, and global shortcut were removed.
+- Persistence: shell chat uses a durable local session store with a real `session_ref` (replacing the hardcoded `shell-session`); conversations restore on relaunch and prior sessions are listable/resumable. The chat hardcoded `fake-model` turn was dropped so Core uses its configured provider/model, and failure states (backend offline / no provider / provider error / empty) surface explicit, actionable messages instead of "No displayable response returned."
+- Control Plane: the full original `control_plane_web` (Providers, Voice Runtime with model/voice/STT selection + downloads, Agents/Personas, etc.) opens in a dedicated Tauri window. The Control Plane WSGI server now serves the SPA same-origin (so its relative `/control` fetches work) and the shell injects the local bearer token into `sessionStorage` via an init script. The shell's prior minimal in-shell Control Plane and Deps tabs were retired.
+- Always-on voice: the "Hey Marvex" wake word is now enabled by default (`VoiceWorkerWakewordConfig.enabled = True`), intended to run 24/7 under a backend Windows service so Core stays warm for instant wake response. This overrides the earlier "disabled by default" posture below. Detection still requires the installed sherpa-onnx KWS asset; there is no hidden audio capture and the no-raw-audio/transcript/generated-audio persistence and safe-projection guarantees are unchanged. The wake-word/STT/TTS model assets must be shipped with the installer and the wake-word worker is a required (non-optional) build artifact.
+
+Still host-dependent/manual at this checkpoint: bundling the actual model asset binaries (sources are operator-supplied), registering/running the backend as a Windows service, and the WebView2/audio/installer GUI smokes.
+
 ## Desktop Agent Computer-Use Proactive Checkpoint
 
 DesktopAgent, computer-use, and Proactive surfaces are now approved in bounded form. DesktopAgent is a local-only perception worker that returns safe focused-window and screenpipe-recall projections only. Computer-use is opt-in and approval-required through ToolWorker/CapabilityRuntime. Proactive behavior is proposal-only, visible, local-only, and gated by learning preferences; it does not execute hidden background actions.
