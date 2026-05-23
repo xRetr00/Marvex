@@ -368,8 +368,10 @@ fn write_runtime_manifest(config: &RuntimeConfig, outcome: &RuntimeOutcome, stat
                 .unwrap_or_else(|| format!("uv run python -m {}", spec.module));
             json!({
                 "name": spec.name,
+                "module": spec.module,
                 "console_script": spec.sidecar,
                 "exe": exe,
+                "runtime_tier": if venv.is_some() { "tier1_setuptools" } else { "tier3_uv_run" },
                 "kind": service_kind_label(&spec.kind),
                 "port": if matches!(spec.kind, ServiceKind::Core) { Some(CORE_PORT) } else { None::<u16> },
             })
@@ -379,6 +381,7 @@ fn write_runtime_manifest(config: &RuntimeConfig, outcome: &RuntimeOutcome, stat
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "marvex_version": MARVEX_VERSION,
         "runtime_phase": phase,
+        "runtime_architecture": "tier1_setuptools_console_scripts",
         "created_at_unix_ms": now_unix_ms(),
         "venv": venv.as_ref().map(|p| p.to_string_lossy().to_string()),
         "python": venv.as_ref().map(|p| venv_script(p, "python").to_string_lossy().to_string()),
@@ -456,10 +459,8 @@ fn spawn_service(
     resource_dir: Option<&Path>,
     venv: Option<&Path>,
 ) -> Result<Child, String> {
-    // Resolution order:
-    //   1. venv console script (installed product) -> cwd = writable data dir
-    //   2. legacy frozen sidecar in resource dir   -> cwd = writable data dir
-    //   3. dev fallback `uv run python -m <module>` -> cwd = source repo
+    // Tier 1: Setuptools console scripts (preferred, production)
+    // Tier 3: Dev fallback `uv run python -m <module>` (source checkout)
     let mut command = if let Some(exe) = venv
         .map(|root| venv_script(root, spec.sidecar))
         .filter(|path| path.is_file())
@@ -468,18 +469,15 @@ fn spawn_service(
         command.args(&spec.args);
         command.current_dir(data_dir);
         command
-    } else if let Some(path) = sidecar_path(resource_dir, spec.sidecar) {
-        let mut command = Command::new(path);
-        command.args(&spec.args);
-        command.current_dir(data_dir);
-        command
     } else {
+        // Development fallback: services from source
         let mut command = Command::new("uv");
         command.args(["run", "python", "-m", spec.module]);
         command.args(&spec.args);
         command.current_dir(project_root());
         command
     };
+    
     // Expose the bundled uv to services so the Deps tab can install extra
     // packages into this same venv (importable without a restart).
     if let Some(uv) = find_uv(resource_dir) {
@@ -494,13 +492,6 @@ fn spawn_service(
     attach_log_pipe(spec.name, "stdout", child.stdout.take(), log_dir);
     attach_log_pipe(spec.name, "stderr", child.stderr.take(), log_dir);
     Ok(child)
-}
-
-fn sidecar_path(resource_dir: Option<&Path>, sidecar: &str) -> Option<PathBuf> {
-    let dir = resource_dir?;
-    let exe = if cfg!(windows) { format!("{sidecar}.exe") } else { sidecar.to_string() };
-    let candidate = dir.join(exe);
-    candidate.is_file().then_some(candidate)
 }
 
 fn project_root() -> PathBuf {
