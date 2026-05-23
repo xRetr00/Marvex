@@ -74,9 +74,11 @@ interface MarvexWaveformProps {
   className?: string;
   width?: number;
   height?: number;
+  /** When false, render a single frame then stop the RAF loop to idle the GPU. */
+  active?: boolean;
 }
 
-export function MarvexWaveform({ audioLevel, className, width = 320, height = 80 }: MarvexWaveformProps) {
+export function MarvexWaveform({ audioLevel, className, width = 320, height = 80, active = true }: MarvexWaveformProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const rafRef = useRef<number>(0);
   const startTimeRef = useRef<number>(performance.now());
@@ -133,7 +135,8 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
     const resLoc = gl.getUniformLocation(program, "resolution");
     const audioLoc = gl.getUniformLocation(program, "audioLevel");
 
-    const draw = () => {
+    let running = true;
+    const renderFrame = () => {
       const elapsed = (performance.now() - startTimeRef.current) / 1000;
       // Smooth toward the state target so the wave follows state without
       // random jitter from raw audio frames.
@@ -145,15 +148,32 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
       gl.uniform2f(resLoc, canvas.width, canvas.height);
       gl.uniform1f(audioLoc, smoothRef.current);
       gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-      rafRef.current = requestAnimationFrame(draw);
     };
-    draw();
+    // When inactive, paint a single frame and idle the GPU; resume on activity
+    // or when the document becomes visible again.
+    const loop = () => {
+      if (!running) return;
+      renderFrame();
+      if (active && !document.hidden) {
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
+    loop();
+    const onVisibility = () => {
+      if (active && !document.hidden) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = requestAnimationFrame(loop);
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibility);
 
     return () => {
+      running = false;
       cancelAnimationFrame(rafRef.current);
+      document.removeEventListener("visibilitychange", onVisibility);
       gl.deleteProgram(program);
     };
-  }, []);
+  }, [active]);
 
   return (
     <canvas
