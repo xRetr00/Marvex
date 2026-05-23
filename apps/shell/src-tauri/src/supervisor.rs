@@ -144,6 +144,22 @@ impl Supervisor {
         });
     }
 
+    /// Thin-client mode: the backend is owned by the always-on Windows service,
+    /// so the shell does NOT spawn or supervise any processes. It records a
+    /// "service" status and a no-op shutdown (it must never kill the service).
+    pub fn attach(token: String, data_dir: PathBuf) -> Self {
+        let status = Arc::new(SupervisorStatus::default());
+        status.set("runtime", "ready");
+        status.set("core", "running (service)");
+        Self {
+            shutdown: Arc::new(AtomicBool::new(false)),
+            status,
+            config: Arc::new(RuntimeConfig { token, log_dir: data_dir.clone(), data_dir, resource_dir: None }),
+            launched: Arc::new(AtomicBool::new(true)),
+            bootstrapping: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
     /// Re-attempt the runtime bootstrap when a previous attempt failed (e.g.
     /// the first launch had no network). No-op once services are running.
     pub fn retry_setup(&self) {

@@ -13,6 +13,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 name = "marvex-shell"
 path = "src/main.rs"
 
+[[bin]]
+name = "marvex-service"
+path = "src/bin/marvex-service.rs"
+
 [build-dependencies]
 tauri-build = { version = "2.5.6", features = [] }
 
@@ -26,6 +30,9 @@ tauri-plugin-global-shortcut = "2.3.1"
 tauri-plugin-positioner = "2.3.1"
 tauri-plugin-single-instance = "2.3.4"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+
+[target.'cfg(windows)'.dependencies]
+windows-service = "0.7"
 
 [features]
 default = ["custom-protocol"]

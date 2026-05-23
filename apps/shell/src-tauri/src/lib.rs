@@ -1,7 +1,11 @@
 mod http;
+mod service_token;
 mod state_stream;
 mod supervisor;
 mod token;
+
+#[cfg(windows)]
+pub mod service;
 
 use std::{path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 
@@ -327,11 +331,21 @@ pub fn run() {
             open_control_plane
         ])
         .setup(|app| {
-            let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;
             let log_dir = app.path().app_log_dir().unwrap_or_else(|_| PathBuf::from("logs"));
             let data_dir = app.path().app_local_data_dir().unwrap_or_else(|_| PathBuf::from("data"));
             let resource_dir = app.path().resource_dir().ok();
-            let supervisor = Supervisor::start(token.clone(), log_dir, data_dir, resource_dir).map_err(std::io::Error::other)?;
+            // Thin-client mode: if the always-on backend Windows service has
+            // published its token, attach to the running service instead of
+            // spawning our own backend. Otherwise (dev / no service) supervise
+            // the backend locally as before.
+            let (token, supervisor) = match service_token::read_shared_token() {
+                Some(shared) => (shared.clone(), Supervisor::attach(shared, data_dir.clone())),
+                None => {
+                    let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;
+                    let supervisor = Supervisor::start(token.clone(), log_dir, data_dir, resource_dir).map_err(std::io::Error::other)?;
+                    (token, supervisor)
+                }
+            };
             state_stream::start_state_stream(app.handle().clone(), token.clone(), supervisor.shutdown_flag());
             app.manage(Mutex::new(ShellState { token, supervisor }));
             build_tray(app.handle())?;
