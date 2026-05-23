@@ -345,7 +345,7 @@ function Verify-Frontend-Assets {
 # ============================================================================
 
 function Build-Tauri-App {
-    Write-Section "Step 5: Building Tauri App & Installers"
+    Write-Section 'Step 5: Building Tauri App & Installers'
     
     Push-Location $ShellDir
     try {
