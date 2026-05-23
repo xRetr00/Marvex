@@ -186,13 +186,14 @@ function Build-Python-Wheel {
         
         # Verify wheel has console scripts
         Write-Host "  Verifying console scripts in wheel..."
-        $wheelContent = uv run python -c @"
+        $pythonCode = @"
 import zipfile
-z = zipfile.ZipFile(r'$($wheel.FullName)')
+z = zipfile.ZipFile(r"$($wheel.FullName)")
 scripts = [f for f in z.namelist() if f.startswith('marvex_scripts-')]
 for s in scripts: print(f'    - {s}')
 if not scripts: print('    WARNING: No console scripts found')
-"@ 2>&1
+"@
+        $wheelContent = uv run python -c $pythonCode 2>&1
         
         Write-Host $wheelContent
         Write-Host ""
