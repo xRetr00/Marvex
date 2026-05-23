@@ -415,13 +415,15 @@ function Build-Tauri-App {
         Write-Host "  This may take several minutes..." -ForegroundColor Yellow
         
         # Resolve a Tauri CLI: local node_modules, then cargo-tauri, then npx.
+        # Use an absolute config path since the build runs from the shell dir.
+        $bundleConf = Join-Path $ShellTauriDir "tauri.bundle.conf.json"
         $localTauri = Join-Path $ShellDir "node_modules\.bin\tauri.cmd"
         if (Test-Path $localTauri) {
-            & $localTauri build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            & $localTauri build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } elseif (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
-            cargo tauri build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            cargo tauri build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } elseif (Get-Command npx -ErrorAction SilentlyContinue) {
-            npx --yes "@tauri-apps/cli" build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            npx --yes "@tauri-apps/cli" build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } else {
             Write-Error-Exit "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
         }

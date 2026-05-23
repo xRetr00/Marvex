@@ -428,18 +428,19 @@ echo   This may take several minutes...
 
 set "tauriLocalCmd=%ShellDir%\node_modules\.bin\tauri.cmd"
 set "tauriLocalExe=%ShellDir%\node_modules\.bin\tauri.exe"
+set "BundleConf=%ShellTauriDir%\tauri.bundle.conf.json"
 if exist "!tauriLocalCmd!" (
-    call "!tauriLocalCmd!" build --config tauri.bundle.conf.json
+    call "!tauriLocalCmd!" build --config "!BundleConf!"
 ) else if exist "!tauriLocalExe!" (
-    call "!tauriLocalExe!" build --config tauri.bundle.conf.json
+    call "!tauriLocalExe!" build --config "!BundleConf!"
 ) else (
     where cargo-tauri >nul 2>&1
     if not errorlevel 1 (
-        call cargo tauri build --config tauri.bundle.conf.json
+        call cargo tauri build --config "!BundleConf!"
     ) else (
         where npx >nul 2>&1
         if not errorlevel 1 (
-            call npx --yes @tauri-apps/cli build --config tauri.bundle.conf.json
+            call npx --yes @tauri-apps/cli build --config "!BundleConf!"
         ) else (
             popd
             call :Die "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
