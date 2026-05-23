@@ -1,10 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CheckCircle2, Mic, Search, ShieldAlert, Trash2, Volume2 } from "lucide-react";
+import { CheckCircle2, Mic, Search, ShieldAlert, Trash2, UserRound, Users, Volume2 } from "lucide-react";
 import {
   applyLearningCandidate,
   downloadVoiceModel,
   enableSkill,
+  fetchAgents,
   fetchVoiceWorkerDevices,
   fetchVoiceWorkerWakewordSupervisor,
   fetchVoiceWorkerStatus,
@@ -23,6 +24,7 @@ import {
   fetchMemoryTreeScoring,
   fetchMemoryTreeSearch,
   fetchPolicies,
+  fetchPersonas,
   fetchRuntimePolicy,
   fetchRuntimePolicyAudit,
   fetchVoiceStatus,
@@ -33,6 +35,8 @@ import {
   forgetMemory,
   proposeMcpAllowlist,
   removeVoiceModel,
+  selectAgent,
+  selectPersona,
   setRuntimePolicyMode,
   selectVoiceStt,
   selectVoiceTts,
@@ -70,6 +74,93 @@ import { SafeTable } from "./TableViews";
 
 function InlineState({ message }: { message: string }) {
   return <Card><CardContent className="p-4 text-sm text-muted-foreground">{message}</CardContent></Card>;
+}
+
+export function AgentPersonaControlView() {
+  const [selectedAgentId, setSelectedAgentId] = useState("");
+  const [selectedPersonaId, setSelectedPersonaId] = useState("");
+  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: fetchAgents, retry: false });
+  const personasQuery = useQuery({ queryKey: ["personas"], queryFn: fetchPersonas, retry: false });
+  const agentMutation = useMutation({ mutationFn: selectAgent });
+  const personaMutation = useMutation({ mutationFn: selectPersona });
+  if (agentsQuery.isLoading || personasQuery.isLoading) return <InlineState message="Loading manual agent and persona controls..." />;
+  if (agentsQuery.isError) return <InlineState message={agentsQuery.error.message} />;
+  if (personasQuery.isError) return <InlineState message={personasQuery.error.message} />;
+  const agentCatalog = agentMutation.data ?? agentsQuery.data;
+  const personaCatalog = personaMutation.data ?? personasQuery.data;
+  const agents = agentCatalog?.agents ?? [];
+  const personas = personaCatalog?.personas ?? [];
+  const activeAgentId = String(agentCatalog?.active_agent_id ?? "");
+  const activePersonaId = String(personaCatalog?.active_persona_id ?? "");
+  const agentValue = selectedAgentId || activeAgentId;
+  const personaValue = selectedPersonaId || activePersonaId;
+  const activeAgentRows = agents.filter((agent) => recordValue(agent, "agent_id") === activeAgentId);
+  const activePersonaRows = personas.filter((persona) => recordValue(persona, "persona_id") === activePersonaId);
+  const selectionRows = [
+    {
+      control: "agent",
+      active_id: activeAgentId,
+      selectable_count: agentCatalog?.selectable_count ?? 0,
+      execution_started: agentCatalog?.execution_started ?? false,
+      raw_payload_persisted: agentCatalog?.raw_payload_persisted ?? false
+    },
+    {
+      control: "persona",
+      active_id: activePersonaId,
+      voice_id: personaCatalog?.voice_id ?? activePersonaRows[0]?.voice_id,
+      execution_started: personaCatalog?.execution_started ?? false,
+      raw_payload_persisted: personaCatalog?.raw_payload_persisted ?? false
+    }
+  ];
+  return (
+    <div className="space-y-4">
+      <Card>
+        <CardHeader><CardTitle>Manual Agent / Persona Control</CardTitle></CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-2">
+          <div className="grid gap-3">
+            <label className="grid gap-1 text-sm font-medium" htmlFor="active-agent">
+              Active agent
+              <select id="active-agent" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={agentValue} onChange={(event) => setSelectedAgentId(event.target.value)}>
+                {agents.map((agent) => {
+                  const agentId = recordValue(agent, "agent_id");
+                  return <option key={agentId} value={agentId}>{recordValue(agent, "display_name") || agentId}</option>;
+                })}
+              </select>
+            </label>
+            <Button variant="outline" onClick={() => agentMutation.mutate(agentValue)} disabled={!agentValue || agentMutation.isPending}><Users className="mr-2" size={16} />Set Active Agent</Button>
+            <p className="text-sm text-muted-foreground">Selection changes the backend-safe active agent projection only; tool calls and subagents still require runtime policy.</p>
+          </div>
+          <div className="grid gap-3">
+            <label className="grid gap-1 text-sm font-medium" htmlFor="active-persona">
+              Active persona
+              <select id="active-persona" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={personaValue} onChange={(event) => setSelectedPersonaId(event.target.value)}>
+                {personas.map((persona) => {
+                  const personaId = recordValue(persona, "persona_id");
+                  const label = recordValue(persona, "display_name") || personaId;
+                  const voiceId = recordValue(persona, "voice_id");
+                  return <option key={personaId} value={personaId}>{voiceId ? `${label} / ${voiceId}` : label}</option>;
+                })}
+              </select>
+            </label>
+            <Button variant="outline" onClick={() => personaMutation.mutate(personaValue)} disabled={!personaValue || personaMutation.isPending}><UserRound className="mr-2" size={16} />Set Active Persona</Button>
+            <p className="text-sm text-muted-foreground">Persona selection controls identity and the female TTS voice profile exposed to prompt compilation.</p>
+          </div>
+        </CardContent>
+      </Card>
+      <SafeTable title="Manual Selection State" rows={selectionRows} empty="No manual selection state available." />
+      <SafeTable title="Active Agent Profile" rows={activeAgentRows} empty="No active agent profile available." />
+      <SafeTable title="Active Persona Profile" rows={activePersonaRows} empty="No active persona profile available." />
+      <SafeTable title="All Agent Profiles" rows={agents} empty="No agent profiles available." />
+      <SafeTable title="All Persona Profiles" rows={personas} empty="No persona profiles available." />
+    </div>
+  );
+}
+
+function recordValue(row: Record<string, unknown>, key: string) {
+  const value = row[key];
+  if (value === null || value === undefined) return "";
+  if (Array.isArray(value)) return value.join(", ");
+  return String(value);
 }
 
 export function McpMarketplaceView() {

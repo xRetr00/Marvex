@@ -115,6 +115,26 @@ export const learningApplySchema = safeRecord;
 export const voiceStatusSchema = safeRecord;
 export const voiceActionSchema = safeRecord;
 
+export const agentCatalogSchema = z.object({
+  schema_version: z.string(),
+  active_agent_id: z.string(),
+  agents: z.array(safeRecord),
+  agent_count: z.number(),
+  selectable_count: z.number(),
+  raw_payload_persisted: z.literal(false),
+  execution_started: z.literal(false).optional()
+});
+
+export const personaCatalogSchema = z.object({
+  schema_version: z.string(),
+  active_persona_id: z.string(),
+  personas: z.array(safeRecord),
+  persona_count: z.number(),
+  raw_payload_persisted: z.literal(false),
+  voice_id: z.string().optional(),
+  execution_started: z.literal(false).optional()
+});
+
 export type SafeRecord = z.infer<typeof safeRecord>;
 export type ApprovalSummary = z.infer<typeof approvalSummarySchema>;
 export type ApprovalList = z.infer<typeof approvalListSchema>;
@@ -139,3 +159,5 @@ export type RuntimePolicyAudit = z.infer<typeof runtimePolicyAuditSchema>;
 export type FeedbackEvents = z.infer<typeof feedbackEventsSchema>;
 export type LearningCandidates = z.infer<typeof learningCandidatesSchema>;
 export type VoiceStatus = z.infer<typeof voiceStatusSchema>;
+export type AgentCatalog = z.infer<typeof agentCatalogSchema>;
+export type PersonaCatalog = z.infer<typeof personaCatalogSchema>;

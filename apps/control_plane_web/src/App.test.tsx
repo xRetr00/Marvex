@@ -242,3 +242,92 @@ describe("Control Plane runtime policy view", () => {
     expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();
   });
 });
+
+describe("Control Plane agent and persona manual controls", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("renders backend agent/persona combo boxes and posts safe non-executing selections", async () => {
+    const agents = {
+      schema_version: "1",
+      active_agent_id: "agent.main.marvex",
+      agent_count: 2,
+      selectable_count: 2,
+      raw_payload_persisted: false,
+      agents: [
+        {
+          schema_version: "1",
+          agent_id: "agent.main.marvex",
+          display_name: "Main Marvex",
+          role: "orchestrator",
+          direct_selectable: true,
+          can_spawn_subagents: true,
+          spawnable_agent_ids: ["agent.deep_search"],
+          max_subagents_per_turn: 2,
+          default_capability_refs: ["builtin.time_date"],
+          default_skill_refs: ["skill.planning"],
+          raw_prompt_persisted: false
+        },
+        {
+          schema_version: "1",
+          agent_id: "agent.deep_search",
+          display_name: "Deep Search",
+          role: "specialist",
+          direct_selectable: true,
+          can_spawn_subagents: false,
+          spawnable_agent_ids: [],
+          max_subagents_per_turn: 0,
+          default_capability_refs: ["web_search.search"],
+          default_skill_refs: ["skill.deep_search"],
+          raw_prompt_persisted: false
+        }
+      ]
+    };
+    const personas = {
+      schema_version: "1",
+      active_persona_id: "persona.marvex.female",
+      persona_count: 1,
+      raw_payload_persisted: false,
+      personas: [{
+        schema_version: "1",
+        persona_id: "persona.marvex.female",
+        display_name: "Marvex",
+        assistant_identity: "Marvex is the Assistant OS runtime companion, not a provider wrapper.",
+        voice_id: "af_heart",
+        voice_gender_presentation: "female",
+        speaking_style: "Concise, direct, pragmatic, and suitable for a female TTS voice.",
+        raw_prompt_persisted: false
+      }]
+    };
+    const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      if (path === "/control/snapshot") return new Response(JSON.stringify(snapshot), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path === "/control/agents/active" && init?.method === "POST") return new Response(JSON.stringify({ ...agents, active_agent_id: "agent.deep_search", execution_started: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path === "/control/personas/active" && init?.method === "POST") return new Response(JSON.stringify({ ...personas, voice_id: "af_heart", execution_started: false }), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path === "/control/agents") return new Response(JSON.stringify(agents), { status: 200, headers: { "Content-Type": "application/json" } });
+      if (path === "/control/personas") return new Response(JSON.stringify(personas), { status: 200, headers: { "Content-Type": "application/json" } });
+      return new Response(JSON.stringify({ message: "missing test route" }), { status: 404, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Agents \/ Personas/i }));
+    expect(await screen.findByText("Manual Agent / Persona Control")).toBeInTheDocument();
+    expect(screen.getByLabelText("Active agent")).toHaveValue("agent.main.marvex");
+    expect(screen.getByLabelText("Active persona")).toHaveValue("persona.marvex.female");
+    expect((await screen.findAllByText("af_heart")).length).toBeGreaterThan(0);
+    await userEvent.selectOptions(screen.getByLabelText("Active agent"), "agent.deep_search");
+    await userEvent.click(screen.getByRole("button", { name: /Set Active Agent/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Set Active Persona/i }));
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/agents/active"), expect.objectContaining({ method: "POST" })));
+    expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/personas/active"), expect.objectContaining({ method: "POST" }));
+    expect((await screen.findAllByText("agent.deep_search")).length).toBeGreaterThan(0);
+    expect((await screen.findAllByText("false")).length).toBeGreaterThan(0);
+    expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/secret|Bearer|raw prompt|raw payload/i)).not.toBeInTheDocument();
+  });
+});

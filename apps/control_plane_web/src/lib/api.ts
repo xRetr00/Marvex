@@ -1,5 +1,6 @@
 import {
   allowlistProposalSchema,
+  agentCatalogSchema,
   approvalDecisionResponseSchema,
   approvalHistorySchema,
   approvalListSchema,
@@ -22,6 +23,7 @@ import {
   memoryTreeTopicSchema,
   memoryTreeSearchSchema,
   policiesSchema,
+  personaCatalogSchema,
   runtimePolicyAuditSchema,
   runtimePolicySchema,
   skillsMarketplaceSchema,
@@ -33,9 +35,11 @@ import {
   type ApprovalDecisionResponse,
   type ApprovalHistory,
   type ApprovalList,
+  type AgentCatalog,
   type ControlSnapshot,
   type McpMarketplace,
   type MemoryInspect,
+  type PersonaCatalog,
   type SkillsMarketplace,
   type TraceSearch
 } from "./schemas";
@@ -287,6 +291,22 @@ export async function testVoiceWorkerWakeword() {
 
 export async function fetchVoiceWorkerWakewordSupervisor() {
   return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor"));
+}
+
+export async function fetchAgents(): Promise<AgentCatalog> {
+  return agentCatalogSchema.parse(await readJson("/agents"));
+}
+
+export async function selectAgent(agentId: string): Promise<AgentCatalog> {
+  return agentCatalogSchema.parse(await readJson("/agents/active", { method: "POST", body: JSON.stringify({ agent_id: agentId }) }));
+}
+
+export async function fetchPersonas(): Promise<PersonaCatalog> {
+  return personaCatalogSchema.parse(await readJson("/personas"));
+}
+
+export async function selectPersona(personaId: string): Promise<PersonaCatalog> {
+  return personaCatalogSchema.parse(await readJson("/personas/active", { method: "POST", body: JSON.stringify({ persona_id: personaId }) }));
 }
 
 export async function startVoiceWorkerWakewordSupervisor() {
