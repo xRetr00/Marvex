@@ -6,8 +6,7 @@ Marvex Shell is the Tauri v2 Windows product surface. It is a loopback client an
 
 - `src-tauri/`: Rust Tauri supervisor, tray, windows, single-instance, autostart, global shortcut, state stream client, and local proxy commands.
 - `src/`: React/Vite shell surfaces for chat, top-left state pill/waveform, and Spotlight approvals/results.
-- `packaging/`: PyInstaller specs for backend sidecar executables.
-- `scripts/`: Python sidecar build commands.
+- `runtime/`: Bundled resources for production deployment (uv.exe, marvex wheel).
 
 ## Development
 
@@ -19,18 +18,26 @@ cargo test --manifest-path apps\shell\src-tauri\Cargo.toml
 cargo build --manifest-path apps\shell\src-tauri\Cargo.toml
 ```
 
-The dev shell falls back to `uv run python -m ...` when bundled sidecar executables are absent.
+The dev shell falls back to `uv run python -m ...` when running from source.
 
-## Packaging
+## Packaging (Tier 1: Production)
 
-```powershell
-uv run python -m PyInstaller --noconfirm apps\shell\packaging\core.spec
-.\apps\shell\scripts\build-python-runtime.ps1
-npm run build
-npm run tauri build
-```
+The production installer uses **setuptools console scripts** (dynamic Python, not frozen executables):
 
-The Tauri bundle declares the PyInstaller outputs as `externalBin` sidecars and produces Windows NSIS/MSI installers. The shell generates its local bearer token at runtime, passes it to Core, uses it for protected loopback calls, and never writes or logs the token value.
+**Build process**:
+1. Frontend: `npm run build` (React/Vite)
+2. Tauri: `npm run tauri build` (produces NSIS/MSI installers)
+
+**Runtime behavior**:
+- On first launch, supervisor creates `~/.marvex/runtime/venv/`
+- Installs bundled `marvex-0.1.0-py3-none-any.whl` via `uv pip install`
+- Setuptools generates console scripts: `~/.marvex/runtime/venv/Scripts/marvex-*.exe`
+- Services launched via console scripts (real Python, not frozen)
+- Supports runtime package installation (Deps tab)
+
+**No PyInstaller**: Services use setuptools console script wrappers (setuptools-generated entry points), not frozen bytecode. This enables dynamic module loading and runtime package installs.
+
+The shell generates its local bearer token at runtime, passes it to Core, uses it for protected loopback calls, and never writes or logs the token value.
 
 ## Operator Smoke
 

@@ -1,27 +1,34 @@
 # Marvex Shell Python Packaging
 
-These commands build the Python runtime executables used by the Tauri v2 Windows shell.
+## Production Runtime (Tier 1)
 
-## Build all runtime targets
+The installer uses **setuptools console scripts** for service execution.
 
+On first launch:
+1. Supervisor detects missing venv in `~/.marvex/runtime/venv/`
+2. Finds bundled `uv.exe` and `marvex-0.1.0-py3-none-any.whl`
+3. Creates venv: `uv venv ~/.marvex/runtime/venv --python 3.11`
+4. Installs wheel: `uv pip install marvex-0.1.0-py3-none-any.whl`
+5. Setuptools generates console scripts at `~/.marvex/runtime/venv/Scripts/`:
+   - `marvex-core.exe`
+   - `marvex-provider-worker.exe`
+   - `marvex-intent-worker.exe`
+   - `marvex-tool-worker.exe`
+   - `marvex-voice-worker.exe`
+
+Services are launched via these setuptools-generated console scripts (real Python, not frozen bytecode).
+
+**Advantages**:
+- Supports runtime package installation (Deps tab)
+- Debuggable and profiler-friendly
+- Dynamic module loading
+- Significantly smaller distribution than frozen executables
+
+## Development Fallback (Tier 3)
+
+If venv doesn't exist and no bundled resources:
 ```powershell
-.\apps\shell\scripts\build-python-runtime.ps1
+uv run python -m services.core.main --serve ...
 ```
 
-## Build specific runtime targets
-
-```powershell
-.\apps\shell\scripts\build-python-runtime.ps1 -Targets core,provider_worker,intent_worker,tool_worker,voice_worker
-```
-
-## Direct PyInstaller commands
-
-```powershell
-uv run python -m PyInstaller --noconfirm --distpath .\apps\shell\dist\python --workpath .\apps\shell\build\pyinstaller\core .\apps\shell\packaging\core.spec
-uv run python -m PyInstaller --noconfirm --distpath .\apps\shell\dist\python --workpath .\apps\shell\build\pyinstaller\provider_worker .\apps\shell\packaging\provider_worker.spec
-uv run python -m PyInstaller --noconfirm --distpath .\apps\shell\dist\python --workpath .\apps\shell\build\pyinstaller\intent_worker .\apps\shell\packaging\intent_worker.spec
-uv run python -m PyInstaller --noconfirm --distpath .\apps\shell\dist\python --workpath .\apps\shell\build\pyinstaller\tool_worker .\apps\shell\packaging\tool_worker.spec
-uv run python -m PyInstaller --noconfirm --distpath .\apps\shell\dist\python --workpath .\apps\shell\build\pyinstaller\voice_worker .\apps\shell\packaging\voice_worker.spec
-```
-
-All specs build with `console=False` to keep Windows packaging windowless.
+Runs services directly from source code.

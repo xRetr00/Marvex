@@ -8,7 +8,7 @@ use std::{path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
 use serde::Serialize;
 use serde_json::{json, Value};
 use supervisor::Supervisor;
-use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent};
+use tauri::{image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -24,6 +24,8 @@ struct ShellState {
     token: String,
     supervisor: Supervisor,
 }
+
+const TRAY_ICON_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../assets/icon.ico"));
 
 #[tauri::command]
 fn shell_runtime_config() -> ShellRuntimeConfig {
@@ -357,9 +359,12 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .tooltip("Marvex")
         .menu(&menu)
         .show_menu_on_left_click(true);
-    if let Some(icon) = app.default_window_icon().cloned() {
-        builder = builder.icon(icon);
-    }
+    let icon = if let Some(icon) = app.default_window_icon().cloned() {
+        icon
+    } else {
+        Image::from_bytes(TRAY_ICON_BYTES)?
+    };
+    builder = builder.icon(icon);
     builder.build(app)?;
     Ok(())
 }
