@@ -135,6 +135,7 @@ body { margin: 0; background: var(--background); color: var(--foreground); }
 html:has(.overlay-shell), body:has(.overlay-shell),
 html:has(.spotlight-shell), body:has(.spotlight-shell) {
   background: transparent !important;
+  overflow: hidden !important;
 }
 button, input { font: inherit; }
 
@@ -159,9 +160,12 @@ button, input { font: inherit; }
   display: flex;
   align-items: flex-start;
   justify-content: flex-end;
-  padding: 14px;
+  padding: 12px;
   background: transparent;
+  overflow: hidden;
 }
+
+.spotlight-panel { max-height: calc(100vh - 24px); overflow: hidden; }
 
 .spotlight-panel {
   width: min(420px, calc(100vw - 28px));

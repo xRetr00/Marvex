@@ -8,7 +8,7 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { setOverlayClickThrough, showChat } from "../lib/shellCommands";
+import { setOverlayClickThrough, showChat, showSpotlight } from "../lib/shellCommands";
 import { makeHoverEdgeTrigger } from "../lib/overlayHover";
 import { persistMode } from "../lib/modeStore";
 import DynamicIsland from "@/components/dynamic-island";
@@ -56,14 +56,23 @@ export function OverlaySurface() {
   const [hovered, setHovered] = useState(false);
   const islandRef = useRef<HTMLDivElement | null>(null);
 
+  const prevStatusRef = useRef<string>("idle");
   useEffect(() => {
     let cleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
+      let next: AssistantStateEvent;
       try {
-        setState(normalizeAssistantState(event.payload));
+        next = normalizeAssistantState(event.payload);
       } catch {
-        setState(idleAssistantState);
+        next = idleAssistantState;
       }
+      setState(next);
+      // Spotlight is event-driven: spawn the approval card from the island when
+      // the assistant transitions into needs_approval (edge-triggered).
+      if (next.status === "needs_approval" && prevStatusRef.current !== "needs_approval") {
+        void showSpotlight().catch(() => undefined);
+      }
+      prevStatusRef.current = next.status;
     }).then((unlisten) => {
       cleanup = unlisten;
     });

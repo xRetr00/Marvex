@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 use supervisor::Supervisor;
 use tauri::{image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
-use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[derive(Clone, Serialize)]
 struct ShellRuntimeConfig {
@@ -285,12 +284,6 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
         .plugin(tauri_plugin_positioner::init())
-        .plugin(tauri_plugin_global_shortcut::Builder::new().with_handler(|app, shortcut, event| {
-            let spotlight = Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space);
-            if shortcut == &spotlight && event.state() == ShortcutState::Pressed {
-                let _ = show_spotlight(app.clone());
-            }
-        }).build())
         .invoke_handler(tauri::generate_handler![
             shell_runtime_config,
             supervisor_status,
@@ -316,7 +309,6 @@ pub fn run() {
             state_stream::start_state_stream(app.handle().clone(), token.clone(), supervisor.shutdown_flag());
             app.manage(Mutex::new(ShellState { token, supervisor }));
             build_tray(app.handle())?;
-            app.global_shortcut().register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space))?;
             #[cfg(target_os = "windows")]
             {
                 // Ensure installed app is registered for login startup.
@@ -346,7 +338,6 @@ pub fn run() {
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
                 "open_chat" => { let _ = show_chat(app.clone()); }
-                "open_spotlight" => { let _ = show_spotlight(app.clone()); }
                 "pause_voice" => {
                     let app = app.clone();
                     tauri::async_runtime::spawn(async move {
@@ -377,7 +368,6 @@ pub fn run() {
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = MenuBuilder::new(app)
         .text("open_chat", "Open Marvex")
-        .text("open_spotlight", "Spotlight")
         .separator()
         .text("pause_voice", "Pause voice")
         .text("resume_voice", "Resume voice")

@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, SlidersHorizontal, Package, Mic, MicOff, Sparkles, RefreshCw, AlertTriangle, Activity, Bot, UserRound, Radio } from "lucide-react";
+import { MessageSquare, SlidersHorizontal, Package, Mic, MicOff, RefreshCw, AlertTriangle, Activity, Bot, UserRound, Radio } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { finalTextFromTurnResult, stagesFromTurnResult, uiDirectivesFromTurnResult, type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showSpotlight, showOverlay, submitChatTurn, getSupervisorStatus, getSetupStatus, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showOverlay, submitChatTurn, getSupervisorStatus, getSetupStatus, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
@@ -638,13 +638,6 @@ export function ChatApp() {
           onTabChange={(idx) => setActiveTab(navItems[idx].id as TabId)}
         />
         <div style={{ width: 1, height: 28, background: "var(--border)" }} />
-        <button
-          onClick={() => void showSpotlight()}
-          title="Spotlight (Ctrl+Shift+Space)"
-          style={{ width: 44, height: 44, borderRadius: 12, background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", display: "grid", placeItems: "center", cursor: "pointer" }}
-        >
-          <Sparkles size={18} />
-        </button>
         <button
           onClick={() => { persistMode("overlay"); void showOverlay(); }}
           title="Switch to Overlay (Marvex presence)"
