@@ -1,6 +1,6 @@
 import { useMemo } from "react";
-import { parseRichResponse, type RichBlock } from "@/lib/richContent";
-import type { TurnStage } from "@/lib/localTurn";
+import { parseRichResponse, directivesToBlocks, type RichBlock } from "@/lib/richContent";
+import type { TurnStage, UiDirective } from "@/lib/localTurn";
 import {
   ChainOfThought,
   ChainOfThoughtHeader,
@@ -27,6 +27,13 @@ function BlockView({ block }: { block: RichBlock }) {
   switch (block.type) {
     case "text":
       return <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{block.text}</p>;
+    case "info":
+      return (
+        <div className="rounded-xl border border-border bg-card/60 p-4">
+          {block.title && <h4 className="mb-1 text-sm font-semibold text-foreground">{block.title}</h4>}
+          {block.body && <p className="whitespace-pre-wrap text-sm leading-relaxed text-muted-foreground">{block.body}</p>}
+        </div>
+      );
     case "products":
       return (
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
@@ -77,12 +84,21 @@ function BlockView({ block }: { block: RichBlock }) {
 export interface RichMessageProps {
   text: string;
   stages?: TurnStage[];
+  /** Backend model-driven directives; when present they drive rendering (not keyword heuristics). */
+  directives?: UiDirective[];
 }
 
-/** Renders an assistant response as rich blocks (reasoning trace, products,
- *  image/expandable cards, plans, alerts) with a copy action. */
-export function RichMessage({ text, stages }: RichMessageProps) {
-  const blocks = useMemo(() => parseRichResponse(text), [text]);
+/** Renders an assistant response as rich blocks. Backend directives are
+ *  authoritative; the text heuristic is only a fallback when none are present. */
+export function RichMessage({ text, stages, directives }: RichMessageProps) {
+  const blocks = useMemo(() => {
+    if (directives && directives.length > 0) {
+      const fromDirectives = directivesToBlocks(directives as Array<Record<string, unknown>>);
+      // Keep any user-visible prose alongside the model's cards.
+      return text.trim() ? [{ type: "text", text: text.trim() } as RichBlock, ...fromDirectives] : fromDirectives;
+    }
+    return parseRichResponse(text);
+  }, [text, directives]);
 
   return (
     <div className="flex flex-col gap-3">

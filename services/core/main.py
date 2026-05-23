@@ -38,6 +38,7 @@ from packages.assistant_runtime.input_normalization import (
     build_turn_input_from_event,
 )
 from packages.assistant_turn_integration.models import EndToEndAssistantTurnProjection
+from packages.ui_directives import parse_ui_directives
 from packages.capability_runtime import (
     ApprovalPrompt,
     AutonomyPolicy,
@@ -875,7 +876,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             provider_turn_input,
             provider=self._provider,
             model=self._model,
-            instructions=provider_instructions,
+            instructions=_with_ui_toolset(provider_instructions, self._provider_name),
             telemetry_sink=self._trace_reader,
         )
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
@@ -1170,7 +1171,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             provider_turn_input,
             provider=self._provider,
             model=self._model,
-            instructions=_structured_provider_instructions(provider_instructions) if structured_requested else provider_instructions,
+            instructions=_with_ui_toolset(
+                _structured_provider_instructions(provider_instructions) if structured_requested else provider_instructions,
+                self._provider_name,
+            ),
             provider_options=effective_provider_options,
             telemetry_sink=self._trace_reader,
         )
@@ -1796,6 +1800,31 @@ def _turn_input_with_prompt(
     return turn_input.model_copy(update={"user_visible_input": prompt_text}), (system_text or None)
 
 
+# Builtin UI toolset the model can call to control what the shell renders. Kept
+# as documentation of the convention the backend parser (packages.ui_directives)
+# understands; delivered to real models via their provider system prompt so it
+# never perturbs deterministic grounded/prompt-fidelity turns.
+_UI_TOOLSET_GUIDANCE = (
+    "UI toolset: render rich cards by appending one fenced block to your reply:\n"
+    "```marvex:ui\n"
+    '{"directives": [ ... ]}\n'
+    "```\n"
+    "Kinds: product (actual shopping results only), info, image, plan. "
+    "Never add a block for greetings or simple answers."
+)
+
+# Real instruction-following models that benefit from the UI toolset prompt.
+# Deterministic fake / provider_worker turns are intentionally left untouched so
+# grounded + prompt-fidelity smokes stay stable.
+_REAL_LM_PROVIDERS = {"lmstudio_responses", "litellm"}
+
+
+def _with_ui_toolset(instructions: str | None, provider_name: str) -> str | None:
+    if provider_name not in _REAL_LM_PROVIDERS:
+        return instructions
+    return (instructions + "\n\n" + _UI_TOOLSET_GUIDANCE).strip() if instructions else _UI_TOOLSET_GUIDANCE
+
+
 def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:
     capability_ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier="builtin.approval_resume")
     prompt = ApprovalPrompt(
@@ -2359,11 +2388,27 @@ def create_core_service_app(
     )
     app = create_health_version_api_app(
         service,
-        turn_handler=lambda request: service.submit_turn(request.assistant_turn_input),
+        turn_handler=lambda request: _apply_ui_directives(service.submit_turn(request.assistant_turn_input)),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
     )
     return app, service
+
+
+def _apply_ui_directives(result: AssistantTurnResult) -> AssistantTurnResult:
+    """Surface model-driven UI directives (show_product/info/image/plan) from the
+    final response text into assistant_final_response.metadata['ui_directives'],
+    stripping the marvex:ui block from the user-visible text."""
+    final = result.assistant_final_response
+    if final is None or final.response_type != AssistantResponseType.TEXT or not final.text:
+        return result
+    directives, clean_text = parse_ui_directives(final.text)
+    if not directives:
+        return result
+    new_text = clean_text if clean_text.strip() else final.text
+    new_metadata = {**final.metadata, "ui_directives": directives}
+    new_final = final.model_copy(update={"text": new_text, "metadata": new_metadata})
+    return result.model_copy(update={"assistant_final_response": new_final})
 
 
 def create_control_plane_service_app(

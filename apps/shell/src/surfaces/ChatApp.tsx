@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { MessageSquare, Search, Settings, Package, Mic, MicOff, Radio } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
-import { finalTextFromTurnResult, stagesFromTurnResult, type TurnStage } from "@/lib/localTurn";
+import { finalTextFromTurnResult, stagesFromTurnResult, uiDirectivesFromTurnResult, type TurnStage, type UiDirective } from "@/lib/localTurn";
 import { getShellRuntimeConfig, showSpotlight, submitChatTurn, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
@@ -28,7 +28,7 @@ import {
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { Button } from "@/components/ui/button";
 
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[] };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
 type TabId = "chat" | "spotlight" | "settings" | "deps";
 
 interface ChatAppProps {
@@ -118,7 +118,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
     setMessages((prev) => [...prev, { role: "user", text }]);
     try {
       const result = await submitChatTurn(text);
-      setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result), stages: stagesFromTurnResult(result) }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result), stages: stagesFromTurnResult(result), directives: uiDirectivesFromTurnResult(result) }]);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "assistant", text: error instanceof Error ? error.message : "Request failed." }]);
     } finally {
@@ -227,7 +227,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                     <Message key={`${msg.role}-${idx}`} from={msg.role === "user" ? "user" : "assistant"}>
                       {msg.role === "assistant" ? (
                         <MessageContent variant="flat" className="w-full max-w-[88%]">
-                          <RichMessage text={msg.text} stages={msg.stages} />
+                          <RichMessage text={msg.text} stages={msg.stages} directives={msg.directives} />
                         </MessageContent>
                       ) : (
                         <MessageContent variant={msg.role === "system" ? "flat" : "contained"}>

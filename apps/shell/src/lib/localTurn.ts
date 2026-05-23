@@ -13,6 +13,26 @@ export interface TurnStage {
   status: string;
 }
 
+/** Model-driven UI directive emitted by the backend (show_product/info/image/plan). */
+export interface UiDirective {
+  kind: "product" | "info" | "image" | "plan";
+  [key: string]: unknown;
+}
+
+/** Read backend UI directives from assistant_final_response.metadata.ui_directives. */
+export function uiDirectivesFromTurnResult(payload: unknown): UiDirective[] {
+  if (!payload || typeof payload !== "object") return [];
+  const final = (payload as { assistant_final_response?: { metadata?: unknown } }).assistant_final_response;
+  const metadata = final?.metadata;
+  if (!metadata || typeof metadata !== "object") return [];
+  const directives = (metadata as { ui_directives?: unknown }).ui_directives;
+  if (!Array.isArray(directives)) return [];
+  return directives.filter(
+    (d): d is UiDirective =>
+      Boolean(d) && typeof d === "object" && ["product", "info", "image", "plan"].includes((d as { kind?: string }).kind ?? ""),
+  );
+}
+
 /** Extract the per-stage reasoning trace from a turn result (drives chain-of-thought). */
 export function stagesFromTurnResult(payload: unknown): TurnStage[] {
   if (!payload || typeof payload !== "object") return [];

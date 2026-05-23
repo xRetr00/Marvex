@@ -23,10 +23,38 @@ export interface PlanStep {
 
 export type RichBlock =
   | { type: "text"; text: string }
+  | { type: "info"; title: string; body: string }
   | { type: "products"; products: ParsedProduct[] }
   | { type: "image"; src: string; title: string; description: string }
   | { type: "plan"; steps: PlanStep[] }
   | { type: "alert"; label: string };
+
+/** Convert backend model-driven directives into render blocks (preferred over heuristics). */
+export function directivesToBlocks(directives: Array<Record<string, unknown>>): RichBlock[] {
+  const blocks: RichBlock[] = [];
+  for (const directive of directives) {
+    const kind = String(directive.kind ?? "");
+    if (kind === "product" && Array.isArray(directive.products)) {
+      const products: ParsedProduct[] = (directive.products as Array<Record<string, unknown>>).map((p) => ({
+        title: String(p.title ?? "Item"),
+        price: typeof p.price === "number" ? p.price : Number(p.price) || 0,
+        currency: String(p.currency ?? "$"),
+        rating: typeof p.rating === "number" ? p.rating : undefined,
+        badge: p.badge ? String(p.badge) : undefined,
+        image: p.image ? String(p.image) : placeholderImage(String(p.title ?? "Item")),
+      }));
+      if (products.length) blocks.push({ type: "products", products });
+    } else if (kind === "info") {
+      blocks.push({ type: "info", title: String(directive.title ?? ""), body: String(directive.body ?? "") });
+    } else if (kind === "image" && directive.src) {
+      blocks.push({ type: "image", src: String(directive.src), title: String(directive.title ?? "Image"), description: String(directive.description ?? "") });
+    } else if (kind === "plan" && Array.isArray(directive.steps)) {
+      const steps: PlanStep[] = (directive.steps as unknown[]).map((s, i) => ({ id: `step-${i + 1}`, title: String(s) }));
+      if (steps.length) blocks.push({ type: "plan", steps });
+    }
+  }
+  return blocks;
+}
 
 const TRIVIAL_MAX_LEN = 140;
 const GREETING = /^(hi|hello|hey|yo|thanks|thank you|ok|okay|got it|sure|yes|no|np|you'?re welcome|hello!|how are you|i'?m (good|fine|well))\b/i;
