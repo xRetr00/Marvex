@@ -2,7 +2,10 @@
 
 Rules:
 - Explicit/user-initiated only (install_request.explicit_user_triggered must be True).
-- Packages are installed into the running user site via pip (--user, --quiet).
+- Packages are installed into the active environment (the product venv) via
+  `uv pip install --python <current interpreter>`, so the running services can
+  import them without a restart. uv is resolved from MARVEX_UV_PATH (the bundled
+  binary) and falls back to `uv` on PATH for dev checkouts.
 - Model files are downloaded to the safe model root only.
 - No silent/background installs; no secret/raw persistence.
 - No subprocess calls to shell; subprocess.run with a fixed argv only.
@@ -11,10 +14,12 @@ Rules:
 from __future__ import annotations
 
 import logging
+import os
 import subprocess
 import sys
 from collections.abc import Callable
 from enum import Enum
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -65,12 +70,22 @@ def _find_group(dep_id: str) -> DepGroup | None:
     return None
 
 
+def _uv_executable() -> str:
+    """Resolve the uv binary: bundled MARVEX_UV_PATH first, then PATH (dev)."""
+    candidate = os.environ.get("MARVEX_UV_PATH", "").strip()
+    if candidate and Path(candidate).is_file():
+        return candidate
+    return "uv"
+
+
 def _pip_install(specs: tuple[str, ...], *, pip_runner: PipRunner | None = None) -> tuple[bool, str]:
-    """Install packages via pip into user site.  Returns (success, detail)."""
+    """Install packages into the active venv via uv.  Returns (success, detail)."""
     if not specs:
         return True, "no_packages_to_install"
-    argv = [sys.executable, "-m", "pip", "install", "--user", "--quiet", *specs]
-    logger.info("dependency_runtime.install: pip install %s", specs)
+    # Install into the interpreter currently running this service (the product
+    # venv), so a newly installed dependency is importable without a restart.
+    argv = [_uv_executable(), "pip", "install", "--python", sys.executable, *specs]
+    logger.info("dependency_runtime.install: uv pip install %s", specs)
     if pip_runner is not None:
         return pip_runner(argv)
     try:

@@ -139,8 +139,9 @@ pub fn run() {
         .setup(|app| {
             let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;
             let log_dir = app.path().app_log_dir().unwrap_or_else(|_| PathBuf::from("logs"));
+            let data_dir = app.path().app_local_data_dir().unwrap_or_else(|_| PathBuf::from("data"));
             let resource_dir = app.path().resource_dir().ok();
-            let supervisor = Supervisor::start(token.clone(), log_dir, resource_dir).map_err(std::io::Error::other)?;
+            let supervisor = Supervisor::start(token.clone(), log_dir, data_dir, resource_dir).map_err(std::io::Error::other)?;
             state_stream::start_state_stream(app.handle().clone(), token.clone(), supervisor.shutdown_flag());
             app.manage(Mutex::new(ShellState { token, supervisor }));
             build_tray(app.handle())?;

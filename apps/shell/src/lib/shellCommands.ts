@@ -11,6 +11,13 @@ export async function getShellRuntimeConfig(): Promise<ShellRuntimeConfig> {
   return invoke<ShellRuntimeConfig>("shell_runtime_config");
 }
 
+/** Map of service name -> status string (includes the "runtime" bootstrap phase). */
+export type SupervisorStatus = Record<string, string>;
+
+export async function getSupervisorStatus(): Promise<SupervisorStatus> {
+  return invoke<SupervisorStatus>("supervisor_status");
+}
+
 export async function submitChatTurn(text: string): Promise<unknown> {
   return invoke("submit_chat_turn", { text });
 }

@@ -3,7 +3,38 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
+import { getSupervisorStatus } from "@/lib/shellCommands";
 import { markSetupDone } from "@/lib/modeStore";
+
+/** Friendly text for the first-run runtime (uv venv) bootstrap phases. */
+const RUNTIME_PHASE_TEXT: Record<string, string> = {
+  "creating environment": "Creating the Marvex runtime environment...",
+  "installing packages": "Installing the Marvex runtime (first launch only)...",
+};
+
+/**
+ * On first launch the Rust supervisor builds a real Python venv with uv before
+ * any service can answer. Wait for that "runtime" phase to reach ready/dev so
+ * the deps check below can actually reach Core. Returns the final phase string.
+ */
+async function waitForRuntimeReady(setText: (text: string) => void): Promise<string> {
+  for (let attempt = 0; attempt < 600; attempt++) {
+    let runtime = "ready";
+    try {
+      const status = await getSupervisorStatus();
+      runtime = status.runtime ?? "ready";
+    } catch {
+      return "ready"; // not running under Tauri (web/dev) — proceed
+    }
+    if (runtime === "ready" || runtime === "dev") return runtime;
+    if (runtime.endsWith("_failed") || runtime.endsWith("_incomplete") || runtime === "uv_unavailable") {
+      return runtime;
+    }
+    setText(RUNTIME_PHASE_TEXT[runtime] ?? "Preparing Marvex...");
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  return "ready";
+}
 
 interface SetupProps {
   onComplete: () => void;
@@ -20,6 +51,7 @@ export function SetupPage({ onComplete }: SetupProps) {
   const [progress, setProgress] = useState(0);
   const [phase, setPhase] = useState<"loading" | "installing" | "done" | "error">("loading");
   const [error, setError] = useState<string | null>(null);
+  const [bootText, setBootText] = useState<string | null>(null);
   const didRun = useRef(false);
 
   useEffect(() => {
@@ -28,6 +60,15 @@ export function SetupPage({ onComplete }: SetupProps) {
 
     void (async () => {
       try {
+        // First launch: wait for the uv venv bootstrap before reaching Core.
+        const runtime = await waitForRuntimeReady(setBootText);
+        if (runtime.endsWith("_failed") || runtime.endsWith("_incomplete") || runtime === "uv_unavailable") {
+          setError("Runtime setup failed. See logs (runtime.bootstrap.log).");
+          setPhase("error");
+          setTimeout(() => { markSetupDone(); onComplete(); }, 2000);
+          return;
+        }
+        setBootText(null);
         const depsData = await fetchDeps();
         const missing = depsData.deps.filter((d) => !d.installed);
 
@@ -77,7 +118,7 @@ export function SetupPage({ onComplete }: SetupProps) {
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-2">
           <p className="text-white/60 text-sm text-center">
-            {phase === "loading" && "Checking dependencies..."}
+            {phase === "loading" && (bootText ?? "Checking dependencies...")}
             {phase === "installing" && "Installing required components..."}
             {phase === "done" && "Setup complete. Starting Marvex..."}
             {phase === "error" && (error ?? "Something went wrong.")}

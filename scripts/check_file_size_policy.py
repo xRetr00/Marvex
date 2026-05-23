@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 MAX_LINES = 500
 JUSTIFICATION = "file size justification"
-EXCLUDED_PARTS = {"node_modules", "dist", ".venv", ".uv-cache", "gen"}
+EXCLUDED_PARTS = {"node_modules", "dist", "build", ".venv", ".uv-cache", "gen"}
 # Gitignored build outputs (PyInstaller work/dist dirs, packaged sidecars).
 EXCLUDED_PREFIXES = (
     "apps/shell/build/",

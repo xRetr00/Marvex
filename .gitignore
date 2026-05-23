@@ -47,3 +47,9 @@ apps/shell/python-sidecars/
 *.swp
 *.swo
 *.swn
+# uv-runtime bundle (staged at build time)
+apps/shell/runtime/
+
+# setuptools build artifacts
+/build/
+*.egg-info/
