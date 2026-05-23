@@ -1,12 +1,41 @@
 import { useEffect, useState } from "react";
 import { listen } from "../lib/tauriBridge";
 import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
+import type { TurnStage } from "../lib/localTurn";
 import { motion, AnimatePresence } from "framer-motion";
-import { ShieldAlert, Check, X, Loader2 } from "lucide-react";
+import { ShieldAlert, ListTodo, Bell } from "lucide-react";
+import { RichMessage } from "@/components/marvex/RichMessage";
+import {
+  Confirmation,
+  ConfirmationTitle,
+  ConfirmationActions,
+  ConfirmationAction,
+  ConfirmationAccepted,
+  ConfirmationRejected,
+} from "@/components/confirmation";
+import { AlertBadge } from "@/components/alert-badge";
+import { Task, TaskTrigger, TaskContent, TaskItem } from "@/components/task";
+import {
+  Queue,
+  QueueSection,
+  QueueSectionTrigger,
+  QueueSectionLabel,
+  QueueSectionContent,
+  QueueList,
+  QueueItem,
+  QueueItemIndicator,
+  QueueItemContent,
+} from "@/components/queue";
+
+interface AgendaItem {
+  title: string;
+  done?: boolean;
+}
 
 type SpotlightPayload =
   | { kind: "info"; title: string; body: string }
-  | { kind: "result"; title: string; body: string }
+  | { kind: "result"; title?: string; body: string; stages?: TurnStage[] }
+  | { kind: "agenda"; title?: string; tasks?: AgendaItem[]; reminders?: string[] }
   | { kind: "approval"; approval: ApprovalSummary };
 
 export function SpotlightSurface() {
@@ -24,25 +53,18 @@ export function SpotlightSurface() {
       })
       .catch(() => undefined);
 
-    const unlisten = listen<SpotlightPayload>("spotlight-payload", (event) =>
-      setPayload(event.payload),
+    const unlisten = listen<SpotlightPayload>("spotlight-payload", (event) => setPayload(event.payload));
+    const voiceDecision = listen<{ approval_id: string; decision: "approve" | "deny" | "cancel"; reason?: string }>(
+      "approval-voice-decision",
+      async (event) => {
+        setPending(true);
+        try {
+          await decideApproval(event.payload.approval_id, event.payload.decision, event.payload.reason ?? "voice approval decision");
+        } finally {
+          setPending(false);
+        }
+      },
     );
-    const voiceDecision = listen<{
-      approval_id: string;
-      decision: "approve" | "deny" | "cancel";
-      reason?: string;
-    }>("approval-voice-decision", async (event) => {
-      setPending(true);
-      try {
-        await decideApproval(
-          event.payload.approval_id,
-          event.payload.decision,
-          event.payload.reason ?? "voice approval decision",
-        );
-      } finally {
-        setPending(false);
-      }
-    });
 
     return () => {
       void unlisten.then((fn) => fn());
@@ -53,43 +75,75 @@ export function SpotlightSurface() {
   return (
     <main className="spotlight-shell">
       <AnimatePresence mode="wait">
-        {payload.kind === "approval" ? (
-          <motion.div
-            key="approval"
-            initial={{ opacity: 0, scale: 0.96, y: 8 }}
-            animate={{ opacity: 1, scale: 1, y: 0 }}
-            exit={{ opacity: 0, scale: 0.96, y: 8 }}
-            transition={{ type: "spring", duration: 0.4, bounce: 0.15 }}
-          >
-            <ApprovalCard
-              approval={payload.approval}
-              pending={pending}
-              setPending={setPending}
-            />
-          </motion.div>
-        ) : (
-          <motion.section
-            key="info"
-            className="spotlight-panel"
-            initial={{ opacity: 0, y: 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 8 }}
-            transition={{ type: "spring", duration: 0.4, bounce: 0.1 }}
-          >
-            <h1 style={{ color: "white", fontSize: "1.1rem", fontWeight: 600, margin: 0 }}>
-              {payload.title}
-            </h1>
-            <p style={{ color: "rgba(255,255,255,0.6)", fontSize: "0.85rem", margin: "6px 0 0" }}>
-              {payload.body}
-            </p>
-          </motion.section>
-        )}
+        <motion.section
+          key={payload.kind}
+          className="spotlight-panel"
+          initial={{ opacity: 0, scale: 0.97, y: 8 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 0.97, y: 8 }}
+          transition={{ type: "spring", duration: 0.4, bounce: 0.12 }}
+        >
+          {payload.kind === "approval" && <ApprovalView approval={payload.approval} pending={pending} setPending={setPending} />}
+          {payload.kind === "result" && <RichMessage text={payload.body} stages={payload.stages} />}
+          {payload.kind === "agenda" && <AgendaView title={payload.title} tasks={payload.tasks ?? []} reminders={payload.reminders ?? []} />}
+          {payload.kind === "info" && (
+            <>
+              <h1>{payload.title}</h1>
+              <p>{payload.body}</p>
+            </>
+          )}
+        </motion.section>
       </AnimatePresence>
     </main>
   );
 }
 
-function ApprovalCard({
+function AgendaView({ title, tasks, reminders }: { title?: string; tasks: AgendaItem[]; reminders: string[] }) {
+  const remaining = tasks.filter((t) => !t.done).length;
+  return (
+    <div className="flex flex-col gap-4">
+      {title && <h1>{title}</h1>}
+      {reminders.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {reminders.map((r, i) => (
+            <AlertBadge key={`rem-${i}`} variant="info" icon={Bell} label={r} />
+          ))}
+        </div>
+      )}
+      {tasks.length > 0 && (
+        <Task defaultOpen className="rounded-lg border border-border p-2">
+          <TaskTrigger title={`Tasks (${remaining} open)`} />
+          <TaskContent>
+            {tasks.map((t, i) => (
+              <TaskItem key={`task-${i}`}>{t.done ? "✓ " : "• "}{t.title}</TaskItem>
+            ))}
+          </TaskContent>
+        </Task>
+      )}
+      {tasks.length > 0 && (
+        <Queue>
+          <QueueSection defaultOpen>
+            <QueueSectionTrigger>
+              <QueueSectionLabel label="Queue" count={tasks.length} icon={<ListTodo className="size-4" />} />
+            </QueueSectionTrigger>
+            <QueueSectionContent>
+              <QueueList>
+                {tasks.map((t, i) => (
+                  <QueueItem key={`q-${i}`}>
+                    <QueueItemIndicator completed={t.done} />
+                    <QueueItemContent completed={t.done}>{t.title}</QueueItemContent>
+                  </QueueItem>
+                ))}
+              </QueueList>
+            </QueueSectionContent>
+          </QueueSection>
+        </Queue>
+      )}
+    </div>
+  );
+}
+
+function ApprovalView({
   approval,
   pending,
   setPending,
@@ -98,141 +152,51 @@ function ApprovalCard({
   pending: boolean;
   setPending: (value: boolean) => void;
 }) {
+  const [approved, setApproved] = useState<boolean | undefined>(undefined);
+  const responded = approved !== undefined;
+
   async function decide(decision: "approve" | "deny" | "cancel") {
     setPending(true);
     try {
-      await decideApproval(
-        approval.approval_request_id,
-        decision,
-        `spotlight ${decision}`,
-      );
+      await decideApproval(approval.approval_request_id, decision, `spotlight ${decision}`);
+      if (decision !== "cancel") setApproved(decision === "approve");
     } finally {
       setPending(false);
     }
   }
 
-  const riskColor =
-    approval.risk_level === "high"
-      ? "#ef4444"
-      : approval.risk_level === "medium"
-        ? "#f97316"
-        : "#22c55e";
+  const riskColor = approval.risk_level === "high" ? "#ef4444" : approval.risk_level === "medium" ? "#f97316" : "#22c55e";
+
+  const approvalData = approved === undefined
+    ? { id: approval.approval_request_id }
+    : { id: approval.approval_request_id, approved };
 
   return (
-    <section
-      className="spotlight-panel approval-panel"
-      style={{
-        background: "rgba(255,255,255,0.04)",
-        border: "1px solid rgba(255,255,255,0.08)",
-        borderRadius: "16px",
-        padding: "20px",
-        display: "flex",
-        flexDirection: "column",
-        gap: "12px",
-      }}
+    <Confirmation
+      approval={approvalData}
+      state={responded ? "approval-responded" : "approval-requested"}
+      className="border-orange-500/30 bg-card"
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: "8px",
-          color: "#f97316",
-          fontSize: "0.75rem",
-          fontWeight: 600,
-          textTransform: "uppercase",
-          letterSpacing: "0.08em",
-        }}
-      >
-        <ShieldAlert size={15} />
-        Approval Required
+      <div className="flex items-center gap-2 text-orange-400 text-xs font-semibold uppercase tracking-wider">
+        <ShieldAlert size={15} /> Approval Required
       </div>
-
-      <h1 style={{ color: "white", fontSize: "1rem", fontWeight: 600, margin: 0 }}>
-        {approval.user_visible_summary}
-      </h1>
-
-      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-        <span style={{ color: "rgba(255,255,255,0.4)", fontSize: "0.75rem" }}>Risk:</span>
-        <span
-          style={{
-            color: riskColor,
-            fontSize: "0.75rem",
-            fontWeight: 600,
-            textTransform: "capitalize",
-            background: `${riskColor}22`,
-            padding: "2px 8px",
-            borderRadius: "20px",
-          }}
-        >
-          {approval.risk_level}
+      <ConfirmationTitle>
+        <span className="font-semibold text-foreground">{approval.user_visible_summary}</span>
+        <span className="ml-2" style={{ color: riskColor }}>
+          ({approval.risk_level} risk)
         </span>
-      </div>
-
-      <div style={{ display: "flex", gap: "8px", marginTop: "4px" }}>
-        <button
-          disabled={pending}
-          onClick={() => void decide("approve")}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            padding: "8px 12px",
-            background: "rgba(34,197,94,0.15)",
-            border: "1px solid rgba(34,197,94,0.3)",
-            borderRadius: "8px",
-            color: "#22c55e",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            cursor: pending ? "not-allowed" : "pointer",
-            opacity: pending ? 0.5 : 1,
-          }}
-        >
-          {pending ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-          Approve
-        </button>
-        <button
-          disabled={pending}
-          onClick={() => void decide("deny")}
-          style={{
-            flex: 1,
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            gap: "6px",
-            padding: "8px 12px",
-            background: "rgba(239,68,68,0.15)",
-            border: "1px solid rgba(239,68,68,0.3)",
-            borderRadius: "8px",
-            color: "#ef4444",
-            fontSize: "0.8rem",
-            fontWeight: 600,
-            cursor: pending ? "not-allowed" : "pointer",
-            opacity: pending ? 0.5 : 1,
-          }}
-        >
-          <X size={14} />
-          Deny
-        </button>
-        <button
-          disabled={pending}
-          onClick={() => void decide("cancel")}
-          style={{
-            padding: "8px 12px",
-            background: "rgba(255,255,255,0.06)",
-            border: "1px solid rgba(255,255,255,0.12)",
-            borderRadius: "8px",
-            color: "rgba(255,255,255,0.5)",
-            fontSize: "0.8rem",
-            fontWeight: 500,
-            cursor: pending ? "not-allowed" : "pointer",
-            opacity: pending ? 0.5 : 1,
-          }}
-        >
-          Cancel
-        </button>
-      </div>
-    </section>
+      </ConfirmationTitle>
+      <ConfirmationActions>
+        <ConfirmationAction disabled={pending} onClick={() => void decide("approve")}>Approve</ConfirmationAction>
+        <ConfirmationAction disabled={pending} variant="outline" onClick={() => void decide("deny")}>Deny</ConfirmationAction>
+        <ConfirmationAction disabled={pending} variant="ghost" onClick={() => void decide("cancel")}>Cancel</ConfirmationAction>
+      </ConfirmationActions>
+      <ConfirmationAccepted>
+        <span className="text-sm text-emerald-400">Approved.</span>
+      </ConfirmationAccepted>
+      <ConfirmationRejected>
+        <span className="text-sm text-red-400">Denied.</span>
+      </ConfirmationRejected>
+    </Confirmation>
   );
 }

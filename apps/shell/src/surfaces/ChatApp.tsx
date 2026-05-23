@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import { MessageSquare, Search, Settings, Package, Mic, MicOff, Radio } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
-import { finalTextFromTurnResult } from "@/lib/localTurn";
+import { finalTextFromTurnResult, stagesFromTurnResult, type TurnStage } from "@/lib/localTurn";
 import { getShellRuntimeConfig, showSpotlight, submitChatTurn, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
@@ -16,6 +16,7 @@ import { Typewriter } from "@/components/typewriter";
 import ChatInput from "@/components/prompt-input-dynamic-grow";
 import { Orb } from "@/components/chat-messages-for-ui/agent-simple-orb";
 import { Message, MessageContent } from "@/components/ui/message";
+import { RichMessage } from "@/components/marvex/RichMessage";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import SystemMonitor from "@/components/system-monitor/system-monitor";
 import {
@@ -27,7 +28,7 @@ import {
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { Button } from "@/components/ui/button";
 
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[] };
 type TabId = "chat" | "spotlight" | "settings" | "deps";
 
 interface ChatAppProps {
@@ -117,7 +118,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
     setMessages((prev) => [...prev, { role: "user", text }]);
     try {
       const result = await submitChatTurn(text);
-      setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result) }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result), stages: stagesFromTurnResult(result) }]);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "assistant", text: error instanceof Error ? error.message : "Request failed." }]);
     } finally {
@@ -186,14 +187,14 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
       </aside>
 
       {/* Main */}
-      <main style={{ display: "flex", flexDirection: "column", minWidth: 0, background: "#f8fafb" }}>
+      <main style={{ display: "flex", flexDirection: "column", minWidth: 0, background: "var(--background)", color: "var(--foreground)" }}>
         {/* Topbar */}
-        <header style={{ minHeight: 64, padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid #d7e0e2", background: "#fff" }}>
+        <header style={{ minHeight: 64, padding: "12px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", background: "var(--card)" }}>
           <div>
-            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700 }}>
+            <h1 style={{ margin: 0, fontSize: 18, fontWeight: 700, color: "var(--foreground)" }}>
               {TAB_TITLES[activeTab]}
             </h1>
-            <p style={{ margin: "2px 0 0", color: "#607078", fontSize: 12 }}>
+            <p style={{ margin: "2px 0 0", color: "var(--muted-foreground)", fontSize: 12 }}>
               {config ? `${config.core_base_url}` : "Connecting..."}
             </p>
           </div>
@@ -214,8 +215,8 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                 {/* Hello splash */}
                 <AnimatePresence>
                   {showHello && (
-                    <motion.div exit={{ opacity: 0, scale: 0.8 }} className="absolute inset-0 flex items-center justify-center bg-white z-10 pointer-events-none">
-                      <AppleHelloEnglishEffect className="text-[#102025] h-20" onAnimationComplete={() => setTimeout(() => setShowHello(false), 400)} />
+                    <motion.div exit={{ opacity: 0, scale: 0.8 }} className="absolute inset-0 flex items-center justify-center bg-background z-10 pointer-events-none">
+                      <AppleHelloEnglishEffect className="text-primary h-20" onAnimationComplete={() => setTimeout(() => setShowHello(false), 400)} />
                     </motion.div>
                   )}
                 </AnimatePresence>
@@ -224,9 +225,15 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                 <div style={{ flex: 1, overflow: "auto", padding: "16px 20px", display: "flex", flexDirection: "column", gap: 8 }}>
                   {messages.map((msg, idx) => (
                     <Message key={`${msg.role}-${idx}`} from={msg.role === "user" ? "user" : "assistant"}>
-                      <MessageContent variant={msg.role === "system" ? "flat" : "contained"}>
-                        {msg.text}
-                      </MessageContent>
+                      {msg.role === "assistant" ? (
+                        <MessageContent variant="flat" className="w-full max-w-[88%]">
+                          <RichMessage text={msg.text} stages={msg.stages} />
+                        </MessageContent>
+                      ) : (
+                        <MessageContent variant={msg.role === "system" ? "flat" : "contained"}>
+                          {msg.text}
+                        </MessageContent>
+                      )}
                       {msg.role === "assistant" && (
                         <div className="size-8 overflow-hidden rounded-full ring-1 ring-border shrink-0">
                           <Orb className="h-full w-full" agentState={orbState} />
@@ -256,13 +263,13 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                 )}
 
                 {/* Composer */}
-                <div style={{ padding: "12px 16px", borderTop: "1px solid #d7e0e2", background: "#fff" }}>
+                <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", background: "var(--card)" }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                     <button
                       title={sttAvailable ? "Microphone" : "STT unavailable"}
                       disabled={!sttAvailable}
                       onClick={() => setMicActive((v) => !v)}
-                      style={{ width: 40, height: 40, borderRadius: 8, border: "1px solid #c7d4d8", background: micActive ? "#0f5f6a" : "#fff", color: micActive ? "#fff" : "#102025", display: "grid", placeItems: "center", cursor: sttAvailable ? "pointer" : "not-allowed", opacity: sttAvailable ? 1 : 0.4 }}
+                      style={{ width: 40, height: 40, borderRadius: 8, border: "1px solid var(--border)", background: micActive ? "var(--primary)" : "var(--secondary)", color: micActive ? "var(--primary-foreground)" : "var(--foreground)", display: "grid", placeItems: "center", cursor: sttAvailable ? "pointer" : "not-allowed", opacity: sttAvailable ? 1 : 0.4 }}
                     >
                       {micActive ? <MicOff size={16} /> : <Mic size={16} />}
                     </button>
@@ -271,8 +278,8 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                         placeholder="Ask Marvex..."
                         disabled={pending}
                         onSubmit={send}
-                        textColor="#0A1217"
-                        backgroundOpacity={0.05}
+                        textColor="#eef6f7"
+                        backgroundOpacity={0.08}
                       />
                     </div>
                   </div>
@@ -284,10 +291,10 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
               <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflow: "auto", padding: 20 }}>
                 <div style={{ maxWidth: 600, display: "flex", flexDirection: "column", gap: 20 }}>
                   {/* Voice selector */}
-                  <section style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #d7e0e2" }}>
+                  <section style={{ background: "var(--card)", borderRadius: 12, padding: 20, border: "1px solid var(--border)" }}>
                     <h2 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 600 }}>TTS Voice</h2>
                     {!ttsAvailable && (
-                      <div style={{ padding: "8px 12px", background: "#fff7ed", border: "1px solid #fed7aa", borderRadius: 8, marginBottom: 12, color: "#92400e", fontSize: 12 }}>
+                      <div style={{ padding: "8px 12px", background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.35)", borderRadius: 8, marginBottom: 12, color: "#fbbf24", fontSize: 12 }}>
                         TTS dependency missing. Install it in the Deps tab.
                       </div>
                     )}
@@ -322,14 +329,14 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                   </section>
 
                   {/* Assistant status */}
-                  <section style={{ background: "#fff", borderRadius: 12, padding: 20, border: "1px solid #d7e0e2" }}>
+                  <section style={{ background: "var(--card)", borderRadius: 12, padding: 20, border: "1px solid var(--border)" }}>
                     <h2 style={{ margin: "0 0 12px", fontSize: 16, fontWeight: 600 }}>Assistant Status</h2>
                     <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                       <Status status={state.status === "idle" ? "online" : "degraded"}>
                         <StatusIndicator />
                         <StatusLabel>{state.status === "idle" ? "Online" : statusText}</StatusLabel>
                       </Status>
-                      {state.detail && <span style={{ fontSize: 12, color: "#607078" }}>{state.detail}</span>}
+                      {state.detail && <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>{state.detail}</span>}
                     </div>
                   </section>
 
@@ -347,8 +354,8 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                 <div style={{ maxWidth: 680, display: "flex", flexDirection: "column", gap: 16 }}>
                   {/* Feature status */}
                   {Object.keys(features).length > 0 && (
-                    <section style={{ background: "#fff", borderRadius: 12, padding: 16, border: "1px solid #d7e0e2" }}>
-                      <h2 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: "#607078" }}>Feature Status</h2>
+                    <section style={{ background: "var(--card)", borderRadius: 12, padding: 16, border: "1px solid var(--border)" }}>
+                      <h2 style={{ margin: "0 0 10px", fontSize: 14, fontWeight: 600, color: "var(--muted-foreground)" }}>Feature Status</h2>
                       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                         {Object.entries(features).map(([key, available]) => (
                           <Badge key={key} variant={available ? "default" : "destructive"}>
@@ -360,12 +367,12 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                   )}
 
                   {/* Dep list */}
-                  <section style={{ background: "#fff", borderRadius: 12, border: "1px solid #d7e0e2", overflow: "hidden" }}>
-                    <div style={{ padding: "14px 16px", borderBottom: "1px solid #d7e0e2", fontWeight: 600, fontSize: 14 }}>
+                  <section style={{ background: "var(--card)", borderRadius: 12, border: "1px solid var(--border)", overflow: "hidden" }}>
+                    <div style={{ padding: "14px 16px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 14 }}>
                       Models & Dependencies
                     </div>
                     {deps.length === 0 ? (
-                      <div style={{ padding: 24, textAlign: "center", color: "#607078", fontSize: 13 }}>
+                      <div style={{ padding: 24, textAlign: "center", color: "var(--muted-foreground)", fontSize: 13 }}>
                         <Loader variant="circular" size="md" />
                         <p style={{ marginTop: 8 }}>Loading deps...</p>
                       </div>
@@ -375,10 +382,10 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                           const isInstalling = installingDep === dep.id;
                           const progress = depProgress[dep.id] ?? 0;
                           return (
-                            <div key={dep.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid #f0f4f5" }}>
+                            <div key={dep.id} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 16px", borderBottom: "1px solid var(--border)" }}>
                               <div style={{ flex: 1, minWidth: 0 }}>
                                 <div style={{ fontSize: 13, fontWeight: 500 }}>{dep.label}</div>
-                                <div style={{ fontSize: 11, color: "#607078" }}>{dep.group}</div>
+                                <div style={{ fontSize: 11, color: "var(--muted-foreground)" }}>{dep.group}</div>
                                 {isInstalling && <AnimatedProgressBar value={progress} color="#0f5f6a" className="mt-2" />}
                               </div>
                               {dep.installed ? (
@@ -400,7 +407,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
 
             {activeTab === "spotlight" && (
               <motion.div key="spotlight" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 20 }}>
-                <div style={{ textAlign: "center", color: "#607078" }}>
+                <div style={{ textAlign: "center", color: "var(--muted-foreground)" }}>
                   <Search size={32} style={{ margin: "0 auto 12px" }} />
                   <p>Spotlight opened in overlay window</p>
                 </div>
