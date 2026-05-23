@@ -369,11 +369,17 @@ function Prepare-Voice-And-Service {
         if ($LASTEXITCODE -ne 0) {
             Write-Error-Exit "Required voice model assets missing. Fix voice_models.manifest.json source URLs/checksums and re-run."
         }
+        # The generic sherpa-onnx KWS model ships sample keywords; rewrite them so
+        # the wake word is actually "Hey Marvex" (+ variants).
+        uv run python scripts/generate_wakeword_keywords.py --asset-root "$voiceAssets"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Exit "Failed to generate Hey Marvex wakeword keywords"
+        }
     }
     finally {
         Pop-Location
     }
-    Write-Success "Voice model assets present"
+    Write-Success "Voice model assets present (Hey Marvex keywords generated)"
 
     # Build the always-on backend Windows service binary and place it where the
     # bundle override config (tauri.bundle.conf.json -> externalBin) expects it.
@@ -408,10 +414,18 @@ function Build-Tauri-App {
         Write-Step "Building Tauri app (release)..." 5 5
         Write-Host "  This may take several minutes..." -ForegroundColor Yellow
         
-        npm run tauri build -- --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object {
-            $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  "
+        # Resolve a Tauri CLI: local node_modules, then cargo-tauri, then npx.
+        $localTauri = Join-Path $ShellDir "node_modules\.bin\tauri.cmd"
+        if (Test-Path $localTauri) {
+            & $localTauri build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+        } elseif (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
+            cargo tauri build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+        } elseif (Get-Command npx -ErrorAction SilentlyContinue) {
+            npx --yes "@tauri-apps/cli" build --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+        } else {
+            Write-Error-Exit "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
         }
-        
+
         if ($LASTEXITCODE -ne 0) {
             Write-Error-Exit "Tauri build failed. Full output: `n$tauriOutput"
         }

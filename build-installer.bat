@@ -395,8 +395,15 @@ if errorlevel 1 (
     call :Die "Required voice model assets missing. Fix voice_models.manifest.json and re-run."
     exit /b 1
 )
+rem Rewrite the generic KWS keywords so the wake word is actually "Hey Marvex".
+call uv run python scripts\generate_wakeword_keywords.py --asset-root "%ShellDir%\voice-assets"
+if errorlevel 1 (
+    popd
+    call :Die "Failed to generate Hey Marvex wakeword keywords"
+    exit /b 1
+)
 popd
-call :WriteSuccess "Voice model assets present"
+call :WriteSuccess "Voice model assets present (Hey Marvex keywords generated)"
 
 call :WriteStep "Building marvex-service (backend Windows service)..." 4 6
 pushd "%ShellTauriDir%"
@@ -426,13 +433,19 @@ if exist "!tauriLocalCmd!" (
 ) else if exist "!tauriLocalExe!" (
     call "!tauriLocalExe!" build --config tauri.bundle.conf.json
 ) else (
-    where tauri >nul 2>&1
-    if errorlevel 1 (
-        popd
-        call :Die "Tauri CLI not found. Install with: npm i -D @tauri-apps/cli (apps\shell) or cargo install tauri-cli"
-        exit /b 1
+    where cargo-tauri >nul 2>&1
+    if not errorlevel 1 (
+        call cargo tauri build --config tauri.bundle.conf.json
+    ) else (
+        where npx >nul 2>&1
+        if not errorlevel 1 (
+            call npx --yes @tauri-apps/cli build --config tauri.bundle.conf.json
+        ) else (
+            popd
+            call :Die "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
+            exit /b 1
+        )
     )
-    call tauri build --config tauri.bundle.conf.json
 )
 if errorlevel 1 (
     popd

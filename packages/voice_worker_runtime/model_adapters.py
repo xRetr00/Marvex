@@ -254,7 +254,25 @@ class SherpaOnnxKwsRunner:
                 kws = self.kws_factory(str(path))
             else:
                 module = import_module("sherpa_onnx")
-                kws = module.KeywordSpotter.from_pre_trained(str(path))
+                files = _resolve_kws_files(path)
+                if files is None:
+                    return WakeWordDetectionResult(
+                        detected=False,
+                        phrase=phrase,
+                        confidence=0.0,
+                        backend_id=asset.backend_id,
+                        reason_code="sherpa_onnx_kws_not_ready",
+                    )
+                encoder, decoder, joiner, tokens, keywords = files
+                kws = module.KeywordSpotter(
+                    tokens=str(tokens),
+                    encoder=str(encoder),
+                    decoder=str(decoder),
+                    joiner=str(joiner),
+                    keywords_file=str(keywords),
+                    num_threads=1,
+                    provider="cpu",
+                )
             stream = kws.create_stream()
             stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
             kws.decode_stream(stream)
@@ -421,6 +439,28 @@ def _first_with_suffix(root: Path, suffix: str) -> Path | None:
         if candidate.suffix == suffix:
             return candidate
     return None
+
+
+def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None:
+    """Resolve the sherpa-onnx KWS model files under ``root`` (nesting-tolerant,
+    int8 preferred): (encoder, decoder, joiner, tokens, keywords). Returns None
+    if any required file is missing."""
+
+    def pick(glob: str) -> Path | None:
+        matches = sorted(root.rglob(glob))
+        if not matches:
+            return None
+        int8 = [m for m in matches if "int8" in m.name]
+        return (int8 or matches)[0]
+
+    encoder = pick("*encoder*.onnx")
+    decoder = pick("*decoder*.onnx")
+    joiner = pick("*joiner*.onnx")
+    tokens = next(iter(sorted(root.rglob("tokens.txt"))), None)
+    keywords = next(iter(sorted(root.rglob("keywords.txt"))), None)
+    if not all((encoder, decoder, joiner, tokens, keywords)):
+        return None
+    return encoder, decoder, joiner, tokens, keywords  # type: ignore[return-value]
 
 
 def _chunk_bytes(chunk: Any) -> bytes:
