@@ -268,12 +268,22 @@ function Build-Frontend {
         if ($LASTEXITCODE -ne 0) {
             Write-Error-Exit "Control Plane build failed"
         }
-        
+
         Write-Success "Control Plane built"
     }
     finally {
         Pop-Location
     }
+
+    # Stage the built Control Plane SPA into the shell so it is bundled as a
+    # resource and served same-origin by the control plane server (8766) for the
+    # shell's Control Plane window.
+    $cpDist = Join-Path $ControlPlaneDir "dist"
+    $cpStage = Join-Path $ShellDir "control_plane_web"
+    if (Test-Path $cpStage) { Remove-Item -Path $cpStage -Recurse -Force }
+    New-Item -ItemType Directory -Path $cpStage | Out-Null
+    Copy-Item -Path (Join-Path $cpDist "*") -Destination $cpStage -Recurse -Force
+    Write-Success "Control Plane SPA staged into shell resources"
     
     # Build Shell Frontend
     Push-Location $ShellDir
@@ -341,6 +351,52 @@ function Verify-Frontend-Assets {
 }
 
 # ============================================================================
+# Step 4b: Voice model assets + backend service binary
+# ============================================================================
+
+function Prepare-Voice-And-Service {
+    Write-Section "Step 4b: Voice Models + Backend Service Binary"
+
+    # Fetch + verify the required "Hey Marvex" / STT / TTS model assets into the
+    # shell's bundled voice-asset root. Fails the build if a required asset is
+    # missing so the installer never ships a broken wake word.
+    $voiceAssets = Join-Path $ShellDir "voice-assets"
+    if (-not (Test-Path $voiceAssets)) { New-Item -ItemType Directory -Path $voiceAssets | Out-Null }
+    Write-Step "Fetching voice model assets..." 4 6
+    Push-Location $RepoRoot
+    try {
+        uv run python scripts/fetch_voice_models.py --asset-root "$voiceAssets"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Exit "Required voice model assets missing. Fix voice_models.manifest.json source URLs/checksums and re-run."
+        }
+    }
+    finally {
+        Pop-Location
+    }
+    Write-Success "Voice model assets present"
+
+    # Build the always-on backend Windows service binary and place it where the
+    # bundle override config (tauri.bundle.conf.json -> externalBin) expects it.
+    Write-Step "Building marvex-service (backend Windows service)..." 4 6
+    Push-Location $ShellTauriDir
+    try {
+        cargo build --release --bin marvex-service 2>&1 | Where-Object { $_ -match 'Compiling|Finished|error' }
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Exit "marvex-service build failed"
+        }
+        $binDir = Join-Path $ShellTauriDir "binaries"
+        if (-not (Test-Path $binDir)) { New-Item -ItemType Directory -Path $binDir | Out-Null }
+        $svcSrc = Join-Path $ShellTauriDir "target\release\marvex-service.exe"
+        $svcDst = Join-Path $binDir "marvex-service-x86_64-pc-windows-msvc.exe"
+        Copy-Item -Path $svcSrc -Destination $svcDst -Force
+        Write-Success "marvex-service staged for bundling"
+    }
+    finally {
+        Pop-Location
+    }
+}
+
+# ============================================================================
 # Step 5: Build Tauri App + Installers
 # ============================================================================
 
@@ -352,7 +408,7 @@ function Build-Tauri-App {
         Write-Step "Building Tauri app (release)..." 5 5
         Write-Host "  This may take several minutes..." -ForegroundColor Yellow
         
-        npm run tauri build 2>&1 | Tee-Object -Variable tauriOutput | Where-Object {
+        npm run tauri build -- --config tauri.bundle.conf.json 2>&1 | Tee-Object -Variable tauriOutput | Where-Object {
             $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  "
         }
         
@@ -459,6 +515,7 @@ function Main {
     Prepare-Runtime-Resources -WheelPath $wheel
     Build-Frontend
     Verify-Frontend-Assets
+    Prepare-Voice-And-Service
     Build-Tauri-App
     Locate-Installers
     

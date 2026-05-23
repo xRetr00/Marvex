@@ -515,6 +515,14 @@ fn spawn_service(
     if web_dist.is_dir() {
         command.env("MARVEX_CONTROL_WEB_DIST", web_dist);
     }
+    // Point the voice worker at the bundled/installed "Hey Marvex" model assets.
+    let voice_assets = resource_dir
+        .map(|dir| dir.join("voice-assets"))
+        .filter(|p| p.is_dir())
+        .unwrap_or_else(|| project_root().join("apps").join("shell").join("voice-assets"));
+    if voice_assets.is_dir() {
+        command.env("MARVEX_VOICE_ASSET_ROOT", voice_assets);
+    }
     command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);

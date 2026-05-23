@@ -40,6 +40,9 @@ if errorlevel 1 exit /b 1
 call :VerifyFrontendAssets
 if errorlevel 1 exit /b 1
 
+call :PrepareVoiceAndService
+if errorlevel 1 exit /b 1
+
 call :BuildTauriApp
 if errorlevel 1 exit /b 1
 
@@ -309,6 +312,13 @@ if errorlevel 1 (
 call :WriteSuccess "Control Plane built"
 popd
 
+rem Stage the built Control Plane SPA into the shell so it is bundled and served
+rem same-origin by the control plane server for the shell's Control Plane window.
+if exist "%ShellDir%\control_plane_web" rmdir /s /q "%ShellDir%\control_plane_web"
+mkdir "%ShellDir%\control_plane_web"
+xcopy /e /i /y "%ControlPlaneDir%\dist\*" "%ShellDir%\control_plane_web\" >nul
+call :WriteSuccess "Control Plane SPA staged into shell resources"
+
 pushd "%ShellDir%"
 call :WriteStep "Installing Shell dependencies..." 3 6
 call npm ci
@@ -373,6 +383,35 @@ rem ============================================================================
 rem Step 5: Build Tauri App + Installers
 rem ============================================================================
 
+:PrepareVoiceAndService
+call :WriteSection "Step 4b: Voice Models + Backend Service Binary"
+
+if not exist "%ShellDir%\voice-assets" mkdir "%ShellDir%\voice-assets"
+call :WriteStep "Fetching voice model assets..." 4 6
+pushd "%RepoRoot%"
+call uv run python scripts\fetch_voice_models.py --asset-root "%ShellDir%\voice-assets"
+if errorlevel 1 (
+    popd
+    call :Die "Required voice model assets missing. Fix voice_models.manifest.json and re-run."
+    exit /b 1
+)
+popd
+call :WriteSuccess "Voice model assets present"
+
+call :WriteStep "Building marvex-service (backend Windows service)..." 4 6
+pushd "%ShellTauriDir%"
+call cargo build --release --bin marvex-service
+if errorlevel 1 (
+    popd
+    call :Die "marvex-service build failed"
+    exit /b 1
+)
+if not exist "%ShellTauriDir%\binaries" mkdir "%ShellTauriDir%\binaries"
+copy /y "%ShellTauriDir%\target\release\marvex-service.exe" "%ShellTauriDir%\binaries\marvex-service-x86_64-pc-windows-msvc.exe" >nul
+popd
+call :WriteSuccess "marvex-service staged for bundling"
+goto :eof
+
 :BuildTauriApp
 call :WriteSection "Step 5: Building Tauri App and Installers"
 
@@ -383,9 +422,9 @@ echo   This may take several minutes...
 set "tauriLocalCmd=%ShellDir%\node_modules\.bin\tauri.cmd"
 set "tauriLocalExe=%ShellDir%\node_modules\.bin\tauri.exe"
 if exist "!tauriLocalCmd!" (
-    call "!tauriLocalCmd!" build
+    call "!tauriLocalCmd!" build --config tauri.bundle.conf.json
 ) else if exist "!tauriLocalExe!" (
-    call "!tauriLocalExe!" build
+    call "!tauriLocalExe!" build --config tauri.bundle.conf.json
 ) else (
     where tauri >nul 2>&1
     if errorlevel 1 (
@@ -393,7 +432,7 @@ if exist "!tauriLocalCmd!" (
         call :Die "Tauri CLI not found. Install with: npm i -D @tauri-apps/cli (apps\shell) or cargo install tauri-cli"
         exit /b 1
     )
-    call tauri build
+    call tauri build --config tauri.bundle.conf.json
 )
 if errorlevel 1 (
     popd

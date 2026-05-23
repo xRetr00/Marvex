@@ -2,9 +2,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
+from pathlib import Path
 
+from packages.voice_worker_runtime.assets import VoiceAssetManager
 from packages.voice_worker_runtime.controller import VoiceWorkerController
 from packages.voice_worker_runtime.worker_main import run_worker_contract_loop, run_worker_loop
 
@@ -33,15 +36,25 @@ def run_version_once() -> int:
     return 0
 
 
+def _controller() -> VoiceWorkerController:
+    """Build the worker controller, honoring a bundled/installed voice-asset
+    root via MARVEX_VOICE_ASSET_ROOT (set by the installer/service) so shipped
+    "Hey Marvex" models are found offline."""
+    asset_root = os.environ.get("MARVEX_VOICE_ASSET_ROOT")
+    if asset_root and asset_root.strip():
+        return VoiceWorkerController(asset_manager=VoiceAssetManager(asset_root=Path(asset_root)))
+    return VoiceWorkerController()
+
+
 def run_once(*, host: str, port: int) -> int:
-    runtime = VoiceWorkerController()
+    runtime = _controller()
     payload = run_worker_loop(controller=runtime, host=host, port=port, once=True)
     print(json.dumps(payload, sort_keys=True))
     return 0
 
 
 def run_jsonl(*, host: str, port: int) -> int:
-    runtime = VoiceWorkerController()
+    runtime = _controller()
     run_worker_contract_loop(
         controller=runtime,
         host=host,
