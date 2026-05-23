@@ -73,13 +73,22 @@ export function displayDetail(state: AssistantStateEvent): string {
 }
 
 export function waveformLevel(state: AssistantStateEvent, phase = 0): number {
-  if (state.status === "listening" || state.status === "talking") {
-    return clamp(state.audio_level);
+  switch (state.status) {
+    case "idle":
+      return 0;
+    case "listening":
+    case "talking":
+      // Real microphone / TTS amplitude drives the bands directly.
+      return clamp(state.audio_level);
+    case "needs_approval":
+    case "asking":
+      // Gentle attention pulse while waiting on the user.
+      return clamp(0.16 + Math.sin(phase) * 0.05);
+    default:
+      // thinking, working, using_tools, mcp, skills, searching_web:
+      // a lively animated baseline so the waveform stays alive during work.
+      return clamp(0.22 + Math.sin(phase) * 0.07);
   }
-  if (state.status === "thinking" || state.status === "working") {
-    return 0.12 + Math.sin(phase) * 0.04;
-  }
-  return 0;
 }
 
 function clamp(value: number): number {
