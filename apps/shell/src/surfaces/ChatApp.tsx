@@ -20,7 +20,7 @@ import { Orb } from "@/components/chat-messages-for-ui/agent-simple-orb";
 import { Message, MessageContent } from "@/components/ui/message";
 import { RichMessage } from "@/components/marvex/RichMessage";
 import { RuntimeStatus } from "@/components/marvex/RuntimeStatus";
-import { AuroraBackground } from "@/components/marvex/AuroraBackground";
+import { BackgroundPlus } from "@/components/ui/background-plus";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import SystemMonitor from "@/components/system-monitor/system-monitor";
 import {
@@ -205,7 +205,7 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
 
   return (
     <div className="flex flex-col h-screen min-h-0 relative z-[1]" style={{ background: "transparent", color: "var(--foreground)" }}>
-      <AuroraBackground />
+      <BackgroundPlus plusColor="#ffe0c2" plusSize={56} fade={false} className="pointer-events-none opacity-35" />
       {/* Topbar */}
       <header style={{ minHeight: 60, padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>

@@ -9,6 +9,7 @@ import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView,
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
+import { BackgroundPlus } from "@/components/ui/background-plus";
 
 const views = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
@@ -63,7 +64,8 @@ export function App() {
   }, [isDark, theme]);
 
   return (
-    <div className="min-h-screen">
+    <div className="relative min-h-screen overflow-hidden">
+      <BackgroundPlus plusColor="#fb3a5d" plusSize={60} fade={false} className="pointer-events-none opacity-20" />
       <header className="border-b border-border bg-card">
         <div className="flex min-h-14 items-center justify-between px-4">
           <div className="flex items-center gap-3">

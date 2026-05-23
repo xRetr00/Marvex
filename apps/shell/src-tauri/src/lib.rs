@@ -9,6 +9,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use supervisor::Supervisor;
 use tauri::{menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent};
+use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
 #[derive(Clone, Serialize)]
@@ -165,8 +166,8 @@ fn set_overlay_click_through(app: AppHandle, ignore: bool) -> Result<(), String>
 
 #[tauri::command]
 fn show_chat(app: AppHandle) -> Result<(), String> {
+    apply_ui_mode(&app, UiMode::Chat)?;
     let window = app.get_webview_window("main").ok_or_else(|| "main window unavailable".to_string())?;
-    window.show().map_err(|err| err.to_string())?;
     window.set_focus().map_err(|err| err.to_string())
 }
 
@@ -184,17 +185,53 @@ fn position_spotlight_top_right(window: &tauri::WebviewWindow) {
 
 #[tauri::command]
 fn show_spotlight(app: AppHandle) -> Result<(), String> {
+    apply_ui_mode(&app, UiMode::Spotlight)?;
     let window = app.get_webview_window("spotlight").ok_or_else(|| "spotlight window unavailable".to_string())?;
-    window.show().map_err(|err| err.to_string())?;
     position_spotlight_top_right(&window);
     window.set_focus().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 fn hide_spotlight(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("spotlight") {
-        window.hide().map_err(|err| err.to_string())?;
+    apply_ui_mode(&app, UiMode::Chat)
+}
+
+#[derive(Copy, Clone)]
+enum UiMode {
+    Chat,
+    Spotlight,
+}
+
+fn apply_ui_mode(app: &AppHandle, mode: UiMode) -> Result<(), String> {
+    let main = app.get_webview_window("main");
+    let overlay = app.get_webview_window("overlay");
+    let spotlight = app.get_webview_window("spotlight");
+
+    match mode {
+        UiMode::Chat => {
+            if let Some(window) = spotlight {
+                window.hide().map_err(|err| err.to_string())?;
+            }
+            if let Some(window) = overlay {
+                window.show().map_err(|err| err.to_string())?;
+            }
+            if let Some(window) = main {
+                window.show().map_err(|err| err.to_string())?;
+            }
+        }
+        UiMode::Spotlight => {
+            if let Some(window) = main {
+                window.hide().map_err(|err| err.to_string())?;
+            }
+            if let Some(window) = overlay {
+                window.hide().map_err(|err| err.to_string())?;
+            }
+            if let Some(window) = spotlight {
+                window.show().map_err(|err| err.to_string())?;
+            }
+        }
     }
+
     Ok(())
 }
 
@@ -239,6 +276,14 @@ pub fn run() {
             app.manage(Mutex::new(ShellState { token, supervisor }));
             build_tray(app.handle())?;
             app.global_shortcut().register(Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), Code::Space))?;
+            #[cfg(target_os = "windows")]
+            {
+                // Ensure installed app is registered for login startup.
+                let autostart = app.autolaunch();
+                if let Ok(false) = autostart.is_enabled() {
+                    let _ = autostart.enable();
+                }
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.hide();
                 window.on_window_event(|event| {
