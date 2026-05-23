@@ -57,6 +57,7 @@ def create_control_plane_api_app(
     deps_pip_runner: Any | None = None,
     agent_catalog_projection: dict[str, Any] | None = None,
     persona_catalog_projection: dict[str, Any] | None = None,
+    web_dist: str | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -67,6 +68,24 @@ def create_control_plane_api_app(
         raw_path = str(environ.get("PATH_INFO", "/"))
         path, _separator, inline_query = raw_path.partition("?")
         query_string = str(environ.get("QUERY_STRING") or inline_query)
+
+        # Serve the bundled control_plane_web SPA (unauthenticated static assets)
+        # for any non-/control GET so the window loads same-origin; the SPA's
+        # own /control API calls still carry the bearer token.
+        if method == "GET" and not path.startswith(CONTROL_PREFIX) and web_dist:
+            from pathlib import Path as _Path
+
+            from .static_web import resolve_static_file
+
+            resolved, content_type = resolve_static_file(_Path(web_dist), path)
+            if resolved is not None and resolved.is_file():
+                data = resolved.read_bytes()
+                start_response(
+                    "200 OK",
+                    [("Content-Type", content_type), ("Content-Length", str(len(data)))],
+                )
+                return [data]
+
         auth_error = validate_local_bearer_token(
             authorization_header=_authorization_header(environ),
             expected_token=local_auth_token,

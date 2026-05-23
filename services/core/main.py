@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -2410,12 +2411,14 @@ def create_control_plane_service_app(
     trace_reader: Any | None = None,
     state_bus: AssistantStateBus | None = None,
 ) -> Any:
+    web_dist = os.environ.get("MARVEX_CONTROL_WEB_DIST") or None
     return create_control_plane_api_app(
         approval_store=InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token=config.local_auth_token or "",
         trace_reader=trace_reader,
         state_bus=state_bus or get_default_bus(),
+        web_dist=web_dist,
     )
 
 
