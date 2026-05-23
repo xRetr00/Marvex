@@ -1,114 +1,127 @@
-# Marvex Shell UX, Control Plane Window, and 24/7 Voice Service — Design
+# Marvex Shell UX, Presence Layer, Control Plane Window, and 24/7 Voice Service — Design
 
 Date: 2026-05-23
-Status: Approved (pending written-spec review)
+Status: Approved-in-principle (pending written-spec review after feedback round)
 
 ## Problem
 
-The Marvex Tauri shell (`apps/shell`) has three categories of defects reported by the project owner:
+The Marvex Tauri shell (`apps/shell`) has several defects reported by the project owner:
 
-1. **Shell UI freezes / poor performance.** The in-app UI becomes unresponsive and feels slow. Root cause confirmed: the overlay surface registers a `mousemove` listener that calls the Tauri command `setOverlayClickThrough` on *every* pointer move (`apps/shell/src/surfaces/overlay.tsx`), flooding the IPC bridge. The WebGL waveform (`MarvexWaveform`) also runs an unconditional 60fps render loop even when idle/hidden.
-2. **No real Control Plane.** The shell embeds a minimal in-shell "Control Plane" tab and a "Deps" tab that only show a fraction of settings. The full original Control Plane app (`apps/control_plane_web`, 26 views including Providers, Voice Runtime with selected model/provider/TTS voice/STT model + downloads, Agents/Personas) is built by the installer but never opened by the shell.
-3. **Spotlight and island are wrong.** The `spotlight` window is a 780×420 box with scrollbars, summoned manually from the dock button + tray menu + global shortcut — i.e. it behaves like a mode/window, not event-driven cards. The dynamic island (`overlay` window) is pinned top-left, shows only a bare pulsing dot at idle, and feels "dead." The owner wants the island on the **right**, showing live state even at idle, expanding the voice waveform on hover, with Spotlight cards spawning *out of* the island.
-4. **Voice/wake word not shipped as a guaranteed always-on capability.** The wake-word ("Hey Marvex") worker is treated as part of optional dependency handling. The owner wants it forced into the build, shipped with its models, and running 24/7 as a Windows service that starts at boot, so "Hey Marvex" fires instantly in real time.
+1. **The whole app freezes / "Not Responding."** Not just the overlay — the chat window, app startup, and even the tray context menu freeze. Confirmed root cause: **every networking Tauri command is synchronous and performs blocking socket I/O on the main/UI thread.** `apps/shell/src-tauri/src/http.rs` uses a raw `TcpStream` with `read_to_string` and a 20-second read timeout; commands like `submit_chat_turn`, `control_request`, `backend_health`, `gui_health`, and `get_setup_status` are declared `fn` (not `async fn`), so in Tauri v2 they run on the main thread that also paints windows and renders the tray menu. Any slow/blocking call freezes the entire app. A secondary contributor: `overlay.tsx` calls the `setOverlayClickThrough` command on **every** `mousemove`, flooding the IPC bridge. The WebGL waveform also runs an unconditional 60fps loop even at rest.
 
-## Decisions (from brainstorming)
+2. **No real Control Plane.** The shell embeds a minimal in-shell "Control Plane" tab and a "Deps" tab showing a fraction of settings. The full original Control Plane (`apps/control_plane_web`, 26 views incl. Providers, Voice Runtime with selected model/provider/TTS voice/STT model + downloads, Agents/Personas) is built by the installer but never opened by the shell.
 
+3. **The presence layer (the "soul") is wrong and feels dead.** The dynamic island (the always-present, Siri-like presence — "Siri is part of macOS") and the cards/spotlights it spawns are the soul of the assistant OS, but today: the island (`overlay` window) is pinned top-left, shows only a bare pulsing dot at idle, and feels dead; Spotlight is a 780×420 scrollbar window summoned manually from the dock button + tray menu + global shortcut (i.e. a mode/window, not event-driven cards). The owner wants the island on the **right**, alive and showing live state even at idle, expanding the voice waveform on hover, with cards (approvals, results, agenda, info) spawning *out of* the island.
+
+4. **Chat/sessions are ephemeral and the session ref is hardcoded.** Shell chat history lives only in React state and is lost on close. `submit_chat_turn` hardcodes `session_ref.ref_id = "shell-session"`. There is no way to see prior chats/sessions or resume where you left off.
+
+5. **Failure states collapse into one meaningless message.** When the chat UI is open but the backend isn't running, no LLM/provider is configured, or the provider errors, sending "Hi" just shows **"No displayable response returned."** (`localTurn.ts:8`). `submit_chat_turn` also **hardcodes `"model":"fake-model"` / `execution_mode: "assistant_runtime_fake_provider"`** (`lib.rs`), so the shell never exercises a real configured provider. All failure cases need distinct, actionable messaging surfaced in chat and reflected in the island presence.
+
+6. **Voice/wake word is not a guaranteed always-on capability.** The wake-word ("Hey Marvex") worker is treated as part of optional dependency handling. The owner wants it forced into the build, shipped with its models, and running 24/7 as a Windows service that starts at boot, so "Hey Marvex" fires instantly in real time.
+
+## Decisions (from brainstorming + feedback)
+
+- **Async backend bridge:** replace the raw blocking `TcpStream` HTTP connector with a non-blocking async client; make all I/O-bound Tauri commands `async` and run network/file I/O off the main thread. This is the primary fix for the global freeze.
 - **Control Plane:** dedicated Tauri window loading the original `control_plane_web`; retire the shell's mini Control Plane + Deps tabs.
-- **Voice runtime:** a true Windows Service. Scope = **full backend service** (supervises Core + control plane + intent/tool/provider/voice workers 24/7) because keeping Core warm is what makes "Hey Marvex" fire instantly with no cold-start. The shell becomes a thin client.
-- **Structure:** one spec, phased implementation. Order: Phase 1 (Shell UX/perf) → Phase 2 (Control Plane window) → Phase 3 (build/installer/voice service).
-- **Spotlight global shortcut (Ctrl+Shift+Space):** removed. Spotlight is fully event-driven.
-- **Governance:** wake-word-enabled-by-default / always-on overrides the current documented "disabled by default" stance; `PROJECT_STATUS.md` and `docs/CONTRACT_APPROVALS.md` will be updated. No-raw-audio-persistence and safe-projection guarantees are preserved.
+- **Presence layer is first-class:** the dynamic island + its spawned cards are designed as one cohesive presence system driven by a single assistant-state source of truth.
+- **Voice runtime:** a true Windows Service, scope = **full backend service** (supervises Core + control plane + intent/tool/provider/voice workers 24/7) so Core stays warm and "Hey Marvex" fires instantly with no cold start. The shell becomes a thin client.
+- **Persistence:** durable chat/sessions with a real `session_ref`; prior chats/sessions are listable and resumable.
+- **Structure:** one spec, phased. Order: Phase 1 (Shell UX/perf/presence/persistence/failure-states) → Phase 2 (Control Plane window) → Phase 3 (build/installer/voice service).
+- **Spotlight global shortcut (Ctrl+Shift+Space):** removed; Spotlight is fully event-driven cards.
+- **Governance:** wake-word-enabled-by-default / always-on overrides the current documented "disabled by default" stance; `PROJECT_STATUS.md` and `docs/CONTRACT_APPROVALS.md` updated. No-raw-audio-persistence and safe-projection guarantees preserved.
 
 ## Non-Goals
 
-- No new assistant intelligence, provider routing, tool, memory, or cognition behavior.
-- No change to the safe-projection / no-raw-payload-persistence guarantees.
-- No redesign of `control_plane_web`'s internal views beyond wiring the model/voice/STT selection + download endpoints if a gap is found.
+- No new assistant intelligence, tool, memory-cognition, or routing behavior beyond wiring provider/model selection through existing endpoints.
+- No change to no-raw-payload-persistence / safe-projection guarantees.
+- No redesign of `control_plane_web`'s internal views beyond wiring model/voice/STT selection + downloads if a gap is found.
 - No macOS/Linux service work (Windows-only service for this slice).
 
 ---
 
-## Phase 1 — Shell UX & Performance
+## Phase 1 — Shell UX, Performance, Presence & Persistence (first)
 
-### 1a. Eliminate the IPC freeze (overlay click-through)
-In `apps/shell/src/surfaces/overlay.tsx`, replace the per-mousemove invoke with edge-triggered logic:
-- Keep `lastOverRef` (boolean). On `mousemove`, compute `over`; only call `setOverlayClickThrough(!over)` when `over !== lastOverRef.current`.
-- Throttle the geometry check with a `requestAnimationFrame` guard so at most one check runs per frame.
-- Result: one IPC call per actual enter/leave transition instead of hundreds per second.
+### 1a. Async, non-blocking backend bridge (PRIMARY freeze fix)
+- Replace the raw `TcpStream` connector in `http.rs` with an async HTTP client (`reqwest` async over loopback; Tauri already pulls in tokio via `tauri::async_runtime`). Keep the loopback-only host guard and bearer-token handling.
+- Convert all I/O-bound commands to `async fn`: `submit_chat_turn`, `control_request`, `backend_health`, `gui_health`, `get_setup_status`, `start_setup`, `start_backend`. They must `await` the async client (or use `tauri::async_runtime::spawn_blocking` for any unavoidable blocking call) so the **main thread is never blocked**.
+- Tighten timeouts (connect + per-request) to small, sane values with proper error mapping instead of a 20s read timeout.
+- Acceptance: while a chat turn is in flight, the tray menu opens instantly and windows repaint smoothly.
 
-### 1b. WebGL waveform throttling
-In `apps/shell/src/components/waveform-shader/MarvexWaveform.tsx`:
-- Add an `active` prop (derived from `expanded`/state). When inactive, render a single frame and stop the RAF loop; resume when active.
-- Stop the loop on `document.visibilitychange` → hidden; resume on visible.
-- Goal: GPU usage ≈ 0 at rest.
+### 1b. Overlay click-through: edge-triggered (secondary freeze fix)
+- In `overlay.tsx`, track `lastOverRef`; call `setOverlayClickThrough(!over)` only when `over` changes, guarded by a `requestAnimationFrame` throttle. One IPC call per enter/leave instead of hundreds per second.
 
-### 1c. Island on the right, live state at idle
-- `tauri.conf.json`: change the `overlay` window anchor from top-left (`x:16`) to top-right. Use a deterministic right anchor; if dynamic positioning is needed, a Rust helper mirrors `position_spotlight_top_right`.
-- `overlay.tsx`: the idle island content shows a compact live status (status label + small ambient waveform reflecting `assistant-state`) rather than a bare dot. Hover/active expands to the full ring with the live waveform.
+### 1c. WebGL waveform throttling
+- `MarvexWaveform` gets an `active` prop; when inactive it renders a single frame and stops its RAF loop, resuming on active/hover. Stop on `document.visibilitychange → hidden`. GPU ≈ 0 at rest.
 
-### 1d. Spotlight = island-spawned cards (not a window/mode)
-- `tauri.conf.json`: shrink the `spotlight` window to a content-sized card, anchored directly beneath the island at top-right (not centered), `transparent`, no scrollbars.
-- `apps/shell/src/styles.css`: fix `.spotlight-shell` / `.spotlight-panel` to size to content and remove the body/window overflow that produces scrollbars.
-- Spotlight animates "out of" the island (origin top-right).
-- Remove the Spotlight button from the `ChatApp` footer dock.
-- Remove the "Spotlight" item from the tray menu (`lib.rs` `build_tray`).
-- Remove the Ctrl+Shift+Space global shortcut registration + handler (`lib.rs`).
-- Keep the `show_spotlight`/`hide_spotlight` commands for internal event-driven use (approval/result/agenda payloads), invoked by the state stream / approval flow, not by the user.
+### 1d. Presence layer: the dynamic island as the soul
+The island is the always-present, Siri-like presence and the anchor everything spawns from. Driven by a single assistant-state source (the `/control/state` stream).
+- **Position:** move the `overlay` window anchor from top-left to top-right (`tauri.conf.json`; Rust right-anchor helper mirroring `position_spotlight_top_right`).
+- **State→visual mapping (alive at idle):** idle = ambient "alive" pill showing current status (e.g. "Ready"/"Listening") with a subtle ambient waveform, not a bare dot; listening/talking = reactive waveform bound to `audio_level`; thinking/working/using-tools/searching = animated working motion; needs-approval = alert pulse. Hover always expands and animates the waveform.
+- **Single state hook:** extract the assistant-state subscription + status→visual derivation into one shared module used by the island, cards, and chat header, so all surfaces agree.
+
+### 1e. Spotlight = island-spawned cards (not a window/mode)
+- Shrink the `spotlight` window to a content-sized, transparent, scrollbar-free card anchored directly beneath the island at top-right; fix `.spotlight-shell`/`.spotlight-panel` overflow + auto-size in `styles.css`.
+- Cards animate "out of" the island (transform origin = island corner).
+- Card kinds: approval, result, agenda, info — plus failure/notice cards (see 1g/1h) and a "session resumed" card.
+- **Remove** the Spotlight dock button (`ChatApp` footer), the "Spotlight" tray item (`lib.rs build_tray`), and the Ctrl+Shift+Space shortcut registration/handler (`lib.rs`). Keep `show_spotlight`/`hide_spotlight` commands for internal event-driven use only.
+
+### 1f. Chat/session continuity (persistence)
+- Replace the hardcoded `session_ref.ref_id = "shell-session"` with a real, stable per-conversation `session_ref` (generated, persisted locally, sent with each turn).
+- Persist chat history durably (backed by the existing backend `SessionRuntime`/session endpoints where available; local fallback otherwise). On launch the shell restores the active conversation instead of starting blank.
+- Add a sessions list / history surface so prior chats are viewable and resumable. (Reuses the control plane's session safe-projections where appropriate.)
+- Acceptance: send messages, close and reopen the shell → conversation is still there and continues under the same session.
+
+### 1g. Robust failure-state surfacing
+- Replace the generic `finalTextFromTurnResult` fallback with explicit mapping of distinct cases, each with an actionable message + a presence/island reflection (e.g. island shows "Backend offline"):
+  - **Backend unreachable** (command/connect error) → "Backend isn't running yet — starting it…" with a retry affordance, and reflect via `backend_health`.
+  - **No provider/LLM configured** → "No model/provider is configured. Open Control Plane → Providers." (links to Phase 2 window).
+  - **Provider error** (upstream returned error) → surface the safe provider error reason.
+  - **Empty/edge result** (turn ok but no text) → a clear "no response text" notice distinct from errors.
+- Stop hardcoding `fake-model`: `submit_chat_turn` sends the selected/configured provider+model (from control-plane selection) or lets Core use the configured default; the fake provider path becomes an explicit dev/test mode, not the shipped default. (Selection UI is owned by Phase 2; Phase 1 wires the turn to honor it and to report when nothing is configured.)
+- Acceptance: with the backend down, "Hi" shows a backend-offline message (not "No displayable response returned"); with no provider configured, it points the user to Providers; the island reflects the failure state.
 
 ### Phase 1 testing
-- Unit: edge-trigger logic for click-through (no call when state unchanged).
-- Existing `overlay.test.tsx` and `Spotlight.test.tsx` updated for new behavior.
-- Manual smoke: move mouse rapidly over/off island — UI stays responsive; island sits top-right and shows state at idle; hover animates the waveform; an injected approval payload shows a card spawning from the island with no scrollbars; no Spotlight button in dock; no Spotlight tray item; shortcut no longer summons Spotlight.
+- Rust: async command compiles and returns without blocking; loopback guard + token handling preserved; right-anchor helper math.
+- TS unit: edge-trigger click-through (no call when unchanged); `finalTextFromTurnResult` replacement returns the correct branch per case; session_ref generation/persistence; updated `overlay.test.tsx` / `Spotlight.test.tsx`.
+- Manual smoke: rapid mouse over/off island stays responsive; tray menu opens during an in-flight turn; island sits top-right and shows state at idle; hover animates waveform; injected approval/result spawns a scrollbar-free card from the island; no Spotlight dock button/tray item/shortcut; close+reopen restores the conversation; backend-down and no-provider cases show actionable messages.
 
 ---
 
 ## Phase 2 — Control Plane Window
 
 ### 2a. Dedicated control plane window
-- Add a `control` window definition (or create-on-demand `WebviewWindow`) that loads the bundled `control_plane_web` build output.
-  - Dev: load its Vite dev URL. Production: load the bundled control plane `index.html` from Tauri resources.
-  - Update the build (Phase 3 build script already builds `control_plane_web`) to copy its `dist` into the shell bundle resources so the window can load it offline.
-- **Token injection:** the shell mints a local bearer token (`token.rs`). Expose it to the control plane window so `control_plane_web/src/lib/api.ts` can authorize `/control/*` calls — via an injected global (`window.__MARVEX_CP_TOKEN__`) read by `api.ts`, or a Tauri command the control plane page calls on load. Token is never logged or persisted by shell code.
-- A new shell command `open_control_plane` shows/focuses (and lazily creates) the window. The dock's "Control Plane" entry calls it.
+- Add a `control` WebviewWindow (created on demand) that loads the bundled `control_plane_web` build (dev: its Vite URL; prod: bundled `index.html` from Tauri resources — the build script already builds `control_plane_web`; copy its `dist` into shell bundle resources).
+- **Token injection:** expose the shell's local bearer token to the control plane page so `control_plane_web/src/lib/api.ts` can authorize `/control/*` (injected global `window.__MARVEX_CP_TOKEN__` read by `api.ts`, or a Tauri command the page calls on load). Token never logged/persisted by shell code.
+- New `open_control_plane` command shows/focuses (lazily creates) the window; the dock's "Control Plane" entry calls it.
 
 ### 2b. Retire shell mini surfaces
-- Remove the "control" and "deps" tabs from `apps/shell/src/surfaces/ChatApp.tsx`. The chat window becomes Chat-only.
-- The dock (`navItems`) keeps **Chat** and replaces Control/Deps with a single **Control Plane** entry that opens the window.
-- Model/provider/TTS-voice/STT-model selection and model/voice downloads are owned by `control_plane_web`'s existing `VoiceRuntimeView` / Providers / Agents-Personas views, backed by the existing protected `/control` endpoints. If any of those selection/download controls are missing in `control_plane_web`, add them there (not in the shell).
-- Delete now-unused shell-only modules if fully orphaned (`depsClient.ts`, deps UI, the shell's RuntimeSelect/voice-selector usage) — verified before deletion.
+- Remove the "control" and "deps" tabs from `ChatApp`; chat window becomes Chat-only (plus the sessions/history surface from 1f). Dock keeps **Chat** + **Sessions** + **Control Plane**.
+- Model/provider/TTS-voice/STT-model selection + downloads live in `control_plane_web` (its `VoiceRuntimeView`/Providers/Agents-Personas, backed by existing `/control` endpoints). Add any missing selection/download controls there, not in the shell.
+- Delete orphaned shell-only modules after verification (`depsClient.ts`, deps UI, shell `RuntimeSelect`, in-shell voice selector if unused).
 
 ### Phase 2 testing
-- Unit: `open_control_plane` command (window create/show idempotence) where testable; token-injection accessor.
-- Manual smoke: dock "Control Plane" opens the full original control plane; it authenticates and renders live data; selected model/provider, TTS voice id, STT model are visible; model/voice download actions are present and callable.
+- Unit: `open_control_plane` idempotence (create/show); token-injection accessor.
+- Manual smoke: dock "Control Plane" opens the full original control plane authenticated with live data; selected model/provider, TTS voice id, STT model visible; model/voice download actions present and callable.
 
 ---
 
 ## Phase 3 — Build, Installer & 24/7 Voice Windows Service
 
 ### 3a. Wake-word worker is a required, model-complete build artifact
-- The voice worker (`services/voice_worker`) and its deps already exist in `pyproject.toml`. Harden the build so:
-  - The wake-word KWS model + STT + TTS model assets required for "Hey Marvex" are bundled into the installer under the safe voice asset root.
-  - The build **fails** if those required model assets are absent (no silent optional skip).
-- `build-installer.ps1` / `.bat`: add a model-asset acquisition + verification step; include assets in Tauri `bundle.resources`.
+- Harden the build so the wake-word KWS + STT + TTS model assets required for "Hey Marvex" are bundled into the installer under the safe voice asset root, and the build **fails** if they are absent (no silent optional skip).
+- `build-installer.ps1` / `.bat`: add model-asset acquisition + verification; include assets in Tauri `bundle.resources`.
 
 ### 3b. Marvex backend Windows Service (full backend, always warm)
-- Introduce a service entrypoint that supervises the backend stack 24/7: Core (`8765`), Control Plane (`8766`), and intent/tool/provider/voice workers — reusing the existing supervisor logic (`apps/shell/src-tauri/src/supervisor.rs`) extracted/shared as appropriate, or a Python/Rust service host.
-  - Always-on voice worker with wake word enabled → Core already running → instant "Hey Marvex" dispatch (no cold start).
-  - Auto-restart on crash; starts at boot (before login).
-  - Generates the local bearer token and writes it to a protected local file readable by the shell.
-- **Shell becomes a thin client:** the shell's setup stops spawning its own Core/workers; instead it reads the shared token and connects to the already-running service. If the service is not present (dev / non-installed), the shell falls back to its current self-supervising behavior so `npm run tauri dev` still works.
-- NSIS installer (`installMode: perMachine`, already set) registers and starts the service; uninstall removes it.
+- Introduce a service host that supervises the backend stack 24/7 (Core 8765, Control Plane 8766, intent/tool/provider/voice workers), reusing/extracting the existing supervisor logic (`supervisor.rs`). Always-on voice worker + warm Core → instant "Hey Marvex". Auto-restart on crash; starts at boot before login. Generates the local bearer token and writes it to a protected local file readable by the shell.
+- **Shell becomes a thin client:** stops spawning its own Core/workers; reads the shared token and connects to the running service. If no service is present (dev / `npm run tauri dev`), it falls back to current self-supervision so dev still works.
+- NSIS installer (`installMode: perMachine`, already set) registers + starts the service; uninstall removes it.
 
 ### 3c. Governance documentation
-- Update `PROJECT_STATUS.md` and `docs/CONTRACT_APPROVALS.md`:
-  - Wake word is now enabled-by-default and runs as an always-on Windows service.
-  - Document the backend-service architecture and the thin-client shell.
-  - Preserve and restate the no-raw-audio/transcript/generated-audio-persistence and safe-projection guarantees.
+- Update `PROJECT_STATUS.md` and `docs/CONTRACT_APPROVALS.md`: wake word enabled-by-default + always-on Windows service; backend-service + thin-client architecture; restate no-raw-audio/transcript/generated-audio persistence + safe-projection guarantees.
 
 ### Phase 3 testing
-- Build smoke: `build-installer.ps1` fails when wake-word models are missing; succeeds with them bundled.
-- Service smoke (manual, host-dependent): install → service runs at boot → "Hey Marvex" detected with shell closed → shell launches and connects to the running service via shared token. WebView2/audio/installer smokes remain manual per existing project practice.
+- Build smoke: build fails when wake-word models missing; succeeds when bundled.
+- Service smoke (manual, host-dependent): install → service runs at boot → "Hey Marvex" detected with shell closed → shell launches and connects via shared token. WebView2/audio/installer smokes remain manual.
 
 ---
 
@@ -120,18 +133,23 @@ In `apps/shell/src/components/waveform-shader/MarvexWaveform.tsx`:
                 │  Voice worker: always-on wake word "Hey Marvex" → instant dispatch to warm Core           │
                 │  Mints local bearer token → protected token file                                          │
                 └───────────────▲───────────────────────────────────────────────▲──────────────────────────┘
-                                │ reads token, loopback HTTP                       │ loopback HTTP + token
+                                │ reads token, async loopback HTTP                 │ async loopback HTTP + token
                 ┌───────────────┴──────────────┐                  ┌──────────────┴──────────────┐
                 │  Shell (thin client, Tauri)   │                  │  Control Plane window         │
-                │  - main: Chat-only            │                  │  (control_plane_web, 26 views)│
-                │  - overlay: island (top-right,│                  │  Providers / Voice Runtime /  │
-                │    live state, hover waveform)│                  │  Agents-Personas / downloads  │
-                │  - spotlight: event cards from│                  └───────────────────────────────┘
-                │    island (no window/mode)    │
+                │  - main: Chat + Sessions      │                  │  (control_plane_web, 26 views)│
+                │  - overlay: PRESENCE island   │                  │  Providers / Voice Runtime /  │
+                │    (top-right, live idle state,│                 │  Agents-Personas / downloads  │
+                │     hover waveform)            │                  └───────────────────────────────┘
+                │  - spotlight: event cards      │
+                │    spawned from the island     │
+                │  Async non-blocking bridge     │
+                │  Durable session_ref           │
                 └───────────────────────────────┘
 ```
 
 ## Risks / Open Items
-- The thin-client refactor must preserve a working `npm run tauri dev` (no installed service) via fallback to self-supervision.
-- Token sharing between a perMachine service and a per-user shell needs a file location both can access with least privilege; define exact path during implementation.
-- Wake-word model licensing/size for bundling into the installer must be confirmed during Phase 3.
+- Adopting `reqwest` adds a Rust dependency to the shell; confirm it builds with the existing Tauri toolchain (it shares tokio).
+- Honoring provider/model selection in the chat turn depends on Phase 2 selection + the existing `/control` provider endpoints; Phase 1 wires "use configured default / report when none" and full selection lands with Phase 2.
+- Thin-client refactor must preserve a working `npm run tauri dev` via self-supervision fallback.
+- Shared-token file location between a perMachine service and per-user shell needs a least-privilege path (defined in implementation).
+- Wake-word model licensing/size for installer bundling confirmed in Phase 3.
