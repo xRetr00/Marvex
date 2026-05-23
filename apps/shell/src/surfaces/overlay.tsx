@@ -8,7 +8,8 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { setOverlayClickThrough } from "../lib/shellCommands";
+import { setOverlayClickThrough, showChat } from "../lib/shellCommands";
+import { persistMode } from "../lib/modeStore";
 import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
 import { AnimatePresence, motion } from "framer-motion";
@@ -94,9 +95,19 @@ export function OverlaySurface() {
   const expanded = isActive || hovered;
   const view = expanded ? "ring" : "idle";
 
+  const openChat = () => {
+    persistMode("chat");
+    void showChat().catch(() => undefined);
+  };
+
   return (
     <div className="overlay-shell">
-      <div ref={islandRef} style={{ width: "fit-content" }}>
+      <div
+        ref={islandRef}
+        style={{ width: "fit-content", cursor: "pointer" }}
+        onClick={openChat}
+        title="Open Marvex chat"
+      >
         <DynamicIsland
           view={view}
           idleContent={

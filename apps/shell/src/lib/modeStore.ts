@@ -1,15 +1,18 @@
 /**
- * Mode store: persists user's chosen mode (chat | overlay) to localStorage.
- * Only one mode is active at a time.
+ * Two top-level modes:
+ *   - "chat":    the full chat window (the chat / test layer).
+ *   - "overlay": the dynamic-island presence (Marvex like Siri in the OS).
+ *                Spotlight is NOT a mode — it spawns on demand from the island
+ *                and lives inside the overlay mode.
  */
 
 export type AppMode = "chat" | "overlay";
 
-const STORAGE_KEY = "marvex_app_mode";
+const MODE_KEY = "marvex_app_mode";
 
 export function getPersistedMode(): AppMode {
   try {
-    const val = localStorage.getItem(STORAGE_KEY);
+    const val = localStorage.getItem(MODE_KEY);
     if (val === "chat" || val === "overlay") return val;
   } catch {
     // localStorage unavailable
@@ -19,7 +22,7 @@ export function getPersistedMode(): AppMode {
 
 export function persistMode(mode: AppMode): void {
   try {
-    localStorage.setItem(STORAGE_KEY, mode);
+    localStorage.setItem(MODE_KEY, mode);
   } catch {
     // ignore
   }

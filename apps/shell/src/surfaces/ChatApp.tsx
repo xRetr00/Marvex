@@ -1,13 +1,13 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageSquare, Settings, Package, Mic, MicOff, Radio, Sparkles, RefreshCw, AlertTriangle, Activity } from "lucide-react";
+import { useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
+import { MessageSquare, SlidersHorizontal, Package, Mic, MicOff, Sparkles, RefreshCw, AlertTriangle, Activity, Bot, UserRound, Radio } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { finalTextFromTurnResult, stagesFromTurnResult, uiDirectivesFromTurnResult, type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showSpotlight, submitChatTurn, getSupervisorStatus, getSetupStatus, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showSpotlight, showOverlay, submitChatTurn, getSupervisorStatus, getSetupStatus, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
-import { fetchPendingApprovals } from "@/lib/controlPlaneClient";
-import type { AppMode } from "@/lib/modeStore";
+import { fetchAgentCatalog, fetchPendingApprovals, fetchPersonaCatalog, selectActiveAgent, selectActivePersona, type AgentCatalog, type AgentProfile, type PersonaCatalog, type PersonaProfile } from "@/lib/controlPlaneClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -33,17 +33,12 @@ import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui
 import { Button } from "@/components/ui/button";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
-type TabId = "chat" | "settings" | "deps";
+type TabId = "chat" | "control" | "deps";
 type DepsState = "loading" | "ready" | "error";
-
-interface ChatAppProps {
-  mode: AppMode;
-  onModeChange: (mode: AppMode) => void;
-}
 
 const TAB_TITLES: Record<TabId, string> = {
   chat: "Assistant Chat",
-  settings: "Settings",
+  control: "Control Plane",
   deps: "Dependencies",
 };
 
@@ -57,6 +52,7 @@ const FEATURE_LABELS: Record<string, string> = {
 };
 
 const VOICES = [
+  { id: "af_heart", name: "Marvex Female", gender: "female" as const, accent: "american", description: "Default Marvex TTS voice" },
   { id: "kokoro-default", name: "Kokoro", gender: "female" as const, accent: "american", description: "Natural neural TTS" },
   { id: "piper-en", name: "Piper", gender: "male" as const, accent: "british", description: "Fast local TTS" },
   { id: "kokoro-ja", name: "Kokoro (JP)", gender: "female" as const, accent: "japanese", description: "Japanese neural TTS" },
@@ -69,6 +65,50 @@ interface ControlPlaneState {
   ready: boolean;
 }
 
+type RuntimeCatalogState = "loading" | "ready" | "error";
+
+function RuntimeSelect({
+  id,
+  label,
+  value,
+  disabled,
+  children,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  value: string;
+  disabled?: boolean;
+  children: ReactNode;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label htmlFor={id} style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 0 }}>
+      <span style={{ fontSize: 12, fontWeight: 600, color: "var(--muted-foreground)" }}>{label}</span>
+      <select
+        id={id}
+        value={value}
+        disabled={disabled}
+        onChange={(event) => onChange(event.currentTarget.value)}
+        style={{
+          height: 40,
+          width: "100%",
+          borderRadius: 8,
+          border: "1px solid var(--border)",
+          background: "var(--background)",
+          color: "var(--foreground)",
+          padding: "0 10px",
+          fontSize: 13,
+          outline: "none",
+          opacity: disabled ? 0.55 : 1,
+        }}
+      >
+        {children}
+      </select>
+    </label>
+  );
+}
+
 function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listening" | "talking" | null {
   if (status === "listening") return "listening";
   if (status === "talking") return "talking";
@@ -76,7 +116,7 @@ function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listen
   return null;
 }
 
-export function ChatApp({ mode, onModeChange }: ChatAppProps) {
+export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
   const [messages, setMessages] = useState<ChatMessage[]>([
@@ -96,7 +136,13 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
   const [depProgress, setDepProgress] = useState<Record<string, number>>({});
 
   // Settings / control plane
-  const [selectedVoice, setSelectedVoice] = useState<string>("kokoro-default");
+  const [selectedVoice, setSelectedVoice] = useState<string>("af_heart");
+  const [agentCatalog, setAgentCatalog] = useState<AgentCatalog | null>(null);
+  const [personaCatalog, setPersonaCatalog] = useState<PersonaCatalog | null>(null);
+  const [selectedAgentId, setSelectedAgentId] = useState<string>("agent.main.marvex");
+  const [selectedPersonaId, setSelectedPersonaId] = useState<string>("persona.marvex.female");
+  const [runtimeCatalogState, setRuntimeCatalogState] = useState<RuntimeCatalogState>("loading");
+  const [runtimeSelectionError, setRuntimeSelectionError] = useState<string | null>(null);
   const [controlPlane, setControlPlane] = useState<ControlPlaneState | null>(null);
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
@@ -128,17 +174,30 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
     return () => { cancelled = true; clearTimeout(timer); };
   }, [depsReload]);
 
-  // Control plane snapshot — refresh while the Settings tab is open.
+  // Control plane snapshot — refresh while the Control Plane tab is open.
   useEffect(() => {
-    if (activeTab !== "settings") return;
+    if (activeTab !== "control") return;
     let cancelled = false;
     const load = async () => {
-      const [setup, services, approvals] = await Promise.allSettled([
+      const [setup, services, approvals, agents, personas] = await Promise.allSettled([
         getSetupStatus(),
         getSupervisorStatus(),
         fetchPendingApprovals(),
+        fetchAgentCatalog(),
+        fetchPersonaCatalog(),
       ]);
       if (cancelled) return;
+      if (agents.status === "fulfilled" && personas.status === "fulfilled") {
+        setRuntimeCatalogState("ready");
+        setAgentCatalog(agents.value);
+        setPersonaCatalog(personas.value);
+        setSelectedAgentId((current) => agents.value.agents.some((agent) => agent.agent_id === current) ? current : agents.value.active_agent_id);
+        setSelectedPersonaId((current) => personas.value.personas.some((persona) => persona.persona_id === current) ? current : personas.value.active_persona_id);
+        const activePersona = personas.value.personas.find((persona) => persona.persona_id === personas.value.active_persona_id);
+        if (activePersona?.voice_id) setSelectedVoice((current) => current || activePersona.voice_id);
+      } else {
+        setRuntimeCatalogState("error");
+      }
       setControlPlane({
         runtimePhase: setup.status === "fulfilled" ? setup.value.runtime_phase : "unknown",
         ready: setup.status === "fulfilled" ? setup.value.ready : false,
@@ -163,14 +222,44 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
     setPending(true);
     setMessages((prev) => [...prev, { role: "user", text }]);
     try {
-      const result = await submitChatTurn(text);
+      const result = await submitChatTurn(text, {
+        agent_profile_id: selectedAgentId,
+        persona_profile_id: selectedPersonaId,
+        selected_voice_id: selectedVoice,
+      });
       setMessages((prev) => [...prev, { role: "assistant", text: finalTextFromTurnResult(result), stages: stagesFromTurnResult(result), directives: uiDirectivesFromTurnResult(result) }]);
     } catch (error) {
       setMessages((prev) => [...prev, { role: "assistant", text: error instanceof Error ? error.message : "Request failed." }]);
     } finally {
       setPending(false);
     }
-  }, [pending]);
+  }, [pending, selectedAgentId, selectedPersonaId, selectedVoice]);
+
+  const handleAgentChange = useCallback(async (agentId: string) => {
+    setRuntimeSelectionError(null);
+    setSelectedAgentId(agentId);
+    try {
+      const catalog = await selectActiveAgent(agentId);
+      setAgentCatalog(catalog);
+      setSelectedAgentId(catalog.active_agent_id);
+    } catch (error) {
+      setRuntimeSelectionError(error instanceof Error ? error.message : "Agent selection failed.");
+    }
+  }, []);
+
+  const handlePersonaChange = useCallback(async (personaId: string) => {
+    setRuntimeSelectionError(null);
+    setSelectedPersonaId(personaId);
+    try {
+      const catalog = await selectActivePersona(personaId);
+      setPersonaCatalog(catalog);
+      setSelectedPersonaId(catalog.active_persona_id);
+      const activePersona = catalog.personas.find((persona) => persona.persona_id === catalog.active_persona_id);
+      if (activePersona?.voice_id) setSelectedVoice(activePersona.voice_id);
+    } catch (error) {
+      setRuntimeSelectionError(error instanceof Error ? error.message : "Persona selection failed.");
+    }
+  }, []);
 
   const handleInstallDep = useCallback(async (id: string) => {
     setInstallingDep(id);
@@ -197,11 +286,13 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
 
   const navItems = useMemo(() => [
     { id: "chat", icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
-    { id: "settings", icon: <Settings />, label: "Settings", onClick: () => setActiveTab("settings") },
+    { id: "control", icon: <SlidersHorizontal />, label: "Control Plane", onClick: () => setActiveTab("control") },
     { id: "deps", icon: <Package />, label: "Deps", onClick: () => setActiveTab("deps") },
   ], []);
   const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
   const orbState = agentStateFromStatus(state.status);
+  const activeAgent: AgentProfile | undefined = agentCatalog?.agents.find((agent) => agent.agent_id === selectedAgentId);
+  const activePersona: PersonaProfile | undefined = personaCatalog?.personas.find((persona) => persona.persona_id === selectedPersonaId);
 
   return (
     <div className="flex flex-col h-screen min-h-0 relative z-[1]" style={{ background: "transparent", color: "var(--foreground)" }}>
@@ -309,8 +400,8 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
             </motion.div>
           )}
 
-          {activeTab === "settings" && (
-            <motion.div key="settings" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflow: "auto", padding: 20 }}>
+          {activeTab === "control" && (
+            <motion.div key="control" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} style={{ flex: 1, overflow: "auto", padding: 20 }}>
               <div style={{ maxWidth: 640, display: "flex", flexDirection: "column", gap: 18 }}>
                 {/* Control Plane */}
                 <section style={{ background: "var(--card)", borderRadius: 14, padding: 18, border: "1px solid var(--border)" }}>
@@ -351,6 +442,68 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
                       <Loader variant="circular" size="sm" /> Reading control plane...
                     </div>
                   )}
+                </section>
+
+                {/* Agent and persona runtime */}
+                <section style={{ background: "var(--card)", borderRadius: 14, padding: 18, border: "1px solid var(--border)" }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                    <Bot size={16} style={{ color: "var(--primary)" }} />
+                    <ScrambleText as="h2" text="Agent Runtime" className="text-[15px] font-semibold" />
+                  </div>
+                  {runtimeCatalogState === "error" && (
+                    <div style={{ padding: "8px 12px", background: "color-mix(in srgb, var(--destructive) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--destructive) 35%, transparent)", borderRadius: 8, marginBottom: 12, color: "var(--destructive)", fontSize: 12 }}>
+                      Couldn't read agent/persona catalogs from the control plane.
+                    </div>
+                  )}
+                  {runtimeSelectionError && (
+                    <div style={{ padding: "8px 12px", background: "color-mix(in srgb, var(--destructive) 14%, transparent)", border: "1px solid color-mix(in srgb, var(--destructive) 35%, transparent)", borderRadius: 8, marginBottom: 12, color: "var(--destructive)", fontSize: 12 }}>
+                      {runtimeSelectionError}
+                    </div>
+                  )}
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 12 }}>
+                    <RuntimeSelect
+                      id="marvex-agent-select"
+                      label="Agent"
+                      value={selectedAgentId}
+                      disabled={runtimeCatalogState !== "ready" || !agentCatalog}
+                      onChange={(value) => void handleAgentChange(value)}
+                    >
+                      {(agentCatalog?.agents.filter((agent) => agent.direct_selectable) ?? []).map((agent) => (
+                        <option key={agent.agent_id} value={agent.agent_id}>{agent.display_name}</option>
+                      ))}
+                    </RuntimeSelect>
+                    <RuntimeSelect
+                      id="marvex-persona-select"
+                      label="Persona"
+                      value={selectedPersonaId}
+                      disabled={runtimeCatalogState !== "ready" || !personaCatalog}
+                      onChange={(value) => void handlePersonaChange(value)}
+                    >
+                      {(personaCatalog?.personas ?? []).map((persona) => (
+                        <option key={persona.persona_id} value={persona.persona_id}>{persona.display_name}</option>
+                      ))}
+                    </RuntimeSelect>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 8, marginTop: 12 }}>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, background: "var(--secondary)", border: "1px solid var(--border)" }}>
+                      <Bot size={15} style={{ marginTop: 2, color: "var(--muted-foreground)" }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{activeAgent?.display_name ?? selectedAgentId}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+                          {activeAgent ? `${activeAgent.role} - ${activeAgent.can_spawn_subagents ? `can spawn ${activeAgent.max_subagents_per_turn}` : "direct only"}` : "Catalog loading"}
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display: "flex", gap: 8, alignItems: "flex-start", padding: "10px 12px", borderRadius: 10, background: "var(--secondary)", border: "1px solid var(--border)" }}>
+                      <UserRound size={15} style={{ marginTop: 2, color: "var(--muted-foreground)" }} />
+                      <div style={{ minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600 }}>{activePersona?.display_name ?? selectedPersonaId}</div>
+                        <div style={{ fontSize: 11, color: "var(--muted-foreground)", lineHeight: 1.5 }}>
+                          {activePersona ? `${activePersona.voice_gender_presentation} voice - ${activePersona.voice_id}` : "Catalog loading"}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
                 </section>
 
                 {/* Voice selector */}
@@ -493,9 +646,9 @@ export function ChatApp({ mode, onModeChange }: ChatAppProps) {
           <Sparkles size={18} />
         </button>
         <button
-          onClick={() => onModeChange(mode === "chat" ? "overlay" : "chat")}
-          title={mode === "chat" ? "Switch to Overlay" : "Switch to Chat"}
-          style={{ width: 44, height: 44, borderRadius: 12, background: mode === "overlay" ? "var(--primary)" : "var(--secondary)", color: mode === "overlay" ? "var(--primary-foreground)" : "var(--foreground)", border: "1px solid var(--border)", display: "grid", placeItems: "center", cursor: "pointer" }}
+          onClick={() => { persistMode("overlay"); void showOverlay(); }}
+          title="Switch to Overlay (Marvex presence)"
+          style={{ width: 44, height: 44, borderRadius: 12, background: "var(--secondary)", border: "1px solid var(--border)", color: "var(--foreground)", display: "grid", placeItems: "center", cursor: "pointer" }}
         >
           <Radio size={18} />
         </button>

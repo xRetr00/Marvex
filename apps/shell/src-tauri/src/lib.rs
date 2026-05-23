@@ -108,7 +108,7 @@ fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-fn submit_chat_turn(text: String, state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
+fn submit_chat_turn(text: String, metadata: Option<Value>, state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("chat text must be non-empty".to_string());
@@ -130,7 +130,7 @@ fn submit_chat_turn(text: String, state: tauri::State<Mutex<ShellState>>) -> Res
             "user_visible_input": text,
             "assistant_mode": "default",
             "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
-            "metadata": {"source": "marvex_shell"}
+            "metadata": safe_shell_turn_metadata(metadata)
         },
         "model": "fake-model",
         "instructions": null,
@@ -139,6 +139,22 @@ fn submit_chat_turn(text: String, state: tauri::State<Mutex<ShellState>>) -> Res
     });
     let response = http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body)?;
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
+fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
+    let mut safe = json!({"source": "marvex_shell"});
+    let Some(Value::Object(input)) = metadata else {
+        return safe;
+    };
+    for key in ["agent_profile_id", "persona_profile_id", "selected_voice_id"] {
+        if let Some(Value::String(value)) = input.get(key) {
+            let trimmed = value.trim();
+            if !trimmed.is_empty() {
+                safe[key] = Value::String(trimmed.to_string());
+            }
+        }
+    }
+    safe
 }
 
 #[tauri::command]
@@ -171,6 +187,13 @@ fn show_chat(app: AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|err| err.to_string())
 }
 
+/// Enter the overlay/presence mode: hide the chat window, show the dynamic
+/// island. Spotlight remains hidden until invoked on demand from the island.
+#[tauri::command]
+fn show_overlay(app: AppHandle) -> Result<(), String> {
+    apply_ui_mode(&app, UiMode::Overlay)
+}
+
 /// Anchor the spotlight to the top-right corner of the active monitor so it
 /// reads like a notification/Siri panel sliding in from the island side.
 fn position_spotlight_top_right(window: &tauri::WebviewWindow) {
@@ -183,50 +206,51 @@ fn position_spotlight_top_right(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Spotlight is on-demand (not a mode): it spawns over the current mode —
+/// typically from the island while in overlay mode — without changing it.
 #[tauri::command]
 fn show_spotlight(app: AppHandle) -> Result<(), String> {
-    apply_ui_mode(&app, UiMode::Spotlight)?;
     let window = app.get_webview_window("spotlight").ok_or_else(|| "spotlight window unavailable".to_string())?;
+    window.show().map_err(|err| err.to_string())?;
     position_spotlight_top_right(&window);
     window.set_focus().map_err(|err| err.to_string())
 }
 
 #[tauri::command]
 fn hide_spotlight(app: AppHandle) -> Result<(), String> {
-    apply_ui_mode(&app, UiMode::Chat)
+    if let Some(window) = app.get_webview_window("spotlight") {
+        window.hide().map_err(|err| err.to_string())?;
+    }
+    Ok(())
 }
 
 #[derive(Copy, Clone)]
 enum UiMode {
     Chat,
-    Spotlight,
+    Overlay,
 }
 
+/// Apply one of the two top-level modes. Chat shows the main window and hides
+/// the island; Overlay shows the island (presence) and hides the chat window.
+/// Spotlight is left untouched here — it is managed on demand.
 fn apply_ui_mode(app: &AppHandle, mode: UiMode) -> Result<(), String> {
     let main = app.get_webview_window("main");
     let overlay = app.get_webview_window("overlay");
-    let spotlight = app.get_webview_window("spotlight");
 
     match mode {
         UiMode::Chat => {
-            if let Some(window) = spotlight {
-                window.hide().map_err(|err| err.to_string())?;
-            }
             if let Some(window) = overlay {
-                window.show().map_err(|err| err.to_string())?;
+                window.hide().map_err(|err| err.to_string())?;
             }
             if let Some(window) = main {
                 window.show().map_err(|err| err.to_string())?;
             }
         }
-        UiMode::Spotlight => {
+        UiMode::Overlay => {
             if let Some(window) = main {
                 window.hide().map_err(|err| err.to_string())?;
             }
             if let Some(window) = overlay {
-                window.hide().map_err(|err| err.to_string())?;
-            }
-            if let Some(window) = spotlight {
                 window.show().map_err(|err| err.to_string())?;
             }
         }
@@ -263,6 +287,7 @@ pub fn run() {
             control_request,
             set_overlay_click_through,
             show_chat,
+            show_overlay,
             show_spotlight,
             hide_spotlight
         ])
@@ -320,8 +345,8 @@ pub fn run() {
 
 fn build_tray(app: &AppHandle) -> tauri::Result<()> {
     let menu = MenuBuilder::new(app)
-        .text("open_chat", "Open chat")
-        .text("open_spotlight", "Settings / Control Plane")
+        .text("open_chat", "Open Marvex")
+        .text("open_spotlight", "Spotlight")
         .separator()
         .text("pause_voice", "Pause voice")
         .text("resume_voice", "Resume voice")
