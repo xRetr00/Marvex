@@ -1,3 +1,10 @@
+"""Tool worker JSONL contract tests.
+
+file size justification: this suite exercises the full tool-worker capability
+surface (builtins, file read/write/mkdir/delete, MCP, sandboxed shell, approval
+seams) end-to-end over the JSONL boundary; splitting it would fragment the
+single-process contract coverage.
+"""
 from __future__ import annotations
 
 import json
@@ -255,7 +262,8 @@ def test_tool_worker_file_write_requires_approval_then_writes_inside_sandbox(tmp
     assert "must-not-leak" not in serialized
 
 
-def test_tool_worker_shell_command_seam_is_approval_gated_and_blocked_by_default() -> None:
+def test_tool_worker_shell_command_is_approval_gated_and_sandboxed() -> None:
+    # 1) Without approval the seam still requires human approval (never auto-runs).
     paused = run_worker_jsonl(
         [
             {
@@ -266,11 +274,12 @@ def test_tool_worker_shell_command_seam_is_approval_gated_and_blocked_by_default
                 "action": "run command",
                 "capability": "shell_command_execution",
                 "resource_type": "shell",
-                "arguments": {"command": "echo must-not-leak"},
+                "arguments": {"command": "echo marvex_ok"},
             }
         ]
     )[0]
-    approved = run_worker_jsonl(
+    # 2) Approved + safe command actually executes via the policy sandbox.
+    approved_safe = run_worker_jsonl(
         [
             {
                 "command": "execute",
@@ -281,22 +290,40 @@ def test_tool_worker_shell_command_seam_is_approval_gated_and_blocked_by_default
                 "capability": "shell_command_execution",
                 "resource_type": "shell",
                 "arguments": {
-                    "command": "echo must-not-leak",
+                    "command": "echo marvex_ok",
                     "approval_request_id": "approval-turn-shell-approved",
                     "approval_decision": "approve",
                 },
             }
         ]
     )[0]
-    serialized = json.dumps([paused, approved])
+    # 3) Approved + destructive command is still denied by the policy denylist.
+    denied = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-shell-destructive",
+                "turn_id": "turn-shell-destructive",
+                "capability_id": "shell.command",
+                "action": "run command",
+                "capability": "shell_command_execution",
+                "resource_type": "shell",
+                "arguments": {
+                    "command": "rm -rf /",
+                    "approval_request_id": "approval-turn-shell-destructive",
+                    "approval_decision": "approve",
+                },
+            }
+        ]
+    )[0]
 
-    assert paused["ok"] is False
     assert paused["result"]["status"] == "requires_human_approval"
-    assert approved["ok"] is False
-    assert approved["blocked"] is True
-    assert approved["result"]["status"] == "denied"
-    assert approved["result"]["safe_result"]["reason_code"] == "shell.execution_blocked_by_default"
-    assert "must-not-leak" not in serialized
+    assert approved_safe["result"]["status"] == "succeeded"
+    assert approved_safe["result"]["safe_result"]["exit_code"] == 0
+    assert "marvex_ok" in approved_safe["result"]["safe_result"]["stdout_preview"]
+    assert approved_safe["result"]["safe_result"]["raw_command_persisted"] is False
+    assert denied["result"]["status"] == "denied"
+    assert denied["result"]["safe_result"]["reason_code"] == "sandbox.command_denied"
 
 
 def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_path: Path) -> None:

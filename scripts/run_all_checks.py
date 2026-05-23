@@ -25,6 +25,7 @@ CHECKS = [
     "check_mcp_adapter_boundaries.py",
     "check_skills_runtime_boundaries.py",
     "check_full_tooling_boundaries.py",
+    "check_sandbox_boundaries.py",
     "check_agent_execution_loop_boundaries.py",
     "check_control_plane_boundaries.py",
     "check_cognition_runtime_boundaries.py",

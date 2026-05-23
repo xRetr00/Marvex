@@ -44,6 +44,7 @@ from packages.capability_runtime.results import CapabilityExecutionSummary, Capa
 from packages.contracts import HealthCheck, HealthStatus, VersionInfo
 from packages.adapters.capabilities.builtins import BuiltinToolCatalog
 from packages.adapters.capabilities.files import FileCapabilityError, ReadOnlyFileExecutor, SandboxedFileWriteExecutor
+from packages.sandbox_runtime import SandboxPolicy, ShellExecutor, WriteFileExecutor
 from packages.adapters.capabilities.mcp import (
     McpAllowlistPolicy,
     McpSdkAdapter,
@@ -79,6 +80,11 @@ class ToolWorkerController:
         self._builtins = BuiltinToolCatalog.default()
         self._files = ReadOnlyFileExecutor()
         self._file_writer = SandboxedFileWriteExecutor()
+        # Policy sandbox (real local FS, approval-gated — never a VM) for the
+        # write/shell tools the agent can use to act on the user's machine.
+        self._sandbox_policy = SandboxPolicy.user_profile_default()
+        self._sandbox_files = WriteFileExecutor(policy=self._sandbox_policy)
+        self._sandbox_shell = ShellExecutor(policy=self._sandbox_policy)
 
     def start(self, *, trace_id: str = "tool-worker-start") -> ToolWorkerCommandResult:
         self._state = ToolWorkerState.RUNNING
@@ -327,39 +333,25 @@ class ToolWorkerController:
                 denied_count=0,
                 executed_fake_count=0,
             )
-        elif capability_id == "shell.command":
-            result = CapabilityResultEnvelope(
-                schema_version=request.schema_version,
-                result_id=f"{request.request_id}:result",
-                trace_id=request.trace_id,
-                turn_id=request.turn_id,
-                capability_ref=request.proposal.capability_ref,
-                status="denied",
-                safe_result={"reason_code": "shell.execution_blocked_by_default"},
-                raw_input_persisted=False,
-                raw_output_persisted=False,
-            )
+        elif capability_id in {"file.mkdir", "file.delete"}:
+            result = self._sandbox_files.execute(request)
             summary = CapabilityExecutionSummary.from_result(
                 result,
                 readiness_count=1,
-                eligible_count=0,
-                denied_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
                 executed_fake_count=0,
             )
-            return self._result(
-                command="execute",
-                ok=False,
-                trace_id=trace_id,
-                blocked=True,
-                result=result.model_copy(update={"result_id": f"{turn_id}:capability:result"}),
-                projection=SafeCapabilityProjection.from_summary(summary),
-                policy_audit=_policy_projection(governance, audit),
-                error=ToolWorkerError(
-                    trace_id=trace_id,
-                    turn_id=turn_id,
-                    code="shell.execution_blocked_by_default",
-                    safe_message="Shell execution remains blocked because no robust sandbox is configured.",
-                ),
+        elif capability_id in {"shell.command", "shell.run"}:
+            # Approval is already enforced by CapabilityExecutionRequest; the
+            # policy sandbox enforces the command denylist + timeout + caps.
+            result = self._sandbox_shell.execute(request)
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
+                executed_fake_count=0,
             )
         elif capability_id == "browser_use.task":
             result = _browser_use_result(request)

@@ -22,6 +22,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.adapters.capabilities.files",
     "packages.adapters.capabilities.mcp",
     "packages.capability_runtime",
+    "packages.sandbox_runtime",
     "packages.contracts",
     "packages.desktop_agent_runtime.windows_uia",
     "pydantic",
