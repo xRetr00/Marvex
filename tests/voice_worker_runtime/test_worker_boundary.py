@@ -20,7 +20,9 @@ def test_worker_config_defaults_are_local_visible_and_not_auto_started() -> None
 
     assert config.local_only is True
     assert config.hidden_auto_start_allowed is False
-    assert config.wakeword.enabled is False
+    # Marvex ships always-on: the wake word is enabled by default (detection
+    # still requires the installed KWS asset; no hidden auto-start of capture).
+    assert config.wakeword.enabled is True
     assert config.wakeword.phrase == "Hey Marvex"
     assert config.privacy.raw_audio_persistence_allowed is False
     assert config.privacy.raw_transcript_persistence_allowed is False

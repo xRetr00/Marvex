@@ -46,7 +46,11 @@ class VoiceWorkerPrivacyConfig(VoiceRuntimeModel):
 
 
 class VoiceWorkerWakewordConfig(VoiceRuntimeModel):
-    enabled: bool = False
+    # Marvex ships as an always-on assistant: the "Hey Marvex" wake word is
+    # enabled by default and supervised 24/7 by the backend service. Detection
+    # still requires the installed sherpa-onnx KWS asset; with no asset the
+    # worker reports not-ready rather than listening.
+    enabled: bool = True
     phrase: str = "Hey Marvex"
     backend_id: str = "sherpa-onnx-kws"
     threshold: float = Field(default=0.72, ge=0, le=1)

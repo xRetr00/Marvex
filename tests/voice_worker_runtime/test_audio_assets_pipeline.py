@@ -277,7 +277,8 @@ def test_worker_wakeword_test_requires_enabled_policy_and_installed_asset(tmp_pa
         return WakeWordDetectionResult.detected(phrase=phrase, confidence=0.95, backend_id=asset.backend_id)
 
     backend = VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=_fake_kws_runner)
-    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=backend)
+    _disabled_cfg = VoiceWorkerConfig.default().model_copy(update={"wakeword": VoiceWorkerConfig.default().wakeword.model_copy(update={"enabled": False})})
+    controller = VoiceWorkerController(config=_disabled_cfg, audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=backend)
 
     disabled = controller.handle(VoiceWorkerCommand(command="test_wakeword", command_id="cmd-wake-disabled"))
     controller.handle(VoiceWorkerCommand(command="reload_config", command_id="cmd-reload", payload={"wakeword_enabled": True}))
@@ -394,7 +395,9 @@ def test_worker_status_projection_includes_health_events_errors_and_model_status
     assert projection["health"]["local_only"] is True
     assert projection["health"]["hidden_recording_allowed"] is False
     assert projection["recent_events"][0]["event_type"] == "mic_started"
-    assert projection["error"]["reason_code"] == "wakeword_not_enabled"
+    # Wakeword is enabled by default now, so a test with no installed KWS asset
+    # surfaces the missing-asset blocker rather than the not-enabled one.
+    assert projection["error"]["reason_code"] == "wakeword_model_not_installed"
     assert projection["model_assets"]["required_blocked_count"] >= 5
     assert projection["stt_backend_status"]["active_backend_id"] == "moonshine-v2"
     assert projection["stt_backend_status"]["status"] == "not_ready"

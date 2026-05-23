@@ -41,10 +41,17 @@ def _enabled_wakeword_config() -> VoiceWorkerConfig:
     )
 
 
+def _disabled_wakeword_config() -> VoiceWorkerConfig:
+    default = VoiceWorkerConfig.default()
+    return default.model_copy(
+        update={"wakeword": default.wakeword.model_copy(update={"enabled": False})}
+    )
+
+
 def test_wakeword_supervisor_requires_enabled_policy_and_installed_asset(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     supervisor = WakewordWorkerSupervisor(
-        config=VoiceWorkerConfig.default(),
+        config=_disabled_wakeword_config(),
         asset_manager=manager,
         backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager),
         audio=FakeLocalAudioAdapter(),
@@ -306,7 +313,7 @@ def test_controller_stop_command_clean_shuts_down_supervisor(tmp_path: Path) -> 
 def test_controller_reload_config_updates_supervisor_view_of_wakeword(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     controller = VoiceWorkerController(
-        config=VoiceWorkerConfig.default(),
+        config=_disabled_wakeword_config(),
         audio=FakeLocalAudioAdapter(),
         asset_manager=manager,
         backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager),
@@ -319,7 +326,7 @@ def test_controller_reload_config_updates_supervisor_view_of_wakeword(tmp_path: 
         VoiceWorkerCommand(command="reload_config", command_id="cmd-reload", payload={"wakeword_enabled": True})
     )
     after_reload = controller.wakeword_supervisor_health()
-    assert after_reload.exact_blocker is None or after_reload.exact_blocker == "wakeword_not_enabled"
+    assert after_reload.exact_blocker in (None, "wakeword_not_enabled", "wakeword_model_not_installed")
 
     (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
     manager.install_local(
