@@ -3,7 +3,11 @@ import { describe, expect, it, vi } from "vitest";
 import { WaveformCanvas } from "./overlay";
 
 vi.mock("../lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
-vi.mock("../lib/shellCommands", () => ({ setOverlayClickThrough: vi.fn() }));
+vi.mock("../lib/shellCommands", () => ({ setOverlayExpanded: vi.fn(), showChat: vi.fn() }));
+vi.mock("../lib/controlPlaneClient", () => ({
+  fetchPendingApprovals: vi.fn(async () => []),
+  decideApproval: vi.fn(),
+}));
 
 describe("WaveformCanvas", () => {
   it("renders an accessible waveform canvas bound to assistant state", () => {

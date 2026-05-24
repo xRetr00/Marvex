@@ -317,6 +317,10 @@ rem same-origin by the control plane server for the shell's Control Plane window
 if exist "%ShellDir%\control_plane_web" rmdir /s /q "%ShellDir%\control_plane_web"
 mkdir "%ShellDir%\control_plane_web"
 xcopy /e /i /y "%ControlPlaneDir%\dist\*" "%ShellDir%\control_plane_web\" >nul
+if not exist "%ShellDir%\control_plane_web\index.html" call :Die "Control Plane staged resource missing index.html"
+if not exist "%ShellDir%\control_plane_web\assets" call :Die "Control Plane staged resource missing built assets"
+dir /b "%ShellDir%\control_plane_web\assets\*" >nul 2>&1
+if errorlevel 1 call :Die "Control Plane staged resource missing built assets"
 call :WriteSuccess "Control Plane SPA staged into shell resources"
 
 pushd "%ShellDir%"

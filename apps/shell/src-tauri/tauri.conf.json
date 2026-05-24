@@ -26,27 +26,14 @@
         "label": "overlay",
         "title": "Marvex Status",
         "url": "/overlay",
-        "width": 300,
-        "height": 72,
+        "width": 140,
+        "height": 60,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
         "skipTaskbar": true,
         "resizable": false,
         "visible": true
-      },
-      {
-        "label": "spotlight",
-        "title": "Marvex Spotlight",
-        "url": "/spotlight",
-        "width": 420,
-        "height": 240,
-        "decorations": false,
-        "transparent": true,
-        "alwaysOnTop": true,
-        "skipTaskbar": true,
-        "resizable": false,
-        "visible": false
       }
     ],
     "security": {

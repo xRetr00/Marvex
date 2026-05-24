@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { ChatApp } from "./surfaces/ChatApp";
 import { OverlaySurface } from "./surfaces/overlay";
-import { SpotlightSurface } from "./surfaces/Spotlight";
 import { ControlLoaderSurface } from "./surfaces/ControlLoader";
 import { SetupPage } from "./surfaces/Setup";
 import { isSetupDone, getPersistedMode } from "./lib/modeStore";
@@ -10,7 +9,6 @@ import { showChat, showOverlay } from "./lib/shellCommands";
 export function App() {
   const path = window.location.pathname;
   if (path.includes("overlay")) return <OverlaySurface />;
-  if (path.includes("spotlight")) return <SpotlightSurface />;
   if (path.includes("control-loader")) return <ControlLoaderSurface />;
 
   return <RootApp />;

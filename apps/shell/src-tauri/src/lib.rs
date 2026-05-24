@@ -222,53 +222,26 @@ fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Res
     app.restart();
 }
 
-#[derive(Serialize)]
-struct LogTail {
-    name: String,
-    lines: Vec<String>,
-}
-
-/// Read the tail of the backend log files (read-only). Looks in the shell's log
-/// dir and the always-on service log dir under ProgramData.
-#[tauri::command]
-fn read_logs(max_lines: Option<usize>, state: tauri::State<Mutex<ShellState>>) -> Result<Vec<LogTail>, String> {
-    let max = max_lines.unwrap_or(200).min(2000);
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    if let Ok(state) = state.lock() {
-        dirs.push(state.supervisor.log_dir());
-    }
-    if let Ok(program_data) = std::env::var("ProgramData") {
-        dirs.push(PathBuf::from(program_data).join("Marvex").join("logs"));
-    }
-    let mut seen = std::collections::BTreeSet::new();
-    let mut out: Vec<LogTail> = Vec::new();
-    for dir in dirs {
-        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) != Some("log") {
-                continue;
-            }
-            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("log").to_string();
-            if !seen.insert(name.clone()) {
-                continue;
-            }
-            if let Ok(text) = std::fs::read_to_string(&path) {
-                let all: Vec<&str> = text.lines().collect();
-                let start = all.len().saturating_sub(max);
-                let lines = all[start..].iter().map(|l| l.to_string()).collect();
-                out.push(LogTail { name, lines });
-            }
-        }
-    }
-    out.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(out)
-}
-
 #[tauri::command]
 fn set_overlay_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
         window.set_ignore_cursor_events(ignore).map_err(|err| err.to_string())?;
+    }
+    Ok(())
+}
+
+#[tauri::command]
+fn set_overlay_expanded(app: AppHandle, expanded: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("overlay") {
+        let (width, height) = if expanded { (460_u32, 260_u32) } else { (140_u32, 60_u32) };
+        window
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
+            .map_err(|err| err.to_string())?;
+        if let Ok(Some(monitor)) = window.current_monitor() {
+            let m = monitor.size();
+            let x = (m.width as i32) - (width as i32) - 16;
+            let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
+        }
     }
     Ok(())
 }
@@ -280,41 +253,11 @@ fn show_chat(app: AppHandle) -> Result<(), String> {
     window.set_focus().map_err(|err| err.to_string())
 }
 
-/// Enter the overlay/presence mode: hide the chat window, show the dynamic
-/// island. Spotlight remains hidden until invoked on demand from the island.
+/// Enter the overlay/presence mode: hide the chat window and show the dynamic
+/// island.
 #[tauri::command]
 fn show_overlay(app: AppHandle) -> Result<(), String> {
     apply_ui_mode(&app, UiMode::Overlay)
-}
-
-/// Anchor the spotlight to the top-right corner of the active monitor so it
-/// reads like a notification/Siri panel sliding in from the island side.
-fn position_spotlight_top_right(window: &tauri::WebviewWindow) {
-    if let (Ok(Some(monitor)), Ok(size)) = (window.current_monitor(), window.outer_size()) {
-        let m = monitor.size();
-        let margin: i32 = 16;
-        let x = (m.width as i32) - (size.width as i32) - margin;
-        let y = margin;
-        let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), y));
-    }
-}
-
-/// Spotlight is on-demand (not a mode): it spawns over the current mode —
-/// typically from the island while in overlay mode — without changing it.
-#[tauri::command]
-fn show_spotlight(app: AppHandle) -> Result<(), String> {
-    let window = app.get_webview_window("spotlight").ok_or_else(|| "spotlight window unavailable".to_string())?;
-    window.show().map_err(|err| err.to_string())?;
-    position_spotlight_top_right(&window);
-    window.set_focus().map_err(|err| err.to_string())
-}
-
-#[tauri::command]
-fn hide_spotlight(app: AppHandle) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("spotlight") {
-        window.hide().map_err(|err| err.to_string())?;
-    }
-    Ok(())
 }
 
 /// Open (or focus) the full original Control Plane in its own window. The window
@@ -351,7 +294,6 @@ enum UiMode {
 
 /// Apply one of the two top-level modes. Chat shows the main window and hides
 /// the island; Overlay shows the island (presence) and hides the chat window.
-/// Spotlight is left untouched here — it is managed on demand.
 fn apply_ui_mode(app: &AppHandle, mode: UiMode) -> Result<(), String> {
     let main = app.get_webview_window("main");
     let overlay = app.get_webview_window("overlay");
@@ -399,14 +341,12 @@ pub fn run() {
             submit_chat_turn,
             control_request,
             set_overlay_click_through,
+            set_overlay_expanded,
             show_chat,
             show_overlay,
-            show_spotlight,
-            hide_spotlight,
             open_control_plane,
             marvex_shutdown,
-            marvex_restart,
-            read_logs
+            marvex_restart
         ])
         .setup(|app| {
             let log_dir = app.path().app_log_dir().unwrap_or_else(|_| PathBuf::from("logs"));

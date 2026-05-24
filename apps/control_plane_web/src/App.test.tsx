@@ -55,6 +55,7 @@ describe("Control Plane app", () => {
     renderApp();
 
     expect(await screen.findByText("Marvex Control Plane")).toBeInTheDocument();
+    expect(await screen.findByText("Build source: apps/control_plane_web")).toBeInTheDocument();
     expect(await screen.findByText("Pending approvals")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: /Approvals/i }));
     expect(await screen.findByText("browser.click")).toBeInTheDocument();

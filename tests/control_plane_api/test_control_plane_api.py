@@ -60,7 +60,23 @@ def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-cont
     return captured["status"], captured["headers"], json.loads(response)
 
 
-def _app():
+class _FakeLogReader:
+    def tail_logs(self, max_lines: int = 200):
+        assert max_lines == 200
+        return [
+            {
+                "name": "core.stderr.log",
+                "source": "control_plane_test",
+                "lines": [
+                    "service ready",
+                    "Authorization: Bearer secret-token",
+                    "api_key=secret-value",
+                ],
+            }
+        ]
+
+
+def _app(*, log_reader=None):
     store = InMemoryApprovalStore.from_requests((_approval_request(),))
     snapshot = ControlPlaneSnapshot.foundation_default(
         schema_version="1",
@@ -98,6 +114,7 @@ def _app():
         approval_store=store,
         snapshot=snapshot,
         local_auth_token="fake-control-token",
+        log_reader=log_reader,
     )
 
 
@@ -110,6 +127,32 @@ def test_control_plane_requires_auth_without_echoing_token() -> None:
     serialized = json.dumps(payload)
     assert "fake-control-token" not in serialized
     assert payload["code"] == "AUTH_REQUIRED"
+
+
+def test_logs_endpoint_returns_sanitized_api_owned_log_projection() -> None:
+    app = _app(log_reader=_FakeLogReader())
+
+    status, _headers, payload = _call(app, "/control/logs")
+
+    assert status == "200 OK"
+    assert payload["schema_version"] == "1"
+    assert payload["raw_log_payload_persisted"] is False
+    assert payload["logs"] == [
+        {
+            "name": "core.stderr.log",
+            "source": "control_plane_test",
+            "lines": ["service ready", "[redacted]", "[redacted]"],
+        }
+    ]
+
+
+def test_logs_endpoint_requires_auth() -> None:
+    app = _app(log_reader=_FakeLogReader())
+
+    status, _headers, payload = _call(app, "/control/logs", token=None)
+
+    assert status == "401 Unauthorized"
+    assert "secret-token" not in json.dumps(payload)
 
 
 def test_list_and_read_pending_approvals_are_safe_projections() -> None:

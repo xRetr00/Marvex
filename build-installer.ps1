@@ -283,6 +283,13 @@ function Build-Frontend {
     if (Test-Path $cpStage) { Remove-Item -Path $cpStage -Recurse -Force }
     New-Item -ItemType Directory -Path $cpStage | Out-Null
     Copy-Item -Path (Join-Path $cpDist "*") -Destination $cpStage -Recurse -Force
+    if (-not (Test-Path (Join-Path $cpStage "index.html"))) {
+        Write-Error-Exit "Control Plane staged resource missing index.html"
+    }
+    $cpAssets = Join-Path $cpStage "assets"
+    if (-not (Test-Path $cpAssets) -or -not (Get-ChildItem -Path $cpAssets -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Write-Error-Exit "Control Plane staged resource missing built assets"
+    }
     Write-Success "Control Plane SPA staged into shell resources"
     
     # Build Shell Frontend

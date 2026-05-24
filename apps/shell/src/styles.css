@@ -130,10 +130,9 @@
 
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--background); color: var(--foreground); }
-/* Overlay + spotlight windows are fully transparent (Tauri transparent:true)
+/* Overlay windows are fully transparent (Tauri transparent:true)
    so only the island / panel chrome is visible — never a window rectangle. */
-html:has(.overlay-shell), body:has(.overlay-shell),
-html:has(.spotlight-shell), body:has(.spotlight-shell) {
+html:has(.overlay-shell), body:has(.overlay-shell) {
   background: transparent !important;
   overflow: hidden !important;
 }
@@ -147,7 +146,7 @@ button, input { font: inherit; }
   height: 100vh;
   background: transparent;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-end;
   padding: 6px 8px;
   overflow: hidden;
@@ -168,33 +167,56 @@ button, input { font: inherit; }
   transform: scale(1.04);
 }
 
-/* ---- Spotlight: right-anchored island toast ------------------------------ */
-.spotlight-shell {
-  width: 100vw;
-  height: 100vh;
+.marvex-island-card {
+  width: min(390px, calc(100vw - 18px));
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #fff;
+  user-select: none;
+}
+
+.marvex-island-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 224, 194, 0.12);
+  color: #ffe0c2;
+  font-weight: 800;
+}
+
+.marvex-island-card-copy { min-width: 0; }
+.marvex-island-card-title { font-size: 15px; line-height: 20px; font-weight: 650; }
+.marvex-island-card-body {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgba(255, 255, 255, 0.62);
+  overflow-wrap: anywhere;
+}
+
+.marvex-island-card-action,
+.marvex-island-approval-actions button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffe0c2;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.marvex-island-approval-actions {
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 12px;
-  background: transparent;
-  overflow: hidden;
+  flex-direction: column;
+  gap: 5px;
 }
-
-.spotlight-panel { max-height: calc(100vh - 24px); overflow: hidden; }
-
-.spotlight-panel {
-  width: min(420px, calc(100vw - 28px));
-  border-radius: 22px;
-  background: color-mix(in srgb, var(--card) 88%, transparent);
-  border: 1px solid var(--border);
-  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
-  backdrop-filter: blur(22px);
-  padding: 18px;
-  color: var(--foreground);
-}
-
-.spotlight-panel h1 { margin: 0 0 8px; font-size: 18px; color: var(--foreground); }
-.spotlight-panel p { margin: 0; color: var(--muted-foreground); line-height: 1.5; font-size: 13px; }
 
 @keyframes marvex-shimmer { 0% { background-position: 0% center; } 100% { background-position: 200% center; } }
 @keyframes marvex-ping { 0% { transform: scale(1); opacity: 0.5; } 100% { transform: scale(2.2); opacity: 0; } }
