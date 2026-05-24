@@ -8,8 +8,7 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { setOverlayClickThrough, showChat, showSpotlight } from "../lib/shellCommands";
-import { makeHoverEdgeTrigger } from "../lib/overlayHover";
+import { showChat, showSpotlight } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
 import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
@@ -79,36 +78,10 @@ export function OverlaySurface() {
     return () => cleanup?.();
   }, []);
 
-  // Click-through everywhere except directly over the island. The bounds check
-  // is throttled to one rAF per frame and the click-through IPC call is
-  // edge-triggered (fires only on enter/leave), so moving the mouse no longer
-  // floods the Tauri bridge and freezes the app.
-  useEffect(() => {
-    const trigger = makeHoverEdgeTrigger((over) => void setOverlayClickThrough(!over));
-    let frame = 0;
-    const onMove = (event: MouseEvent) => {
-      if (frame) return;
-      frame = requestAnimationFrame(() => {
-        frame = 0;
-        const rect = islandRef.current?.getBoundingClientRect();
-        const over = Boolean(
-          rect &&
-            event.clientX >= rect.left &&
-            event.clientX <= rect.right &&
-            event.clientY >= rect.top &&
-            event.clientY <= rect.bottom,
-        );
-        setHovered(over);
-        trigger(over);
-      });
-    };
-    window.addEventListener("mousemove", onMove);
-    void setOverlayClickThrough(true);
-    return () => {
-      window.removeEventListener("mousemove", onMove);
-      if (frame) cancelAnimationFrame(frame);
-    };
-  }, []);
+  // The island window is small and interactive, so hover is driven directly by
+  // the webview's own mouse enter/leave on the island element — no global
+  // mousemove listener and no cursor-ignore toggling (which would swallow the
+  // events entirely).
 
   const audioLevel = waveformLevel(state);
   const isActive = shouldShowOverlay(state);
@@ -125,8 +98,11 @@ export function OverlaySurface() {
     <div className="overlay-shell">
       <div
         ref={islandRef}
+        className="marvex-island"
         style={{ width: "fit-content", cursor: "pointer" }}
         onClick={openChat}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
         title="Open Marvex chat"
       >
         <DynamicIsland

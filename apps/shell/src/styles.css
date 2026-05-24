@@ -147,10 +147,25 @@ button, input { font: inherit; }
   height: 100vh;
   background: transparent;
   display: flex;
-  align-items: flex-start;
-  justify-content: flex-start;
-  padding: 6px;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 6px 8px;
   overflow: hidden;
+}
+
+/* Living presence: a soft warm halo that breathes so the island reads as an
+   always-on assistant, not a static window. Lifts on hover. */
+@keyframes marvex-island-breathe {
+  0%, 100% { box-shadow: 0 0 0 1px rgba(255, 224, 194, 0.12), 0 6px 22px rgba(0, 0, 0, 0.45), 0 0 16px rgba(255, 224, 194, 0.10); }
+  50% { box-shadow: 0 0 0 1px rgba(255, 224, 194, 0.22), 0 6px 22px rgba(0, 0, 0, 0.45), 0 0 26px rgba(255, 224, 194, 0.22); }
+}
+.marvex-island {
+  border-radius: 999px;
+  animation: marvex-island-breathe 3.2s ease-in-out infinite;
+  transition: transform 0.18s ease;
+}
+.marvex-island:hover {
+  transform: scale(1.04);
 }
 
 /* ---- Spotlight: right-anchored island toast ------------------------------ */

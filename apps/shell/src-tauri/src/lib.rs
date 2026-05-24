@@ -371,7 +371,9 @@ pub fn run() {
                     let x = (m.width as i32) - (size.width as i32) - 16;
                     let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
                 }
-                let _ = window.set_ignore_cursor_events(true);
+                // The island window stays interactive (small, top-right) so the
+                // webview receives hover/click events. Ignoring cursor events
+                // would silently swallow hover and the click-to-open-chat.
             }
             Ok(())
         })

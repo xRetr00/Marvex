@@ -26,8 +26,8 @@
         "label": "overlay",
         "title": "Marvex Status",
         "url": "/overlay",
-        "width": 360,
-        "height": 120,
+        "width": 300,
+        "height": 72,
         "decorations": false,
         "transparent": true,
         "alwaysOnTop": true,
@@ -56,8 +56,7 @@
   "bundle": {
     "active": true,
     "targets": [
-      "nsis",
-      "msi"
+      "nsis"
     ],
     "icon": [
       "../../assets/icon.ico"
