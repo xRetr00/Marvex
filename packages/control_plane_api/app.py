@@ -15,6 +15,7 @@ from packages.telemetry.search import TraceSearchQuery, search_traces
 from .approvals import InMemoryApprovalStore
 from .agents import handle_agent_control_request
 from .deps import handle_deps_request
+from .logs import logs_payload
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
 from .state import handle_state_snapshot, handle_state_stream
 from .voice import handle_voice_control_request
@@ -58,6 +59,7 @@ def create_control_plane_api_app(
     agent_catalog_projection: dict[str, Any] | None = None,
     persona_catalog_projection: dict[str, Any] | None = None,
     web_dist: str | None = None,
+    log_reader: Any | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -280,6 +282,8 @@ def create_control_plane_api_app(
             return handle_state_stream(environ, start_response, state_bus=state_bus)
         if method == "GET" and path == f"{CONTROL_PREFIX}/diagnostics":
             return _json_response(start_response, "200 OK", {"schema_version": SCHEMA_VERSION, **_safe_mapping(diagnostics or {}), "raw_payload_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/logs":
+            return _json_response(start_response, "200 OK", logs_payload(log_reader))
         if method == "GET" and path == f"{CONTROL_PREFIX}/snapshot":
             payload = snapshot.model_dump(mode="json")
             payload["approvals"] = approval_store.list_pending().model_dump(mode="json")

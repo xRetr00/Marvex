@@ -77,6 +77,7 @@ export function App() {
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
+            <div>Build source: apps/control_plane_web</div>
             <div className="flex items-center gap-2"><KeyRound size={16} /> local token required</div>
             <Button
               type="button"

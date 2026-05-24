@@ -1,26 +1,44 @@
 import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
-import { readLogs, controlRequest, type LogTail } from "@/lib/shellCommands";
+import { controlRequest, type LogTail } from "@/lib/shellCommands";
 import { Button } from "@/components/ui/button";
 
-/** Read-only Logs / Traces / Telemetry board. Logs are tailed from the backend
- * log files; traces + telemetry come from the control plane snapshot. */
+type LogsApiResponse = {
+  schema_version: string;
+  logs: LogTail[];
+  raw_log_payload_persisted: false;
+};
+
+/** Read-only Logs / Traces / Telemetry board. All data comes from the
+ * authenticated Control Plane API; the shell UI never reads log files itself. */
 export function LogsView() {
   const [logs, setLogs] = useState<LogTail[]>([]);
   const [traces, setTraces] = useState<Record<string, unknown>[]>([]);
   const [telemetry, setTelemetry] = useState<Record<string, unknown>>({});
+  const [apiError, setApiError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [lg, snap] = await Promise.allSettled([readLogs(200), controlRequest("/snapshot", "GET")]);
+      const [lg, snap] = await Promise.allSettled([controlRequest("/logs", "GET"), controlRequest("/snapshot", "GET")]);
       if (cancelled) return;
-      if (lg.status === "fulfilled") setLogs(lg.value);
+      setApiError(null);
+      if (lg.status === "fulfilled" && lg.value && typeof lg.value === "object") {
+        const payload = lg.value as LogsApiResponse;
+        setLogs(Array.isArray(payload.logs) ? payload.logs : []);
+      } else if (lg.status === "rejected") {
+        setLogs([]);
+        setApiError("Control Plane logs API unavailable.");
+      }
       if (snap.status === "fulfilled" && snap.value && typeof snap.value === "object") {
         const s = snap.value as { traces?: Record<string, unknown>[]; telemetry?: Record<string, unknown> };
         setTraces(Array.isArray(s.traces) ? s.traces : []);
         setTelemetry(s.telemetry ?? {});
+      } else if (snap.status === "rejected") {
+        setTraces([]);
+        setTelemetry({});
+        setApiError("Control Plane snapshot API unavailable.");
       }
     };
     void load();
@@ -61,8 +79,10 @@ export function LogsView() {
         )}
       </section>
 
-      {logs.length === 0 ? (
-        <Muted>No log files found yet.</Muted>
+      {apiError ? (
+        <Muted>{apiError}</Muted>
+      ) : logs.length === 0 ? (
+        <Muted>No log events exposed by the Control Plane API yet.</Muted>
       ) : logs.map((file) => (
         <section key={file.name} style={{ background: "var(--card)", borderRadius: 14, padding: 0, border: "1px solid var(--border)", overflow: "hidden" }}>
           <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 12 }}>{file.name}</div>

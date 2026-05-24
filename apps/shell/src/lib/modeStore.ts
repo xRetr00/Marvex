@@ -2,8 +2,7 @@
  * Two top-level modes:
  *   - "chat":    the full chat window (the chat / test layer).
  *   - "overlay": the dynamic-island presence (Marvex like Siri in the OS).
- *                Spotlight is NOT a mode — it spawns on demand from the island
- *                and lives inside the overlay mode.
+ *                Cards and approvals live inside the island overlay.
  */
 
 export type AppMode = "chat" | "overlay";

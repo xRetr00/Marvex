@@ -8,8 +8,10 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { showChat, showSpotlight } from "../lib/shellCommands";
+import { setOverlayExpanded, showChat } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
+import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
+import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
 import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
 import { AnimatePresence, motion } from "framer-motion";
@@ -53,18 +55,34 @@ function TextShimmer({ text }: { text: string }) {
 export function OverlaySurface() {
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
   const [hovered, setHovered] = useState(false);
+  const [cardState, setCardState] = useState<IslandQueueSnapshot>({ active: null, queued: [] });
   const islandRef = useRef<HTMLDivElement | null>(null);
+  const queueRef = useRef<ReturnType<typeof createIslandQueue> | null>(null);
+  if (!queueRef.current) {
+    queueRef.current = createIslandQueue({ maxQueue: 4, onChange: setCardState });
+  }
+  const queue = queueRef.current;
 
-  // Welcome card: when the island first appears on startup, spawn a spotlight
-  // card from it so the assistant greets the user.
+  // Welcome card: lives inside the island overlay and collapses back into the
+  // idle pill after its own lifecycle.
   useEffect(() => {
-    const t = setTimeout(() => void showSpotlight().catch(() => undefined), 1200);
+    const t = setTimeout(() => {
+      queue.show({
+        id: "welcome",
+        kind: "info",
+        title: "Marvex is ready",
+        body: "Say \"Hey Marvex\" or click the island to chat.",
+        duration: 5000,
+      });
+    }, 1200);
     return () => clearTimeout(t);
-  }, []);
+  }, [queue]);
 
   const prevStatusRef = useRef<string>("idle");
   useEffect(() => {
     let cleanup: VoidFunction | undefined;
+    let cardCleanup: VoidFunction | undefined;
+    let approvalVoiceCleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
       let next: AssistantStateEvent;
       try {
@@ -73,17 +91,40 @@ export function OverlaySurface() {
         next = idleAssistantState;
       }
       setState(next);
-      // Spotlight is event-driven: spawn the approval card from the island when
-      // the assistant transitions into needs_approval (edge-triggered).
+      // Approval cards are event-driven inside the island, not in a separate
+      // window. They persist until the user decides.
       if (next.status === "needs_approval" && prevStatusRef.current !== "needs_approval") {
-        void showSpotlight().catch(() => undefined);
+        void fetchPendingApprovals()
+          .then((approvals) => {
+            if (!approvals[0]) return;
+            queue.show(approvalCard(approvals[0]), { force: true });
+          })
+          .catch(() => undefined);
       }
       prevStatusRef.current = next.status;
     }).then((unlisten) => {
       cleanup = unlisten;
     });
-    return () => cleanup?.();
-  }, []);
+    void listen<IslandCard>("island-card", (event) => {
+      queue.show(event.payload, { force: event.payload.kind === "approval" });
+    }).then((unlisten) => {
+      cardCleanup = unlisten;
+    });
+    void listen<{ approval_id: string; decision: "approve" | "deny" | "cancel"; reason?: string }>(
+      "approval-voice-decision",
+      async (event) => {
+        await decideApproval(event.payload.approval_id, event.payload.decision, event.payload.reason ?? "voice approval decision");
+        queue.dismiss(`approval-${event.payload.approval_id}`);
+      },
+    ).then((unlisten) => {
+      approvalVoiceCleanup = unlisten;
+    });
+    return () => {
+      cleanup?.();
+      cardCleanup?.();
+      approvalVoiceCleanup?.();
+    };
+  }, [queue]);
 
   // The island window is small and interactive, so hover is driven directly by
   // the webview's own mouse enter/leave on the island element — no global
@@ -93,8 +134,13 @@ export function OverlaySurface() {
   const audioLevel = waveformLevel(state);
   const isActive = shouldShowOverlay(state);
   const statusText = displayDetail(state);
-  const expanded = isActive || hovered;
+  const activeCard = cardState.active;
+  const expanded = Boolean(activeCard) || isActive || hovered;
   const view = expanded ? "ring" : "idle";
+
+  useEffect(() => {
+    void setOverlayExpanded(expanded).catch(() => undefined);
+  }, [expanded]);
 
   const openChat = () => {
     persistMode("chat");
@@ -128,24 +174,107 @@ export function OverlaySurface() {
             </div>
           }
           ringContent={
-            <div
-              style={{
-                display: "flex",
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 10,
-                padding: "7px 14px 7px 12px",
-              }}
-            >
-              {/* Waveform always on the LEFT. */}
-              <MarvexWaveform audioLevel={isActive ? audioLevel : 0.18} width={isActive ? 120 : 64} height={22} active={isActive || hovered} />
-              <AnimatePresence mode="wait">
-                <TextShimmer text={isActive ? statusText : "Marvex"} key={isActive ? statusText : "marvex"} />
-              </AnimatePresence>
-            </div>
+            activeCard
+              ? <IslandCardView card={activeCard} onDismiss={() => queue.dismiss(activeCard.id)} />
+              : (
+                <div
+                  style={{
+                    display: "flex",
+                    flexDirection: "column",
+                    alignItems: "stretch",
+                    gap: 8,
+                    width: isActive ? 320 : 180,
+                    padding: "12px 16px",
+                  }}
+                >
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                    <AnimatePresence mode="wait">
+                      <TextShimmer text={isActive ? statusText : "Marvex"} key={isActive ? statusText : "marvex"} />
+                    </AnimatePresence>
+                    <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>{state.status}</span>
+                  </div>
+                  <MarvexWaveform
+                    audioLevel={isActive ? audioLevel : 0.18}
+                    width={isActive ? 288 : 140}
+                    height={isActive ? 76 : 34}
+                    active={isActive || hovered}
+                  />
+                </div>
+              )
           }
         />
       </div>
+    </div>
+  );
+}
+
+function approvalCard(approval: ApprovalSummary): IslandCard {
+  return {
+    id: `approval-${approval.approval_request_id}`,
+    kind: "approval",
+    title: "Approval Required",
+    body: approval.user_visible_summary,
+    autoDismiss: false,
+    payload: approval,
+  };
+}
+
+function IslandCardView({ card, onDismiss }: { card: IslandCard; onDismiss: () => void }) {
+  const dragStartRef = useRef<number | null>(null);
+  const [dragY, setDragY] = useState(0);
+  const approval = card.kind === "approval" ? card.payload as ApprovalSummary : null;
+
+  const handlePointerUp = () => {
+    if (dragY < -42) onDismiss();
+    dragStartRef.current = null;
+    setDragY(0);
+  };
+
+  return (
+    <motion.div
+      role="status"
+      aria-live="polite"
+      className="marvex-island-card"
+      style={{ transform: `translateY(${dragY}px)` }}
+      onPointerDown={(event) => { dragStartRef.current = event.clientY; }}
+      onPointerMove={(event) => {
+        if (dragStartRef.current === null) return;
+        setDragY(Math.min(0, event.clientY - dragStartRef.current));
+      }}
+      onPointerUp={handlePointerUp}
+      onPointerCancel={handlePointerUp}
+      initial={{ opacity: 0, scale: 0.86, y: -12, filter: "blur(6px)" }}
+      animate={{ opacity: 1, scale: 1, y: 0, filter: "blur(0px)" }}
+      exit={{ opacity: 0, scale: 0.86, y: -12, filter: "blur(6px)" }}
+    >
+      <div className="marvex-island-card-icon">{card.kind === "approval" ? "!" : "M"}</div>
+      <div className="marvex-island-card-copy">
+        <div className="marvex-island-card-title">{card.title}</div>
+        {card.body && <div className="marvex-island-card-body">{card.body}</div>}
+      </div>
+      {approval ? <ApprovalActions approval={approval} onDone={onDismiss} /> : (
+        <button className="marvex-island-card-action" type="button" onClick={(event) => { event.stopPropagation(); onDismiss(); }}>Dismiss</button>
+      )}
+    </motion.div>
+  );
+}
+
+function ApprovalActions({ approval, onDone }: { approval: ApprovalSummary; onDone: () => void }) {
+  const [pending, setPending] = useState(false);
+  async function decide(decision: "approve" | "deny" | "cancel") {
+    setPending(true);
+    try {
+      await decideApproval(approval.approval_request_id, decision, `dynamic island ${decision}`);
+      onDone();
+    } finally {
+      setPending(false);
+    }
+  }
+  return (
+    <div className="marvex-island-approval-actions">
+      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("approve"); }}>Approve</button>
+      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("deny"); }}>Deny</button>
+      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("cancel"); }}>Cancel</button>
     </div>
   );
 }

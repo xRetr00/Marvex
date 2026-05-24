@@ -24,6 +24,7 @@ from packages.control_plane_api import (
     InMemoryApprovalStore,
     create_control_plane_api_app,
 )
+from packages.control_plane_api.logs import LocalLogReader
 from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
     GITHUB_CONNECTOR_REF,
@@ -2412,6 +2413,8 @@ def create_control_plane_service_app(
     state_bus: AssistantStateBus | None = None,
 ) -> Any:
     web_dist = os.environ.get("MARVEX_CONTROL_WEB_DIST") or None
+    log_dir = os.environ.get("MARVEX_LOG_DIR")
+    log_reader = LocalLogReader((log_dir,)) if log_dir else None
     return create_control_plane_api_app(
         approval_store=InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
@@ -2419,6 +2422,7 @@ def create_control_plane_service_app(
         trace_reader=trace_reader,
         state_bus=state_bus or get_default_bus(),
         web_dist=web_dist,
+        log_reader=log_reader,
     )
 
 

@@ -5,7 +5,7 @@ Marvex Shell is the Tauri v2 Windows product surface. It is a loopback client an
 ## Layout
 
 - `src-tauri/`: Rust Tauri supervisor, tray, windows, single-instance, autostart, global shortcut, state stream client, and local proxy commands.
-- `src/`: React/Vite shell surfaces for chat, top-left state pill/waveform, and Spotlight approvals/results.
+- `src/`: React/Vite shell surfaces for chat and the single Dynamic Island overlay for state, waveform, cards, and approvals.
 - `runtime/`: Bundled resources for production deployment (uv.exe, marvex wheel).
 
 ## Development
@@ -45,10 +45,10 @@ After installing the packaged app:
 
 1. Launch Marvex from Start Menu or the installer finish action.
 2. Confirm no backend terminal windows are visible.
-3. Confirm the tray menu opens chat, Spotlight, voice pause/resume, and quit.
+3. Confirm the tray menu opens chat, voice pause/resume, and quit.
 4. Send a chat message and confirm a real Core `/v1/turns` response.
-5. Trigger assistant/voice state and confirm the top-left pill and waveform react to `/control/state/stream`.
-6. Trigger an approval and confirm Spotlight accepts button or voice decisions.
+5. Trigger assistant/voice state and confirm the Dynamic Island expands with a large waveform from `/control/state/stream`.
+6. Trigger an approval and confirm the Dynamic Island accepts button or voice decisions.
 7. Reboot or log out/in and confirm autostart.
 8. Quit from tray and confirm child processes are stopped.
 

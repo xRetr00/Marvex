@@ -86,12 +86,8 @@ export async function setOverlayClickThrough(ignore: boolean): Promise<void> {
   await invoke("set_overlay_click_through", { ignore });
 }
 
-export async function showSpotlight(): Promise<void> {
-  await invoke("show_spotlight");
-}
-
-export async function hideSpotlight(): Promise<void> {
-  await invoke("hide_spotlight");
+export async function setOverlayExpanded(expanded: boolean): Promise<void> {
+  await invoke("set_overlay_expanded", { expanded });
 }
 
 export async function showChat(): Promise<void> {
@@ -114,8 +110,4 @@ export async function marvexRestart(): Promise<void> {
   await invoke("marvex_restart");
 }
 
-export type LogTail = { name: string; lines: string[] };
-
-export async function readLogs(maxLines = 200): Promise<LogTail[]> {
-  return invoke<LogTail[]>("read_logs", { maxLines });
-}
+export type LogTail = { name: string; source?: string; lines: string[] };

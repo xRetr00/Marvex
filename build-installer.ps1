@@ -71,6 +71,23 @@ function Write-Success {
     Write-Host "✓ $Message" -ForegroundColor Green
 }
 
+function Invoke-NpmCi {
+    param([string]$Label)
+
+    $npmOutput = & npm ci 2>&1
+    $npmExitCode = $LASTEXITCODE
+    $npmOutput | Where-Object { $_ -match 'added|up to date|audited|found 0 vulnerabilities' } | ForEach-Object {
+        Write-Host $_
+    }
+
+    if ($npmExitCode -ne 0) {
+        $npmOutput | Select-Object -Last 20 | ForEach-Object {
+            Write-Host $_ -ForegroundColor DarkYellow
+        }
+        Write-Error-Exit "npm ci failed for $Label. Close running Node/Vite dev servers that may lock node_modules native packages, then retry."
+    }
+}
+
 # ============================================================================
 # Validation
 # ============================================================================
@@ -258,10 +275,7 @@ function Build-Frontend {
     Push-Location $ControlPlaneDir
     try {
         Write-Step "Installing Control Plane dependencies..." 3 5
-        npm ci 2>&1 | Where-Object { $_ -match 'added|up to date' }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "npm ci failed for Control Plane"
-        }
+        Invoke-NpmCi "Control Plane"
         
         Write-Step "Building Control Plane..." 3 5
         npm run build 2>&1 | Where-Object { $_ -match 'built|entry' }
@@ -283,16 +297,20 @@ function Build-Frontend {
     if (Test-Path $cpStage) { Remove-Item -Path $cpStage -Recurse -Force }
     New-Item -ItemType Directory -Path $cpStage | Out-Null
     Copy-Item -Path (Join-Path $cpDist "*") -Destination $cpStage -Recurse -Force
+    if (-not (Test-Path (Join-Path $cpStage "index.html"))) {
+        Write-Error-Exit "Control Plane staged resource missing index.html"
+    }
+    $cpAssets = Join-Path $cpStage "assets"
+    if (-not (Test-Path $cpAssets) -or -not (Get-ChildItem -Path $cpAssets -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
+        Write-Error-Exit "Control Plane staged resource missing built assets"
+    }
     Write-Success "Control Plane SPA staged into shell resources"
     
     # Build Shell Frontend
     Push-Location $ShellDir
     try {
         Write-Step "Installing Shell dependencies..." 3 5
-        npm ci 2>&1 | Where-Object { $_ -match 'added|up to date' }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "npm ci failed for Shell"
-        }
+        Invoke-NpmCi "Shell"
         
         Write-Step "Building Shell frontend..." 3 5
         npm run build 2>&1 | Where-Object { $_ -match 'built|entry|vite' }

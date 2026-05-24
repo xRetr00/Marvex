@@ -176,10 +176,6 @@ impl Supervisor {
         self.config.data_dir.join("runtime").join("manifest.json")
     }
 
-    pub fn log_dir(&self) -> PathBuf {
-        self.config.log_dir.clone()
-    }
-
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
     }
@@ -519,6 +515,7 @@ fn spawn_service(
     if web_dist.is_dir() {
         command.env("MARVEX_CONTROL_WEB_DIST", web_dist);
     }
+    command.env("MARVEX_LOG_DIR", log_dir);
     // Point the voice worker at the bundled/installed "Hey Marvex" model assets.
     let voice_assets = resource_dir
         .map(|dir| dir.join("voice-assets"))

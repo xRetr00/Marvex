@@ -104,6 +104,7 @@ uv build --wheel
 npm --prefix apps/control_plane_web run build
 npm --prefix apps/shell run build
 # Output: apps/shell/dist/ with index.html, assets/
+# Control Plane output is staged to apps/shell/control_plane_web/
 ```
 
 **Step 4: Tauri Build**
@@ -122,7 +123,9 @@ npm --prefix apps/shell run tauri build
 ```json
 "resources": {
   "../runtime/uv.exe": "uv.exe",
-  "../runtime/marvex-0.1.0-py3-none-any.whl": "marvex-0.1.0-py3-none-any.whl"
+  "../runtime/marvex-0.1.0-py3-none-any.whl": "marvex-0.1.0-py3-none-any.whl",
+  "../control_plane_web": "control_plane_web",
+  "../voice-assets": "voice-assets"
 }
 ```
 
