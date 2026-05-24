@@ -2070,6 +2070,7 @@ dependencies = [
  "tauri-plugin-global-shortcut",
  "tauri-plugin-positioner",
  "tauri-plugin-single-instance",
+ "tokio",
  "windows-service",
 ]
 

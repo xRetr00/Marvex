@@ -248,11 +248,20 @@ fn hide_spotlight(app: AppHandle) -> Result<(), String> {
 /// calls work) and an init script injects the local bearer token into
 /// sessionStorage, matching the Control Plane web app's auth expectation.
 #[tauri::command]
-fn open_control_plane(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
-    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+async fn open_control_plane(app: AppHandle, state: tauri::State<'_, Mutex<ShellState>>) -> Result<(), String> {
+    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
     if let Some(window) = app.get_webview_window("control") {
         window.show().map_err(|err| err.to_string())?;
         return window.set_focus().map_err(|err| err.to_string());
+    }
+    // Wait for the control plane server (8766) to accept connections before
+    // loading the window, otherwise the webview shows a blank connection-refused
+    // page with no auto-retry. Any HTTP response means the server is up.
+    for _ in 0..40 {
+        if http::http_get("127.0.0.1", 8766, "/", Some(&token)).await.is_ok() {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     }
     let escaped = token.replace('\\', "\\\\").replace('\'', "\\'");
     let init = format!("window.sessionStorage.setItem('marvex_control_plane_token', '{escaped}');");
