@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { listen } from "../lib/tauriBridge";
 import {
   displayDetail,
@@ -8,7 +8,7 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { setOverlayExpanded, showChat } from "../lib/shellCommands";
+import { setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
 import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
 import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
@@ -37,6 +37,24 @@ const SHIMMER_STYLE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const OVERLAY_SHADOW_PADDING = 8;
+
+type OverlayBounds = {
+  width: number;
+  height: number;
+};
+
+export function toOverlayWindowSize(bounds: OverlayBounds, padding = OVERLAY_SHADOW_PADDING): OverlayWindowSize {
+  return {
+    width: Math.max(1, Math.round(bounds.width) + padding * 2),
+    height: Math.max(1, Math.round(bounds.height) + padding * 2),
+  };
+}
+
+function sizesClose(a: OverlayWindowSize | null, b: OverlayWindowSize) {
+  return Boolean(a && Math.abs(a.width - b.width) <= 1 && Math.abs(a.height - b.height) <= 1);
+}
+
 function TextShimmer({ text }: { text: string }) {
   return (
     <motion.span
@@ -62,6 +80,7 @@ export function OverlaySurface() {
     queueRef.current = createIslandQueue({ maxQueue: 4, onChange: setCardState });
   }
   const queue = queueRef.current;
+  const lastOverlaySizeRef = useRef<OverlayWindowSize | null>(null);
 
   // Welcome card: lives inside the island overlay and collapses back into the
   // idle pill after its own lifecycle.
@@ -138,9 +157,38 @@ export function OverlaySurface() {
   const expanded = Boolean(activeCard) || isActive || hovered;
   const view = expanded ? "ring" : "idle";
 
-  useEffect(() => {
-    void setOverlayExpanded(expanded).catch(() => undefined);
-  }, [expanded]);
+  useLayoutEffect(() => {
+    const island = islandRef.current;
+    if (!island) return;
+
+    let frame = 0;
+    const updateSize = () => {
+      frame = 0;
+      const rect = island.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const next = toOverlayWindowSize(rect);
+      if (sizesClose(lastOverlaySizeRef.current, next)) return;
+      lastOverlaySizeRef.current = next;
+      void setOverlaySize(next).catch(() => undefined);
+    };
+
+    const scheduleUpdate = () => {
+      if (frame) return;
+      frame = requestAnimationFrame(updateSize);
+    };
+
+    scheduleUpdate();
+
+    const resizeObserver = typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleUpdate);
+    resizeObserver?.observe(island);
+    window.addEventListener("resize", scheduleUpdate);
+
+    return () => {
+      if (frame) cancelAnimationFrame(frame);
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", scheduleUpdate);
+    };
+  }, [activeCard?.id, expanded, hovered, isActive, state.status, statusText]);
 
   const openChat = () => {
     persistMode("chat");

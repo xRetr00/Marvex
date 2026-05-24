@@ -102,7 +102,8 @@ fn run_service() -> windows_service::Result<()> {
     if let Some(supervisor) = supervisor {
         supervisor.shutdown();
     }
-    status_handle.set_service_status(status(ServiceState::Stopped, ServiceControlAccept::empty()))?;
+    status_handle
+        .set_service_status(status(ServiceState::Stopped, ServiceControlAccept::empty()))?;
     Ok(())
 }
 
@@ -120,7 +121,9 @@ fn program_data_root() -> PathBuf {
 }
 
 fn exe_dir() -> Option<PathBuf> {
-    std::env::current_exe().ok().and_then(|path| path.parent().map(PathBuf::from))
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(PathBuf::from))
 }
 
 /// Mint a fresh loopback token, publish it to the shared file (so the shell can
@@ -135,7 +138,8 @@ fn start_backend() -> Option<crate::supervisor::Supervisor> {
 }
 
 fn install() -> windows_service::Result<()> {
-    let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
+    let manager =
+        ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
     let executable_path = std::env::current_exe().map_err(windows_service::Error::Winapi)?;
     let info = ServiceInfo {
         name: OsString::from(SERVICE_NAME),
@@ -149,15 +153,19 @@ fn install() -> windows_service::Result<()> {
         account_name: None,
         account_password: None,
     };
-    let service = manager.create_service(&info, ServiceAccess::CHANGE_CONFIG | ServiceAccess::START)?;
-    let _ = service.set_description("Marvex always-on assistant backend (Core, workers, Hey Marvex wake word).");
+    let service =
+        manager.create_service(&info, ServiceAccess::CHANGE_CONFIG | ServiceAccess::START)?;
+    let _ = service.set_description(
+        "Marvex always-on assistant backend (Core, workers, Hey Marvex wake word).",
+    );
     service.start::<OsString>(&[])?;
     Ok(())
 }
 
 fn uninstall() -> windows_service::Result<()> {
     let manager = ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CONNECT)?;
-    let service = manager.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
+    let service =
+        manager.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
     let _ = service.stop();
     service.delete()?;
     Ok(())

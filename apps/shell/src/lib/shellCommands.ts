@@ -86,8 +86,13 @@ export async function setOverlayClickThrough(ignore: boolean): Promise<void> {
   await invoke("set_overlay_click_through", { ignore });
 }
 
-export async function setOverlayExpanded(expanded: boolean): Promise<void> {
-  await invoke("set_overlay_expanded", { expanded });
+export type OverlayWindowSize = {
+  width: number;
+  height: number;
+};
+
+export async function setOverlaySize({ width, height }: OverlayWindowSize): Promise<void> {
+  await invoke("set_overlay_size", { width, height });
 }
 
 export async function showChat(): Promise<void> {

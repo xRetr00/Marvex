@@ -142,14 +142,12 @@ button, input { font: inherit; }
    No panel/background here — the island component paints its own pill. The
    shell is just a transparent, top-left aligned hit area. */
 .overlay-shell {
-  width: 100vw;
-  height: 100vh;
+  width: max-content;
+  height: max-content;
   background: transparent;
-  display: flex;
-  align-items: flex-start;
-  justify-content: flex-end;
-  padding: 6px 8px;
-  overflow: hidden;
+  display: block;
+  padding: 8px;
+  overflow: visible;
 }
 
 /* Living presence: a soft warm halo that breathes so the island reads as an
@@ -159,6 +157,7 @@ button, input { font: inherit; }
   50% { box-shadow: 0 0 0 1px rgba(255, 224, 194, 0.22), 0 6px 22px rgba(0, 0, 0, 0.45), 0 0 26px rgba(255, 224, 194, 0.22); }
 }
 .marvex-island {
+  width: max-content;
   border-radius: 999px;
   animation: marvex-island-breathe 3.2s ease-in-out infinite;
   transition: transform 0.18s ease;
@@ -168,7 +167,7 @@ button, input { font: inherit; }
 }
 
 .marvex-island-card {
-  width: min(390px, calc(100vw - 18px));
+  width: 390px;
   min-height: 76px;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;

@@ -1,7 +1,10 @@
 use std::{
     io::{BufRead, BufReader, Write},
     net::TcpStream,
-    sync::{atomic::{AtomicBool, Ordering}, Arc},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc,
+    },
     thread,
     time::Duration,
 };
@@ -41,20 +44,30 @@ pub fn start_state_stream(app: AppHandle, token: String, shutdown: Arc<AtomicBoo
     thread::spawn(move || {
         while !shutdown.load(Ordering::SeqCst) {
             if let Err(err) = read_state_stream_once(&app, &token, &shutdown) {
-                let _ = app.emit("supervisor-health", format!("state stream unavailable: {err}"));
+                let _ = app.emit(
+                    "supervisor-health",
+                    format!("state stream unavailable: {err}"),
+                );
             }
             thread::sleep(Duration::from_secs(2));
         }
     });
 }
 
-fn read_state_stream_once(app: &AppHandle, token: &str, shutdown: &AtomicBool) -> Result<(), String> {
-    let mut stream = TcpStream::connect(("127.0.0.1", 8766)).map_err(|err| format!("connect failed: {err}"))?;
+fn read_state_stream_once(
+    app: &AppHandle,
+    token: &str,
+    shutdown: &AtomicBool,
+) -> Result<(), String> {
+    let mut stream =
+        TcpStream::connect(("127.0.0.1", 8766)).map_err(|err| format!("connect failed: {err}"))?;
     stream.set_read_timeout(Some(Duration::from_secs(5))).ok();
     let request = format!(
         "GET /control/state/stream HTTP/1.1\r\nHost: 127.0.0.1:8766\r\nAccept: text/event-stream\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
     );
-    stream.write_all(request.as_bytes()).map_err(|err| format!("write failed: {err}"))?;
+    stream
+        .write_all(request.as_bytes())
+        .map_err(|err| format!("write failed: {err}"))?;
     let reader = BufReader::new(stream);
     let mut data_lines = Vec::new();
     for raw in reader.lines() {

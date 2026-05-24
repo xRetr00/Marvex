@@ -7,7 +7,14 @@ mod token;
 #[cfg(windows)]
 pub mod service;
 
-use std::{path::PathBuf, sync::{atomic::{AtomicBool, Ordering}, Mutex}, time::{SystemTime, UNIX_EPOCH}};
+use std::{
+    path::PathBuf,
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Mutex,
+    },
+    time::{SystemTime, UNIX_EPOCH},
+};
 
 /// Set while an explicit Marvex shutdown is in progress so the main window's
 /// CloseRequested handler stops swallowing the close (otherwise quit hangs and
@@ -17,7 +24,9 @@ static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 use serde::Serialize;
 use serde_json::{json, Value};
 use supervisor::Supervisor;
-use tauri::{image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent};
+use tauri::{
+    image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent,
+};
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 
 #[derive(Clone, Serialize)]
@@ -33,7 +42,10 @@ struct ShellState {
     supervisor: Supervisor,
 }
 
-const TRAY_ICON_BYTES: &[u8] = include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../../assets/icon.ico"));
+const TRAY_ICON_BYTES: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/../../../assets/icon.ico"
+));
 
 #[tauri::command]
 fn shell_runtime_config() -> ShellRuntimeConfig {
@@ -47,7 +59,9 @@ fn shell_runtime_config() -> ShellRuntimeConfig {
 
 #[tauri::command]
 fn supervisor_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
-    let state = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+    let state = state
+        .lock()
+        .map_err(|_| "shell state unavailable".to_string())?;
     Ok(json!(state.supervisor.status.snapshot()))
 }
 
@@ -55,11 +69,19 @@ fn supervisor_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, St
 /// status, an overall `ready` flag, and the runtime manifest when present.
 #[tauri::command]
 fn get_setup_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
-    let state = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+    let state = state
+        .lock()
+        .map_err(|_| "shell state unavailable".to_string())?;
     let snapshot = state.supervisor.status.snapshot();
-    let runtime_phase = snapshot.get("runtime").cloned().unwrap_or_else(|| "unknown".to_string());
+    let runtime_phase = snapshot
+        .get("runtime")
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
     let runtime_ok = matches!(runtime_phase.as_str(), "ready" | "dev");
-    let core_running = snapshot.get("core").map(|s| s.starts_with("running")).unwrap_or(false);
+    let core_running = snapshot
+        .get("core")
+        .map(|s| s.starts_with("running"))
+        .unwrap_or(false);
     let manifest = std::fs::read_to_string(state.supervisor.runtime_manifest_path())
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -78,7 +100,9 @@ fn get_setup_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, Str
 #[tauri::command]
 fn start_setup(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
     {
-        let state = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+        let state = state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?;
         state.supervisor.retry_setup();
     }
     get_setup_status(state)
@@ -93,11 +117,20 @@ fn start_backend(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String
 /// Health of the Core daemon (loopback /health on 8765).
 #[tauri::command]
 async fn backend_health(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
-    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
     match http::http_get("127.0.0.1", 8765, "/health", Some(&token)).await {
         Ok(response) => {
-            let body: Value = serde_json::from_str(&response.body).unwrap_or_else(|_| json!({"raw": false}));
-            Ok(json!({"reachable": response.status == 200, "status_code": response.status, "health": body}))
+            let body: Value =
+                serde_json::from_str(&response.body).unwrap_or_else(|_| json!({"raw": false}));
+            Ok(
+                json!({"reachable": response.status == 200, "status_code": response.status, "health": body}),
+            )
         }
         Err(err) => Ok(json!({"reachable": false, "error": err})),
     }
@@ -106,8 +139,16 @@ async fn backend_health(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Va
 /// Health of the GUI/shell process itself (always ok while this command runs).
 #[tauri::command]
 fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
-    let snapshot = state.lock().map_err(|_| "shell state unavailable".to_string())?.supervisor.status.snapshot();
-    let services_running = snapshot.iter().filter(|(name, value)| *name != "runtime" && value.starts_with("running")).count();
+    let snapshot = state
+        .lock()
+        .map_err(|_| "shell state unavailable".to_string())?
+        .supervisor
+        .status
+        .snapshot();
+    let services_running = snapshot
+        .iter()
+        .filter(|(name, value)| *name != "runtime" && value.starts_with("running"))
+        .count();
     Ok(json!({
         "schema_version": "1",
         "component": "marvex-shell",
@@ -118,13 +159,19 @@ fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
 }
 
 #[tauri::command]
-async fn submit_chat_turn(text: String, metadata: Option<Value>, state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
+async fn submit_chat_turn(
+    text: String,
+    metadata: Option<Value>,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("chat text must be non-empty".to_string());
     }
     let (token, session_id) = {
-        let guard = state.lock().map_err(|_| "shell state unavailable".to_string())?;
+        let guard = state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?;
         (guard.token.clone(), session_id_from_metadata(&metadata))
     };
     let now = monotonic_id();
@@ -149,7 +196,8 @@ async fn submit_chat_turn(text: String, metadata: Option<Value>, state: tauri::S
         "previous_response_id": null,
         "provider_options": {}
     });
-    let response = http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body).await?;
+    let response =
+        http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body).await?;
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
 }
 
@@ -170,7 +218,11 @@ fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
     let Some(Value::Object(input)) = metadata else {
         return safe;
     };
-    for key in ["agent_profile_id", "persona_profile_id", "selected_voice_id"] {
+    for key in [
+        "agent_profile_id",
+        "persona_profile_id",
+        "selected_voice_id",
+    ] {
         if let Some(Value::String(value)) = input.get(key) {
             let trimmed = value.trim();
             if !trimmed.is_empty() {
@@ -182,18 +234,37 @@ fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
 }
 
 #[tauri::command]
-async fn control_request(path: String, method: String, body: Option<Value>, state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
+async fn control_request(
+    path: String,
+    method: String,
+    body: Option<Value>,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
     if !path.starts_with('/') || path.contains("://") {
         return Err("control path must be local".to_string());
     }
-    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
     let full_path = format!("/control{path}");
     let response = if method.eq_ignore_ascii_case("POST") {
-        http::http_post_json("127.0.0.1", 8766, &full_path, Some(&token), &body.unwrap_or_else(|| json!({}))).await?
+        http::http_post_json(
+            "127.0.0.1",
+            8766,
+            &full_path,
+            Some(&token),
+            &body.unwrap_or_else(|| json!({})),
+        )
+        .await?
     } else {
         http::http_get("127.0.0.1", 8766, &full_path, Some(&token)).await?
     };
-    serde_json::from_str(&response.body).map_err(|err| format!("invalid Control Plane response: {err}"))
+    serde_json::from_str(&response.body)
+        .map_err(|err| format!("invalid Control Plane response: {err}"))
 }
 
 /// Shut Marvex down cleanly: stop the locally-supervised backend (no-op in
@@ -225,23 +296,44 @@ fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Res
 #[tauri::command]
 fn set_overlay_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
-        window.set_ignore_cursor_events(ignore).map_err(|err| err.to_string())?;
+        window
+            .set_ignore_cursor_events(ignore)
+            .map_err(|err| err.to_string())?;
     }
     Ok(())
 }
 
 #[tauri::command]
-fn set_overlay_expanded(app: AppHandle, expanded: bool) -> Result<(), String> {
+fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+    if !width.is_finite() || !height.is_finite() {
+        return Err("overlay size must be finite".to_string());
+    }
     if let Some(window) = app.get_webview_window("overlay") {
-        let (width, height) = if expanded { (460_u32, 260_u32) } else { (140_u32, 60_u32) };
+        let scale = window.scale_factor().unwrap_or(1.0);
+        let requested_width = ((width.max(1.0)) * scale).round() as u32;
+        let requested_height = ((height.max(1.0)) * scale).round() as u32;
+        let (width, height, x, y) = if let Ok(Some(monitor)) = window.current_monitor() {
+            let monitor_size = monitor.size();
+            let monitor_position = monitor.position();
+            let margin = 16_i32;
+            let width = requested_width
+                .min(monitor_size.width.saturating_sub((margin * 2) as u32))
+                .max(1);
+            let height = requested_height
+                .min(monitor_size.height.saturating_sub((margin * 2) as u32))
+                .max(1);
+            let x = monitor_position.x + (monitor_size.width as i32) - (width as i32) - margin;
+            let y = monitor_position.y + margin;
+            (width, height, x.max(monitor_position.x), y)
+        } else {
+            (requested_width, requested_height, 0, 16)
+        };
         window
-            .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(width, height)))
+            .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
+                width, height,
+            )))
             .map_err(|err| err.to_string())?;
-        if let Ok(Some(monitor)) = window.current_monitor() {
-            let m = monitor.size();
-            let x = (m.width as i32) - (width as i32) - 16;
-            let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
-        }
+        let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
     Ok(())
 }
@@ -249,7 +341,9 @@ fn set_overlay_expanded(app: AppHandle, expanded: bool) -> Result<(), String> {
 #[tauri::command]
 fn show_chat(app: AppHandle) -> Result<(), String> {
     apply_ui_mode(&app, UiMode::Chat)?;
-    let window = app.get_webview_window("main").ok_or_else(|| "main window unavailable".to_string())?;
+    let window = app
+        .get_webview_window("main")
+        .ok_or_else(|| "main window unavailable".to_string())?;
     window.set_focus().map_err(|err| err.to_string())
 }
 
@@ -265,8 +359,15 @@ fn show_overlay(app: AppHandle) -> Result<(), String> {
 /// calls work) and an init script injects the local bearer token into
 /// sessionStorage, matching the Control Plane web app's auth expectation.
 #[tauri::command]
-fn open_control_plane(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
-    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
+fn open_control_plane(
+    app: AppHandle,
+    state: tauri::State<Mutex<ShellState>>,
+) -> Result<(), String> {
+    let token = state
+        .lock()
+        .map_err(|_| "shell state unavailable".to_string())?
+        .token
+        .clone();
     if let Some(window) = app.get_webview_window("control") {
         window.show().map_err(|err| err.to_string())?;
         return window.set_focus().map_err(|err| err.to_string());
@@ -277,12 +378,16 @@ fn open_control_plane(app: AppHandle, state: tauri::State<Mutex<ShellState>>) ->
     // after navigation), so the SPA authenticates without a blank/race window.
     let escaped = token.replace('\\', "\\\\").replace('\'', "\\'");
     let init = format!("window.sessionStorage.setItem('marvex_control_plane_token', '{escaped}');");
-    tauri::WebviewWindowBuilder::new(&app, "control", tauri::WebviewUrl::App("control-loader".into()))
-        .title("Marvex Control Plane")
-        .inner_size(1280.0, 860.0)
-        .initialization_script(&init)
-        .build()
-        .map_err(|err| err.to_string())?;
+    tauri::WebviewWindowBuilder::new(
+        &app,
+        "control",
+        tauri::WebviewUrl::App("control-loader".into()),
+    )
+    .title("Marvex Control Plane")
+    .inner_size(1280.0, 860.0)
+    .initialization_script(&init)
+    .build()
+    .map_err(|err| err.to_string())?;
     Ok(())
 }
 
@@ -328,7 +433,10 @@ pub fn run() {
                 let _ = window.set_focus();
             }
         }))
-        .plugin(tauri_plugin_autostart::init(tauri_plugin_autostart::MacosLauncher::LaunchAgent, None))
+        .plugin(tauri_plugin_autostart::init(
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
+            None,
+        ))
         .plugin(tauri_plugin_positioner::init())
         .invoke_handler(tauri::generate_handler![
             shell_runtime_config,
@@ -341,7 +449,7 @@ pub fn run() {
             submit_chat_turn,
             control_request,
             set_overlay_click_through,
-            set_overlay_expanded,
+            set_overlay_size,
             show_chat,
             show_overlay,
             open_control_plane,
@@ -349,8 +457,14 @@ pub fn run() {
             marvex_restart
         ])
         .setup(|app| {
-            let log_dir = app.path().app_log_dir().unwrap_or_else(|_| PathBuf::from("logs"));
-            let data_dir = app.path().app_local_data_dir().unwrap_or_else(|_| PathBuf::from("data"));
+            let log_dir = app
+                .path()
+                .app_log_dir()
+                .unwrap_or_else(|_| PathBuf::from("logs"));
+            let data_dir = app
+                .path()
+                .app_local_data_dir()
+                .unwrap_or_else(|_| PathBuf::from("data"));
             let resource_dir = app.path().resource_dir().ok();
             // Thin-client mode: if the always-on backend Windows service has
             // published its token, attach to the running service instead of
@@ -359,12 +473,19 @@ pub fn run() {
             let (token, supervisor) = match service_token::read_shared_token() {
                 Some(shared) => (shared.clone(), Supervisor::attach(shared, data_dir.clone())),
                 None => {
-                    let token = token::generate_local_bearer_token().map_err(std::io::Error::other)?;
-                    let supervisor = Supervisor::start(token.clone(), log_dir, data_dir, resource_dir).map_err(std::io::Error::other)?;
+                    let token =
+                        token::generate_local_bearer_token().map_err(std::io::Error::other)?;
+                    let supervisor =
+                        Supervisor::start(token.clone(), log_dir, data_dir, resource_dir)
+                            .map_err(std::io::Error::other)?;
                     (token, supervisor)
                 }
             };
-            state_stream::start_state_stream(app.handle().clone(), token.clone(), supervisor.shutdown_flag());
+            state_stream::start_state_stream(
+                app.handle().clone(),
+                token.clone(),
+                supervisor.shutdown_flag(),
+            );
             app.manage(Mutex::new(ShellState { token, supervisor }));
             build_tray(app.handle())?;
             #[cfg(target_os = "windows")]
@@ -388,7 +509,9 @@ pub fn run() {
                 });
             }
             if let Some(window) = app.get_webview_window("overlay") {
-                if let (Ok(Some(monitor)), Ok(size)) = (window.current_monitor(), window.outer_size()) {
+                if let (Ok(Some(monitor)), Ok(size)) =
+                    (window.current_monitor(), window.outer_size())
+                {
                     let m = monitor.size();
                     let x = (m.width as i32) - (size.width as i32) - 16;
                     let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
@@ -399,25 +522,41 @@ pub fn run() {
             }
             Ok(())
         })
-        .on_menu_event(|app, event| {
-            match event.id().as_ref() {
-                "open_chat" => { let _ = show_chat(app.clone()); }
-                "pause_voice" => {
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = control_request("/voice/worker/pause".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()).await;
-                    });
-                }
-                "resume_voice" => {
-                    let app = app.clone();
-                    tauri::async_runtime::spawn(async move {
-                        let _ = control_request("/voice/worker/resume".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()).await;
-                    });
-                }
-                "restart" => { let _ = marvex_restart(app.clone(), app.state::<Mutex<ShellState>>()); }
-                "shutdown" => { let _ = marvex_shutdown(app.clone(), app.state::<Mutex<ShellState>>()); }
-                _ => {}
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "open_chat" => {
+                let _ = show_chat(app.clone());
             }
+            "pause_voice" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = control_request(
+                        "/voice/worker/pause".into(),
+                        "POST".into(),
+                        Some(json!({})),
+                        app.state::<Mutex<ShellState>>(),
+                    )
+                    .await;
+                });
+            }
+            "resume_voice" => {
+                let app = app.clone();
+                tauri::async_runtime::spawn(async move {
+                    let _ = control_request(
+                        "/voice/worker/resume".into(),
+                        "POST".into(),
+                        Some(json!({})),
+                        app.state::<Mutex<ShellState>>(),
+                    )
+                    .await;
+                });
+            }
+            "restart" => {
+                let _ = marvex_restart(app.clone(), app.state::<Mutex<ShellState>>());
+            }
+            "shutdown" => {
+                let _ = marvex_shutdown(app.clone(), app.state::<Mutex<ShellState>>());
+            }
+            _ => {}
         })
         .run(tauri::generate_context!())
         .expect("error while running Marvex Shell");
@@ -448,5 +587,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
 }
 
 fn monotonic_id() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|duration| duration.as_millis()).unwrap_or_default()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or_default()
 }

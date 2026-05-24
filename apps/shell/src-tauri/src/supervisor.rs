@@ -4,7 +4,10 @@ use std::{
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
-    sync::{atomic::{AtomicBool, Ordering}, Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     thread,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -24,7 +27,10 @@ const CONTROL_PORT: u16 = 8766;
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
     Core,
-    JsonlWorker { start_command: String, stop_command: String },
+    JsonlWorker {
+        start_command: String,
+        stop_command: String,
+    },
 }
 
 #[derive(Clone, Debug)]
@@ -49,11 +55,17 @@ impl SupervisorStatus {
     }
 
     pub fn get(&self, name: &str) -> Option<String> {
-        self.inner.lock().ok().and_then(|inner| inner.get(name).cloned())
+        self.inner
+            .lock()
+            .ok()
+            .and_then(|inner| inner.get(name).cloned())
     }
 
     pub fn snapshot(&self) -> BTreeMap<String, String> {
-        self.inner.lock().map(|inner| inner.clone()).unwrap_or_default()
+        self.inner
+            .lock()
+            .map(|inner| inner.clone())
+            .unwrap_or_default()
     }
 }
 
@@ -95,11 +107,17 @@ impl Supervisor {
         resource_dir: Option<PathBuf>,
     ) -> Result<Self, String> {
         fs::create_dir_all(&log_dir).map_err(|err| format!("log directory unavailable: {err}"))?;
-        fs::create_dir_all(&data_dir).map_err(|err| format!("data directory unavailable: {err}"))?;
+        fs::create_dir_all(&data_dir)
+            .map_err(|err| format!("data directory unavailable: {err}"))?;
         let supervisor = Self {
             shutdown: Arc::new(AtomicBool::new(false)),
             status: Arc::new(SupervisorStatus::default()),
-            config: Arc::new(RuntimeConfig { token, log_dir, data_dir, resource_dir }),
+            config: Arc::new(RuntimeConfig {
+                token,
+                log_dir,
+                data_dir,
+                resource_dir,
+            }),
             launched: Arc::new(AtomicBool::new(false)),
             bootstrapping: Arc::new(AtomicBool::new(false)),
         };
@@ -119,7 +137,12 @@ impl Supervisor {
         let launched = Arc::clone(&self.launched);
         let bootstrapping = Arc::clone(&self.bootstrapping);
         thread::spawn(move || {
-            let outcome = ensure_runtime(config.resource_dir.as_deref(), &config.data_dir, &config.log_dir, &status);
+            let outcome = ensure_runtime(
+                config.resource_dir.as_deref(),
+                &config.data_dir,
+                &config.log_dir,
+                &status,
+            );
             write_runtime_manifest(&config, &outcome, &status);
             bootstrapping.store(false, Ordering::SeqCst);
             if shutdown.load(Ordering::SeqCst) {
@@ -139,7 +162,15 @@ impl Supervisor {
                 let service_status = Arc::clone(&status);
                 let service_config = Arc::clone(&config);
                 let service_venv = Arc::clone(&venv);
-                thread::spawn(move || supervise_service(spec, service_shutdown, service_status, service_config, service_venv));
+                thread::spawn(move || {
+                    supervise_service(
+                        spec,
+                        service_shutdown,
+                        service_status,
+                        service_config,
+                        service_venv,
+                    )
+                });
             }
         });
     }
@@ -154,7 +185,12 @@ impl Supervisor {
         Self {
             shutdown: Arc::new(AtomicBool::new(false)),
             status,
-            config: Arc::new(RuntimeConfig { token, log_dir: data_dir.clone(), data_dir, resource_dir: None }),
+            config: Arc::new(RuntimeConfig {
+                token,
+                log_dir: data_dir.clone(),
+                data_dir,
+                resource_dir: None,
+            }),
             launched: Arc::new(AtomicBool::new(true)),
             bootstrapping: Arc::new(AtomicBool::new(false)),
         }
@@ -251,7 +287,8 @@ fn venv_script(venv: &Path, name: &str) -> PathBuf {
 /// `None` when the venv is absent or the script is not present on disk (so the
 /// caller falls back to the dev `uv run` path).
 fn sidecar_path(venv: Option<&Path>, name: &str) -> Option<PathBuf> {
-    venv.map(|root| venv_script(root, name)).filter(|path| path.is_file())
+    venv.map(|root| venv_script(root, name))
+        .filter(|path| path.is_file())
 }
 
 /// Resolve the `uv` binary: prefer the bundled copy in the resource dir, then
@@ -315,7 +352,17 @@ fn ensure_runtime(
 
     status.set("runtime", "creating environment");
     let venv_arg = venv.to_string_lossy().to_string();
-    if !run_tool(&uv, &["venv".to_string(), venv_arg, "--python".to_string(), "3.11".to_string()], data_dir, &bootstrap_log) {
+    if !run_tool(
+        &uv,
+        &[
+            "venv".to_string(),
+            venv_arg,
+            "--python".to_string(),
+            "3.11".to_string(),
+        ],
+        data_dir,
+        &bootstrap_log,
+    ) {
         status.set("runtime", "venv_failed");
         return RuntimeOutcome::Failed;
     }
@@ -374,13 +421,22 @@ fn run_tool(tool: &Path, args: &[String], cwd: &Path, log_path: &Path) -> bool {
 
 /// Write `<data_dir>/runtime/manifest.json` describing the live runtime so the
 /// GUI, health checks and diagnostics have a single source of truth.
-fn write_runtime_manifest(config: &RuntimeConfig, outcome: &RuntimeOutcome, status: &SupervisorStatus) {
+fn write_runtime_manifest(
+    config: &RuntimeConfig,
+    outcome: &RuntimeOutcome,
+    status: &SupervisorStatus,
+) {
     let runtime_dir = config.data_dir.join("runtime");
     let _ = fs::create_dir_all(&runtime_dir);
     let (phase, venv): (String, Option<PathBuf>) = match outcome {
         RuntimeOutcome::Ready(venv) => ("ready".to_string(), Some(venv.clone())),
         RuntimeOutcome::Dev => ("dev".to_string(), None),
-        RuntimeOutcome::Failed => (status.get("runtime").unwrap_or_else(|| "failed".to_string()), None),
+        RuntimeOutcome::Failed => (
+            status
+                .get("runtime")
+                .unwrap_or_else(|| "failed".to_string()),
+            None,
+        ),
     };
     let services: Vec<_> = service_specs(&config.token)
         .iter()
@@ -421,7 +477,10 @@ fn write_runtime_manifest(config: &RuntimeConfig, outcome: &RuntimeOutcome, stat
 }
 
 fn now_unix_ms() -> u128 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis()).unwrap_or_default()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis())
+        .unwrap_or_default()
 }
 
 // ---------------------------------------------------------------------------
@@ -438,7 +497,13 @@ fn supervise_service(
     let mut backoff_seconds = 1_u64;
     while !shutdown.load(Ordering::SeqCst) {
         status.set(spec.name, "starting");
-        match spawn_service(&spec, &config.log_dir, &config.data_dir, config.resource_dir.as_deref(), venv.as_deref()) {
+        match spawn_service(
+            &spec,
+            &config.log_dir,
+            &config.data_dir,
+            config.resource_dir.as_deref(),
+            venv.as_deref(),
+        ) {
             Ok(mut child) => {
                 status.set(spec.name, format!("running pid {}", child.id()));
                 if let ServiceKind::JsonlWorker { start_command, .. } = &spec.kind {
@@ -497,7 +562,7 @@ fn spawn_service(
         command.current_dir(project_root());
         command
     };
-    
+
     // Expose the bundled uv to services so the Deps tab can install extra
     // packages into this same venv (importable without a restart).
     if let Some(uv) = find_uv(resource_dir) {
@@ -511,7 +576,12 @@ fn spawn_service(
     let web_dist = resource_dir
         .map(|dir| dir.join("control_plane_web"))
         .filter(|p| p.is_dir())
-        .unwrap_or_else(|| project_root().join("apps").join("control_plane_web").join("dist"));
+        .unwrap_or_else(|| {
+            project_root()
+                .join("apps")
+                .join("control_plane_web")
+                .join("dist")
+        });
     if web_dist.is_dir() {
         command.env("MARVEX_CONTROL_WEB_DIST", web_dist);
     }
@@ -520,21 +590,35 @@ fn spawn_service(
     let voice_assets = resource_dir
         .map(|dir| dir.join("voice-assets"))
         .filter(|p| p.is_dir())
-        .unwrap_or_else(|| project_root().join("apps").join("shell").join("voice-assets"));
+        .unwrap_or_else(|| {
+            project_root()
+                .join("apps")
+                .join("shell")
+                .join("voice-assets")
+        });
     if voice_assets.is_dir() {
         command.env("MARVEX_VOICE_ASSET_ROOT", voice_assets);
     }
-    command.stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+    command
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
     #[cfg(windows)]
     command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-    let mut child = command.spawn().map_err(|err| format!("failed to spawn {}: {err}", spec.name))?;
+    let mut child = command
+        .spawn()
+        .map_err(|err| format!("failed to spawn {}: {err}", spec.name))?;
     attach_log_pipe(spec.name, "stdout", child.stdout.take(), log_dir);
     attach_log_pipe(spec.name, "stderr", child.stderr.take(), log_dir);
     Ok(child)
 }
 
 fn project_root() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..").join("..").canonicalize().unwrap_or_else(|_| PathBuf::from("."))
+    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("..")
+        .canonicalize()
+        .unwrap_or_else(|_| PathBuf::from("."))
 }
 
 fn write_child_line(child: &mut Child, line: &str) {
@@ -545,7 +629,12 @@ fn write_child_line(child: &mut Child, line: &str) {
     }
 }
 
-fn attach_log_pipe(name: &'static str, stream_name: &'static str, stream: Option<impl std::io::Read + Send + 'static>, log_dir: &Path) {
+fn attach_log_pipe(
+    name: &'static str,
+    stream_name: &'static str,
+    stream: Option<impl std::io::Read + Send + 'static>,
+    log_dir: &Path,
+) {
     let Some(stream) = stream else { return };
     let path = log_dir.join(format!("{name}.{stream_name}.log"));
     thread::spawn(move || {
@@ -563,7 +652,10 @@ fn attach_log_pipe(name: &'static str, stream_name: &'static str, stream: Option
 
 #[cfg(test)]
 mod tests {
-    use super::{find_uv, service_kind_label, service_specs, sidecar_path, venv_root, venv_script, ServiceKind};
+    use super::{
+        find_uv, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
+        ServiceKind,
+    };
     use std::path::Path;
 
     #[test]
@@ -597,7 +689,10 @@ mod tests {
         let specs = service_specs("token");
         let core = specs.iter().find(|s| s.name == "core").expect("core");
         assert_eq!(service_kind_label(&core.kind), "http");
-        let provider = specs.iter().find(|s| s.name == "provider_worker").expect("provider");
+        let provider = specs
+            .iter()
+            .find(|s| s.name == "provider_worker")
+            .expect("provider");
         assert_eq!(service_kind_label(&provider.kind), "jsonl");
         assert!(matches!(core.kind, ServiceKind::Core));
     }

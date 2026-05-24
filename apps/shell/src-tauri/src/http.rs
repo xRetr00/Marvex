@@ -20,7 +20,12 @@ fn client() -> Result<reqwest::Client, String> {
         .map_err(|err| format!("http client init failed: {err}"))
 }
 
-pub async fn http_get(host: &str, port: u16, path: &str, token: Option<&str>) -> Result<HttpResponse, String> {
+pub async fn http_get(
+    host: &str,
+    port: u16,
+    path: &str,
+    token: Option<&str>,
+) -> Result<HttpResponse, String> {
     if !loopback_ok(host) {
         return Err("loopback host required".to_string());
     }
@@ -29,24 +34,45 @@ pub async fn http_get(host: &str, port: u16, path: &str, token: Option<&str>) ->
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
-    let resp = req.send().await.map_err(|err| format!("request failed: {err}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
     let status = resp.status().as_u16();
-    let body = resp.text().await.map_err(|err| format!("read failed: {err}"))?;
+    let body = resp
+        .text()
+        .await
+        .map_err(|err| format!("read failed: {err}"))?;
     Ok(HttpResponse { status, body })
 }
 
-pub async fn http_post_json(host: &str, port: u16, path: &str, token: Option<&str>, body: &Value) -> Result<HttpResponse, String> {
+pub async fn http_post_json(
+    host: &str,
+    port: u16,
+    path: &str,
+    token: Option<&str>,
+    body: &Value,
+) -> Result<HttpResponse, String> {
     if !loopback_ok(host) {
         return Err("loopback host required".to_string());
     }
     let url = format!("http://{host}:{port}{path}");
-    let mut req = client()?.post(url).header("Accept", "application/json").json(body);
+    let mut req = client()?
+        .post(url)
+        .header("Accept", "application/json")
+        .json(body);
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
-    let resp = req.send().await.map_err(|err| format!("request failed: {err}"))?;
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
     let status = resp.status().as_u16();
-    let text = resp.text().await.map_err(|err| format!("read failed: {err}"))?;
+    let text = resp
+        .text()
+        .await
+        .map_err(|err| format!("read failed: {err}"))?;
     Ok(HttpResponse { status, body: text })
 }
 
