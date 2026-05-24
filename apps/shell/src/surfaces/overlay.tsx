@@ -55,6 +55,13 @@ export function OverlaySurface() {
   const [hovered, setHovered] = useState(false);
   const islandRef = useRef<HTMLDivElement | null>(null);
 
+  // Welcome card: when the island first appears on startup, spawn a spotlight
+  // card from it so the assistant greets the user.
+  useEffect(() => {
+    const t = setTimeout(() => void showSpotlight().catch(() => undefined), 1200);
+    return () => clearTimeout(t);
+  }, []);
+
   const prevStatusRef = useRef<string>("idle");
   useEffect(() => {
     let cleanup: VoidFunction | undefined;

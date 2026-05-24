@@ -7,7 +7,12 @@ mod token;
 #[cfg(windows)]
 pub mod service;
 
-use std::{path::PathBuf, sync::Mutex, time::{SystemTime, UNIX_EPOCH}};
+use std::{path::PathBuf, sync::{atomic::{AtomicBool, Ordering}, Mutex}, time::{SystemTime, UNIX_EPOCH}};
+
+/// Set while an explicit Marvex shutdown is in progress so the main window's
+/// CloseRequested handler stops swallowing the close (otherwise quit hangs and
+/// the process must be killed from Task Manager).
+static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
 
 use serde::Serialize;
 use serde_json::{json, Value};
@@ -191,6 +196,75 @@ async fn control_request(path: String, method: String, body: Option<Value>, stat
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Control Plane response: {err}"))
 }
 
+/// Shut Marvex down cleanly: stop the locally-supervised backend (no-op in
+/// thin-client mode, which must not kill the shared service), close all windows,
+/// and exit the process.
+#[tauri::command]
+fn marvex_shutdown(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    if let Ok(state) = state.lock() {
+        state.supervisor.shutdown();
+    }
+    for (_label, window) in app.webview_windows() {
+        let _ = window.close();
+    }
+    app.exit(0);
+    Ok(())
+}
+
+/// Restart the Marvex shell process.
+#[tauri::command]
+fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
+    SHUTTING_DOWN.store(true, Ordering::SeqCst);
+    if let Ok(state) = state.lock() {
+        state.supervisor.shutdown();
+    }
+    app.restart();
+}
+
+#[derive(Serialize)]
+struct LogTail {
+    name: String,
+    lines: Vec<String>,
+}
+
+/// Read the tail of the backend log files (read-only). Looks in the shell's log
+/// dir and the always-on service log dir under ProgramData.
+#[tauri::command]
+fn read_logs(max_lines: Option<usize>, state: tauri::State<Mutex<ShellState>>) -> Result<Vec<LogTail>, String> {
+    let max = max_lines.unwrap_or(200).min(2000);
+    let mut dirs: Vec<PathBuf> = Vec::new();
+    if let Ok(state) = state.lock() {
+        dirs.push(state.supervisor.log_dir());
+    }
+    if let Ok(program_data) = std::env::var("ProgramData") {
+        dirs.push(PathBuf::from(program_data).join("Marvex").join("logs"));
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    let mut out: Vec<LogTail> = Vec::new();
+    for dir in dirs {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) != Some("log") {
+                continue;
+            }
+            let name = path.file_name().and_then(|s| s.to_str()).unwrap_or("log").to_string();
+            if !seen.insert(name.clone()) {
+                continue;
+            }
+            if let Ok(text) = std::fs::read_to_string(&path) {
+                let all: Vec<&str> = text.lines().collect();
+                let start = all.len().saturating_sub(max);
+                let lines = all[start..].iter().map(|l| l.to_string()).collect();
+                out.push(LogTail { name, lines });
+            }
+        }
+    }
+    out.sort_by(|a, b| a.name.cmp(&b.name));
+    Ok(out)
+}
+
 #[tauri::command]
 fn set_overlay_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("overlay") {
@@ -248,27 +322,19 @@ fn hide_spotlight(app: AppHandle) -> Result<(), String> {
 /// calls work) and an init script injects the local bearer token into
 /// sessionStorage, matching the Control Plane web app's auth expectation.
 #[tauri::command]
-async fn open_control_plane(app: AppHandle, state: tauri::State<'_, Mutex<ShellState>>) -> Result<(), String> {
-    let token = { state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone() };
+fn open_control_plane(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Result<(), String> {
+    let token = state.lock().map_err(|_| "shell state unavailable".to_string())?.token.clone();
     if let Some(window) = app.get_webview_window("control") {
         window.show().map_err(|err| err.to_string())?;
         return window.set_focus().map_err(|err| err.to_string());
     }
-    // Wait for the control plane server (8766) to accept connections before
-    // loading the window, otherwise the webview shows a blank connection-refused
-    // page with no auto-retry. Any HTTP response means the server is up.
-    for _ in 0..40 {
-        if http::http_get("127.0.0.1", 8766, "/", Some(&token)).await.is_ok() {
-            break;
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
-    }
+    // Load a shell-owned loader page that shows backend bring-up/errors and then
+    // navigates to the control plane server when it is ready. The init script
+    // injects the bearer token on whatever origin loads (including 127.0.0.1:8766
+    // after navigation), so the SPA authenticates without a blank/race window.
     let escaped = token.replace('\\', "\\\\").replace('\'', "\\'");
     let init = format!("window.sessionStorage.setItem('marvex_control_plane_token', '{escaped}');");
-    let url = tauri::WebviewUrl::External(
-        "http://127.0.0.1:8766/".parse().map_err(|_| "invalid control plane url".to_string())?,
-    );
-    tauri::WebviewWindowBuilder::new(&app, "control", url)
+    tauri::WebviewWindowBuilder::new(&app, "control", tauri::WebviewUrl::App("control-loader".into()))
         .title("Marvex Control Plane")
         .inner_size(1280.0, 860.0)
         .initialization_script(&init)
@@ -337,7 +403,10 @@ pub fn run() {
             show_overlay,
             show_spotlight,
             hide_spotlight,
-            open_control_plane
+            open_control_plane,
+            marvex_shutdown,
+            marvex_restart,
+            read_logs
         ])
         .setup(|app| {
             let log_dir = app.path().app_log_dir().unwrap_or_else(|_| PathBuf::from("logs"));
@@ -370,7 +439,11 @@ pub fn run() {
                 let _ = window.hide();
                 window.on_window_event(|event| {
                     if let WindowEvent::CloseRequested { api, .. } = event {
-                        api.prevent_close();
+                        // Closing the chat window hides to tray — unless an
+                        // explicit shutdown is underway, in which case let it close.
+                        if !SHUTTING_DOWN.load(Ordering::SeqCst) {
+                            api.prevent_close();
+                        }
                     }
                 });
             }
@@ -401,14 +474,8 @@ pub fn run() {
                         let _ = control_request("/voice/worker/resume".into(), "POST".into(), Some(json!({})), app.state::<Mutex<ShellState>>()).await;
                     });
                 }
-                "quit" => {
-                    if let Some(state) = app.try_state::<Mutex<ShellState>>() {
-                        if let Ok(state) = state.lock() {
-                            state.supervisor.shutdown();
-                        }
-                    }
-                    app.exit(0);
-                }
+                "restart" => { let _ = marvex_restart(app.clone(), app.state::<Mutex<ShellState>>()); }
+                "shutdown" => { let _ = marvex_shutdown(app.clone(), app.state::<Mutex<ShellState>>()); }
                 _ => {}
             }
         })
@@ -423,7 +490,8 @@ fn build_tray(app: &AppHandle) -> tauri::Result<()> {
         .text("pause_voice", "Pause voice")
         .text("resume_voice", "Resume voice")
         .separator()
-        .text("quit", "Quit")
+        .text("restart", "Restart Marvex")
+        .text("shutdown", "Shutdown Marvex")
         .build()?;
     let mut builder = TrayIconBuilder::with_id("marvex-shell")
         .tooltip("Marvex")

@@ -42,8 +42,8 @@ type SpotlightPayload =
 export function SpotlightSurface() {
   const [payload, setPayload] = useState<SpotlightPayload>({
     kind: "info",
-    title: "Marvex",
-    body: "Waiting for assistant activity.",
+    title: "Marvex is ready",
+    body: "Say “Hey Marvex” or click the island to chat.",
   });
   const [pending, setPending] = useState(false);
   const hovering = useRef(false);

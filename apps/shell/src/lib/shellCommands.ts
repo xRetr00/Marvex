@@ -105,3 +105,17 @@ export async function showOverlay(): Promise<void> {
 export async function openControlPlane(): Promise<void> {
   await invoke("open_control_plane");
 }
+
+export async function marvexShutdown(): Promise<void> {
+  await invoke("marvex_shutdown");
+}
+
+export async function marvexRestart(): Promise<void> {
+  await invoke("marvex_restart");
+}
+
+export type LogTail = { name: string; lines: string[] };
+
+export async function readLogs(maxLines = 200): Promise<LogTail[]> {
+  return invoke<LogTail[]>("read_logs", { maxLines });
+}

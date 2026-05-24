@@ -176,6 +176,10 @@ impl Supervisor {
         self.config.data_dir.join("runtime").join("manifest.json")
     }
 
+    pub fn log_dir(&self) -> PathBuf {
+        self.config.log_dir.clone()
+    }
+
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
     }
