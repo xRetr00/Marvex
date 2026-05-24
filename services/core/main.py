@@ -93,6 +93,11 @@ from packages.learning_runtime import (
     ToolOutcomeFeedback,
 )
 from packages.local_api import LocalApiConfig, create_health_version_api_app
+from packages.local_api.asgi_host import (
+    AsgiHostConfig,
+    build_asgi_startup_message,
+    run_dual_asgi_host,
+)
 from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
 from packages.memory_tree_runtime import (
     CanonicalSourceMetadata as MemoryTreeSourceMetadata,
@@ -2492,6 +2497,27 @@ def run_core_service(
         trace_reader=trace_reader,
         state_bus=state_bus,
     )
+    if server_factory is make_server and control_server_factory is None:
+        asgi_config = AsgiHostConfig(
+            host=local_api_config.host,
+            port=local_api_config.port,
+            control_host=control_api_config.host,
+            control_port=control_api_config.port,
+            allow_remote=effective_config.allow_remote,
+        )
+        try:
+            return run_dual_asgi_host(
+                core_wsgi_app=app,
+                control_wsgi_app=control_app,
+                config=asgi_config,
+                startup_message=build_asgi_startup_message(
+                    config=asgi_config,
+                    service="marvex-core-service",
+                    provider=effective_config.provider,
+                ),
+            )
+        finally:
+            service.shutdown()
     httpd = server_factory(local_api_config.host, local_api_config.port, app)
     effective_control_server_factory = control_server_factory
     if effective_control_server_factory is None and server_factory is make_server:
