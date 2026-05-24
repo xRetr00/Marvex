@@ -106,6 +106,28 @@ def test_provider_worker_jsonl_start_status_send_and_stop_fake_provider():
     assert provider_response.error is None
 
 
+def test_provider_worker_ignores_network_timeout_for_fake_provider():
+    from services.provider_worker.controller import ProviderWorkerController
+    from services.provider_worker.models import ProviderWorkerConfig
+
+    result = ProviderWorkerController(
+        config=ProviderWorkerConfig(
+            provider_candidates=("fake",),
+            fallback_enabled=False,
+        )
+    ).send(
+        provider_name="fake",
+        request=make_request().model_copy(
+            update={"provider_options": {"grounded_citation_ids": ["web.evidence.1"]}}
+        ),
+        timeout_seconds=10,
+    )
+
+    assert result.ok is True
+    assert result.response is not None
+    assert result.response.output_text == "Answer from provided evidence [web.evidence.1]."
+
+
 def test_provider_worker_unsupported_provider_returns_structured_error():
     responses = run_worker_jsonl(
         [

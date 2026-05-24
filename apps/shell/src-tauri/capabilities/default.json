@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "main-capability",
   "description": "Marvex Shell windows call only local shell-owned commands and receive shell-owned state events.",
-  "windows": ["main", "overlay"],
+  "windows": ["main", "overlay", "control"],
   "permissions": [
     "core:default",
     "autostart:allow-enable",

@@ -27,7 +27,7 @@ ALLOWED_BOUNDARY_DIRS = {
     "apps/shell/src/components/ui",
 }
 EXCLUDED_TOP_LEVEL = {"docs", "templates", "scripts"}
-EXCLUDED_PARTS = {"node_modules", "dist", "build", ".venv", ".claude"}
+EXCLUDED_PARTS = {"node_modules", "dist", "build", ".venv", ".claude", "temp"}
 
 
 def main() -> int:

@@ -21,6 +21,7 @@ from .state import handle_state_snapshot, handle_state_stream
 from .voice import handle_voice_control_request
 
 
+# file size justification: Control Plane API dispatch is still centralized while the Assistant OS contracts settle; endpoint groups should continue moving into service-owned modules.
 StartResponse = Any
 WsgiApp = Any
 SCHEMA_VERSION = "1"

@@ -1,5 +1,7 @@
 # Marvex Windows Installer — Packaging Documentation
 
+file size justification: This packaging contract intentionally keeps installer, runtime, and sidecar validation details together until the app packaging boundary is split into owned specs.
+
 ## Overview
 
 Marvex uses **Tier 1: Production (Setuptools Console Scripts)** for runtime service execution. This document describes the complete packaging architecture, build flow, and runtime behavior.

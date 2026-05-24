@@ -78,7 +78,6 @@ export function SetupPage({ onComplete }: SetupProps) {
         if (runtime.endsWith("_failed") || runtime.endsWith("_incomplete") || runtime === "uv_unavailable") {
           setError("Runtime setup failed. See logs (runtime.bootstrap.log).");
           setPhase("error");
-          setTimeout(() => { markSetupDone(); onComplete(); }, 2000);
           return;
         }
         setBootText(null);
@@ -109,13 +108,17 @@ export function SetupPage({ onComplete }: SetupProps) {
           setProgress(Math.round(((i + 1) / states.length) * 100));
         }
 
+        const finalStatus = await fetchDeps();
+        if (finalStatus.deps.some((dep) => !dep.installed)) {
+          setError("Runtime setup failed. See logs (runtime.bootstrap.log).");
+          setPhase("error");
+          return;
+        }
         setPhase("done");
         setTimeout(() => { markSetupDone(); onComplete(); }, 1200);
       } catch (err) {
-        // Backend not available — skip setup
-        setError("Backend not reachable. Starting anyway.");
+        setError("Backend not reachable. Runtime setup is still pending.");
         setPhase("error");
-        setTimeout(() => { markSetupDone(); onComplete(); }, 1500);
       }
     })();
   }, [onComplete]);

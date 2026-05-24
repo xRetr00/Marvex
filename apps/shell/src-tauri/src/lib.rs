@@ -196,8 +196,15 @@ async fn submit_chat_turn(
         "previous_response_id": null,
         "provider_options": {}
     });
-    let response =
-        http::http_post_json("127.0.0.1", 8765, "/v1/turns", Some(&token), &body).await?;
+    let response = http::http_post_json_with_timeout(
+        "127.0.0.1",
+        8765,
+        "/v1/turns",
+        Some(&token),
+        &body,
+        http::TURN_HTTP_TIMEOUT,
+    )
+    .await?;
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
 }
 
@@ -252,12 +259,13 @@ async fn control_request(
     };
     let full_path = format!("/control{path}");
     let response = if method.eq_ignore_ascii_case("POST") {
-        http::http_post_json(
+        http::http_post_json_with_timeout(
             "127.0.0.1",
             8766,
             &full_path,
             Some(&token),
             &body.unwrap_or_else(|| json!({})),
+            http::CONTROL_POST_HTTP_TIMEOUT,
         )
         .await?
     } else {
@@ -591,4 +599,21 @@ fn monotonic_id() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn default_capability_allows_control_window_commands() {
+        let capability: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
+        let windows = capability
+            .get("windows")
+            .and_then(|value| value.as_array())
+            .unwrap();
+
+        assert!(windows.iter().any(|value| value.as_str() == Some("main")));
+        assert!(windows.iter().any(|value| value.as_str() == Some("overlay")));
+        assert!(windows.iter().any(|value| value.as_str() == Some("control")));
+    }
 }

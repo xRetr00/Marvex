@@ -13,6 +13,7 @@ EXCLUDED_PREFIXES = (
     "apps/shell/packaging/dist/",
     "apps/shell/src-tauri/target/",
     "apps/shell/src-tauri/gen/",
+    "apps/shell/voice-assets/",
 )
 EXCLUDED_FILENAMES = {"package-lock.json"}
 TEXT_SUFFIXES = {

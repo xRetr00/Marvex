@@ -14,6 +14,8 @@ ALLOWED_IMPORT_PREFIXES = (
     "collections.abc",
     "dataclasses",
     "json",
+    "os",
+    "pathlib",
     "packages.voice_worker_runtime",
     "pydantic",
     "services.voice_worker",

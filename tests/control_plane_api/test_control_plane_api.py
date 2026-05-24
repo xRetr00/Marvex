@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# file size justification: control-plane contract coverage exercises many endpoints through one WSGI fixture to preserve end-to-end behavior checks.
+
 import io
 import json
 from wsgiref.util import setup_testing_defaults

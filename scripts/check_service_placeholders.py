@@ -29,6 +29,7 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "dataclasses",
     "datetime",
     "json",
+    "os",
     "pathlib",
     "re",
     "packages.adapters.connectors",

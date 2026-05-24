@@ -1,5 +1,7 @@
 # Phase 1 — Shell UX, Performance, Presence & Persistence Implementation Plan
 
+file size justification: This archived execution plan preserves task-level implementation and verification detail for phase handoff; do not use it as a runtime module pattern.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Make the Marvex shell responsive (no main-thread blocking), turn the dynamic island into a live top-right presence that spawns cards, persist chat/sessions, and surface real failure states instead of "No displayable response returned."

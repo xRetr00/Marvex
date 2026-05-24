@@ -134,11 +134,11 @@ class ProviderWorkerController:
             for _attempt in range(retry_count + 1):
                 try:
                     provider = self.provider_factory(
-                        ProviderRuntimeConfig(
+                        _provider_runtime_config(
                             provider_name=candidate,
-                            lmstudio_responses_api_key=lmstudio_responses_api_key,
                             base_url=base_url,
                             timeout_seconds=timeout_seconds,
+                            lmstudio_responses_api_key=lmstudio_responses_api_key,
                         )
                     )
                     response = provider.send(request)  # type: ignore[attr-defined]
@@ -458,3 +458,20 @@ class ProviderWorkerController:
                 details={"reason": reason},
             ),
         )
+
+
+def _provider_runtime_config(
+    *,
+    provider_name: str,
+    base_url: str | None = None,
+    timeout_seconds: float | None = None,
+    lmstudio_responses_api_key: str | None = None,
+) -> ProviderRuntimeConfig:
+    if provider_name == "fake":
+        return ProviderRuntimeConfig(provider_name=provider_name)
+    return ProviderRuntimeConfig(
+        provider_name=provider_name,
+        lmstudio_responses_api_key=lmstudio_responses_api_key,
+        base_url=base_url,
+        timeout_seconds=timeout_seconds,
+    )

@@ -16,6 +16,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "collections",
     "datetime",
     "json",
+    "pathlib",
     "queue",
     "threading",
     "time",
