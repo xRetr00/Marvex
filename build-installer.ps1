@@ -71,6 +71,23 @@ function Write-Success {
     Write-Host "✓ $Message" -ForegroundColor Green
 }
 
+function Invoke-NpmCi {
+    param([string]$Label)
+
+    $npmOutput = & npm ci 2>&1
+    $npmExitCode = $LASTEXITCODE
+    $npmOutput | Where-Object { $_ -match 'added|up to date|audited|found 0 vulnerabilities' } | ForEach-Object {
+        Write-Host $_
+    }
+
+    if ($npmExitCode -ne 0) {
+        $npmOutput | Select-Object -Last 20 | ForEach-Object {
+            Write-Host $_ -ForegroundColor DarkYellow
+        }
+        Write-Error-Exit "npm ci failed for $Label. Close running Node/Vite dev servers that may lock node_modules native packages, then retry."
+    }
+}
+
 # ============================================================================
 # Validation
 # ============================================================================
@@ -258,10 +275,7 @@ function Build-Frontend {
     Push-Location $ControlPlaneDir
     try {
         Write-Step "Installing Control Plane dependencies..." 3 5
-        npm ci 2>&1 | Where-Object { $_ -match 'added|up to date' }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "npm ci failed for Control Plane"
-        }
+        Invoke-NpmCi "Control Plane"
         
         Write-Step "Building Control Plane..." 3 5
         npm run build 2>&1 | Where-Object { $_ -match 'built|entry' }
@@ -296,10 +310,7 @@ function Build-Frontend {
     Push-Location $ShellDir
     try {
         Write-Step "Installing Shell dependencies..." 3 5
-        npm ci 2>&1 | Where-Object { $_ -match 'added|up to date' }
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "npm ci failed for Shell"
-        }
+        Invoke-NpmCi "Shell"
         
         Write-Step "Building Shell frontend..." 3 5
         npm run build 2>&1 | Where-Object { $_ -match 'built|entry|vite' }

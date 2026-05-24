@@ -296,10 +296,11 @@ call :WriteSection "Step 3: Building Frontend (React/Vite)"
 pushd "%ControlPlaneDir%"
 call :WriteStep "Installing Control Plane dependencies..." 3 6
 call npm ci
-if errorlevel 1 (
+set "npmExit=!ERRORLEVEL!"
+if not "!npmExit!"=="0" (
     popd
-    call :Die "npm ci failed for Control Plane"
-    exit /b 1
+    call :Die "npm ci failed for Control Plane. Close running Node/Vite dev servers that may lock node_modules native packages, then retry."
+    exit /b !npmExit!
 )
 
 call :WriteStep "Building Control Plane..." 3 6
@@ -317,19 +318,29 @@ rem same-origin by the control plane server for the shell's Control Plane window
 if exist "%ShellDir%\control_plane_web" rmdir /s /q "%ShellDir%\control_plane_web"
 mkdir "%ShellDir%\control_plane_web"
 xcopy /e /i /y "%ControlPlaneDir%\dist\*" "%ShellDir%\control_plane_web\" >nul
-if not exist "%ShellDir%\control_plane_web\index.html" call :Die "Control Plane staged resource missing index.html"
-if not exist "%ShellDir%\control_plane_web\assets" call :Die "Control Plane staged resource missing built assets"
+if not exist "%ShellDir%\control_plane_web\index.html" (
+    call :Die "Control Plane staged resource missing index.html"
+    exit /b 1
+)
+if not exist "%ShellDir%\control_plane_web\assets" (
+    call :Die "Control Plane staged resource missing built assets"
+    exit /b 1
+)
 dir /b "%ShellDir%\control_plane_web\assets\*" >nul 2>&1
-if errorlevel 1 call :Die "Control Plane staged resource missing built assets"
+if errorlevel 1 (
+    call :Die "Control Plane staged resource missing built assets"
+    exit /b 1
+)
 call :WriteSuccess "Control Plane SPA staged into shell resources"
 
 pushd "%ShellDir%"
 call :WriteStep "Installing Shell dependencies..." 3 6
 call npm ci
-if errorlevel 1 (
+set "npmExit=!ERRORLEVEL!"
+if not "!npmExit!"=="0" (
     popd
-    call :Die "npm ci failed for Shell"
-    exit /b 1
+    call :Die "npm ci failed for Shell. Close running Node/Vite dev servers that may lock node_modules native packages, then retry."
+    exit /b !npmExit!
 )
 
 call :WriteStep "Building Shell frontend..." 3 6
