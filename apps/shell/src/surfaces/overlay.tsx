@@ -82,6 +82,17 @@ export function OverlaySurface() {
   const queue = queueRef.current;
   const lastOverlaySizeRef = useRef<OverlayWindowSize | null>(null);
 
+  useEffect(() => {
+    document.documentElement.classList.add("marvex-overlay-document");
+    document.body.classList.add("marvex-overlay-document");
+    document.getElementById("root")?.classList.add("marvex-overlay-root");
+    return () => {
+      document.documentElement.classList.remove("marvex-overlay-document");
+      document.body.classList.remove("marvex-overlay-document");
+      document.getElementById("root")?.classList.remove("marvex-overlay-root");
+    };
+  }, []);
+
   // Welcome card: lives inside the island overlay and collapses back into the
   // idle pill after its own lifecycle.
   useEffect(() => {

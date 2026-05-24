@@ -54,32 +54,30 @@ export default function DynamicIsland({
   };
 
   return (
-    <div className={`relative flex justify-center ${className}`}>
-      <motion.div
-        className="mx-auto w-fit min-w-[100px] overflow-hidden rounded-full bg-black"
-        layout
-        style={{ borderRadius: 32 }}
-        transition={
-          shouldReduceMotion
-            ? { duration: 0 }
-            : {
-                type: "spring" as const,
-                bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE,
-                duration: 0.25,
-              }
-        }
-      >
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={view}
-            animate={shouldReduceMotion ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1, filter: "blur(0px)", originX: 0.5, originY: 0.5, transition: { delay: 0.05 } }}
-            initial={{ scale: 0.9, opacity: 0, filter: "blur(5px)", originX: 0.5, originY: 0.5 }}
-            transition={{ type: "spring" as const, bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE }}
-          >
-            {content}
-          </motion.div>
-        </AnimatePresence>
-      </motion.div>
-    </div>
+    <motion.div
+      className={`marvex-dynamic-island-pill mx-auto w-fit min-w-[100px] overflow-hidden rounded-full bg-black ${className}`}
+      layout
+      style={{ borderRadius: 32 }}
+      transition={
+        shouldReduceMotion
+          ? { duration: 0 }
+          : {
+              type: "spring" as const,
+              bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE,
+              duration: 0.25,
+            }
+      }
+    >
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view}
+          animate={shouldReduceMotion ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1, filter: "blur(0px)", originX: 0.5, originY: 0.5, transition: { delay: 0.05 } }}
+          initial={{ scale: 0.9, opacity: 0, filter: "blur(5px)", originX: 0.5, originY: 0.5 }}
+          transition={{ type: "spring" as const, bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE }}
+        >
+          {content}
+        </motion.div>
+      </AnimatePresence>
+    </motion.div>
   );
 }
