@@ -43,6 +43,12 @@ export type VoiceModelCatalog = {
   raw_payload_persisted: false;
 };
 
+export type VoiceModelDownloadProgress = {
+  asset: VoiceModelCatalogAsset;
+  completed: number;
+  total: number;
+};
+
 export function fetchVoiceWorkerStatus(): Promise<VoiceWorkerStatus> {
   return controlRequest("/voice/worker", "GET") as Promise<VoiceWorkerStatus>;
 }
@@ -96,4 +102,18 @@ export function downloadVoiceModel(asset: VoiceModelCatalogAsset): Promise<unkno
   if (asset.install_relative_path) body.install_relative_path = asset.install_relative_path;
   if (asset.checksum_sha256) body.checksum_sha256 = asset.checksum_sha256;
   return controlRequest("/voice/worker/models/download", "POST", body);
+}
+
+export async function downloadVoiceModelGroup(
+  assets: VoiceModelCatalogAsset[],
+  onProgress?: (event: VoiceModelDownloadProgress) => void
+): Promise<unknown[]> {
+  const results: unknown[] = [];
+  const total = assets.length;
+  for (const asset of assets) {
+    const result = await downloadVoiceModel(asset);
+    results.push(result);
+    onProgress?.({ asset, completed: results.length, total });
+  }
+  return results;
 }

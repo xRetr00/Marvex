@@ -21,6 +21,7 @@ from packages.contracts.state_event import AssistantStatusKind
 from packages.control_plane_api import (
     ControlPlaneRuntime,
     ControlPlaneSnapshot,
+    InMemoryProviderControl,
     InMemoryApprovalStore,
 )
 from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
@@ -146,8 +147,9 @@ from packages.web_search_runtime import (
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_CONTROL_PORT = 8766
-DEFAULT_FOUNDATION_MODEL = "fake-model"
-DEFAULT_PROVIDER = "fake"
+DEFAULT_FOUNDATION_MODEL = "qwen2.5-coder-7b"
+DEFAULT_PROVIDER = "provider_worker"
+DEFAULT_WORKER_PROVIDER = "lmstudio_responses"
 LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
 
@@ -163,7 +165,7 @@ class CoreServiceEntrypointConfig:
     local_auth_token: str | None = None
     foundation_model: str = DEFAULT_FOUNDATION_MODEL
     provider: str = DEFAULT_PROVIDER
-    worker_provider: str | None = None
+    worker_provider: str | None = DEFAULT_WORKER_PROVIDER
     base_url: str | None = None
     web_search: str = "fake"
     web_base_url: str | None = None
@@ -769,6 +771,21 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     shutdown()
                 except Exception:
                     pass
+
+    def configure_provider(self, *, provider_name: str, model: str) -> None:
+        provider_name = provider_name.strip()
+        model = model.strip()
+        if not provider_name or not model:
+            return
+        if provider_name != self._provider_name:
+            self._provider.shutdown()
+            self._provider = _ProviderWorkerProcessProvider(
+                provider_name=provider_name,
+                base_url=self._base_url,
+                timeout_seconds=self._timeout_seconds,
+            )
+            self._provider_name = provider_name
+        self._model = model
 
     def _publish(
         self,
@@ -2557,6 +2574,7 @@ def create_control_plane_service_app(
     state_bus: AssistantStateBus | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
+    provider_control: Any | None = None,
 ) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
@@ -2569,6 +2587,7 @@ def create_control_plane_service_app(
         log_reader=log_reader,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
+        provider_control=provider_control or InMemoryProviderControl(),
     )
 
 
@@ -2593,6 +2612,29 @@ class _CompositeTraceReader:
             except Exception:
                 pass
         return self._in_memory.read_trace(trace_id)
+
+
+def _apply_provider_control(service: CoreService, catalog: dict[str, Any]) -> None:
+    executor = getattr(service, "_turn_executor", None)
+    configure = getattr(executor, "configure_provider", None)
+    if not callable(configure):
+        return
+    active_provider_id = str(catalog.get("active_provider_id") or "").strip()
+    providers = catalog.get("providers")
+    if not active_provider_id or not isinstance(providers, list):
+        return
+    active = next(
+        (
+            row
+            for row in providers
+            if isinstance(row, dict) and row.get("provider_id") == active_provider_id
+        ),
+        None,
+    )
+    if active is None:
+        return
+    model = str(active.get("active_model") or "").strip()
+    configure(provider_name=active_provider_id, model=model)
 
 
 def health_once_payload() -> dict[str, object]:
@@ -2640,12 +2682,14 @@ def run_core_service(
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
     browser_session_manager = BrowserSessionManager()
+    provider_control = InMemoryProviderControl(on_change=lambda catalog: _apply_provider_control(service, catalog))
     control_runtime = create_control_plane_service_app(
         config=effective_config,
-        trace_reader=trace_reader,
+        trace_reader=effective_trace_reader,
         state_bus=state_bus,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
+        provider_control=provider_control,
     )
     asgi_config = AsgiHostConfig(
         host=local_api_config.host,
@@ -2770,7 +2814,7 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--worker-provider",
-        default=None,
+        default=DEFAULT_WORKER_PROVIDER,
         help="ProviderWorker target provider when --provider provider_worker is used.",
     )
     parser.add_argument(

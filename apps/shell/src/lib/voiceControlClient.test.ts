@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { controlRequest } from "./shellCommands";
-import { downloadVoiceModel, fetchVoiceModelCatalog, switchVoiceWorkerStt, switchVoiceWorkerTts, switchVoiceWorkerVoice } from "./voiceControlClient";
+import { downloadVoiceModel, downloadVoiceModelGroup, fetchVoiceModelCatalog, switchVoiceWorkerStt, switchVoiceWorkerTts, switchVoiceWorkerVoice } from "./voiceControlClient";
 
 vi.mock("./shellCommands", () => ({
   controlRequest: vi.fn(async () => ({ ok: true }))
@@ -37,5 +37,40 @@ describe("voice control client", () => {
       extract: true,
       explicit_user_triggered: true
     });
+  });
+
+  it("downloads every catalog asset in a model group and reports progress", async () => {
+    const progress: Array<{ completed: number; total: number; modelId: string }> = [];
+
+    await downloadVoiceModelGroup(
+      [
+        {
+          model_id: "moonshine-v2",
+          backend_id: "moonshine-v2",
+          model_kind: "stt",
+          source_uri: "https://models.example.test/encoder.ort",
+          relative_path: "stt/moonshine-v2/encoder.ort",
+          install_relative_path: "stt/moonshine-v2",
+          explicit_user_triggered: true
+        },
+        {
+          model_id: "moonshine-v2",
+          backend_id: "moonshine-v2",
+          model_kind: "stt",
+          source_uri: "https://models.example.test/tokenizer.bin",
+          relative_path: "stt/moonshine-v2/tokenizer.bin",
+          install_relative_path: "stt/moonshine-v2",
+          explicit_user_triggered: true
+        }
+      ],
+      (event) => progress.push({ completed: event.completed, total: event.total, modelId: event.asset.model_id })
+    );
+
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/models/download", "POST", expect.objectContaining({ relative_path: "stt/moonshine-v2/encoder.ort" }));
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/models/download", "POST", expect.objectContaining({ relative_path: "stt/moonshine-v2/tokenizer.bin" }));
+    expect(progress).toEqual([
+      { completed: 1, total: 2, modelId: "moonshine-v2" },
+      { completed: 2, total: 2, modelId: "moonshine-v2" }
+    ]);
   });
 });

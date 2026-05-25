@@ -29,11 +29,11 @@ export async function fetchDeps(): Promise<DepsResponse> {
   return depsResponseSchema.parse(raw);
 }
 
-export async function installDep(id: string): Promise<{ id: string; status: "installing" | "installed" | "error"; detail?: string }> {
+export async function installDep(id: string): Promise<{ id: string; status: "installing" | "installed" | "error" | "blocked"; detail?: string }> {
   const raw = await controlRequest("/deps/install", "POST", { id });
   const parsed = z.object({
     id: z.string(),
-    status: z.enum(["installing", "installed", "error"]),
+    status: z.enum(["installing", "installed", "error", "blocked"]),
     detail: z.string().optional(),
   }).parse(raw);
   return parsed;

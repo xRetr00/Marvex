@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
 import tarfile
 from pathlib import Path
 
 from packages.control_plane_api.voice import handle_voice_control_request
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceWorkerControlPlaneFacade
-from packages.voice_worker_runtime.assets import VoiceModelDownloadRequest
+from packages.voice_worker_runtime.assets import VoiceModelCatalog, VoiceModelCatalogAsset, VoiceModelDownloadRequest
 
 
 def test_asset_manager_downloads_file_source_into_safe_asset_root_and_registers_it(tmp_path: Path) -> None:
@@ -101,6 +102,27 @@ def test_asset_manager_download_uses_injected_fetcher_for_https_without_leaking_
     assert "downloaded model bytes" not in json.dumps(result.model_dump(mode="json")).lower()
 
 
+def test_asset_manager_does_not_register_multi_file_download_until_catalog_group_is_complete(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    result = manager.download(
+        VoiceModelDownloadRequest(
+            model_id="moonshine-v2",
+            backend_id="moonshine-v2",
+            model_kind="stt",
+            source_uri="https://models.example.test/moonshine-v2/encoder.ort",
+            relative_path="stt/moonshine-v2/encoder.ort",
+            install_relative_path="stt/moonshine-v2",
+            explicit_user_triggered=True,
+        ),
+        fetcher=lambda _uri: b"encoder bytes",
+    )
+
+    assert result.status == "not_installed"
+    assert result.download_started is True
+    assert result.install_started is False
+    assert manager.is_ready(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt") is False
+
+
 def test_asset_manager_download_extracts_archive_assets_before_registration(tmp_path: Path) -> None:
     archive = io.BytesIO()
     with tarfile.open(fileobj=archive, mode="w:gz") as tar:
@@ -126,6 +148,97 @@ def test_asset_manager_download_extracts_archive_assets_before_registration(tmp_
     assert result.status == "installed"
     assert (tmp_path / "voice-assets" / "wakeword" / "hey-marvex" / "model" / "tokens.txt").read_bytes() == b"hey marvex"
     assert manager.resolve_installed_path("hey-marvex") == (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").resolve()
+
+
+def test_asset_manager_discovers_bundled_catalog_assets_from_voice_asset_root(tmp_path: Path) -> None:
+    asset_root = tmp_path / "voice-assets"
+    (asset_root / "wakeword" / "hey-marvex" / "model").mkdir(parents=True)
+    (asset_root / "wakeword" / "hey-marvex" / "model" / "tokens.txt").write_bytes(b"hey marvex")
+    catalog = VoiceModelCatalog(
+        assets=(
+            VoiceModelCatalogAsset(
+                model_id="hey-marvex",
+                backend_id="sherpa-onnx-kws",
+                model_kind="wakeword",
+                source_uri="https://models.example.test/hey-marvex.tar.gz",
+                relative_path="wakeword/hey-marvex",
+                extract=True,
+                required=True,
+                explicit_user_triggered=True,
+            ),
+        )
+    )
+    manager = VoiceAssetManager(asset_root=asset_root)
+
+    registry = manager.discover_installed(catalog)
+
+    assert registry.installed_count == 1
+    assert manager.is_ready(model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword") is True
+
+
+def test_asset_manager_discovers_multi_file_model_only_after_all_catalog_parts_exist(tmp_path: Path) -> None:
+    asset_root = tmp_path / "voice-assets"
+    (asset_root / "stt" / "moonshine-v2").mkdir(parents=True)
+    (asset_root / "stt" / "moonshine-v2" / "encoder.ort").write_bytes(b"encoder")
+    catalog = VoiceModelCatalog(
+        assets=(
+            VoiceModelCatalogAsset(
+                model_id="moonshine-v2",
+                backend_id="moonshine-v2",
+                model_kind="stt",
+                source_uri="https://models.example.test/encoder.ort",
+                relative_path="stt/moonshine-v2/encoder.ort",
+                install_relative_path="stt/moonshine-v2",
+                required=True,
+                explicit_user_triggered=True,
+            ),
+            VoiceModelCatalogAsset(
+                model_id="moonshine-v2",
+                backend_id="moonshine-v2",
+                model_kind="stt",
+                source_uri="https://models.example.test/tokenizer.bin",
+                relative_path="stt/moonshine-v2/tokenizer.bin",
+                install_relative_path="stt/moonshine-v2",
+                required=True,
+                explicit_user_triggered=True,
+            ),
+        )
+    )
+    manager = VoiceAssetManager(asset_root=asset_root)
+
+    partial = manager.discover_installed(catalog)
+    (asset_root / "stt" / "moonshine-v2" / "tokenizer.bin").write_bytes(b"tokenizer")
+    complete = manager.discover_installed(catalog)
+
+    assert partial.installed_count == 0
+    assert complete.installed_count == 1
+    assert manager.resolve_installed_path("moonshine-v2") == (asset_root / "stt" / "moonshine-v2").resolve()
+
+
+def test_control_plane_status_discovers_bundled_assets_before_reporting_required_models(tmp_path: Path) -> None:
+    asset_root = tmp_path / "voice-assets"
+    (asset_root / "wakeword" / "hey-marvex").mkdir(parents=True)
+    manager = VoiceAssetManager(asset_root=asset_root)
+    catalog = VoiceModelCatalog(
+        assets=(
+            VoiceModelCatalogAsset(
+                model_id="hey-marvex",
+                backend_id="sherpa-onnx-kws",
+                model_kind="wakeword",
+                source_uri="https://models.example.test/hey-marvex.tar.gz",
+                relative_path="wakeword/hey-marvex",
+                extract=True,
+                required=True,
+                explicit_user_triggered=True,
+            ),
+        )
+    )
+    facade = VoiceWorkerControlPlaneFacade(controller=None, assets=manager, model_catalog_loader=lambda: catalog)
+
+    assets = facade.assets_status()
+
+    required = {item["model_id"]: item for item in assets["required"]}
+    assert required["hey-marvex"]["status"] == "installed"
 
 
 def test_required_registry_tracks_kokoro_voice_bundle_asset(tmp_path: Path) -> None:

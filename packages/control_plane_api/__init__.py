@@ -8,6 +8,7 @@ from .models import (
     ProviderStatusView,
 )
 from .runtime import ControlPlaneResponse, ControlPlaneRuntime
+from .providers import InMemoryProviderControl, ProviderControlState
 
 __all__ = [
     "ApprovalDecisionInput",
@@ -19,4 +20,6 @@ __all__ = [
     "ProviderStatusView",
     "ControlPlaneResponse",
     "ControlPlaneRuntime",
+    "InMemoryProviderControl",
+    "ProviderControlState",
 ]

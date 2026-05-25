@@ -122,7 +122,7 @@ class ControlPlaneSnapshot(ControlPlaneModel):
     sessions: tuple[dict[str, Any], ...] = ()
     agent_loops: tuple[dict[str, Any], ...] = ()
     telemetry: dict[str, Any] = Field(default_factory=dict)
-    settings: dict[str, bool] = Field(default_factory=dict)
+    settings: dict[str, Any] = Field(default_factory=dict)
     raw_payload_persisted: Literal[False] = False
 
     @classmethod
@@ -140,7 +140,7 @@ class ControlPlaneSnapshot(ControlPlaneModel):
         sessions: tuple[dict[str, Any], ...] = (),
         agent_loops: tuple[dict[str, Any], ...] = (),
         telemetry: dict[str, Any] | None = None,
-        settings: dict[str, bool] | None = None,
+        settings: dict[str, Any] | None = None,
     ) -> ControlPlaneSnapshot:
         return cls(
             schema_version=schema_version,

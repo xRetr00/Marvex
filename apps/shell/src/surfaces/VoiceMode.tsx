@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode, CSSProperties } from "react";
 import { Download, Mic, MicOff, Play, Radio, RefreshCw, Volume2 } from "lucide-react";
 import {
-  downloadVoiceModel,
+  downloadVoiceModelGroup,
   fetchVoiceModelCatalog,
   fetchVoiceWorkerStatus,
   startVoiceWorker,
@@ -15,6 +15,13 @@ import {
   type VoiceModelCatalogAsset,
   type VoiceWorkerStatus
 } from "@/lib/voiceControlClient";
+
+type ModelDownloadState = {
+  state: "downloading" | "complete" | "failed";
+  completed: number;
+  total: number;
+  error?: string;
+};
 
 const STT_MODELS = [
   { id: "moonshine-v2", label: "Moonshine v2" },
@@ -38,6 +45,7 @@ export function VoiceMode() {
   const [status, setStatus] = useState<VoiceWorkerStatus | null>(null);
   const [catalog, setCatalog] = useState<VoiceModelCatalogAsset[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
+  const [downloads, setDownloads] = useState<Record<string, ModelDownloadState>>({});
   const [message, setMessage] = useState("Loading voice worker...");
 
   const load = async () => {
@@ -64,8 +72,12 @@ export function VoiceMode() {
 
   const required = useMemo(() => status?.model_assets?.required ?? [], [status]);
   const catalogByModel = useMemo(() => {
-    const map = new Map<string, VoiceModelCatalogAsset>();
-    for (const asset of catalog) if (!map.has(asset.model_id)) map.set(asset.model_id, asset);
+    const map = new Map<string, VoiceModelCatalogAsset[]>();
+    for (const asset of catalog) {
+      const assets = map.get(asset.model_id) ?? [];
+      assets.push(asset);
+      map.set(asset.model_id, assets);
+    }
     return map;
   }, [catalog]);
 
@@ -77,6 +89,28 @@ export function VoiceMode() {
       setMessage(`${label} requested.`);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : `${label} failed.`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const runModelDownload = async (modelId: string, assets: VoiceModelCatalogAsset[]) => {
+    const label = `Download ${modelId}`;
+    setBusy(label);
+    setDownloads((current) => ({ ...current, [modelId]: { state: "downloading", completed: 0, total: assets.length } }));
+    setMessage(`Downloading ${modelId} 0/${assets.length}.`);
+    try {
+      await downloadVoiceModelGroup(assets, (event) => {
+        setDownloads((current) => ({ ...current, [modelId]: { state: "downloading", completed: event.completed, total: event.total } }));
+        setMessage(`Downloading ${modelId} ${event.completed}/${event.total}.`);
+      });
+      await load();
+      setDownloads((current) => ({ ...current, [modelId]: { state: "complete", completed: assets.length, total: assets.length } }));
+      setMessage(`${label} requested.`);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : `${label} failed.`;
+      setDownloads((current) => ({ ...current, [modelId]: { state: "failed", completed: current[modelId]?.completed ?? 0, total: assets.length, error: errorMessage } }));
+      setMessage(errorMessage);
     } finally {
       setBusy(null);
     }
@@ -122,17 +156,27 @@ export function VoiceMode() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {required.map((asset) => {
             const modelId = String(asset.model_id ?? "");
-            const download = catalogByModel.get(modelId);
+            const downloadTargets = catalogByModel.get(modelId) ?? [];
+            const downloadState = downloads[modelId];
+            const statusLabel = downloadState?.state === "downloading"
+              ? `Downloading ${downloadState.completed}/${downloadState.total}`
+              : downloadState?.state === "failed"
+                ? "failed"
+                : downloadState?.state === "complete"
+                  ? "installed"
+                  : String(asset.status ?? "unknown");
+            const detail = downloadState?.error ?? String(asset.exact_blocker ?? "ready");
+            const disabled = downloadTargets.length === 0 || Boolean(busy) || String(asset.status ?? "") === "installed";
             return (
               <div key={`${modelId}-${String(asset.backend_id ?? "")}`} style={assetRowStyle}>
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontSize: 13, fontWeight: 650 }}>{modelId}</div>
                   <div style={{ color: "var(--muted-foreground)", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {String(asset.backend_id ?? "")} / {String(asset.model_kind ?? "")} / {String(asset.exact_blocker ?? "ready")}
+                    {String(asset.backend_id ?? "")} / {String(asset.model_kind ?? "")} / {detail} / {downloadTargets.length || 0} files
                   </div>
                 </div>
-                <TextButton aria-label={`Download ${modelId}`} disabled={!download || Boolean(busy)} onClick={() => download && void run(`Download ${modelId}`, () => downloadVoiceModel(download))}>
-                  <Download size={14} /> {String(asset.status ?? "unknown")}
+                <TextButton aria-label={`Download ${modelId}`} disabled={disabled} onClick={() => void runModelDownload(modelId, downloadTargets)}>
+                  <Download size={14} /> {statusLabel}
                 </TextButton>
               </div>
             );

@@ -68,6 +68,7 @@ class VoiceWorkerController:
         )
 
     def status(self) -> VoiceWorkerStatus:
+        self.asset_manager.discover_installed()
         return VoiceWorkerStatus(
             worker_id=self.config.worker_id,
             lifecycle_state=self._state,
@@ -104,6 +105,7 @@ class VoiceWorkerController:
         return VoiceWorkerVersionInfo(worker=self.config.worker_id)
 
     def start_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
+        self.asset_manager.discover_installed()
         self.wakeword_supervisor.update_config(self.config)
         return self.wakeword_supervisor.start(explicit_user_triggered=explicit_user_triggered)
 
@@ -111,10 +113,12 @@ class VoiceWorkerController:
         return self.wakeword_supervisor.stop(explicit_user_triggered=explicit_user_triggered)
 
     def tick_wakeword_supervisor(self) -> WakewordSupervisorTickResult:
+        self.asset_manager.discover_installed()
         self.wakeword_supervisor.update_config(self.config)
         return self.wakeword_supervisor.tick()
 
     def wakeword_supervisor_health(self) -> WakewordSupervisorHealth:
+        self.asset_manager.discover_installed()
         return self.wakeword_supervisor.health()
 
     def clean_shutdown_wakeword_supervisor(self) -> WakewordSupervisorHealth:
@@ -343,6 +347,7 @@ class VoiceWorkerController:
 
     def _handle_test_wakeword(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         trace_id = self._trace_id_for(command)
+        self.asset_manager.discover_installed()
         if not self.config.wakeword.enabled:
             self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="wakeword_not_enabled", message="Wakeword is disabled.")
             return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False})
