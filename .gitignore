@@ -52,8 +52,6 @@ apps/shell/runtime/
 
 # Build-time staged bundle resources (dirs kept via .gitkeep so tauri resource
 # validation passes on a fresh clone; their contents are produced by the build).
-apps/shell/control_plane_web/*
-!apps/shell/control_plane_web/.gitkeep
 apps/shell/voice-assets/*
 !apps/shell/voice-assets/.gitkeep
 apps/shell/src-tauri/binaries/

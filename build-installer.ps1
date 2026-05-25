@@ -6,7 +6,7 @@
 .DESCRIPTION
     Comprehensive build script that:
     1. Validates environment (Node, Cargo, Rust, uv, Python 3.11+)
-    2. Builds Python wheel (marvex-0.1.0-py3-none-any.whl)
+    2. Builds Python wheel (marvex-*.whl, staged as marvex-runtime.whl)
     3. Prepares runtime resources (uv.exe bundling)
     4. Builds React/Vite frontend
     5. Builds Tauri app + generates NSIS/MSI installers
@@ -243,10 +243,11 @@ function Prepare-Runtime-Resources {
         Write-Success "Created $RuntimeDir"
     }
     
-    # Copy wheel to runtime
+    # Copy wheel to runtime (fixed filename for bundling)
     Write-Step "Copying wheel to runtime..." 2 5
-    Copy-Item -Path $WheelPath -Destination $RuntimeDir -Force
-    Write-Success "Wheel copied to $RuntimeDir"
+    $runtimeWheel = Join-Path $RuntimeDir "marvex-runtime.whl"
+    Copy-Item -Path $WheelPath -Destination $runtimeWheel -Force
+    Write-Success "Wheel copied to $runtimeWheel"
     
     # Find uv.exe (bundled or system)
     Write-Step "Locating uv executable..." 2 5
@@ -289,22 +290,16 @@ function Build-Frontend {
         Pop-Location
     }
 
-    # Stage the built Control Plane SPA into the shell so it is bundled as a
-    # resource and served same-origin by the control plane server (8766) for the
-    # shell's Control Plane window.
+    # Verify Control Plane dist artifacts (bundled directly from dist)
     $cpDist = Join-Path $ControlPlaneDir "dist"
-    $cpStage = Join-Path $ShellDir "control_plane_web"
-    if (Test-Path $cpStage) { Remove-Item -Path $cpStage -Recurse -Force }
-    New-Item -ItemType Directory -Path $cpStage | Out-Null
-    Copy-Item -Path (Join-Path $cpDist "*") -Destination $cpStage -Recurse -Force
-    if (-not (Test-Path (Join-Path $cpStage "index.html"))) {
-        Write-Error-Exit "Control Plane staged resource missing index.html"
+    if (-not (Test-Path (Join-Path $cpDist "index.html"))) {
+        Write-Error-Exit "Control Plane dist missing index.html"
     }
-    $cpAssets = Join-Path $cpStage "assets"
+    $cpAssets = Join-Path $cpDist "assets"
     if (-not (Test-Path $cpAssets) -or -not (Get-ChildItem -Path $cpAssets -File -ErrorAction SilentlyContinue | Select-Object -First 1)) {
-        Write-Error-Exit "Control Plane staged resource missing built assets"
+        Write-Error-Exit "Control Plane dist missing built assets"
     }
-    Write-Success "Control Plane SPA staged into shell resources"
+    Write-Success "Control Plane dist verified"
     
     # Build Shell Frontend
     Push-Location $ShellDir

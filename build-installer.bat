@@ -257,12 +257,12 @@ if not exist "%RuntimeDir%" (
 )
 
 call :WriteStep "Copying wheel to runtime..." 2 6
-copy /y "%WheelPath%" "%RuntimeDir%" >nul
+copy /y "%WheelPath%" "%RuntimeDir%\marvex-runtime.whl" >nul
 if errorlevel 1 (
     call :Die "Failed to copy wheel to runtime"
     exit /b 1
 )
-call :WriteSuccess "Wheel copied to %RuntimeDir%"
+call :WriteSuccess "Wheel copied to %RuntimeDir%\marvex-runtime.whl"
 
 call :WriteStep "Locating uv executable..." 2 6
 set "uvPath="
@@ -313,25 +313,21 @@ if errorlevel 1 (
 call :WriteSuccess "Control Plane built"
 popd
 
-rem Stage the built Control Plane SPA into the shell so it is bundled and served
-rem same-origin by the control plane server for the shell's Control Plane window.
-if exist "%ShellDir%\control_plane_web" rmdir /s /q "%ShellDir%\control_plane_web"
-mkdir "%ShellDir%\control_plane_web"
-xcopy /e /i /y "%ControlPlaneDir%\dist\*" "%ShellDir%\control_plane_web\" >nul
-if not exist "%ShellDir%\control_plane_web\index.html" (
-    call :Die "Control Plane staged resource missing index.html"
+rem Verify the built Control Plane SPA (bundled directly from dist)
+if not exist "%ControlPlaneDir%\dist\index.html" (
+    call :Die "Control Plane dist missing index.html"
     exit /b 1
 )
-if not exist "%ShellDir%\control_plane_web\assets" (
-    call :Die "Control Plane staged resource missing built assets"
+if not exist "%ControlPlaneDir%\dist\assets" (
+    call :Die "Control Plane dist missing built assets"
     exit /b 1
 )
-dir /b "%ShellDir%\control_plane_web\assets\*" >nul 2>&1
+dir /b "%ControlPlaneDir%\dist\assets\*" >nul 2>&1
 if errorlevel 1 (
-    call :Die "Control Plane staged resource missing built assets"
+    call :Die "Control Plane dist missing built assets"
     exit /b 1
 )
-call :WriteSuccess "Control Plane SPA staged into shell resources"
+call :WriteSuccess "Control Plane dist verified"
 
 pushd "%ShellDir%"
 call :WriteStep "Installing Shell dependencies..." 3 6
