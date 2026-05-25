@@ -16,13 +16,12 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from wsgiref.simple_server import make_server
 
 from packages.contracts.state_event import AssistantStatusKind
 from packages.control_plane_api import (
+    ControlPlaneRuntime,
     ControlPlaneSnapshot,
     InMemoryApprovalStore,
-    create_control_plane_api_app,
 )
 from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
 from packages.control_plane_api.browser_session import BrowserSessionManager
@@ -94,13 +93,14 @@ from packages.learning_runtime import (
     LearningPipelineRunner,
     ToolOutcomeFeedback,
 )
-from packages.local_api import LocalApiConfig, create_health_version_api_app
+from packages.local_api import LocalApiConfig, create_local_api_asgi_app
 from packages.local_api.asgi_host import (
     AsgiHostConfig,
+    ServerFactory,
     build_asgi_startup_message,
     run_dual_asgi_host,
 )
-from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
+from packages.local_api.contracts import LOCAL_TURNS_EXECUTION_MODE
 from packages.memory_tree_runtime import (
     CanonicalSourceMetadata as MemoryTreeSourceMetadata,
     MemoryTreeRuntime,
@@ -150,9 +150,6 @@ DEFAULT_FOUNDATION_MODEL = "fake-model"
 DEFAULT_PROVIDER = "fake"
 LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
-
-ServerFactory = Callable[[str, int, Any], Any]
-
 
 DEFAULT_TELEMETRY_STORE_PATH = ".marvex-telemetry/traces.jsonl"
 _TURN_AUTONOMY_POLICY = AutonomyPolicy.for_mode("ask_before_risky")
@@ -2527,11 +2524,12 @@ def create_core_service_app(
         in_memory=trace_reader or InMemoryTraceReader(),
         persistent=persistent_store,
     )
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         service,
         turn_handler=lambda request: _apply_ui_directives(service.submit_turn(request.assistant_turn_input)),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
+        accepted_turn_execution_modes=(LOCAL_TURNS_EXECUTION_MODE,),
     )
     return app, service
 
@@ -2559,17 +2557,15 @@ def create_control_plane_service_app(
     state_bus: AssistantStateBus | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
-) -> Any:
-    web_dist = os.environ.get("MARVEX_CONTROL_WEB_DIST") or None
+) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
-    return create_control_plane_api_app(
+    return ControlPlaneRuntime(
         approval_store=InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token=config.local_auth_token or "",
         trace_reader=trace_reader,
         state_bus=state_bus or get_default_bus(),
-        web_dist=web_dist,
         log_reader=log_reader,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
@@ -2619,7 +2615,7 @@ def run_health_once() -> int:
 def run_core_service(
     *,
     config: CoreServiceEntrypointConfig | None = None,
-    server_factory: ServerFactory = make_server,
+    server_factory: ServerFactory | None = None,
     control_server_factory: ServerFactory | None = None,
 ) -> int:
     effective_config = config or CoreServiceEntrypointConfig()
@@ -2632,108 +2628,50 @@ def run_core_service(
 
     trace_reader = InMemoryTraceReader()
     session_coordinator = BackendSessionCoordinator()
-    app, service = create_core_service_app(
+    core_app, service = create_core_service_app(
         config=effective_config,
         trace_reader=trace_reader,
         session_registry=session_coordinator,
     )
+    effective_trace_reader: Any = _CompositeTraceReader(
+        in_memory=trace_reader,
+        persistent=_persistent_store_from_config(effective_config),
+    )
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
     browser_session_manager = BrowserSessionManager()
-    control_app = create_control_plane_service_app(
+    control_runtime = create_control_plane_service_app(
         config=effective_config,
         trace_reader=trace_reader,
         state_bus=state_bus,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
     )
-    if server_factory is make_server and control_server_factory is None:
-        asgi_config = AsgiHostConfig(
-            host=local_api_config.host,
-            port=local_api_config.port,
-            control_host=control_api_config.host,
-            control_port=control_api_config.port,
-            allow_remote=effective_config.allow_remote,
-        )
-        try:
-            return run_dual_asgi_host(
-                core_wsgi_app=app,
-                control_wsgi_app=control_app,
-                control_asgi_app=create_control_plane_asgi_app(
-                    control_wsgi_app=control_app,
-                    local_auth_token=effective_config.local_auth_token,
-                    state_bus=state_bus,
-                    browser_session_manager=browser_session_manager,
-                    session_coordinator=session_coordinator,
-                ),
-                config=asgi_config,
-                startup_message=build_asgi_startup_message(
-                    config=asgi_config,
-                    service="marvex-core-service",
-                    provider=effective_config.provider,
-                ),
-            )
-        finally:
-            service.shutdown()
-    httpd = server_factory(local_api_config.host, local_api_config.port, app)
-    effective_control_server_factory = control_server_factory
-    if effective_control_server_factory is None and server_factory is make_server:
-        effective_control_server_factory = make_server
-    control_httpd = (
-        effective_control_server_factory(control_api_config.host, control_api_config.port, control_app)
-        if effective_control_server_factory is not None
-        else None
-    )
-    control_thread = _start_background_server(control_httpd, "marvex-control-plane") if control_httpd is not None else None
-    print(
-        STARTUP_MESSAGE_PREFIX
-        + json.dumps(
-            {
-                "base_url": f"http://{local_api_config.host}:{local_api_config.port}",
-                "control_base_url": f"http://{control_api_config.host}:{control_api_config.port}/control",
-                "auth_required": True,
-                "auth_token_present": True,
-                "token_value_logged": False,
-                "service": "marvex-core-service",
-                "provider": effective_config.provider,
-            },
-            sort_keys=True,
-        )
+    asgi_config = AsgiHostConfig(
+        host=local_api_config.host,
+        port=local_api_config.port,
+        control_host=control_api_config.host,
+        control_port=control_api_config.port,
+        allow_remote=effective_config.allow_remote,
     )
     try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        pass
+        return run_dual_asgi_host(
+            core_app=core_app,
+            control_app=create_control_plane_asgi_app(
+                runtime=control_runtime,
+                web_dist=os.environ.get("MARVEX_CONTROL_WEB_DIST") or None,
+            ),
+            config=asgi_config,
+            server_factory=server_factory,
+            control_server_factory=control_server_factory,
+            startup_message=build_asgi_startup_message(
+                config=asgi_config,
+                service="marvex-core-service",
+                provider=effective_config.provider,
+            ),
+        )
     finally:
-        _shutdown_server(control_httpd)
-        if control_thread is not None:
-            control_thread.join(timeout=2)
         service.shutdown()
-        httpd.server_close()
-    return 0
-
-
-def _start_background_server(server: Any, name: str) -> threading.Thread:
-    thread = threading.Thread(target=server.serve_forever, name=name, daemon=True)
-    thread.start()
-    return thread
-
-
-def _shutdown_server(server: Any | None) -> None:
-    if server is None:
-        return
-    shutdown = getattr(server, "shutdown", None)
-    if callable(shutdown):
-        try:
-            shutdown()
-        except Exception:
-            pass
-    close = getattr(server, "server_close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:
-            pass
 
 
 def run_turn_once(

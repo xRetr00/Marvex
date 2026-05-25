@@ -26,6 +26,15 @@ def test_load_manifest_reads_required_wakeword() -> None:
     assert wake.required is True
 
 
+def test_manifest_uses_moonshine_package_cdn_for_active_moonshine_backend() -> None:
+    manifest = load_manifest(REPO_ROOT / "voice_models.manifest.json")
+    moonshine = [asset for asset in manifest if asset.model_id == "moonshine-v2"]
+
+    assert moonshine
+    assert all(asset.source_uri.startswith("https://download.moonshine.ai/model/") for asset in moonshine)
+    assert {Path(asset.relative_path).name for asset in moonshine} >= {"encoder.ort", "frontend.ort", "tokenizer.bin"}
+
+
 def test_fetch_plain_file_via_file_uri(tmp_path: Path) -> None:
     source = tmp_path / "model.onnx"
     source.write_bytes(b"weights")

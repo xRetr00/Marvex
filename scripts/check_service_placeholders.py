@@ -62,7 +62,6 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "sys",
     "threading",
     "typing",
-    "wsgiref.simple_server",
 )
 FORBIDDEN_CORE_SERVICE_IMPORT_PREFIXES = (
     "apps",

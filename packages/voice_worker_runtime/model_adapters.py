@@ -26,7 +26,11 @@ class MoonshineSttRunner:
             return _stt_failed(request, asset.backend_id, blocker)
         try:
             factory = self.transcriber_factory or import_module("moonshine_voice.transcriber").Transcriber
-            transcriber = factory(str(path))
+            model_arch = _moonshine_model_arch(path)
+            try:
+                transcriber = factory(str(path), model_arch=model_arch) if model_arch is not None else factory(str(path))
+            except TypeError:
+                transcriber = factory(str(path))
             try:
                 transcript = transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
             finally:
@@ -72,7 +76,8 @@ class KokoroOnnxTtsRunner:
         if path is None:
             return _tts_failed(request, asset.backend_id, "model_asset_path_not_registered")
         model_path = _first_existing(path, ("model.onnx", "kokoro.onnx")) if path.is_dir() else path
-        voices_path = _first_matching(path, ("voices.npy", "*.npy", "voices.bin", "voices.json", "voice.bin")) if path.is_dir() else None
+        voices_root = path if path.is_dir() else path.parent
+        voices_path = _first_matching(voices_root, ("voices-v1.0.bin", "voices.npy", "*.npy", "voices.bin", "*.bin", "voices.json", "voice.bin"))
         if model_path is None or voices_path is None:
             return _tts_failed(request, asset.backend_id, "kokoro_model_or_voice_file_missing")
         try:
@@ -438,6 +443,26 @@ def _first_with_suffix(root: Path, suffix: str) -> Path | None:
     for candidate in sorted(root.iterdir()):
         if candidate.suffix == suffix:
             return candidate
+    return None
+
+
+def _moonshine_model_arch(path: Path | None) -> Any | None:
+    if path is None or not path.is_dir():
+        return None
+    try:
+        model_arch = import_module("moonshine_voice.moonshine_api").ModelArch
+    except Exception:
+        return None
+    if (path / "streaming_config.json").exists():
+        name = path.name.lower()
+        if "medium" in name:
+            return model_arch.MEDIUM_STREAMING
+        if "small" in name:
+            return model_arch.SMALL_STREAMING
+        if "tiny" in name:
+            return model_arch.TINY_STREAMING
+    if (path / "encoder_model.ort").exists() and "tiny" in path.name.lower():
+        return model_arch.TINY
     return None
 
 

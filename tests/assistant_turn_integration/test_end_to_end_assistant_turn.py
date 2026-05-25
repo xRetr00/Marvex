@@ -1,9 +1,7 @@
 from __future__ import annotations
 
-import io
 import json
 from datetime import UTC, datetime
-from wsgiref.util import setup_testing_defaults
 
 from packages.assistant_runtime import build_text_input_event, build_turn_input_from_event
 from packages.assistant_turn_integration import (
@@ -12,8 +10,9 @@ from packages.assistant_turn_integration import (
     run_end_to_end_assistant_turn,
 )
 from packages.contracts import AssistantTurnResult, TraceStage
-from packages.local_api import create_health_version_api_app
-from packages.local_api.health_version_api import LOCAL_TURNS_EXECUTION_MODE
+from packages.local_api import create_local_api_asgi_app
+from packages.local_api.contracts import LOCAL_TURNS_EXECUTION_MODE
+from tests.local_api.asgi_helpers import asgi_call
 from tests.local_api.test_health_version_api import make_provider
 
 
@@ -35,23 +34,8 @@ def _turn_input(text: str = "Calculate 2+2 with the safe calculator tool"):
 
 
 def _call(app, path: str, *, method: str = "GET", token: str | None = "dev-token", body: dict | None = None):
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if token is not None:
-        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    raw = json.dumps(body or {}).encode("utf-8")
-    environ["wsgi.input"] = io.BytesIO(raw)
-    environ["CONTENT_LENGTH"] = str(len(raw))
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response)
+    auth = f"Bearer {token}" if token is not None else None
+    return asgi_call(app, path, method=method, auth=auth, body=body)
 
 
 def _turn_body():
@@ -94,7 +78,7 @@ def test_end_to_end_turn_runs_intent_context_prompt_tool_provider_and_telemetry_
 
 def test_local_api_uses_injected_e2e_handler_without_owning_runtime_policy() -> None:
     store = EndToEndTurnStateStore()
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         make_provider(),
         turn_handler=create_end_to_end_local_turn_handler(state_store=store),
         trace_reader=store.trace_reader,

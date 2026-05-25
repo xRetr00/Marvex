@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest
+from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest, load_voice_model_catalog
 from .controller import VoiceWorkerController
 from .models import VoiceWorkerCommand
 
@@ -38,6 +38,9 @@ class VoiceWorkerControlPlaneFacade:
 
     def assets_status(self) -> dict[str, object]:
         return self.assets.registry().model_dump(mode="json")
+
+    def model_catalog(self) -> dict[str, object]:
+        return load_voice_model_catalog().model_dump(mode="json")
 
     def start_wakeword_supervisor(self) -> dict[str, object]:
         return self.controller.start_wakeword_supervisor(explicit_user_triggered=True).safe_projection()

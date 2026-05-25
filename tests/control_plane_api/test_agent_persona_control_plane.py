@@ -1,33 +1,18 @@
 from __future__ import annotations
 
-import io
 import json
-from wsgiref.util import setup_testing_defaults
 
-from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
+from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
+from tests.control_plane_api.asgi_helpers import asgi_call, create_control_plane_test_app
 
 
 def _call(app, path: str, *, method: str = "GET", body: dict | None = None):
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    environ["HTTP_AUTHORIZATION"] = "Bearer fake-control-token"
-    raw = json.dumps(body or {}).encode("utf-8")
-    environ["wsgi.input"] = io.BytesIO(raw)
-    environ["CONTENT_LENGTH"] = str(len(raw))
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], json.loads(response)
+    status, _headers, payload = asgi_call(app, path, method=method, body=body)
+    return status, payload
 
 
 def _app():
-    return create_control_plane_api_app(
+    return create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",

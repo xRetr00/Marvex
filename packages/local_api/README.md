@@ -8,10 +8,11 @@ assistant-envelope contracts.
 
 Current behavior:
 
-- `create_health_version_api_app(...)` creates a dependency-free WSGI app object.
-- `packages.local_api.asgi_host` wraps existing WSGI apps in an a2wsgi-backed
-  FastAPI/Uvicorn host adapter for product service mode without changing
-  endpoint ownership.
+- `create_local_api_asgi_app(...)` creates a dependency-free WSGI app object.
+- `packages.local_api.asgi_app` creates the native FastAPI app for the product
+  Core API service routes.
+- `packages.local_api.asgi_host` owns the FastAPI/Uvicorn host adapter for
+  product service mode. The product and manual runner paths use native ASGI route ownership; no WSGI compatibility bridge remains.
 - `python -m packages.local_api.runner` starts a manual developer-only runner
   for that app object.
 - `GET /health` returns the existing `HealthCheck` contract shape.
@@ -57,7 +58,7 @@ Task 120 `/v1/turns` decision:
 
 Task 121 `/v1/turns` implementation:
 
-- `create_health_version_api_app(...)` accepts optional `turn_handler` and
+- `create_local_api_asgi_app(...)` accepts optional `turn_handler` and
   `local_auth_token` arguments.
 - `turn_handler` has shape
   `Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]`.
@@ -106,7 +107,7 @@ Task 126 trace exposure decision:
 
 Task 127 trace read implementation:
 
-- `create_health_version_api_app(...)` accepts optional `trace_reader`.
+- `create_local_api_asgi_app(...)` accepts optional `trace_reader`.
 - `trace_reader` has shape `read_trace(trace_id: str) -> dict | None`.
 - Auth is enforced before trace-id validation and before reader lookup.
 - Missing/invalid auth, invalid trace ids, unknown traces, missing reader, and
@@ -140,7 +141,7 @@ Task 130 real-provider API decision:
 
 Task 131 LM Studio runner support:
 
-- `create_health_version_api_app(...)` and `run_local_health_version_api(...)`
+- `create_local_api_asgi_app(...)` and `run_local_health_version_api(...)`
   accept an optional `accepted_turn_execution_modes` tuple.
 - The default remains `assistant_runtime_fake_provider`.
 - The LM Studio runner injects `assistant_runtime_lmstudio_responses` explicitly
@@ -162,16 +163,17 @@ ASGI host slice:
 - `AsgiHostConfig` keeps Core and Control Plane binds loopback-only by default.
 - `run_dual_asgi_host(...)` starts Core and Control Plane as two Uvicorn
   servers, preserving ports `8765` and `8766`.
-- Core remains WSGI behind a2wsgi. Control Plane may pass an already-built ASGI
-  app for routes that have migrated to native ownership.
+- Core API product and manual routes are native ASGI; WSGI factories and compatibility bridges have been removed.
+- Control Plane passes an already-built ASGI app for routes that have migrated to
+  native ownership, including the browser-session/session routes and static SPA
+  serving.
 - FastAPI/Uvicorn server ownership stays out of `services.core`; Core imports
   only the adapter seam and must not own framework APIs directly.
 - Native ASGI migration is incremental. The migrated Control Plane routes are
   `/control/state`, `/control/state/stream`, `/control/browser-session/leases`,
   `/control/browser-session/claim`, `GET /control/sessions`,
   `POST /control/sessions`, `GET /control/health`, and
-  `GET /control/version`; the rest of the Control Plane remains behind the WSGI
-  fallback until explicitly moved.
+  `GET /control/version`, plus non-`/control` static SPA requests. Control Plane API groups dispatch through native ASGI into ControlPlaneRuntime.
 
 Auth decision:
 

@@ -31,7 +31,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "typing",
 )
 LOCAL_API_SERVICE_RUNNER_IMPORT_PREFIXES = (
-    "packages.local_api.health_version_api",
+    "packages.local_api.contracts",
     "packages.local_api.runner",
 )
 FORBIDDEN_IMPORT_PREFIXES = (

@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from collections.abc import Sequence
 
-from packages.local_api.health_version_api import LocalApiConfig
+from packages.local_api.contracts import LocalApiConfig
 from packages.local_api.runner import ServerFactory, run_local_health_version_api
 from packages.telemetry import InMemoryTraceReader
 

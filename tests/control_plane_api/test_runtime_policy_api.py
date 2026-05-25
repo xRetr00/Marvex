@@ -1,37 +1,16 @@
 from __future__ import annotations
 
-import io
 import json
-from wsgiref.util import setup_testing_defaults
 
 from packages.capability_runtime import AutonomyAction, AutonomyMode, AutonomyPolicy, evaluate_autonomy_action
-from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
-
-
-def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-control-token", body: dict | None = None):
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if token is not None:
-        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    raw = json.dumps(body or {}).encode("utf-8")
-    environ["wsgi.input"] = io.BytesIO(raw)
-    environ["CONTENT_LENGTH"] = str(len(raw))
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response)
+from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
+from tests.control_plane_api.asgi_helpers import asgi_call as _call, create_control_plane_test_app
 
 
 def test_control_plane_runtime_policy_exposes_mode_matrix_and_audit() -> None:
     policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
     audit = evaluate_autonomy_action(policy, AutonomyAction(action="scheduled connector sync", resource_type="connector", capability="auto_fetch", connector_id="github"))
-    app = create_control_plane_api_app(
+    app = create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",
@@ -56,7 +35,7 @@ def test_control_plane_runtime_policy_exposes_mode_matrix_and_audit() -> None:
 
 
 def test_control_plane_runtime_policy_mode_update_changes_policy_without_execution() -> None:
-    app = create_control_plane_api_app(
+    app = create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",
@@ -76,7 +55,7 @@ def test_control_plane_runtime_policy_mode_update_changes_policy_without_executi
 
 
 def test_control_plane_runtime_policy_update_rejects_permission_matrix_payloads() -> None:
-    app = create_control_plane_api_app(
+    app = create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",

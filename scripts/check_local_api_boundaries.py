@@ -42,14 +42,17 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.contracts",
     "packages.process_runtime",
     "typing",
-    "wsgiref.simple_server",
 )
 ASGI_HOST_ONLY_ALLOWED_IMPORT_PREFIXES = (
-    "a2wsgi",
     "fastapi",
+    "io",
     "threading",
     "uvicorn",
 )
+ASGI_ADAPTER_FILES = {
+    "packages/local_api/asgi_app.py",
+    "packages/local_api/asgi_host.py",
+}
 FORBIDDEN_IMPORT_PREFIXES = (
     "apps",
     "packages.adapters",
@@ -190,7 +193,7 @@ def _scan_local_api(failures: list[str]) -> None:
             if _matches_prefix(module, FORBIDDEN_IMPORT_PREFIXES):
                 failures.append(f"{rel} imports forbidden dependency: {module}")
             allowed_prefixes = ALLOWED_IMPORT_PREFIXES
-            if rel == "packages/local_api/asgi_host.py":
+            if rel in ASGI_ADAPTER_FILES:
                 allowed_prefixes = allowed_prefixes + ASGI_HOST_ONLY_ALLOWED_IMPORT_PREFIXES
             if not _matches_prefix(module, allowed_prefixes):
                 failures.append(f"{rel} imports non-approved dependency: {module}")

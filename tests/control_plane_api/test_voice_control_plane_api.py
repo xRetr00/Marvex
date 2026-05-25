@@ -1,31 +1,10 @@
 from __future__ import annotations
 
-import io
 import json
-from wsgiref.util import setup_testing_defaults
 
-from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
+from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
+from tests.control_plane_api.asgi_helpers import asgi_call as _call, create_control_plane_test_app
 from packages.voice_runtime import DeterministicSttAdapter, DeterministicTtsAdapter, VoiceControlPlaneFacade, VoiceRuntime
-
-
-def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-control-token", body: dict | None = None):
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if token is not None:
-        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    raw = json.dumps(body or {}).encode("utf-8")
-    environ["wsgi.input"] = io.BytesIO(raw)
-    environ["CONTENT_LENGTH"] = str(len(raw))
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response)
 
 
 def _app():
@@ -34,7 +13,7 @@ def _app():
         tts=DeterministicTtsAdapter("kokoro-onnx"),
     )
     facade = VoiceControlPlaneFacade(runtime)
-    return create_control_plane_api_app(
+    return create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",

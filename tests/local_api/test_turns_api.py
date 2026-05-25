@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
-from wsgiref.util import setup_testing_defaults
 
 from packages.contracts import (
     AssistantFinalResponse,
@@ -21,7 +19,9 @@ from packages.contracts import (
     StageStatus,
     VersionInfo,
 )
+from packages.local_api import create_local_api_asgi_app
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
+from tests.local_api.asgi_helpers import asgi_call
 
 
 EXPECTED_TOKEN = "fake-local-token"
@@ -139,15 +139,13 @@ def make_app(
     token: str | None = EXPECTED_TOKEN,
     accepted_turn_execution_modes=None,
 ):
-    from packages.local_api import create_health_version_api_app
-
     kwargs = {
         "turn_handler": handler,
         "local_auth_token": token,
     }
     if accepted_turn_execution_modes is not None:
         kwargs["accepted_turn_execution_modes"] = accepted_turn_execution_modes
-    return create_health_version_api_app(
+    return create_local_api_asgi_app(
         make_provider(),
         **kwargs,
     )
@@ -161,28 +159,7 @@ def call_app(
     body: object = None,
     auth: str | None = None,
 ) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    if body is None:
-        body_bytes = b""
-    elif isinstance(body, bytes):
-        body_bytes = body
-    else:
-        body_bytes = json.dumps(body).encode("utf-8")
-    environ["CONTENT_LENGTH"] = str(len(body_bytes))
-    environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response_body)
+    return asgi_call(app, path, method=method, body=body, auth=auth)
 
 
 def call_app_without_readable_body(
@@ -190,22 +167,7 @@ def call_app_without_readable_body(
     *,
     auth: str | None,
 ) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "POST"
-    environ["PATH_INFO"] = "/v1/turns"
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    environ["CONTENT_LENGTH"] = "99"
-    environ["wsgi.input"] = RaisingInput()
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response_body)
+    return asgi_call(app, "/v1/turns", method="POST", body=b"{unreadable", auth=auth)
 
 
 def test_health_remains_public_and_unchanged():

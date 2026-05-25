@@ -4,7 +4,7 @@ import argparse
 import os
 from collections.abc import Sequence
 
-from packages.local_api.health_version_api import (
+from packages.local_api.contracts import (
     LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE,
     LocalApiConfig,
 )

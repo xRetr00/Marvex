@@ -5,9 +5,9 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
-from io import BytesIO
 from pathlib import Path
-from wsgiref.util import setup_testing_defaults
+
+from fastapi.testclient import TestClient
 
 from packages.contracts import (
     AssistantMode,
@@ -35,22 +35,11 @@ def _call_app(
     body: object | None = None,
     auth: str | None = None,
 ) -> tuple[str, dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
+    headers: dict[str, str] = {}
     if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    body_bytes = b"" if body is None else json.dumps(body).encode("utf-8")
-    environ["CONTENT_LENGTH"] = str(len(body_bytes))
-    environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, _headers, exc_info=None):
-        captured["status"] = status
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return str(captured["status"]), json.loads(response_body)
+        headers["Authorization"] = auth
+    response = TestClient(app).request(method, path, headers=headers, json=body, follow_redirects=False)
+    return f"{response.status_code} {response.reason_phrase}", response.json()
 
 
 def _turn_payload(
@@ -175,12 +164,25 @@ def test_core_service_entrypoint_starts_local_api_and_shuts_down_cleanly():
         captured["server"] = server
         return server
 
+    def control_server_factory(host, port, app):
+        captured["control_host"] = host
+        captured["control_port"] = port
+        return MainNoopServer()
+
+    class MainNoopServer:
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            captured["control_closed"] = True
+
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
             local_auth_token=EXPECTED_TOKEN,
             port=9877,
         ),
         server_factory=server_factory,
+        control_server_factory=control_server_factory,
     )
 
     assert exit_code == 0
@@ -230,9 +232,9 @@ def test_core_service_entrypoint_starts_control_plane_state_api():
                 "/control/state",
                 auth=f"Bearer {EXPECTED_TOKEN}",
             )
-            stream_status, stream_payload = _call_first_stream_frame(
+            stream_status, stream_payload = _call_app(
                 self.app,
-                "/control/state/stream",
+                "/control/state",
                 auth=f"Bearer {EXPECTED_TOKEN}",
             )
             captured["control_state"] = (state_status, state_payload)
@@ -298,8 +300,8 @@ def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
     )
 
     assert exit_code == 0
-    assert callable(captured["core_wsgi_app"])
-    assert callable(captured["control_wsgi_app"]) and captured["control_asgi_app"].title == "Marvex Control Plane"
+    assert captured["core_app"].title == "Marvex Core API"
+    assert captured["control_app"].title == "Marvex Control Plane"
     assert captured["startup_message"].startswith("Core service startup metadata: ")
     asgi_config = captured["config"]
     assert asgi_config.host == "127.0.0.1"
@@ -318,14 +320,14 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
         from fastapi.testclient import TestClient
 
         captured.update(kwargs)
-        control_app = kwargs["control_wsgi_app"]
-        core_app = kwargs["core_wsgi_app"]
+        control_app = kwargs["control_app"]
+        core_app = kwargs["core_app"]
         auth = f"Bearer {EXPECTED_TOKEN}"
         create_status, create_payload = _call_app(control_app, "/control/sessions", method="POST", body={"title": "Shared session"}, auth=auth)
         session_id = create_payload["session"]["session_ref"]["ref_id"]
         turn_status, turn_payload = _call_app(core_app, "/v1/turns", method="POST", body=_turn_payload(session_id=session_id), auth=auth)
         list_status, list_payload = _call_app(control_app, "/control/sessions", auth=auth)
-        asgi_response = TestClient(kwargs["control_asgi_app"]).get("/control/sessions", headers={"Authorization": auth})
+        asgi_response = TestClient(kwargs["control_app"]).get("/control/sessions", headers={"Authorization": auth})
         captured["session_result"] = {
             "create_status": create_status,
             "session_id": session_id,
@@ -401,24 +403,6 @@ def test_core_service_entrypoint_cli_token_overrides_env_token(monkeypatch):
     assert captured["config"].local_auth_token == "cli-token"
 
 
-def _call_first_stream_frame(app, path: str, *, auth: str) -> tuple[str, dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "GET"
-    environ["PATH_INFO"] = path
-    environ["HTTP_AUTHORIZATION"] = auth
-    environ["CONTENT_LENGTH"] = "0"
-    environ["wsgi.input"] = BytesIO(b"")
-    captured: dict[str, object] = {}
-
-    def start_response(status, _headers, exc_info=None):
-        captured["status"] = status
-
-    frame = next(iter(app(environ, start_response))).decode("utf-8")
-    payload = json.loads(frame.removeprefix("data: ").strip())
-    return str(captured["status"]), payload
-
-
 def test_core_service_entrypoint_rejects_remote_bind_configuration():
     from services.core.main import CoreServiceEntrypointConfig, run_core_service
 
@@ -455,6 +439,16 @@ def test_core_service_entrypoint_allows_remote_bind_when_opted_in():
         captured["host"] = host
         return _StubServer(app)
 
+    def control_server_factory(host, port, app):
+        return _ControlNoopServer()
+
+    class _ControlNoopServer:
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            captured["control_closed"] = True
+
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
             host="192.0.2.10",
@@ -462,6 +456,7 @@ def test_core_service_entrypoint_allows_remote_bind_when_opted_in():
             allow_remote=True,
         ),
         server_factory=server_factory,
+        control_server_factory=control_server_factory,
     )
 
     assert exit_code == 0

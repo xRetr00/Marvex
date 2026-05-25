@@ -3,10 +3,11 @@ from __future__ import annotations
 import json
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from wsgiref.util import setup_testing_defaults
 
 from packages.contracts import ErrorCode, ErrorEnvelope, HealthCheck, VersionInfo
+from packages.local_api import create_local_api_asgi_app
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
+from tests.local_api.asgi_helpers import asgi_call
 
 
 def make_provider() -> HealthVersionProvider:
@@ -28,24 +29,11 @@ def make_provider() -> HealthVersionProvider:
 
 
 def call_app(app, path: str, *, method: str = "GET") -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(body)
+    return asgi_call(app, path, method=method)
 
 
 def test_health_returns_valid_health_check_json():
-    from packages.local_api import create_health_version_api_app
-
-    app = create_health_version_api_app(make_provider())
+    app = create_local_api_asgi_app(make_provider())
 
     status, headers, payload = call_app(app, "/health")
 
@@ -61,9 +49,7 @@ def test_health_returns_valid_health_check_json():
 
 
 def test_version_returns_valid_version_info_json():
-    from packages.local_api import create_health_version_api_app
-
-    app = create_health_version_api_app(make_provider())
+    app = create_local_api_asgi_app(make_provider())
 
     status, headers, payload = call_app(app, "/version")
 
@@ -81,9 +67,7 @@ def test_version_returns_valid_version_info_json():
 
 
 def test_unknown_route_returns_deterministic_error_envelope():
-    from packages.local_api import create_health_version_api_app
-
-    app = create_health_version_api_app(make_provider())
+    app = create_local_api_asgi_app(make_provider())
 
     status, headers, payload = call_app(app, "/v1/turns")
 

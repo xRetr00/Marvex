@@ -67,7 +67,7 @@ REQUIRED_MARKERS = {
         "canonicalize_source_document",
         "MemoryTreeRuntime",
     ),
-    "packages/control_plane_api/app.py": (
+    "packages/control_plane_api/runtime.py": (
         "{CONTROL_PREFIX}/feedback",
         "{CONTROL_PREFIX}/learning/candidates",
         "learning_runner",

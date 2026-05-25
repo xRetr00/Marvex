@@ -1,4 +1,3 @@
-from .app import create_control_plane_api_app
 from .approvals import InMemoryApprovalStore
 from .models import (
     ApprovalDecisionInput,
@@ -8,6 +7,7 @@ from .models import (
     ControlPlaneSnapshot,
     ProviderStatusView,
 )
+from .runtime import ControlPlaneResponse, ControlPlaneRuntime
 
 __all__ = [
     "ApprovalDecisionInput",
@@ -17,5 +17,6 @@ __all__ = [
     "ControlPlaneSnapshot",
     "InMemoryApprovalStore",
     "ProviderStatusView",
-    "create_control_plane_api_app",
+    "ControlPlaneResponse",
+    "ControlPlaneRuntime",
 ]

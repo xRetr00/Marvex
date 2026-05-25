@@ -21,6 +21,8 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
             return "200 OK", voice_worker_control.devices()
         if method == "GET" and path == "/control/voice/worker/assets":
             return "200 OK", voice_worker_control.assets_status()
+        if method == "GET" and path == "/control/voice/worker/models/catalog":
+            return "200 OK", voice_worker_control.model_catalog()
         if method == "GET" and path == "/control/voice/worker/wakeword-supervisor":
             return "200 OK", voice_worker_control.wakeword_supervisor_health()
         worker_commands = {
@@ -86,10 +88,7 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
 
 
 def _read_json(environ: dict[str, Any]) -> dict[str, Any]:
-    length_text = str(environ.get("CONTENT_LENGTH") or "0")
-    content_length = int(length_text) if length_text.strip() else 0
-    stream = environ["wsgi.input"]
-    raw_body = stream.read(content_length)
+    raw_body = environ.get("REQUEST_BODY", b"")
     text = raw_body.decode("utf-8") if isinstance(raw_body, bytes) else str(raw_body)
     payload = json.loads(text or "{}")
     return payload if isinstance(payload, dict) else {}

@@ -3,16 +3,15 @@ from __future__ import annotations
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
-from wsgiref.simple_server import make_server
 
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 
-from .health_version_api import (
+from .asgi_app import create_local_api_asgi_app
+from .asgi_host import run_asgi_host
+from .contracts import (
     LocalApiConfig,
     TraceReader,
     TurnHandler,
-    WsgiApp,
-    create_health_version_api_app,
 )
 
 
@@ -25,7 +24,7 @@ CONTRACT_VERSIONS = {
 }
 
 Clock = Callable[[], datetime]
-ServerFactory = Callable[[str, int, WsgiApp], Any]
+ServerFactory = Callable[..., Any]
 
 
 def create_default_health_version_provider(
@@ -53,7 +52,7 @@ def run_local_health_version_api(
     *,
     config: LocalApiConfig = LocalApiConfig(),
     provider: HealthVersionProvider | None = None,
-    server_factory: ServerFactory = make_server,
+    server_factory: ServerFactory | None = None,
     turn_handler: TurnHandler | None = None,
     trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
@@ -68,22 +67,18 @@ def run_local_health_version_api(
     }
     if accepted_turn_execution_modes is not None:
         app_kwargs["accepted_turn_execution_modes"] = accepted_turn_execution_modes
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         effective_provider,
         **app_kwargs,
     )
-    httpd = server_factory(config.host, config.port, app)
-    print(
-        startup_message
-        or f"Local health/version API listening on http://{config.host}:{config.port}"
+    return run_asgi_host(
+        app=app,
+        host=config.host,
+        port=config.port,
+        server_factory=server_factory,
+        startup_message=startup_message
+        or f"Local health/version API listening on http://{config.host}:{config.port}",
     )
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("Local health/version API stopped.")
-    finally:
-        httpd.server_close()
-    return 0
 
 
 def main() -> int:

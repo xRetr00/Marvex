@@ -4,13 +4,12 @@ import json
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Protocol
 
 import uvicorn
-from a2wsgi import WSGIMiddleware
 from fastapi import FastAPI
 
-from .health_version_api import WsgiApp, is_loopback_host
+from .contracts import is_loopback_host
 
 
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
@@ -41,12 +40,6 @@ class AsgiHostConfig:
         _validate_port("control_port", self.control_port)
 
 
-def create_asgi_app(wsgi_app: WsgiApp, *, title: str) -> FastAPI:
-    app = FastAPI(title=title, docs_url=None, redoc_url=None, openapi_url=None)
-    app.mount("/", WSGIMiddleware(wsgi_app))
-    return app
-
-
 def build_asgi_startup_message(
     *,
     config: AsgiHostConfig,
@@ -69,22 +62,25 @@ def build_asgi_startup_message(
 
 def run_dual_asgi_host(
     *,
-    core_wsgi_app: WsgiApp,
-    control_wsgi_app: WsgiApp,
-    control_asgi_app: Any | None = None,
+    core_app: FastAPI,
+    control_app: FastAPI,
     config: AsgiHostConfig,
     server_factory: ServerFactory | None = None,
+    control_server_factory: ServerFactory | None = None,
     startup_message: str | None = None,
 ) -> int:
-    factory = server_factory or _uvicorn_server
-    control_server = factory(
-        app=control_asgi_app or create_asgi_app(control_wsgi_app, title="Marvex Control Plane"),
+    core_factory = server_factory or _uvicorn_server
+    control_factory = control_server_factory or server_factory or _uvicorn_server
+    control_server = _make_server(
+        control_factory,
+        app=control_app,
         host=config.control_host,
         port=config.control_port,
         name="control",
     )
-    core_server = factory(
-        app=create_asgi_app(core_wsgi_app, title="Marvex Core API"),
+    core_server = _make_server(
+        core_factory,
+        app=core_app,
         host=config.host,
         port=config.port,
         name="core",
@@ -94,19 +90,47 @@ def run_dual_asgi_host(
         print(startup_message)
 
     control_thread = threading.Thread(
-        target=control_server.run,
+        target=lambda: _run_server(control_server),
         name="marvex-control-plane-asgi",
         daemon=True,
     )
     control_thread.start()
     try:
-        core_server.run()
+        _run_server(core_server)
     except KeyboardInterrupt:
         pass
     finally:
         _request_shutdown(core_server)
         _request_shutdown(control_server)
         control_thread.join(timeout=2)
+    return 0
+
+
+def run_asgi_host(
+    *,
+    app: FastAPI,
+    host: str,
+    port: int,
+    server_factory: ServerFactory | None = None,
+    startup_message: str | None = None,
+) -> int:
+    _validate_host("host", host, allow_remote=False)
+    _validate_port("port", port)
+    server = _make_server(
+        server_factory or _uvicorn_server,
+        app=app,
+        host=host,
+        port=port,
+        name="local-api",
+    )
+    if startup_message:
+        print(startup_message)
+    try:
+        _run_server(server)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        _request_shutdown(server)
     return 0
 
 
@@ -122,11 +146,33 @@ def _uvicorn_server(*, app: FastAPI, host: str, port: int, name: str) -> uvicorn
     return uvicorn.Server(config)
 
 
+def _make_server(factory: ServerFactory, *, app: FastAPI, host: str, port: int, name: str) -> RunnableServer:
+    try:
+        return factory(app=app, host=host, port=port, name=name)
+    except TypeError:
+        return factory(host, port, app)
+
+
+def _run_server(server: RunnableServer) -> None:
+    run = getattr(server, "run", None)
+    if callable(run):
+        run()
+        return
+    serve_forever = getattr(server, "serve_forever", None)
+    if callable(serve_forever):
+        serve_forever()
+        return
+    raise TypeError("ASGI server must expose run() or serve_forever()")
+
+
 def _request_shutdown(server: RunnableServer) -> None:
     try:
         server.should_exit = True
     except Exception:
-        return
+        pass
+    server_close = getattr(server, "server_close", None)
+    if callable(server_close):
+        server_close()
 
 
 def _validate_host(name: str, host: str, *, allow_remote: bool) -> None:
