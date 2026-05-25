@@ -1,8 +1,8 @@
 //! Marvex backend Windows service.
 //!
-//! Runs the full backend stack (Core + control plane + intent/tool/provider/
-//! voice workers) 24/7 via the existing [`crate::supervisor::Supervisor`], so the
-//! always-on "Hey Marvex" wake word reaches a warm Core instantly. The per-user
+//! Runs the shell-supervised backend boundary (Core + voice worker) 24/7 via
+//! the existing [`crate::supervisor::Supervisor`]. Core owns provider, intent,
+//! and tool worker IPC internally through persistent JSONL clients. The per-user
 //! shell attaches to this service as a thin client using the local token handoff
 //! named pipe.
 //!
@@ -109,10 +109,52 @@ fn run_service() -> windows_service::Result<()> {
 }
 
 fn run_console() {
-    let _supervisor = start_backend();
+    let supervisor = start_backend();
+    let stop_file = console_stop_file_path();
     println!("Marvex backend running in console mode. Press Ctrl+C to stop.");
     loop {
-        std::thread::sleep(Duration::from_secs(3600));
+        if console_stop_requested(stop_file.as_ref()) {
+            break;
+        }
+        std::thread::sleep(Duration::from_secs(1));
+    }
+    if let Some(supervisor) = supervisor {
+        supervisor.shutdown();
+        std::thread::sleep(Duration::from_secs(2));
+    }
+}
+
+fn console_stop_file_path() -> Option<PathBuf> {
+    std::env::var_os("MARVEX_SERVICE_CONSOLE_STOP_FILE").map(PathBuf::from)
+}
+
+fn console_stop_requested(stop_file: Option<&PathBuf>) -> bool {
+    stop_file.is_some_and(|path| path.is_file())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::console_stop_requested;
+    use std::{
+        fs,
+        time::{SystemTime, UNIX_EPOCH},
+    };
+
+    #[test]
+    fn console_stop_requested_uses_explicit_stop_file_only() {
+        let path = std::env::temp_dir().join(format!(
+            "marvex-console-stop-{}",
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .expect("time")
+                .as_nanos()
+        ));
+
+        assert!(!console_stop_requested(None));
+        assert!(!console_stop_requested(Some(&path)));
+        fs::write(&path, b"stop").expect("stop file");
+        assert!(console_stop_requested(Some(&path)));
+        let _ = fs::remove_file(path);
     }
 }
 
