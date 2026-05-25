@@ -1,5 +1,7 @@
 # Build Script Validation & Execution Guide
 
+file size justification: This build guide intentionally keeps prerequisites, validation, build variants, troubleshooting, and timing expectations together until installer documentation is split by audience.
+
 ## Quick Start
 
 From the workspace root (`D:\Marvex`):

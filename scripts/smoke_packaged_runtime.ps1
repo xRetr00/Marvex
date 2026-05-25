@@ -164,16 +164,32 @@ function Read-StateStreamOnce([string]$Token) {
     try {
         $client.Connect("127.0.0.1", 8766)
         $stream = $client.GetStream()
-        $stream.ReadTimeout = 5000
+        $stream.ReadTimeout = 1000
         $request = "GET /control/state/stream HTTP/1.1`r`nHost: 127.0.0.1:8766`r`nAccept: text/event-stream`r`nAuthorization: Bearer $Token`r`nConnection: close`r`n`r`n"
         $bytes = [System.Text.Encoding]::ASCII.GetBytes($request)
         $stream.Write($bytes, 0, $bytes.Length)
         $buffer = New-Object byte[] 4096
-        $read = $stream.Read($buffer, 0, $buffer.Length)
-        if ($read -le 0) {
+        $textBuilder = New-Object System.Text.StringBuilder
+        $deadline = [Diagnostics.Stopwatch]::StartNew()
+        while ($deadline.Elapsed.TotalSeconds -lt 5) {
+            try {
+                $read = $stream.Read($buffer, 0, $buffer.Length)
+                if ($read -le 0) {
+                    break
+                }
+                [void]$textBuilder.Append([System.Text.Encoding]::UTF8.GetString($buffer, 0, $read))
+                $text = $textBuilder.ToString()
+                if ($text -match "data:") {
+                    break
+                }
+            } catch [System.IO.IOException] {
+                continue
+            }
+        }
+        if ($textBuilder.Length -le 0) {
             throw "state stream returned no bytes"
         }
-        $text = [System.Text.Encoding]::UTF8.GetString($buffer, 0, $read)
+        $text = $textBuilder.ToString()
         if ($text -notmatch "200 OK") {
             throw "state stream did not return HTTP 200"
         }
