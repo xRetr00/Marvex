@@ -45,8 +45,8 @@ ALLOWED_IMPORT_PREFIXES = (
     "wsgiref.simple_server",
 )
 ASGI_HOST_ONLY_ALLOWED_IMPORT_PREFIXES = (
+    "a2wsgi",
     "fastapi",
-    "starlette.middleware.wsgi",
     "threading",
     "uvicorn",
 )

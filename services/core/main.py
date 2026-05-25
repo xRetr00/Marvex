@@ -145,6 +145,7 @@ DEFAULT_PORT = 8765
 DEFAULT_CONTROL_PORT = 8766
 DEFAULT_FOUNDATION_MODEL = "fake-model"
 DEFAULT_PROVIDER = "fake"
+LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
 
 ServerFactory = Callable[[str, int, Any], Any]
@@ -2809,11 +2810,16 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.health_once:
         return run_health_once()
+    local_auth_token = (
+        args.local_auth_token
+        if args.local_auth_token is not None
+        else os.environ.get(LOCAL_AUTH_TOKEN_ENV)
+    )
     config = CoreServiceEntrypointConfig(
         host=args.host,
         port=args.port,
         control_port=args.control_port,
-        local_auth_token=args.local_auth_token,
+        local_auth_token=local_auth_token,
         foundation_model=args.model,
         provider=args.provider,
         worker_provider=args.worker_provider,

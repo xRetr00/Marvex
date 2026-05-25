@@ -7,8 +7,8 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 import uvicorn
+from a2wsgi import WSGIMiddleware
 from fastapi import FastAPI
-from starlette.middleware.wsgi import WSGIMiddleware
 
 from .health_version_api import WsgiApp, is_loopback_host
 

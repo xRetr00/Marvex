@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import http.client
 import json
+import os
 import socket
 import subprocess
 import sys
@@ -26,14 +27,13 @@ def test_core_asgi_host_keeps_health_and_turns_responsive_while_control_stream_i
             "-m",
             "services.core.main",
             "--serve",
-            "--local-auth-token",
-            TOKEN,
             "--port",
             str(core_port),
             "--control-port",
             str(control_port),
         ],
         cwd=ROOT,
+        env={**os.environ, "MARVEX_LOCAL_AUTH_TOKEN": TOKEN},
         text=True,
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
