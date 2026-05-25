@@ -66,3 +66,4 @@ temp/
 node_modules/
 dist/
 build/
+.worktrees/
