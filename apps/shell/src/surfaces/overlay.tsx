@@ -15,6 +15,7 @@ import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../
 import DynamicIsland from "@/components/dynamic-island";
 import { MarvexWaveform } from "@/components/waveform-shader/MarvexWaveform";
 import { AnimatePresence, motion } from "framer-motion";
+import "./overlay.css";
 
 // Warm shimmer (Marvex cream gradient) for the status text. Injected once.
 if (typeof document !== "undefined" && !document.getElementById("marvex-shimmer-style")) {
@@ -82,7 +83,7 @@ export function OverlaySurface() {
   const queue = queueRef.current;
   const lastOverlaySizeRef = useRef<OverlayWindowSize | null>(null);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     document.documentElement.classList.add("marvex-overlay-document");
     document.body.classList.add("marvex-overlay-document");
     document.getElementById("root")?.classList.add("marvex-overlay-root");

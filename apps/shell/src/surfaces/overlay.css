@@ -1,0 +1,117 @@
+html.marvex-overlay-document,
+body.marvex-overlay-document,
+body.marvex-overlay-document #root,
+body.marvex-overlay-document .marvex-overlay-root {
+  margin: 0 !important;
+  width: max-content !important;
+  height: max-content !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  color-scheme: dark;
+  overflow: hidden !important;
+}
+
+body.marvex-overlay-document *,
+body.marvex-overlay-document *::before,
+body.marvex-overlay-document *::after {
+  box-sizing: border-box;
+}
+
+.overlay-shell {
+  width: max-content;
+  height: max-content;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 8px;
+  display: block;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  border: 0;
+  box-shadow: none;
+  overflow: visible;
+}
+
+.marvex-island {
+  width: max-content;
+  height: max-content;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  background-color: transparent;
+  background-image: none;
+  box-shadow: none;
+}
+
+.marvex-dynamic-island-pill {
+  background: #000;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px rgba(255, 224, 194, 0.14),
+    0 6px 18px rgba(0, 0, 0, 0.38);
+}
+
+.marvex-island-card {
+  width: 390px;
+  min-height: 76px;
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  color: #fff;
+  user-select: none;
+}
+
+.marvex-island-card-icon {
+  width: 42px;
+  height: 42px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 224, 194, 0.12);
+  color: #ffe0c2;
+  font-weight: 800;
+}
+
+.marvex-island-card-copy {
+  min-width: 0;
+}
+
+.marvex-island-card-title {
+  font-size: 15px;
+  line-height: 20px;
+  font-weight: 650;
+}
+
+.marvex-island-card-body {
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 16px;
+  color: rgba(255, 255, 255, 0.62);
+  overflow-wrap: anywhere;
+}
+
+.marvex-island-card-action,
+.marvex-island-approval-actions button {
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #ffe0c2;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.marvex-island-approval-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
