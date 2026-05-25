@@ -38,7 +38,7 @@ def main() -> int:
         if not blacklist.reason_codes:
             failures.append("hard-block decisions must include reason codes")
 
-    app_py = ROOT / "packages" / "control_plane_api" / "app.py"
+    app_py = ROOT / "packages" / "control_plane_api" / "runtime.py"
     app_text = app_py.read_text(encoding="utf-8")
     if "/runtime-policy" not in app_text:
         failures.append("Control Plane runtime-policy endpoint is required")
