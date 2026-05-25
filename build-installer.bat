@@ -65,7 +65,18 @@ call :PrepareVoiceAndService
 if errorlevel 1 exit /b 1
 
 if "%SkipInstaller%"=="1" (
-    call :PrintSummarySkipped
+    call :BuildTauriApp
+    if errorlevel 1 exit /b 1
+    
+    call :WriteSection "Build Summary (Skip Installer Mode)"
+    echo [OK] Tauri app compiled successfully (no installer bundled)
+    echo.
+    echo Compiled app location:
+    echo   %ShellTauriDir%\target\release\marvex-service.exe
+    echo.
+    echo To generate the final installer, run:
+    echo   build-installer.bat
+    echo.
 ) else (
     call :BuildTauriApp
     if errorlevel 1 exit /b 1
@@ -470,27 +481,39 @@ call :WriteSuccess "marvex-service staged for bundling"
 goto :eof
 
 :BuildTauriApp
-call :WriteSection "Step 5: Building Tauri App and Installers"
+if "%SkipInstaller%"=="1" (
+    call :WriteSection "Step 5: Building Tauri App (No Bundler)"
+    call :WriteStep "Building Tauri app (release, --no-bundle)..." 5 6
+    echo   App will compile but installers will not be generated...
+) else (
+    call :WriteSection "Step 5: Building Tauri App and Installers"
+    call :WriteStep "Building Tauri app (release)..." 5 6
+    echo   This may take several minutes...
+)
 
 pushd "%ShellDir%"
-call :WriteStep "Building Tauri app (release)..." 5 6
-echo   This may take several minutes...
 
 set "tauriLocalCmd=%ShellDir%\node_modules\.bin\tauri.cmd"
 set "tauriLocalExe=%ShellDir%\node_modules\.bin\tauri.exe"
 set "BundleConf=%ShellTauriDir%\tauri.bundle.conf.json"
+set "BundleArgs=build --config "!BundleConf!""
+
+if "%SkipInstaller%"=="1" (
+    set "BundleArgs=!BundleArgs! --no-bundle"
+)
+
 if exist "!tauriLocalCmd!" (
-    call "!tauriLocalCmd!" build --config "!BundleConf!"
+    call "!tauriLocalCmd!" !BundleArgs!
 ) else if exist "!tauriLocalExe!" (
-    call "!tauriLocalExe!" build --config "!BundleConf!"
+    call "!tauriLocalExe!" !BundleArgs!
 ) else (
     where cargo-tauri >nul 2>&1
     if not errorlevel 1 (
-        call cargo tauri build --config "!BundleConf!"
+        call cargo tauri !BundleArgs!
     ) else (
         where npx >nul 2>&1
         if not errorlevel 1 (
-            call npx --yes @tauri-apps/cli build --config "!BundleConf!"
+            call npx --yes @tauri-apps/cli !BundleArgs!
         ) else (
             popd
             call :Die "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
@@ -503,7 +526,12 @@ if errorlevel 1 (
     call :Die "Tauri build failed"
     exit /b 1
 )
-call :WriteSuccess "Tauri app built successfully"
+
+if "%SkipInstaller%"=="1" (
+    call :WriteSuccess "Tauri app built successfully (no bundle/installer generated)"
+) else (
+    call :WriteSuccess "Tauri app built successfully"
+)
 popd
 
 echo.

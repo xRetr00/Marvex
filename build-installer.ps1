@@ -458,23 +458,41 @@ function Prepare-Voice-And-Service {
 # ============================================================================
 
 function Build-Tauri-App {
-    Write-Section 'Step 5: Building Tauri App & Installers'
+    param(
+        [switch]$NoBundle = $false
+    )
+    
+    if ($NoBundle) {
+        Write-Section 'Step 5: Building Tauri App (No Bundler)'
+    } else {
+        Write-Section 'Step 5: Building Tauri App & Installers'
+    }
     
     Push-Location $ShellDir
     try {
-        Write-Step "Building Tauri app (release)..." 5 5
-        Write-Host "  This may take several minutes..." -ForegroundColor Yellow
+        if ($NoBundle) {
+            Write-Step "Building Tauri app (release, --no-bundle)..." 5 5
+            Write-Host "  App will compile but installers will not be generated..." -ForegroundColor Yellow
+        } else {
+            Write-Step "Building Tauri app (release)..." 5 5
+            Write-Host "  This may take several minutes..." -ForegroundColor Yellow
+        }
         
         # Resolve a Tauri CLI: local node_modules, then cargo-tauri, then npx.
         # Use an absolute config path since the build runs from the shell dir.
         $bundleConf = Join-Path $ShellTauriDir "tauri.bundle.conf.json"
+        $buildArgs = @("build", "--config", "$bundleConf")
+        if ($NoBundle) {
+            $buildArgs += "--no-bundle"
+        }
+        
         $localTauri = Join-Path $ShellDir "node_modules\.bin\tauri.cmd"
         if (Test-Path $localTauri) {
-            & $localTauri build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            & $localTauri @buildArgs 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } elseif (Get-Command cargo-tauri -ErrorAction SilentlyContinue) {
-            cargo tauri build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            cargo tauri @buildArgs 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } elseif (Get-Command npx -ErrorAction SilentlyContinue) {
-            npx --yes "@tauri-apps/cli" build --config "$bundleConf" 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
+            npx --yes "@tauri-apps/cli" @buildArgs 2>&1 | Tee-Object -Variable tauriOutput | Where-Object { $_ -match 'Compiling|Finished|bundle|installer|Created' -or $_ -match "^  " }
         } else {
             Write-Error-Exit "Tauri CLI not found. Install with: cargo install tauri-cli  OR  npm i -D @tauri-apps/cli"
         }
@@ -483,7 +501,11 @@ function Build-Tauri-App {
             Write-Error-Exit "Tauri build failed. Full output: `n$tauriOutput"
         }
         
-        Write-Success "Tauri app built successfully"
+        if ($NoBundle) {
+            Write-Success "Tauri app built successfully (no bundle/installer generated)"
+        } else {
+            Write-Success "Tauri app built successfully"
+        }
     }
     finally {
         Pop-Location
@@ -587,17 +609,21 @@ function Main {
     Verify-Frontend-Assets
     Prepare-Voice-And-Service
     
-    if (-not $SkipInstaller) {
-        Build-Tauri-App
-        Locate-Installers
-    }
-    else {
-        Write-Section "Skipping Tauri Build & Installer Generation"
-        Write-Host "✓ All build steps completed (wheel, frontend, voice assets)" -ForegroundColor Green
+    if ($SkipInstaller) {
+        Build-Tauri-App -NoBundle
+        Write-Section "Build Summary (Skip Installer Mode)"
+        Write-Host "✓ Tauri app compiled successfully (no installer bundled)" -ForegroundColor Green
         Write-Host ""
-        Write-Host "To generate the final installer:" -ForegroundColor Cyan
+        Write-Host "Compiled app location:" -ForegroundColor Cyan
+        Write-Host "  $ShellTauriDir\target\release\marvex-service.exe" -ForegroundColor Yellow
+        Write-Host ""
+        Write-Host "To generate the final installer, run:" -ForegroundColor Cyan
         Write-Host "  .\build-installer.ps1" -ForegroundColor Yellow
         Write-Host ""
+    }
+    else {
+        Build-Tauri-App
+        Locate-Installers
     }
     
     Print-Summary
