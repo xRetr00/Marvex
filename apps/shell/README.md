@@ -30,7 +30,8 @@ The production installer uses **setuptools console scripts** (dynamic Python, no
 
 **Runtime behavior**:
 - On first launch, supervisor creates `~/.marvex/runtime/venv/`
-- Installs bundled `marvex-runtime.whl` via `uv pip install`
+- Installs bundled `marvex-<version>-py3-none-any.whl` via `uv pip install`
+  with the packaged `wheels/` dependency directory.
 - Setuptools generates console scripts: `~/.marvex/runtime/venv/Scripts/marvex-*.exe`
 - Services launched via console scripts (real Python, not frozen)
 - Supports runtime package installation (Deps tab)

@@ -1,13 +1,44 @@
 # Project Status
 
-current_phase: intent_tool_worker_execution_slice_checkpoint
+current_phase: native_asgi_control_plane_state_boundary_checkpoint
 
-implementation_status: intent_tool_worker_execution_slice_checkpoint
+implementation_status: native_asgi_control_plane_state_boundary_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Intent and Tool Worker Execution Slice Checkpoint
+Native ASGI Control Plane State Boundary Checkpoint
+
+## Packaged Runtime Wheel Freshness Checkpoint
+
+The shell service runtime now records a marker for the bundled
+`marvex-runtime.whl` installed into the per-machine runtime venv. On later app
+updates, an existing venv is treated as current only when the marker matches the
+new bundled wheel. If the marker is missing or stale, the supervisor reruns
+`uv pip install --reinstall-package marvex` before launching Core. This prevents
+an old `marvex-core` console script from surviving an upgrade and failing with
+`local_auth_token is required` even though the current supervisor injects
+`MARVEX_LOCAL_AUTH_TOKEN` through the child environment.
+
+The local bearer token remains in memory and in the Core child environment only.
+It is still not passed in argv, written to `service.token`, logged, or projected
+through runtime status/manifest payloads.
+
+## Native ASGI Control Plane State Boundary Checkpoint
+
+Marvex has started the native-ASGI endpoint ownership migration. Core and
+Control Plane still run under the Uvicorn two-port host, but Control Plane
+`/control/state` and `/control/state/stream` are now owned by native ASGI routes
+with the existing WSGI Control Plane app mounted as fallback for all other
+routes. The state stream remains SSE, uses the same safe `AssistantStateEvent`
+frame shape, keeps bearer and HttpOnly browser-session cookie auth behavior, and
+unsubscribes from the state bus on stream close.
+
+The migration plan for the remaining WSGI-to-ASGI phases is tracked in
+`docs/NATIVE_ASGI_MIGRATION_PLAN.md`. Core `/v1/turns`, trace lookup,
+Control Plane sessions, browser-session claims, static SPA serving, approvals,
+voice controls, dependency installs, and other Control Plane APIs intentionally
+remain on the compatibility bridge until their dedicated slices move them.
 
 ## Windows Shell Overhaul: Async Bridge, Presence, Control Plane Window, Always-On Voice Checkpoint
 

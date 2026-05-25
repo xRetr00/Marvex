@@ -160,14 +160,15 @@ Task 133 provider-token boundary:
 ASGI host slice:
 
 - `AsgiHostConfig` keeps Core and Control Plane binds loopback-only by default.
-- `run_dual_asgi_host(...)` starts the existing Core WSGI app and Control Plane
-  WSGI app as two Uvicorn servers, preserving ports `8765` and `8766`.
-- a2wsgi/FastAPI/Uvicorn are host-only dependencies here; Core must import only
-  the adapter seam and must not own framework APIs directly.
-- Existing WSGI app contracts remain the source of endpoint behavior until a
-  later native ASGI/WebSocket task is approved.
-- This slice replaces Starlette's deprecated WSGI middleware only. Native ASGI
-  route ownership remains a later endpoint migration.
+- `run_dual_asgi_host(...)` starts Core and Control Plane as two Uvicorn
+  servers, preserving ports `8765` and `8766`.
+- Core remains WSGI behind a2wsgi. Control Plane may pass an already-built ASGI
+  app for routes that have migrated to native ownership.
+- FastAPI/Uvicorn server ownership stays out of `services.core`; Core imports
+  only the adapter seam and must not own framework APIs directly.
+- Native ASGI migration is incremental. The first migrated Control Plane routes
+  are `/control/state` and `/control/state/stream`; the rest of the Control
+  Plane remains behind the WSGI fallback until explicitly moved.
 
 Auth decision:
 
@@ -191,8 +192,8 @@ Non-behavior:
   provider-stage execution is invoked by this package.
 - No sessions, history, routing, retry/fallback, model selection, API-key
   policy, tools, memory, UI, voice, desktop, vision, or proactive behavior.
-- No native FastAPI route ownership is added; a2wsgi/FastAPI/Uvicorn are
-  limited to the host adapter.
+- Native FastAPI route ownership is limited to explicitly approved endpoint
+  adapters; Core still has no direct FastAPI/Uvicorn ownership.
 
 Dependency direction:
 

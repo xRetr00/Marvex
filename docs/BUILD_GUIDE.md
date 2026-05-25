@@ -97,7 +97,7 @@ uv build --wheel
 **Output**:
 ```
 apps/shell/runtime/
-├── marvex-runtime.whl
+├── marvex-<version>-py3-none-any.whl
 └── uv.exe
 ```
 

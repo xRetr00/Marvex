@@ -30,13 +30,13 @@
 
 Installation:
   Installer bundles:
-    • marvex-runtime.whl (~20-30 MB)
+    • marvex-<version>-py3-none-any.whl (~20-30 MB)
     • uv.exe (Python package manager)
 
 First Launch:
   1. Supervisor detects missing ~/.marvex/runtime/venv/
   2. Creates virtual environment
-  3. Runs: uv pip install marvex-runtime.whl
+  3. Runs: uv pip install --no-index --find-links wheels marvex-<version>-py3-none-any.whl
   4. Setuptools generates console scripts:
      • ~/.marvex/runtime/venv/Scripts/marvex-core.exe
      • ~/.marvex/runtime/venv/Scripts/marvex-provider-worker.exe
@@ -200,7 +200,7 @@ Windows: ~/.marvex/runtime/venv/Scripts/marvex-core.exe
 
 ### What Was Chosen
 
-**✅ CHOSEN**: `marvex-runtime.whl` (compiled wheel)
+**✅ CHOSEN**: `marvex-<version>-py3-none-any.whl` (compiled wheel)
 **❌ REJECTED**: `pip install -e .` (editable directory)
 
 ### Why Wheel
