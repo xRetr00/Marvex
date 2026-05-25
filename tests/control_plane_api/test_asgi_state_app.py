@@ -4,69 +4,67 @@ import asyncio
 import json
 from collections.abc import Iterator
 from pathlib import Path
-from typing import Any
 
 from fastapi.testclient import TestClient
 
 from packages.contracts.state_event import AssistantStatusKind
-from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
+from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
 from packages.control_plane_api.browser_session import BrowserSessionManager
 from packages.session_runtime import BackendSessionCoordinator
 from packages.state_bus import AssistantStateBus
+from tests.control_plane_api.asgi_helpers import create_control_plane_test_app
 
 
-def _wsgi_fallback(environ: dict[str, Any], start_response):
-    path = str(environ.get("PATH_INFO", "/"))
-    body = json.dumps({"fallback_path": path}).encode("utf-8")
-    start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
-    return [body]
+def _app(
+    *,
+    local_auth_token: str = "state-token",
+    state_bus: AssistantStateBus | None = None,
+    browser_session_manager: BrowserSessionManager | None = None,
+    session_coordinator: BackendSessionCoordinator | None = None,
+    web_dist: str | None = None,
+):
+    return create_control_plane_test_app(
+        approval_store=InMemoryApprovalStore(),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token=local_auth_token,
+        state_bus=state_bus or AssistantStateBus(),
+        browser_session_manager=browser_session_manager or BrowserSessionManager(),
+        session_coordinator=session_coordinator,
+        web_dist=web_dist,
+    )
 
 
 def test_control_plane_asgi_state_route_uses_native_state_snapshot() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
     bus = AssistantStateBus()
     bus.publish_status(AssistantStatusKind.THINKING, detail="native-asgi")
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=bus,
-        browser_session_manager=BrowserSessionManager(),
-    )
+    app = _app(state_bus=bus)
 
     response = TestClient(app).get("/control/state", headers={"Authorization": "Bearer state-token"})
 
     assert response.status_code == 200
     assert response.json()["status"] == "thinking"
     assert response.json()["detail"] == "native-asgi"
-    assert "fallback_path" not in response.text
 
 
-def test_control_plane_asgi_app_mounts_wsgi_fallback_for_non_state_routes() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
+def test_control_plane_asgi_diagnostics_route_is_native() -> None:
+    app = create_control_plane_test_app(
+        approval_store=InMemoryApprovalStore(),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="state-token",
         state_bus=AssistantStateBus(),
         browser_session_manager=BrowserSessionManager(),
+        diagnostics={"runtime": "control-plane", "status": "ok"},
     )
 
     response = TestClient(app).get("/control/diagnostics", headers={"Authorization": "Bearer state-token"})
 
     assert response.status_code == 200
-    assert response.json() == {"fallback_path": "/control/diagnostics"}
+    assert response.json()["runtime"] == "control-plane"
+    assert response.json()["status"] == "ok"
 
 
 def test_control_plane_asgi_app_no_longer_uses_wsgi_middleware() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
-        browser_session_manager=BrowserSessionManager(),
-    )
+    app = _app()
     mounted_apps = [getattr(route, "app", None) for route in app.routes]
 
     assert all(
@@ -75,19 +73,11 @@ def test_control_plane_asgi_app_no_longer_uses_wsgi_middleware() -> None:
     )
 
 
-def test_control_plane_asgi_serves_static_spa_without_wsgi_fallback(tmp_path: Path) -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
+def test_control_plane_asgi_serves_static_spa_without_runtime_dispatch(tmp_path: Path) -> None:
     (tmp_path / "index.html").write_text("<main>control shell</main>", encoding="utf-8")
     (tmp_path / "assets").mkdir()
     (tmp_path / "assets" / "app.js").write_text("console.log('control');", encoding="utf-8")
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
-        browser_session_manager=BrowserSessionManager(),
-        web_dist=str(tmp_path),
-    )
+    app = _app(web_dist=str(tmp_path))
     client = TestClient(app)
 
     root = client.get("/")
@@ -100,51 +90,25 @@ def test_control_plane_asgi_serves_static_spa_without_wsgi_fallback(tmp_path: Pa
     assert asset.text == "console.log('control');"
     assert spa_fallback.status_code == 200
     assert spa_fallback.text == "<main>control shell</main>"
-    assert "fallback_path" not in root.text + asset.text + spa_fallback.text
 
 
 def test_control_plane_asgi_health_and_version_routes_are_native() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
-        browser_session_manager=BrowserSessionManager(),
-    )
-    client = TestClient(app)
+    client = TestClient(_app())
 
     health = client.get("/control/health", headers={"Authorization": "Bearer state-token"})
     version = client.get("/control/version", headers={"Authorization": "Bearer state-token"})
 
     assert health.status_code == 200
     assert health.json() == {"schema_version": "1", "status": "ok"}
-    assert "fallback_path" not in health.text
     assert version.status_code == 200
     assert version.json() == {"schema_version": "1", "service": "marvex-control-plane-api"}
-    assert "fallback_path" not in version.text
 
 
 def test_control_plane_asgi_state_route_accepts_shared_browser_cookie() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
     values: Iterator[str] = iter(("claim-token", "session-token"))
     browser_sessions = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: next(values))
     lease = browser_sessions.create_lease()
-    bus = AssistantStateBus()
-    control_wsgi_app = create_control_plane_api_app(
-        approval_store=InMemoryApprovalStore(),
-        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
-        local_auth_token="state-token",
-        state_bus=bus,
-        browser_session_manager=browser_sessions,
-    )
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=control_wsgi_app,
-        local_auth_token="state-token",
-        state_bus=bus,
-        browser_session_manager=browser_sessions,
-    )
+    app = _app(browser_session_manager=browser_sessions)
     client = TestClient(app)
     claim_response = client.get(str(lease["claim_url"]), follow_redirects=False)
 
@@ -157,30 +121,16 @@ def test_control_plane_asgi_state_route_accepts_shared_browser_cookie() -> None:
 
 
 def test_control_plane_asgi_state_route_rejects_invalid_auth() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
-        browser_session_manager=BrowserSessionManager(),
-    )
-
-    response = TestClient(app).get("/control/state", headers={"Authorization": "Bearer wrong"})
+    response = TestClient(_app()).get("/control/state", headers={"Authorization": "Bearer wrong"})
 
     assert response.status_code == 401
     assert response.json()["details"]["reason"] == "invalid"
 
 
 def test_control_plane_asgi_browser_session_routes_are_native_and_cookie_authenticates() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
     values: Iterator[str] = iter(("claim-token", "session-token"))
     browser_sessions = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: next(values))
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
+    app = _app(
         browser_session_manager=browser_sessions,
         session_coordinator=BackendSessionCoordinator(),
     )
@@ -191,7 +141,6 @@ def test_control_plane_asgi_browser_session_routes_are_native_and_cookie_authent
     lease = lease_response.json()
     assert lease["claim_url"] == "/control/browser-session/claim?claim=claim-token"
     assert lease["token_value_logged"] is False
-    assert "fallback_path" not in lease_response.text
     assert "state-token" not in lease_response.text
 
     claim_response = client.get(lease["claim_url"], follow_redirects=False)
@@ -199,7 +148,6 @@ def test_control_plane_asgi_browser_session_routes_are_native_and_cookie_authent
     assert claim_response.json() == {}
     assert "HttpOnly" in claim_response.headers["set-cookie"]
     assert "SameSite=Strict" in claim_response.headers["set-cookie"]
-    assert "fallback_path" not in claim_response.text
 
     cookie_response = client.get("/control/sessions")
     assert cookie_response.status_code == 200
@@ -207,14 +155,9 @@ def test_control_plane_asgi_browser_session_routes_are_native_and_cookie_authent
 
 
 def test_control_plane_asgi_browser_session_claim_is_one_time() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
     values: Iterator[str] = iter(("claim-token", "session-token"))
     browser_sessions = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: next(values))
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
+    app = _app(
         browser_session_manager=browser_sessions,
         session_coordinator=BackendSessionCoordinator(),
     )
@@ -229,17 +172,9 @@ def test_control_plane_asgi_browser_session_claim_is_one_time() -> None:
 
 
 def test_control_plane_asgi_session_routes_are_native_safe_projections() -> None:
-    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
-
     coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000, id_factory=lambda: "session-native")
     coordinator.create_session(title="Existing native session")
-    app = create_control_plane_asgi_app(
-        control_wsgi_app=_wsgi_fallback,
-        local_auth_token="state-token",
-        state_bus=AssistantStateBus(),
-        browser_session_manager=BrowserSessionManager(),
-        session_coordinator=coordinator,
-    )
+    app = _app(session_coordinator=coordinator)
     client = TestClient(app)
 
     list_response = client.get("/control/sessions", headers={"Authorization": "Bearer state-token"})
@@ -248,7 +183,6 @@ def test_control_plane_asgi_session_routes_are_native_safe_projections() -> None
     assert listed["session_count"] == 1
     assert listed["sessions"][0]["title"] == "Existing native session"
     assert listed["transcript_persisted"] is False
-    assert "fallback_path" not in list_response.text
     assert "state-token" not in list_response.text.lower()
 
     create_response = client.post(
@@ -262,7 +196,6 @@ def test_control_plane_asgi_session_routes_are_native_safe_projections() -> None
     assert created["session"]["title"] == "Created native session"
     assert created["session"]["session_ref"] == {"ref_type": "session", "ref_id": "session-native"}
     assert created["transcript_persisted"] is False
-    assert "fallback_path" not in create_response.text
 
 
 def test_control_plane_asgi_state_stream_yields_updates_and_unsubscribes() -> None:

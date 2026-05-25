@@ -1,10 +1,8 @@
 from __future__ import annotations
 
-# file size justification: control-plane contract coverage exercises many endpoints through one WSGI fixture to preserve end-to-end behavior checks.
+# file size justification: control-plane contract coverage exercises many endpoints through one native ASGI fixture to preserve end-to-end behavior checks.
 
-import io
 import json
-from wsgiref.util import setup_testing_defaults
 
 from packages.capability_runtime import (
     ApprovalPrompt,
@@ -19,9 +17,9 @@ from packages.capability_runtime import (
 from packages.control_plane_api import (
     ControlPlaneSnapshot,
     InMemoryApprovalStore,
-    create_control_plane_api_app,
 )
 from packages.session_runtime import BackendSessionCoordinator
+from tests.control_plane_api.asgi_helpers import asgi_call as _call, create_control_plane_test_app
 
 
 def _approval_request() -> CapabilityApprovalRequest:
@@ -41,36 +39,6 @@ def _approval_request() -> CapabilityApprovalRequest:
             side_effect_level=ToolSideEffectLevel.BROWSER_ACTION,
         ),
     )
-
-
-def _call(
-    app,
-    path: str,
-    *,
-    method: str = "GET",
-    token: str | None = "fake-control-token",
-    cookie: str | None = None,
-    body: dict | None = None,
-):
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if token is not None:
-        environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
-    if cookie is not None:
-        environ["HTTP_COOKIE"] = cookie
-    raw = json.dumps(body or {}).encode("utf-8")
-    environ["wsgi.input"] = io.BytesIO(raw)
-    environ["CONTENT_LENGTH"] = str(len(raw))
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response)
 
 
 class _FakeLogReader:
@@ -123,7 +91,7 @@ def _app(*, log_reader=None, session_coordinator=None, browser_session_manager=N
         telemetry={"trace_count": 1, "raw_payload_persisted": False},
         settings={"browser_tools_enabled": False, "computer_use_enabled": False},
     )
-    return create_control_plane_api_app(
+    return create_control_plane_test_app(
         approval_store=store,
         snapshot=snapshot,
         local_auth_token="fake-control-token",
@@ -423,7 +391,7 @@ def _expanded_app():
         transport_summaries=("stdio",),
     ),))
     skills_catalog = SkillMarketplaceCatalog.from_entries((SkillMarketplaceEntry.from_manifest(_skill_manifest(), source="approved_local"),))
-    return create_control_plane_api_app(
+    return create_control_plane_test_app(
         approval_store=approval_store,
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",
@@ -521,7 +489,7 @@ def _memory_tree_control_app():
     from datetime import UTC, datetime
 
     from packages.connector_runtime import AutoFetchPolicy, ConnectorCategory, ConnectorRef, SourceIngestionPolicy, SourceSyncInterval, SourceSyncMode, default_connector_manifests
-    from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
+    from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
     from packages.memory_tree_runtime import (
         CanonicalSourceMetadata,
         MemorySourceRef,
@@ -561,7 +529,7 @@ def _memory_tree_control_app():
     )
     chunks = chunk_document(document, max_chars=80)
     runtime = MemoryTreeRuntime.with_documents(documents=(document,), chunks=chunks)
-    return create_control_plane_api_app(
+    return create_control_plane_test_app(
         approval_store=InMemoryApprovalStore.from_requests(()),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token="fake-control-token",
