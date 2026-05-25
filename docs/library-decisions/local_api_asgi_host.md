@@ -9,6 +9,15 @@ fallback if abandoned: Keep existing WSGI app contracts and replace the thin hos
 pyproject dependency: fastapi
 declared dependency: fastapi>=0.135,<0.137
 
+library name: a2wsgi
+official source: https://github.com/abersheeran/a2wsgi
+maintenance status: active enough for this compatibility seam; PyPI release history shows 1.10.10 released in June 2025.
+why use it: FastAPI now recommends a2wsgi for mounting WSGI applications, and it replaces Starlette's deprecated WSGI middleware while Marvex migrates endpoint ownership deliberately.
+why not custom code: A custom WSGI-to-ASGI adapter would duplicate protocol translation, thread-pool execution, backpressure, and streaming behavior that belongs in a maintained boundary adapter.
+fallback if abandoned: Keep the adapter isolated in `packages.local_api.asgi_host` and replace it with native ASGI endpoints or another maintained WSGI-to-ASGI bridge without changing Core or frontend contracts.
+pyproject dependency: a2wsgi
+declared dependency: a2wsgi>=1.10.10,<2
+
 library name: Uvicorn
 official source: https://www.uvicorn.org/
 maintenance status: active; PyPI release history shows 0.47.0 released in May 2026.

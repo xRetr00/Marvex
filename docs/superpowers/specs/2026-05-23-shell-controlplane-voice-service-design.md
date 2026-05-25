@@ -113,7 +113,7 @@ The island is the always-present, Siri-like presence and the anchor everything s
 
 ### 3b. Marvex backend Windows Service (full backend, always warm)
 - Introduce a service host that supervises the backend stack 24/7 (Core 8765, Control Plane 8766, intent/tool/provider/voice workers), reusing/extracting the existing supervisor logic (`supervisor.rs`). Always-on voice worker + warm Core → instant "Hey Marvex". Auto-restart on crash; starts at boot before login. Generates the local bearer token and writes it to a protected local file readable by the shell.
-- **Shell becomes a thin client:** stops spawning its own Core/workers; reads the shared token and connects to the running service. If no service is present (dev / `npm run tauri dev`), it falls back to current self-supervision so dev still works.
+- **Shell becomes a thin client:** stops spawning its own Core/workers; requests a local token lease from the backend service and connects to the running service. If no service is present (dev / `npm run tauri dev`), it falls back to current self-supervision so dev still works.
 - NSIS installer (`installMode: perMachine`, already set) registers + starts the service; uninstall removes it.
 
 ### 3c. Governance documentation
@@ -121,7 +121,7 @@ The island is the always-present, Siri-like presence and the anchor everything s
 
 ### Phase 3 testing
 - Build smoke: build fails when wake-word models missing; succeeds when bundled.
-- Service smoke (manual, host-dependent): install → service runs at boot → "Hey Marvex" detected with shell closed → shell launches and connects via shared token. WebView2/audio/installer smokes remain manual.
+- Service smoke (manual, host-dependent): install → service runs at boot → "Hey Marvex" detected with shell closed → shell launches and connects via local token lease. WebView2/audio/installer smokes remain manual.
 
 ---
 

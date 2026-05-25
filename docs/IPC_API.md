@@ -132,7 +132,9 @@ public startup metadata, plus schema/service/version/process fields and warning
 state. It must not contain the raw local bearer token, provider credentials,
 environment values, prompts, traces, sessions, history, remote bind addresses,
 or handler/provider configuration. Protected endpoint access still requires an
-explicit private token handoff outside the discovery file. The first writer must
+explicit private token handoff outside the discovery file. The product shell
+handoff uses a Windows-local named-pipe lease broker and keeps the raw token out
+of public discovery metadata and process argv. The first writer must
 reject non-loopback metadata and avoid discovery writes unless explicitly
 requested by startup config; a reader/client helper may only read this safe
 metadata and must not become a token store, service registry, launcher, daemon,

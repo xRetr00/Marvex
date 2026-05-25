@@ -9,8 +9,9 @@ assistant-envelope contracts.
 Current behavior:
 
 - `create_health_version_api_app(...)` creates a dependency-free WSGI app object.
-- `packages.local_api.asgi_host` wraps existing WSGI apps in a FastAPI/Uvicorn
-  host adapter for product service mode without changing endpoint ownership.
+- `packages.local_api.asgi_host` wraps existing WSGI apps in an a2wsgi-backed
+  FastAPI/Uvicorn host adapter for product service mode without changing
+  endpoint ownership.
 - `python -m packages.local_api.runner` starts a manual developer-only runner
   for that app object.
 - `GET /health` returns the existing `HealthCheck` contract shape.
@@ -161,10 +162,12 @@ ASGI host slice:
 - `AsgiHostConfig` keeps Core and Control Plane binds loopback-only by default.
 - `run_dual_asgi_host(...)` starts the existing Core WSGI app and Control Plane
   WSGI app as two Uvicorn servers, preserving ports `8765` and `8766`.
-- FastAPI/Uvicorn are host-only dependencies here; Core must import only the
-  adapter seam and must not own framework APIs directly.
+- a2wsgi/FastAPI/Uvicorn are host-only dependencies here; Core must import only
+  the adapter seam and must not own framework APIs directly.
 - Existing WSGI app contracts remain the source of endpoint behavior until a
   later native ASGI/WebSocket task is approved.
+- This slice replaces Starlette's deprecated WSGI middleware only. Native ASGI
+  route ownership remains a later endpoint migration.
 
 Auth decision:
 
@@ -188,8 +191,8 @@ Non-behavior:
   provider-stage execution is invoked by this package.
 - No sessions, history, routing, retry/fallback, model selection, API-key
   policy, tools, memory, UI, voice, desktop, vision, or proactive behavior.
-- No native FastAPI route ownership is added; FastAPI/Uvicorn are limited to
-  the host adapter.
+- No native FastAPI route ownership is added; a2wsgi/FastAPI/Uvicorn are
+  limited to the host adapter.
 
 Dependency direction:
 
