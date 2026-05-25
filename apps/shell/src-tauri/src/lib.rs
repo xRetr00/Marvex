@@ -179,7 +179,7 @@ async fn submit_chat_turn(
     let turn_id = format!("turn-shell-chat-{now}");
     let body = json!({
         "schema_version": "0.1.1-draft",
-        "execution_mode": "assistant_runtime_fake_provider",
+        "execution_mode": "assistant_runtime_lmstudio_responses",
         "assistant_turn_input": {
             "schema_version": "0.1.1-draft",
             "trace_id": trace_id,
@@ -192,7 +192,7 @@ async fn submit_chat_turn(
             "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
             "metadata": safe_shell_turn_metadata(metadata)
         },
-        "model": "fake-model",
+        "model": "qwen2.5-coder-7b",
         "instructions": null,
         "previous_response_id": null,
         "provider_options": {}
