@@ -50,7 +50,7 @@
     ],
     "resources": {
       "../runtime/uv.exe": "uv.exe",
-      "../runtime/marvex-0.1.0-py3-none-any.whl": "marvex-0.1.0-py3-none-any.whl",
+      "../runtime/marvex-runtime.whl": "marvex-runtime.whl",
       "../../control_plane_web/dist": "control_plane_web",
       "../voice-assets": "voice-assets"
     },

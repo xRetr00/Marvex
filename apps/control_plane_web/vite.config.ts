@@ -11,7 +11,12 @@ export default defineConfig({
   server: {
     host: "127.0.0.1",
     port: 5173,
-    strictPort: false
+    strictPort: false,
+    proxy: {
+      "/control": {
+        target: "http://127.0.0.1:8766"
+      }
+    }
   },
   preview: {
     host: "127.0.0.1",
