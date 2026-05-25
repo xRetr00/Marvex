@@ -1,7 +1,11 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import shutil
+import tarfile
+import zipfile
+from io import BytesIO
 from pathlib import Path
 from typing import Callable
 from typing import Literal
@@ -17,6 +21,7 @@ REQUIRED_VOICE_ASSETS: tuple[tuple[str, str, str], ...] = (
     ("sensevoice-small", "sensevoice-small", "stt"),
     ("hey-marvex", "sherpa-onnx-kws", "wakeword"),
     ("kokoro-af-heart", "kokoro-onnx", "tts_voice"),
+    ("kokoro-voices", "kokoro-onnx", "tts_voice"),
     ("piper-default", "piper-tts", "tts_voice"),
     ("silero-vad", "silero-vad", "vad"),
     ("webrtcvad-wheels", "webrtcvad-wheels", "vad"),
@@ -53,6 +58,8 @@ class VoiceModelDownloadRequest(VoiceRuntimeModel):
     model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
     source_uri: str = Field(..., min_length=1)
     relative_path: str = Field(..., min_length=1)
+    install_relative_path: str | None = Field(default=None, min_length=1)
+    extract: bool = False
     checksum_sha256: str | None = None
     explicit_user_triggered: Literal[True] = True
 
@@ -68,6 +75,40 @@ class VoiceModelDownloadResult(VoiceRuntimeModel):
     checksum_present: bool = False
     exact_blocker: str | None = None
     raw_model_internals_rendered: Literal[False] = False
+    raw_payload_persisted: Literal[False] = False
+
+
+class VoiceModelCatalogAsset(VoiceRuntimeModel):
+    schema_version: str = SCHEMA_VERSION
+    model_id: str
+    backend_id: str
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    source_uri: str
+    relative_path: str
+    install_relative_path: str | None = None
+    extract: bool = False
+    checksum_sha256: str | None = None
+    required: bool = True
+    explicit_user_triggered: Literal[True] = True
+    raw_payload_persisted: Literal[False] = False
+
+    def to_download_request(self) -> VoiceModelDownloadRequest:
+        return VoiceModelDownloadRequest(
+            model_id=self.model_id,
+            backend_id=self.backend_id,
+            model_kind=self.model_kind,
+            source_uri=self.source_uri,
+            relative_path=self.relative_path,
+            install_relative_path=self.install_relative_path,
+            extract=self.extract,
+            checksum_sha256=self.checksum_sha256,
+            explicit_user_triggered=True,
+        )
+
+
+class VoiceModelCatalog(VoiceRuntimeModel):
+    schema_version: str = SCHEMA_VERSION
+    assets: tuple[VoiceModelCatalogAsset, ...]
     raw_payload_persisted: Literal[False] = False
 
 
@@ -140,6 +181,8 @@ class VoiceAssetManager:
         fetcher: Callable[[str], bytes] | None = None,
     ) -> VoiceModelDownloadResult:
         target = (self.asset_root / request.relative_path).resolve()
+        install_relative_path = request.install_relative_path or request.relative_path
+        install_target = (self.asset_root / install_relative_path).resolve()
         if not target.is_relative_to(self.asset_root):
             return _download_result_from_request(
                 request,
@@ -148,7 +191,15 @@ class VoiceAssetManager:
                 install_started=False,
                 exact_blocker="model_path_outside_voice_asset_root",
             )
-        blocker = self._download_to_target(source_uri=request.source_uri, target=target, fetcher=fetcher)
+        if not install_target.is_relative_to(self.asset_root):
+            return _download_result_from_request(
+                request,
+                status="blocked",
+                download_started=False,
+                install_started=False,
+                exact_blocker="model_path_outside_voice_asset_root",
+            )
+        blocker = self._download_to_target(source_uri=request.source_uri, target=target, fetcher=fetcher, extract=request.extract)
         if blocker is not None:
             return _download_result_from_request(
                 request,
@@ -162,7 +213,7 @@ class VoiceAssetManager:
                 model_id=request.model_id,
                 backend_id=request.backend_id,
                 model_kind=request.model_kind,
-                relative_path=request.relative_path,
+                relative_path=install_relative_path,
                 checksum_sha256=request.checksum_sha256,
                 explicit_user_triggered=True,
             )
@@ -186,6 +237,7 @@ class VoiceAssetManager:
         source_uri: str,
         target: Path,
         fetcher: Callable[[str], bytes] | None,
+        extract: bool,
     ) -> str | None:
         parsed = urlparse(source_uri)
         try:
@@ -202,8 +254,11 @@ class VoiceAssetManager:
                 return None
             if parsed.scheme == "https":
                 data = fetcher(source_uri) if fetcher is not None else _fetch_https(source_uri)
-                target.parent.mkdir(parents=True, exist_ok=True)
-                target.write_bytes(data)
+                if extract or _is_archive(parsed.path):
+                    _extract_archive(data, parsed.path, target if extract else target.parent)
+                else:
+                    target.parent.mkdir(parents=True, exist_ok=True)
+                    target.write_bytes(data)
                 return None
         except Exception:
             return "model_download_failed"
@@ -264,6 +319,47 @@ class VoiceAssetManager:
 
 def _looks_like_sha256(value: str) -> bool:
     return len(value) == 64 and all(character in "0123456789abcdefABCDEF" for character in value)
+
+
+def load_voice_model_catalog(manifest_path: Path | None = None) -> VoiceModelCatalog:
+    path = manifest_path or Path(__file__).resolve().parents[2] / "voice_models.manifest.json"
+    if not path.exists():
+        return VoiceModelCatalog(assets=())
+    data = json.loads(path.read_text(encoding="utf-8"))
+    assets: list[VoiceModelCatalogAsset] = []
+    for item in data.get("assets", []):
+        assets.append(
+            VoiceModelCatalogAsset(
+                model_id=str(item["model_id"]),
+                backend_id=str(item["backend_id"]),
+                model_kind=item["model_kind"],
+                source_uri=str(item["source_uri"]),
+                relative_path=str(item["relative_path"]),
+                install_relative_path=item.get("install_relative_path") or None,
+                extract=bool(item.get("extract", False)),
+                checksum_sha256=item.get("checksum_sha256") or None,
+                required=bool(item.get("required", True)),
+                explicit_user_triggered=True,
+            )
+        )
+    return VoiceModelCatalog(assets=tuple(assets))
+
+
+def _is_archive(name: str) -> bool:
+    lowered = name.lower()
+    return lowered.endswith((".tar.bz2", ".tar.gz", ".tgz", ".tar", ".zip"))
+
+
+def _extract_archive(data: bytes, source_name: str, dest_dir: Path) -> None:
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    lowered = source_name.lower()
+    if lowered.endswith(".zip"):
+        with zipfile.ZipFile(BytesIO(data)) as archive:
+            archive.extractall(dest_dir)
+        return
+    mode = "r:bz2" if lowered.endswith(".tar.bz2") else "r:gz" if lowered.endswith((".tar.gz", ".tgz")) else "r:"
+    with tarfile.open(fileobj=BytesIO(data), mode=mode) as archive:
+        archive.extractall(dest_dir, filter="data")
 
 
 def _fetch_https(source_uri: str) -> bytes:

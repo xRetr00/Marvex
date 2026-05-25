@@ -127,7 +127,7 @@ class VoiceWorkerBackendRuntime:
         self._stt_runner = stt_runner or VoiceWorkerSttModelRunner(
             asset_manager=self.asset_manager,
             audio_refs=self.audio_refs,
-            transcriber_factory=lambda model_path: self._module_loader("moonshine_voice.transcriber").Transcriber(model_path),
+            transcriber_factory=lambda *args, **kwargs: self._module_loader("moonshine_voice.transcriber").Transcriber(*args, **kwargs),
             automodel_factory=lambda **kwargs: self._module_loader("funasr").AutoModel(**kwargs),
             sherpa_recognizer_factory=lambda model_dir: self._module_loader("sherpa_onnx").OfflineRecognizer.from_pre_trained(model_dir),
         )
@@ -156,7 +156,14 @@ class VoiceWorkerBackendRuntime:
     def tts_status(self, backend_id: str, voice_id: str) -> dict[str, object]:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)
         model_id = voice_id if backend_id == "kokoro-onnx" and voice_id.startswith("kokoro-") else default_model
-        return self._status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name)
+        status = self._status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name)
+        if backend_id == "kokoro-onnx" and status["status"] == "ready":
+            voices = self.asset_manager.required_status(model_id="kokoro-voices", backend_id=backend_id, model_kind="tts_voice")
+            if voices.status != "installed":
+                status["status"] = "not_ready"
+                status["exact_blocker"] = "kokoro_voice_asset_missing_manual_install_required"
+                status["paired_model_id"] = "kokoro-voices"
+        return status
 
     def wakeword_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
@@ -193,6 +200,10 @@ class VoiceWorkerBackendRuntime:
         model_id = voice_id if backend_id == "kokoro-onnx" and voice_id.startswith("kokoro-") else default_model
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice")
         blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        if blocker is None and backend_id == "kokoro-onnx":
+            voices = self.asset_manager.required_status(model_id="kokoro-voices", backend_id=backend_id, model_kind="tts_voice")
+            if voices.status != "installed":
+                blocker = "kokoro_voice_asset_missing_manual_install_required"
         if blocker is not None:
             return SpeechSynthesisResult.failed(trace_id=trace_id, backend_id=backend_id, voice_id=voice_id, error=VoiceErrorEnvelope.backend_error(trace_id=trace_id, backend_id=backend_id, reason_code=blocker))
         request = SpeechSynthesisRequest(trace_id=trace_id, text=_normalize_tts_text(text), voice_id=voice_id, backend_id=backend_id)
