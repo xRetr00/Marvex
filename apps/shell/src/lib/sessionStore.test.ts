@@ -1,28 +1,17 @@
 import { beforeEach, describe, expect, it } from "vitest";
-import { getActiveSessionId, newSession, loadMessages, saveMessages, listSessions } from "./sessionStore";
+import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions } from "./sessionStore";
 
 beforeEach(() => localStorage.clear());
 
 describe("sessionStore", () => {
-  it("creates and persists a stable active session id", () => {
-    const id = getActiveSessionId();
-    expect(id).toMatch(/^session-/);
-    expect(getActiveSessionId()).toBe(id); // stable across calls
+  it("round-trips cached messages for a backend-owned session", () => {
+    saveCachedMessages("session-backend-1", [{ role: "user", text: "hi" }]);
+    expect(loadCachedMessages("session-backend-1")).toEqual([{ role: "user", text: "hi" }]);
   });
 
-  it("round-trips messages for a session", () => {
-    const id = getActiveSessionId();
-    saveMessages(id, [{ role: "user", text: "hi" }]);
-    expect(loadMessages(id)).toEqual([{ role: "user", text: "hi" }]);
-  });
-
-  it("newSession switches the active id and lists prior sessions", () => {
-    const first = getActiveSessionId();
-    saveMessages(first, [{ role: "user", text: "one" }]);
-    const second = newSession();
-    expect(second).not.toBe(first);
-    expect(getActiveSessionId()).toBe(second);
-    const ids = listSessions().map((s) => s.id);
-    expect(ids).toContain(first);
+  it("remembers backend sessions without minting ids locally", () => {
+    rememberSession({ id: "session-backend-1", title: "Backend", updatedAt: 100 });
+    const ids = listCachedSessions().map((s) => s.id);
+    expect(ids).toEqual(["session-backend-1"]);
   });
 });

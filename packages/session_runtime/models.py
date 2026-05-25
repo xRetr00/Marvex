@@ -91,6 +91,29 @@ class SafeConversationProjection(SessionRuntimeModel):
         }
 
 
+class SafeSessionHandle(SessionRuntimeModel):
+    schema_version: str = Field(..., min_length=1)
+    session_ref: SessionRef
+    title: str = Field(..., min_length=1, max_length=80)
+    created_at_unix_ms: int = Field(..., ge=0)
+    updated_at_unix_ms: int = Field(..., ge=0)
+    turn_count: int = Field(..., ge=0)
+    trace_count: int = Field(..., ge=0)
+    transcript_persisted: Literal[False] = False
+
+    def safe_projection(self) -> JsonProjection:
+        return {
+            "schema_version": self.schema_version,
+            "session_ref": _dump_ref(self.session_ref),
+            "title": self.title,
+            "created_at_unix_ms": self.created_at_unix_ms,
+            "updated_at_unix_ms": self.updated_at_unix_ms,
+            "turn_count": self.turn_count,
+            "trace_count": self.trace_count,
+            "transcript_persisted": False,
+        }
+
+
 def _dump_ref(ref: SessionRef | ConversationRef | None) -> dict[str, str] | None:
     if ref is None:
         return None
