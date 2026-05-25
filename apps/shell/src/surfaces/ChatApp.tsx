@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useRef, useState, useCallback } from "react";
-import { MessageSquare, SlidersHorizontal, Mic, MicOff, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
+import { MessageSquare, Settings, Mic, MicOff, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showOverlay, submitChatTurn, openControlPlane, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showOverlay, submitChatTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
@@ -25,9 +25,10 @@ import { StartupScreen } from "@/components/marvex/StartupScreen";
 import { StatusView } from "@/components/marvex/StatusView";
 import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
+import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
-type TabId = "chat" | "voice" | "status" | "logs";
+type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 
 function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listening" | "talking" | null {
   if (status === "listening") return "listening";
@@ -131,7 +132,7 @@ export function ChatApp() {
     { id: "voice" as TabId, icon: <Volume2 />, label: "Voice Mode", onClick: () => setActiveTab("voice") },
     { id: "status" as TabId, icon: <Activity />, label: "Status", onClick: () => setActiveTab("status") },
     { id: "logs" as TabId, icon: <ScrollText />, label: "Logs", onClick: () => setActiveTab("logs") },
-    { id: "control", icon: <SlidersHorizontal />, label: "Control Plane", onClick: () => void openControlPlane() },
+    { id: "settings" as TabId, icon: <Settings />, label: "Settings", onClick: () => setActiveTab("settings") },
   ], []);
   const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
 
@@ -158,7 +159,7 @@ export function ChatApp() {
     return <StartupScreen backend={backend} onHelloDone={() => setHelloDone(true)} onRetry={() => void startBackend().catch(() => undefined)} />;
   }
 
-  const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry" };
+  const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry", settings: "Settings" };
 
   return (
     <div className="flex flex-col h-screen min-h-0 relative z-[1]" style={{ background: "transparent", color: "var(--foreground)" }}>
@@ -260,6 +261,9 @@ export function ChatApp() {
           )}
           {activeTab === "logs" && (
             <div style={{ flex: 1, overflow: "auto", padding: 20 }}><LogsView /></div>
+          )}
+          {activeTab === "settings" && (
+            <div style={{ flex: 1, overflow: "auto", padding: 20 }}><ControlPlaneSettings /></div>
           )}
         </div>
       </div>

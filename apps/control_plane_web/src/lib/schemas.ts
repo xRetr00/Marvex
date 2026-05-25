@@ -48,7 +48,7 @@ export const controlSnapshotSchema = z.object({
   sessions: z.array(safeRecord),
   agent_loops: z.array(safeRecord),
   telemetry: safeRecord,
-  settings: z.record(z.string(), z.boolean()),
+  settings: safeRecord,
   raw_payload_persisted: z.literal(false),
   approvals: approvalListSchema.optional()
 });

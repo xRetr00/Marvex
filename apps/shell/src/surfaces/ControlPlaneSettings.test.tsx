@@ -12,9 +12,12 @@ const mockedControlRequest = vi.mocked(controlRequest);
 
 describe("ControlPlaneSettings", () => {
   beforeEach(() => {
+    let secretPresent = false;
     mockedControlRequest.mockReset();
     mockedControlRequest.mockImplementation(async (path: string, method = "GET", body?: unknown) => {
       if (path === "/providers" || path.startsWith("/providers/")) {
+        if (path.endsWith("/secret") && method === "POST") secretPresent = true;
+        if (path.endsWith("/secret") && method === "DELETE") secretPresent = false;
         const active = path === "/providers/active" ? String((body as { provider_id: string }).provider_id) : "lmstudio_responses";
         return {
           schema_version: "1",
@@ -28,8 +31,8 @@ describe("ControlPlaneSettings", () => {
               active_model: "qwen2.5-coder-7b",
               models: ["qwen2.5-coder-7b", "llama-3.1-8b"],
               multi_models: ["qwen2.5-coder-7b"],
-              secret_present: path.endsWith("/secret") && method !== "DELETE",
-              secret_display: path.endsWith("/secret") && method !== "DELETE" ? "********" : "",
+              secret_present: secretPresent,
+              secret_display: secretPresent ? "********" : "",
               secret_value_present: false,
             },
           ],
