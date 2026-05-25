@@ -1,17 +1,38 @@
-import { useEffect, useState } from "react";
-import { ChatApp } from "./surfaces/ChatApp";
-import { OverlaySurface } from "./surfaces/overlay";
-import { ControlLoaderSurface } from "./surfaces/ControlLoader";
-import { SetupPage } from "./surfaces/Setup";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { isSetupDone, getPersistedMode } from "./lib/modeStore";
 import { showChat, showOverlay } from "./lib/shellCommands";
 
+const ChatApp = lazy(() => import("./surfaces/ChatApp").then((module) => ({ default: module.ChatApp })));
+const OverlaySurface = lazy(() => import("./surfaces/overlay").then((module) => ({ default: module.OverlaySurface })));
+const ControlLoaderSurface = lazy(() => import("./surfaces/ControlLoader").then((module) => ({ default: module.ControlLoaderSurface })));
+const SetupPage = lazy(() => import("./surfaces/Setup").then((module) => ({ default: module.SetupPage })));
+
+function SurfaceFallback() {
+  return <div style={{ minHeight: "100vh", background: "#020617" }} />;
+}
+
 export function App() {
   const path = window.location.pathname;
-  if (path.includes("overlay")) return <OverlaySurface />;
-  if (path.includes("control-loader")) return <ControlLoaderSurface />;
+  if (path.includes("overlay")) {
+    return (
+      <Suspense fallback={<SurfaceFallback />}>
+        <OverlaySurface />
+      </Suspense>
+    );
+  }
+  if (path.includes("control-loader")) {
+    return (
+      <Suspense fallback={<SurfaceFallback />}>
+        <ControlLoaderSurface />
+      </Suspense>
+    );
+  }
 
-  return <RootApp />;
+  return (
+    <Suspense fallback={<SurfaceFallback />}>
+      <RootApp />
+    </Suspense>
+  );
 }
 
 function RootApp() {
