@@ -4,7 +4,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from packages.local_api.health_version_api import LocalApiConfig
+from packages.local_api.contracts import LocalApiConfig
 from packages.local_api.runner import run_local_health_version_api
 
 from .discovery import write_local_api_discovery_metadata
