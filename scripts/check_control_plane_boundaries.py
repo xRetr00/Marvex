@@ -37,9 +37,9 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "urllib.parse",
 )
 CONTROL_API_ASGI_ADAPTER_ALLOWED_IMPORTS = (
-    "a2wsgi",
     "asyncio",
     "fastapi",
+    "io",
 )
 CONTROL_API_FORBIDDEN_IMPORTS = (
     "apps",

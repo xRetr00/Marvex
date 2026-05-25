@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
 
 from fastapi.testclient import TestClient
@@ -55,6 +56,51 @@ def test_control_plane_asgi_app_mounts_wsgi_fallback_for_non_state_routes() -> N
 
     assert response.status_code == 200
     assert response.json() == {"fallback_path": "/control/diagnostics"}
+
+
+def test_control_plane_asgi_app_no_longer_uses_wsgi_middleware() -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=BrowserSessionManager(),
+    )
+    mounted_apps = [getattr(route, "app", None) for route in app.routes]
+
+    assert all(
+        mounted_app is None or mounted_app.__class__.__name__ != "WSGIMiddleware"
+        for mounted_app in mounted_apps
+    )
+
+
+def test_control_plane_asgi_serves_static_spa_without_wsgi_fallback(tmp_path: Path) -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    (tmp_path / "index.html").write_text("<main>control shell</main>", encoding="utf-8")
+    (tmp_path / "assets").mkdir()
+    (tmp_path / "assets" / "app.js").write_text("console.log('control');", encoding="utf-8")
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=BrowserSessionManager(),
+        web_dist=str(tmp_path),
+    )
+    client = TestClient(app)
+
+    root = client.get("/")
+    asset = client.get("/assets/app.js")
+    spa_fallback = client.get("/settings")
+
+    assert root.status_code == 200
+    assert root.text == "<main>control shell</main>"
+    assert asset.status_code == 200
+    assert asset.text == "console.log('control');"
+    assert spa_fallback.status_code == 200
+    assert spa_fallback.text == "<main>control shell</main>"
+    assert "fallback_path" not in root.text + asset.text + spa_fallback.text
 
 
 def test_control_plane_asgi_health_and_version_routes_are_native() -> None:
