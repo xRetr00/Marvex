@@ -44,7 +44,9 @@ pub async fn http_get_with_timeout(
         return Err("loopback host required".to_string());
     }
     let url = format!("http://{host}:{port}{path}");
-    let mut req = client(timeout)?.get(url).header("Accept", "application/json");
+    let mut req = client(timeout)?
+        .get(url)
+        .header("Accept", "application/json");
     if let Some(token) = token {
         req = req.bearer_auth(token);
     }
@@ -93,9 +95,7 @@ pub async fn http_post_json_with_timeout(
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        loopback_ok, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT, TURN_HTTP_TIMEOUT,
-    };
+    use super::{loopback_ok, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT, TURN_HTTP_TIMEOUT};
     use std::time::Duration;
 
     #[test]

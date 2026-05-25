@@ -75,6 +75,7 @@ Runnable commands:
 uv run python -m services.core.main --help
 uv run python -m services.core.main --health-once
 uv run python -m services.core.main --serve --local-auth-token <local-token>
+$env:MARVEX_LOCAL_AUTH_TOKEN="<local-token>"; uv run python -m services.core.main --serve
 uv run python -m services.core.main --turn-once "hello" --provider provider_worker --model fake-model
 ```
 

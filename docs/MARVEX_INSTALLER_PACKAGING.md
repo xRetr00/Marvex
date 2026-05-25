@@ -30,7 +30,7 @@ Marvex uses **Tier 1: Production (Setuptools Console Scripts)** for runtime serv
 
 **Service invocation**:
 ```
-Supervisor → ~/.marvex/runtime/venv/Scripts/marvex-core.exe --serve --port 8765 --local-auth-token <TOKEN>
+Supervisor → MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> ~/.marvex/runtime/venv/Scripts/marvex-core.exe --serve --port 8765
 ```
 
 **Advantages**:
@@ -46,7 +46,7 @@ Supervisor → ~/.marvex/runtime/venv/Scripts/marvex-core.exe --serve --port 876
 
 **Service invocation**:
 ```
-Supervisor → uv run python -m services.core.main --serve --port 8765 --local-auth-token <TOKEN>
+Supervisor → MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> uv run python -m services.core.main --serve --port 8765
 ```
 
 Runs services directly from source code. Perfect for active development.
@@ -252,7 +252,7 @@ else {
 
 **Core daemon**:
 ```bash
-marvex-core.exe --serve --host 127.0.0.1 --port 8765 --local-auth-token <TOKEN>
+MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> marvex-core.exe --serve --host 127.0.0.1 --port 8765
 ```
 
 **Worker services** (JSONL protocol):
@@ -286,14 +286,16 @@ let token = generate_secure_token();  // 32 bytes, hex-encoded
 ### Propagation
 
 1. Token passed to Supervisor
-2. Supervisor passes to each service via CLI: `--local-auth-token <TOKEN>`
-3. Services receive token and use for HTTP Bearer header: `Authorization: Bearer <TOKEN>`
-4. Frontend receives token from `shell_runtime_config()` command
+2. Supervisor passes the token to Core only through `MARVEX_LOCAL_AUTH_TOKEN`
+3. Workers do not receive the Core bearer token
+4. Installed service exposes an in-memory Windows named-pipe lease broker for the shell attach path
+5. Services receive token and use for HTTP Bearer header: `Authorization: Bearer <TOKEN>`
 
 ### Security
 
 - **Never persisted**: Only in memory during session
-- **Never logged**: Log filtering removes lines containing "bearer "
+- **Not in argv**: Product supervision uses process environment instead of CLI args
+- **Never logged**: Startup metadata reports token presence only
 - **Destroyed on shutdown**: Lost when app exits
 - **Loopback-only**: Only 127.0.0.1 can use endpoints
 

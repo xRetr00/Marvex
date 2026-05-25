@@ -3,7 +3,8 @@
 //! Runs the full backend stack (Core + control plane + intent/tool/provider/
 //! voice workers) 24/7 via the existing [`crate::supervisor::Supervisor`], so the
 //! always-on "Hey Marvex" wake word reaches a warm Core instantly. The per-user
-//! shell attaches to this service as a thin client using the shared token file.
+//! shell attaches to this service as a thin client using the local token handoff
+//! named pipe.
 //!
 //! Usage:
 //!   marvex-service --install     register + start the service (run elevated)
@@ -126,15 +127,18 @@ fn exe_dir() -> Option<PathBuf> {
         .and_then(|path| path.parent().map(PathBuf::from))
 }
 
-/// Mint a fresh loopback token, publish it to the shared file (so the shell can
-/// attach), and launch the supervised backend stack.
+/// Mint a fresh loopback token, publish an in-memory lease broker so the shell
+/// can attach, and launch the supervised backend stack.
 fn start_backend() -> Option<crate::supervisor::Supervisor> {
     let token = crate::token::generate_local_bearer_token().ok()?;
-    let _ = crate::service_token::write_shared_token(&token);
+    crate::token_handoff::delete_legacy_shared_token();
     let root = program_data_root();
     let log_dir = root.join("logs");
     let data_dir = root.join("data");
-    crate::supervisor::Supervisor::start(token, log_dir, data_dir, exe_dir()).ok()
+    let supervisor =
+        crate::supervisor::Supervisor::start(token.clone(), log_dir, data_dir, exe_dir()).ok()?;
+    let _broker = crate::token_handoff::start_token_broker(token, supervisor.shutdown_flag());
+    Some(supervisor)
 }
 
 fn install() -> windows_service::Result<()> {
@@ -168,5 +172,6 @@ fn uninstall() -> windows_service::Result<()> {
         manager.open_service(SERVICE_NAME, ServiceAccess::STOP | ServiceAccess::DELETE)?;
     let _ = service.stop();
     service.delete()?;
+    crate::token_handoff::delete_legacy_shared_token();
     Ok(())
 }
