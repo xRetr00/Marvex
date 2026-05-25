@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     fs::{self, File, OpenOptions},
-    io::{BufRead, BufReader, Write},
+    io::{BufRead, BufReader, Read, Write},
     path::{Path, PathBuf},
     process::{Command, Stdio},
     sync::{
@@ -28,6 +28,8 @@ const MANIFEST_SCHEMA_VERSION: &str = "1";
 const MARVEX_VERSION: &str = "0.1.0";
 const CORE_PORT: u16 = 8765;
 const CONTROL_PORT: u16 = 8766;
+const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";
+const MARVEX_PACKAGE_NAME: &str = "marvex";
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
@@ -276,6 +278,10 @@ fn venv_root(data_dir: &Path) -> PathBuf {
     data_dir.join("runtime").join("venv")
 }
 
+fn runtime_uv_cache_dir(data_dir: &Path) -> PathBuf {
+    data_dir.join("runtime").join("uv-cache")
+}
+
 /// Path to an executable/script inside the venv (console scripts + python).
 fn venv_script(venv: &Path, name: &str) -> PathBuf {
     if cfg!(windows) {
@@ -317,6 +323,52 @@ fn first_marvex_wheel(resource_dir: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn runtime_wheel_marker_path(data_dir: &Path) -> PathBuf {
+    data_dir.join("runtime").join(RUNTIME_WHEEL_MARKER_FILE)
+}
+
+fn runtime_wheel_marker(wheel: &Path) -> Option<String> {
+    let metadata = wheel.metadata().ok()?;
+    let name = wheel.file_name()?.to_string_lossy();
+    let mut file = File::open(wheel).ok()?;
+    let mut hash = 0xcbf2_9ce4_8422_2325_u64;
+    let mut buffer = [0_u8; 8192];
+    loop {
+        let read = file.read(&mut buffer).ok()?;
+        if read == 0 {
+            break;
+        }
+        for byte in &buffer[..read] {
+            hash ^= u64::from(*byte);
+            hash = hash.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+    Some(format!("{name}:{}:{hash:016x}", metadata.len()))
+}
+
+fn record_installed_runtime_wheel(data_dir: &Path, wheel: &Path) -> Result<(), String> {
+    let marker = runtime_wheel_marker(wheel).ok_or_else(|| "runtime wheel unavailable".to_string())?;
+    let marker_path = runtime_wheel_marker_path(data_dir);
+    fs::create_dir_all(marker_path.parent().unwrap_or(data_dir))
+        .map_err(|err| format!("runtime marker directory unavailable: {err}"))?;
+    fs::write(marker_path, marker).map_err(|err| format!("runtime marker write failed: {err}"))
+}
+
+fn runtime_venv_is_current(data_dir: &Path, venv: &Path, resource_dir: Option<&Path>) -> bool {
+    if !venv_script(venv, "marvex-core").is_file() {
+        return false;
+    }
+    let Some(wheel) = resource_dir.and_then(first_marvex_wheel) else {
+        return true;
+    };
+    let Some(expected) = runtime_wheel_marker(&wheel) else {
+        return false;
+    };
+    fs::read_to_string(runtime_wheel_marker_path(data_dir))
+        .map(|installed| installed == expected)
+        .unwrap_or(false)
 }
 
 fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(String, String)> {
@@ -366,10 +418,11 @@ fn ensure_runtime(
     status: &SupervisorStatus,
 ) -> RuntimeOutcome {
     let venv = venv_root(data_dir);
-    if venv_script(&venv, "marvex-core").is_file() {
+    if runtime_venv_is_current(data_dir, &venv, resource_dir) {
         status.set("runtime", "ready");
         return RuntimeOutcome::Ready(venv);
     }
+    let existing_console_script = venv_script(&venv, "marvex-core").is_file();
 
     // First-run bootstrap requires a bundled marvex wheel. When absent (dev
     // checkout), signal "dev" so services use the `uv run` path.
@@ -391,35 +444,46 @@ fn ensure_runtime(
     let bootstrap_log = log_dir.join("runtime.bootstrap.log");
     let _ = fs::create_dir_all(venv.parent().unwrap_or(data_dir));
 
-    status.set("runtime", "creating environment");
-    let venv_arg = venv.to_string_lossy().to_string();
-    if !run_tool(
-        &uv,
-        &[
-            "venv".to_string(),
-            venv_arg,
-            "--python".to_string(),
-            "3.11".to_string(),
-        ],
-        data_dir,
-        &bootstrap_log,
-    ) {
-        status.set("runtime", "venv_failed");
-        return RuntimeOutcome::Failed;
+    if !existing_console_script {
+        status.set("runtime", "creating environment");
+        let venv_arg = venv.to_string_lossy().to_string();
+        if !run_tool(
+            &uv,
+            &[
+                "venv".to_string(),
+                venv_arg,
+                "--python".to_string(),
+                "3.11".to_string(),
+            ],
+            data_dir,
+            &bootstrap_log,
+        ) {
+            status.set("runtime", "venv_failed");
+            return RuntimeOutcome::Failed;
+        }
     }
 
-    status.set("runtime", "installing packages");
+    status.set(
+        "runtime",
+        if existing_console_script {
+            "updating packages"
+        } else {
+            "installing packages"
+        },
+    );
     let python = venv_script(&venv, "python");
-    let mut args: Vec<String> = vec![
-        "pip".to_string(),
-        "install".to_string(),
-        "--python".to_string(),
-        python.to_string_lossy().to_string(),
-    ];
+    let mut args: Vec<String> = vec!["pip".to_string(), "install".to_string()];
+    if existing_console_script {
+        args.push("--reinstall-package".to_string());
+        args.push(MARVEX_PACKAGE_NAME.to_string());
+    }
+    args.push("--python".to_string());
+    args.push(python.to_string_lossy().to_string());
     // Prefer bundled wheels (offline) when present, with PyPI fallback.
     if let Some(dir) = resource_dir {
         let wheels = dir.join("wheels");
         if wheels.is_dir() {
+            args.push("--no-index".to_string());
             args.push("--find-links".to_string());
             args.push(wheels.to_string_lossy().to_string());
         }
@@ -431,6 +495,7 @@ fn ensure_runtime(
     }
 
     if venv_script(&venv, "marvex-core").is_file() {
+        let _ = record_installed_runtime_wheel(data_dir, &wheel);
         status.set("runtime", "ready");
         RuntimeOutcome::Ready(venv)
     } else {
@@ -444,6 +509,7 @@ fn run_tool(tool: &Path, args: &[String], cwd: &Path, log_path: &Path) -> bool {
     let mut command = Command::new(tool);
     command.args(args);
     command.current_dir(cwd);
+    command.env("UV_CACHE_DIR", runtime_uv_cache_dir(cwd));
     command.stdin(Stdio::null());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -675,8 +741,9 @@ fn attach_log_pipe(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_uv, resource_env_paths, service_kind_label, service_specs, sidecar_path, venv_root,
-        venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
+        find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
+        runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
+        write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
         ServiceKind,
     };
     use serde_json::Value;
@@ -733,6 +800,34 @@ mod tests {
         assert!(venv.ends_with("runtime/venv") || venv.ends_with("runtime\\venv"));
         let core = venv_script(&venv, "marvex-core");
         assert!(core.to_string_lossy().contains("marvex-core"));
+    }
+
+    #[test]
+    fn uv_cache_lives_under_runtime_data_dir() {
+        let cache = runtime_uv_cache_dir(Path::new("/data"));
+        assert!(cache.ends_with("runtime/uv-cache") || cache.ends_with("runtime\\uv-cache"));
+    }
+
+    #[test]
+    fn existing_venv_is_not_current_until_bundled_wheel_marker_matches() {
+        let root = unique_temp_dir("runtime-wheel-freshness");
+        let data_dir = root.join("data");
+        let resource_dir = root.join("resources");
+        let venv = venv_root(&data_dir);
+        fs::create_dir_all(venv_script(&venv, "marvex-core").parent().expect("script dir"))
+            .expect("venv script dir");
+        fs::create_dir_all(&resource_dir).expect("resource dir");
+        fs::write(venv_script(&venv, "marvex-core"), b"old core").expect("core script");
+        let wheel = resource_dir.join("marvex-runtime.whl");
+        fs::write(&wheel, b"new runtime wheel").expect("wheel");
+
+        assert!(!runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
+
+        record_installed_runtime_wheel(&data_dir, &wheel).expect("record marker");
+        assert!(runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
+
+        fs::write(&wheel, b"newer runtime wheel").expect("wheel update");
+        assert!(!runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
     }
 
     #[test]

@@ -232,7 +232,7 @@ mod windows_impl {
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         // LocalSystem and administrators get full control; the interactive user
         // session can request a short token lease without exposing a disk secret.
-        let sddl = wide("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)");
+        let sddl = wide("D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;OW)(A;;GRGW;;;IU)");
         let converted = unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
                 PCWSTR(sddl.as_ptr()),

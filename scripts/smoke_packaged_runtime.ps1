@@ -69,12 +69,19 @@ function Stage-DefaultRuntimeResources {
     $serviceDir = Split-Path -Parent $ServiceExe
     $runtimeDir = Join-Path $RepoRoot "apps\shell\runtime"
     $wheel = Get-ChildItem -Path $runtimeDir -Filter "marvex-*.whl" -ErrorAction SilentlyContinue |
+        Where-Object { $_.Name -ne "marvex-runtime.whl" } |
         Sort-Object LastWriteTime -Descending |
         Select-Object -First 1
     if ($wheel) {
         Get-ChildItem -Path $serviceDir -Filter "marvex-*.whl" -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
         Copy-Item -LiteralPath $wheel.FullName -Destination (Join-Path $serviceDir $wheel.Name) -Force
+    }
+    $wheelhouse = Join-Path $RepoRoot "dist"
+    $wheelhouseDest = Join-Path $serviceDir "wheels"
+    if (Test-Path $wheelhouse) {
+        New-Item -ItemType Directory -Force -Path $wheelhouseDest | Out-Null
+        Copy-Item -Path (Join-Path $wheelhouse "*.whl") -Destination $wheelhouseDest -Force
     }
 
     $uv = Join-Path $runtimeDir "uv.exe"

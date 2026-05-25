@@ -50,7 +50,8 @@
     ],
     "resources": {
       "../runtime/uv.exe": "uv.exe",
-      "../runtime/marvex-runtime.whl": "marvex-runtime.whl",
+      "../runtime/marvex-*.whl": ".",
+      "../runtime/wheels": "wheels",
       "../../control_plane_web/dist": "control_plane_web",
       "../voice-assets": "voice-assets"
     },
