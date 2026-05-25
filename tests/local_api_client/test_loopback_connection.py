@@ -1,8 +1,10 @@
 import json
 import threading
 from datetime import UTC, datetime, timedelta
-from wsgiref.simple_server import make_server
 
+import uvicorn
+
+from packages.local_api import create_local_api_asgi_app
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from tests.local_api.test_trace_api import RecordingTraceReader, make_trace_envelope
 from tests.local_api.test_turns_api import RecordingHandler, make_request_payload
@@ -46,19 +48,29 @@ def safe_discovery_payload(port: int) -> dict:
 
 
 def test_client_uses_discovery_metadata_to_call_loopback_local_api(tmp_path):
-    from packages.local_api import create_health_version_api_app
     from packages.local_api_client import load_local_api_client_from_discovery
 
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         make_provider(),
         turn_handler=RecordingHandler(),
         trace_reader=RecordingTraceReader(make_trace_envelope("trace-client-test")),
         local_auth_token="fake-local-token",
     )
-    httpd = make_server("127.0.0.1", 0, app)
-    port = httpd.server_port
-    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    config = uvicorn.Config(
+        app,
+        host="127.0.0.1",
+        port=0,
+        log_level="warning",
+        access_log=False,
+        server_header=False,
+    )
+    httpd = uvicorn.Server(config)
+    thread = threading.Thread(target=httpd.run, daemon=True)
     thread.start()
+    while not httpd.started:
+        if not thread.is_alive():
+            raise AssertionError("uvicorn test server exited before startup")
+    port = next(sock.getsockname()[1] for server in httpd.servers for sock in server.sockets)
 
     discovery_file = tmp_path / "marvex" / "local-api.json"
     discovery_file.parent.mkdir(parents=True)
@@ -86,9 +98,8 @@ def test_client_uses_discovery_metadata_to_call_loopback_local_api(tmp_path):
             local_auth_token="fake-local-token",
         )
     finally:
-        httpd.shutdown()
+        httpd.should_exit = True
         thread.join(timeout=5)
-        httpd.server_close()
 
     assert health.status_code == 200
     assert health.body["service"] == "marvex-local-api"

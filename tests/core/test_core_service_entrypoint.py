@@ -439,6 +439,16 @@ def test_core_service_entrypoint_allows_remote_bind_when_opted_in():
         captured["host"] = host
         return _StubServer(app)
 
+    def control_server_factory(host, port, app):
+        return _ControlNoopServer()
+
+    class _ControlNoopServer:
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            captured["control_closed"] = True
+
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
             host="192.0.2.10",
@@ -446,6 +456,7 @@ def test_core_service_entrypoint_allows_remote_bind_when_opted_in():
             allow_remote=True,
         ),
         server_factory=server_factory,
+        control_server_factory=control_server_factory,
     )
 
     assert exit_code == 0

@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
-from wsgiref.util import setup_testing_defaults
 
 from packages.contracts import (
     AssistantTurnResult,
@@ -12,8 +10,10 @@ from packages.contracts import (
     TraceLevel,
     TraceStage,
 )
+from packages.local_api import create_local_api_asgi_app
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
 from packages.telemetry import make_trace_event
+from tests.local_api.asgi_helpers import asgi_call
 
 
 EXPECTED_TOKEN = "fake-local-token"
@@ -81,9 +81,7 @@ def make_request_payload(*, previous_response_id: str | None = None) -> dict:
 
 
 def make_app(handler, *, trace_reader=None):
-    from packages.local_api import create_health_version_api_app
-
-    return create_health_version_api_app(
+    return create_local_api_asgi_app(
         make_provider(),
         turn_handler=handler,
         trace_reader=trace_reader,
@@ -99,43 +97,11 @@ def call_app(
     body: object | None = None,
     auth: str | None = f"Bearer {EXPECTED_TOKEN}",
 ) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    if body is None:
-        body_bytes = b""
-    else:
-        body_bytes = json.dumps(body).encode("utf-8")
-    environ["CONTENT_LENGTH"] = str(len(body_bytes))
-    environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response_body)
+    return asgi_call(app, path, method=method, body=body, auth=auth)
 
 
 def call_app_without_readable_body(app) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "POST"
-    environ["PATH_INFO"] = "/v1/turns"
-    environ["CONTENT_LENGTH"] = "50"
-    environ["wsgi.input"] = RaisingInput()
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response_body)
+    return asgi_call(app, "/v1/turns", method="POST", body=b"{unreadable", auth=None)
 
 
 def test_fake_turn_handler_factory_calls_runtime_composition_bridge(monkeypatch):
