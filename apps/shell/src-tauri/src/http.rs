@@ -24,6 +24,71 @@ fn client(timeout: Duration) -> Result<reqwest::Client, String> {
         .map_err(|err| format!("http client init failed: {err}"))
 }
 
+pub struct LoopbackHttpClient {
+    host: String,
+    port: u16,
+    client: reqwest::Client,
+}
+
+impl LoopbackHttpClient {
+    pub fn new(host: &str, port: u16, timeout: Duration) -> Result<Self, String> {
+        if !loopback_ok(host) {
+            return Err("loopback host required".to_string());
+        }
+        Ok(Self {
+            host: host.to_string(),
+            port,
+            client: client(timeout)?,
+        })
+    }
+
+    pub fn url(&self, path: &str) -> Result<reqwest::Url, String> {
+        reqwest::Url::parse(&format!("http://{}:{}{}", self.host, self.port, path))
+            .map_err(|err| format!("invalid local URL: {err}"))
+    }
+
+    async fn get(&self, path: &str, token: Option<&str>) -> Result<HttpResponse, String> {
+        let mut req = self
+            .client
+            .get(self.url(path)?)
+            .header("Accept", "application/json");
+        if let Some(token) = token {
+            req = req.bearer_auth(token);
+        }
+        response_from_request(req).await
+    }
+
+    async fn post_json(
+        &self,
+        path: &str,
+        token: Option<&str>,
+        body: &Value,
+    ) -> Result<HttpResponse, String> {
+        let mut req = self
+            .client
+            .post(self.url(path)?)
+            .header("Accept", "application/json")
+            .json(body);
+        if let Some(token) = token {
+            req = req.bearer_auth(token);
+        }
+        response_from_request(req).await
+    }
+}
+
+async fn response_from_request(req: reqwest::RequestBuilder) -> Result<HttpResponse, String> {
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| format!("request failed: {err}"))?;
+    let status = resp.status().as_u16();
+    let body = resp
+        .text()
+        .await
+        .map_err(|err| format!("read failed: {err}"))?;
+    Ok(HttpResponse { status, body })
+}
+
 pub async fn http_get(
     host: &str,
     port: u16,
@@ -40,26 +105,9 @@ pub async fn http_get_with_timeout(
     token: Option<&str>,
     timeout: Duration,
 ) -> Result<HttpResponse, String> {
-    if !loopback_ok(host) {
-        return Err("loopback host required".to_string());
-    }
-    let url = format!("http://{host}:{port}{path}");
-    let mut req = client(timeout)?
-        .get(url)
-        .header("Accept", "application/json");
-    if let Some(token) = token {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .send()
+    LoopbackHttpClient::new(host, port, timeout)?
+        .get(path, token)
         .await
-        .map_err(|err| format!("request failed: {err}"))?;
-    let status = resp.status().as_u16();
-    let body = resp
-        .text()
-        .await
-        .map_err(|err| format!("read failed: {err}"))?;
-    Ok(HttpResponse { status, body })
 }
 
 pub async fn http_post_json_with_timeout(
@@ -70,32 +118,17 @@ pub async fn http_post_json_with_timeout(
     body: &Value,
     timeout: Duration,
 ) -> Result<HttpResponse, String> {
-    if !loopback_ok(host) {
-        return Err("loopback host required".to_string());
-    }
-    let url = format!("http://{host}:{port}{path}");
-    let mut req = client(timeout)?
-        .post(url)
-        .header("Accept", "application/json")
-        .json(body);
-    if let Some(token) = token {
-        req = req.bearer_auth(token);
-    }
-    let resp = req
-        .send()
+    LoopbackHttpClient::new(host, port, timeout)?
+        .post_json(path, token, body)
         .await
-        .map_err(|err| format!("request failed: {err}"))?;
-    let status = resp.status().as_u16();
-    let text = resp
-        .text()
-        .await
-        .map_err(|err| format!("read failed: {err}"))?;
-    Ok(HttpResponse { status, body: text })
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{loopback_ok, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT, TURN_HTTP_TIMEOUT};
+    use super::{
+        loopback_ok, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT, LoopbackHttpClient,
+        TURN_HTTP_TIMEOUT,
+    };
     use std::time::Duration;
 
     #[test]
@@ -110,5 +143,14 @@ mod tests {
         assert_eq!(DEFAULT_HTTP_TIMEOUT, Duration::from_secs(15));
         assert_eq!(TURN_HTTP_TIMEOUT, Duration::from_secs(120));
         assert_eq!(CONTROL_POST_HTTP_TIMEOUT, Duration::from_secs(300));
+    }
+
+    #[test]
+    fn loopback_http_client_builds_local_urls_and_rejects_remote_hosts() {
+        let client = LoopbackHttpClient::new("127.0.0.1", 8765, DEFAULT_HTTP_TIMEOUT)
+            .expect("loopback client");
+
+        assert_eq!(client.url("/health").expect("url").as_str(), "http://127.0.0.1:8765/health");
+        assert!(LoopbackHttpClient::new("example.com", 8765, DEFAULT_HTTP_TIMEOUT).is_err());
     }
 }

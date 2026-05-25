@@ -92,6 +92,12 @@ class CoreService:
 
     def shutdown(self) -> HealthCheck:
         self._state = CoreServiceState.STOPPING
+        shutdown = getattr(self._turn_executor, "shutdown", None)
+        if callable(shutdown):
+            try:
+                shutdown()
+            except Exception:
+                pass
         return self.get_health()
 
     def get_health(self) -> HealthCheck:
