@@ -65,7 +65,7 @@ python --version
   - Verifies console scripts in wheel
 ```
 
-**Output**: `dist/marvex-0.1.0-py3-none-any.whl` (~20-30 MB)
+**Output**: `dist/marvex-<version>-py3-none-any.whl` (~20-30 MB)
 
 **What it contains**:
 - Python packages from `pyproject.toml`
@@ -95,7 +95,7 @@ uv build --wheel
 **Output**:
 ```
 apps/shell/runtime/
-├── marvex-0.1.0-py3-none-any.whl
+├── marvex-runtime.whl
 └── uv.exe
 ```
 
@@ -183,7 +183,7 @@ npm --prefix apps/shell run tauri build
 ✓ Python: 3.11.8
 
 [1/5] Building Python Wheel...
-✓ Wheel built: marvex-0.1.0-py3-none-any.whl
+✓ Wheel built: marvex-<version>-py3-none-any.whl
 
 [2/5] Preparing runtime resources...
 ✓ Wheel copied to apps/shell/runtime/

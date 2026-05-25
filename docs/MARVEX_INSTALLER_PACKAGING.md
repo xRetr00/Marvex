@@ -17,10 +17,10 @@ Marvex uses **Tier 1: Production (Setuptools Console Scripts)** for runtime serv
 **When**: Installer deployment with bundled resources
 
 **What happens**:
-1. Tauri installer packages `uv.exe` and `marvex-0.1.0-py3-none-any.whl`
+1. Tauri installer packages `uv.exe` and `marvex-runtime.whl`
 2. On first app launch, supervisor detects missing venv
 3. Creates `~/.marvex/runtime/venv/` via `uv venv --python 3.11`
-4. Installs wheel: `uv pip install marvex-0.1.0-py3-none-any.whl`
+4. Installs wheel: `uv pip install marvex-runtime.whl`
 5. Setuptools generates console script entry points:
    - `~/.marvex/runtime/venv/Scripts/marvex-core.exe`
    - `~/.marvex/runtime/venv/Scripts/marvex-voice-worker.exe`
@@ -94,7 +94,7 @@ From workspace root (`D:\Marvex`):
 **Step 1: Python Wheel**
 ```powershell
 uv build --wheel
-# Output: dist/marvex-0.1.0-py3-none-any.whl
+# Output: dist/marvex-<version>-py3-none-any.whl
 ```
 
 **Step 2: Runtime Resources**
@@ -125,7 +125,7 @@ npm --prefix apps/shell run tauri build
 ```json
 "resources": {
   "../runtime/uv.exe": "uv.exe",
-  "../runtime/marvex-0.1.0-py3-none-any.whl": "marvex-0.1.0-py3-none-any.whl",
+  "../runtime/marvex-runtime.whl": "marvex-runtime.whl",
   "../../control_plane_web/dist": "control_plane_web",
   "../voice-assets": "voice-assets"
 }
@@ -167,7 +167,7 @@ Create venv:
   uv venv ~/.marvex/runtime/venv --python 3.11
   ↓
 Install wheel into venv:
-  uv pip install marvex-0.1.0-py3-none-any.whl --python ~/.marvex/runtime/venv/Scripts/python.exe
+  uv pip install marvex-runtime.whl --python ~/.marvex/runtime/venv/Scripts/python.exe
   ↓
 Setuptools generates console scripts:
   ~/.marvex/runtime/venv/Scripts/marvex-*.exe
@@ -289,7 +289,7 @@ installing the Windows service:
 npm --prefix apps/control_plane_web run build
 npm --prefix apps/shell run build
 uv build --wheel
-Copy-Item dist/marvex-0.1.0-py3-none-any.whl apps/shell/runtime/marvex-0.1.0-py3-none-any.whl -Force
+Copy-Item dist/marvex-<version>-py3-none-any.whl apps/shell/runtime/marvex-runtime.whl -Force
 cargo build --release --bin marvex-service --manifest-path apps/shell/src-tauri/Cargo.toml
 powershell -ExecutionPolicy Bypass -File scripts/smoke_packaged_runtime.ps1
 ```
@@ -424,7 +424,7 @@ Installer
 ├── Rust executable (marvex-shell.exe)
 ├── Frontend assets (HTML, JS, CSS)
 ├── uv.exe (bundled package manager)
-├── marvex-0.1.0-py3-none-any.whl (Python package)
+├── marvex-runtime.whl (Python package)
 └── Start Menu shortcuts
 ```
 

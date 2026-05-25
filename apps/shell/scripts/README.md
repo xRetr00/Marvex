@@ -6,9 +6,9 @@ The installer uses **setuptools console scripts** for service execution.
 
 On first launch:
 1. Supervisor detects missing venv in `~/.marvex/runtime/venv/`
-2. Finds bundled `uv.exe` and `marvex-0.1.0-py3-none-any.whl`
+2. Finds bundled `uv.exe` and `marvex-runtime.whl`
 3. Creates venv: `uv venv ~/.marvex/runtime/venv --python 3.11`
-4. Installs wheel: `uv pip install marvex-0.1.0-py3-none-any.whl`
+4. Installs wheel: `uv pip install marvex-runtime.whl`
 5. Setuptools generates console scripts at `~/.marvex/runtime/venv/Scripts/`:
    - `marvex-core.exe`
    - `marvex-provider-worker.exe`
