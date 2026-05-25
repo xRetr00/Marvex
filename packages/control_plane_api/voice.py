@@ -21,6 +21,8 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
             return "200 OK", voice_worker_control.devices()
         if method == "GET" and path == "/control/voice/worker/assets":
             return "200 OK", voice_worker_control.assets_status()
+        if method == "GET" and path == "/control/voice/worker/models/catalog":
+            return "200 OK", voice_worker_control.model_catalog()
         if method == "GET" and path == "/control/voice/worker/wakeword-supervisor":
             return "200 OK", voice_worker_control.wakeword_supervisor_health()
         worker_commands = {
