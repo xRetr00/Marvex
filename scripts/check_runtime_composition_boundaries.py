@@ -37,7 +37,7 @@ MANUAL_LOCAL_API_FAKE_TURNS_RUNNER_IMPORT_PREFIXES = (
     "argparse",
     "collections.abc",
     "os",
-    "packages.local_api.health_version_api",
+    "packages.local_api.contracts",
     "packages.local_api.runner",
 )
 BRIDGE_FORBIDDEN_IMPORT_PREFIXES = (

@@ -42,7 +42,6 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.contracts",
     "packages.process_runtime",
     "typing",
-    "wsgiref.simple_server",
 )
 ASGI_HOST_ONLY_ALLOWED_IMPORT_PREFIXES = (
     "fastapi",

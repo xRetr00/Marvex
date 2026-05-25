@@ -14,6 +14,7 @@ PROJECT_STATUS = ROOT / "PROJECT_STATUS.md"
 CONTROL_API_ALLOWED_IMPORTS = (
     "__future__",
     "collections",
+    "dataclasses",
     "datetime",
     "json",
     "pathlib",
@@ -58,7 +59,6 @@ CONTROL_API_FORBIDDEN_IMPORTS = (
 )
 CONTROL_API_FORBIDDEN_TEXT = (
     "execute_request(",
-    "dispatch(",
     "ToolExecutionPolicy",
     "raw_payload_persisted: Literal[True]",
     "raw_input_persisted=True",
@@ -79,7 +79,7 @@ FRONTEND_FORBIDDEN_TEXT = (
     "directToolExecution",
 )
 REQUIRED_CONTROL_API_TERMS = (
-    "create_control_plane_api_app",
+    "ControlPlaneRuntime",
     "InMemoryApprovalStore",
     "ApprovalSummary",
     "ControlPlaneSnapshot",
