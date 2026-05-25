@@ -106,7 +106,7 @@ uv build --wheel
 npm --prefix apps/control_plane_web run build
 npm --prefix apps/shell run build
 # Output: apps/shell/dist/ with index.html, assets/
-# Control Plane output is staged to apps/shell/control_plane_web/
+# Control Plane output remains apps/control_plane_web/dist/ and is bundled as control_plane_web/
 ```
 
 **Step 4: Tauri Build**
@@ -126,7 +126,7 @@ npm --prefix apps/shell run tauri build
 "resources": {
   "../runtime/uv.exe": "uv.exe",
   "../runtime/marvex-0.1.0-py3-none-any.whl": "marvex-0.1.0-py3-none-any.whl",
-  "../control_plane_web": "control_plane_web",
+  "../../control_plane_web/dist": "control_plane_web",
   "../voice-assets": "voice-assets"
 }
 ```
@@ -173,7 +173,7 @@ Setuptools generates console scripts:
   ~/.marvex/runtime/venv/Scripts/marvex-*.exe
   ↓
 Services Running:
-  Launch each service via console script with token
+  Launch Core via console script with the token in `MARVEX_LOCAL_AUTH_TOKEN`
   ↓
 Write manifest to ~/.marvex/runtime/manifest.json
 ```
@@ -331,7 +331,7 @@ let token = generate_secure_token();  // 32 bytes, hex-encoded
 2. Supervisor passes the token to Core only through `MARVEX_LOCAL_AUTH_TOKEN`
 3. Workers do not receive the Core bearer token
 4. Installed service exposes an in-memory Windows named-pipe lease broker for the shell attach path
-5. Services receive token and use for HTTP Bearer header: `Authorization: Bearer <TOKEN>`
+5. Rust shell/service commands use the token for privileged loopback HTTP Bearer calls; Control Plane browser windows use the one-time claim URL and HttpOnly cookie path instead of receiving the raw token
 
 ### Security
 
@@ -530,7 +530,7 @@ type $env:USERPROFILE\.marvex\logs\runtime.bootstrap.log
 Tokens are never logged (security). If token verification fails, check:
 1. Core received `MARVEX_LOCAL_AUTH_TOKEN` in its private environment
 2. Shell attach received a lease from the named-pipe token handoff broker
-3. Frontend received token from `shell_runtime_config()`
+3. Shell received a token lease and Control Plane browser auth used a one-time claim URL plus HttpOnly cookie
 4. Authorization header format: `Bearer <TOKEN>`
 
 ---
