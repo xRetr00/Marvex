@@ -1,8 +1,8 @@
 mod http;
-mod service_token;
 mod state_stream;
 mod supervisor;
 mod token;
+mod token_handoff;
 
 #[cfg(windows)]
 pub mod service;
@@ -478,17 +478,21 @@ pub fn run() {
             // published its token, attach to the running service instead of
             // spawning our own backend. Otherwise (dev / no service) supervise
             // the backend locally as before.
-            let (token, supervisor) = match service_token::read_shared_token() {
-                Some(shared) => (shared.clone(), Supervisor::attach(shared, data_dir.clone())),
-                None => {
-                    let token =
-                        token::generate_local_bearer_token().map_err(std::io::Error::other)?;
-                    let supervisor =
-                        Supervisor::start(token.clone(), log_dir, data_dir, resource_dir)
-                            .map_err(std::io::Error::other)?;
-                    (token, supervisor)
-                }
-            };
+            let (token, supervisor) =
+                match token_handoff::request_token_lease(std::time::Duration::from_secs(2)) {
+                    Some(lease) => (
+                        lease.token.clone(),
+                        Supervisor::attach(lease.token, data_dir.clone()),
+                    ),
+                    None => {
+                        let token =
+                            token::generate_local_bearer_token().map_err(std::io::Error::other)?;
+                        let supervisor =
+                            Supervisor::start(token.clone(), log_dir, data_dir, resource_dir)
+                                .map_err(std::io::Error::other)?;
+                        (token, supervisor)
+                    }
+                };
             state_stream::start_state_stream(
                 app.handle().clone(),
                 token.clone(),
@@ -613,7 +617,11 @@ mod tests {
             .unwrap();
 
         assert!(windows.iter().any(|value| value.as_str() == Some("main")));
-        assert!(windows.iter().any(|value| value.as_str() == Some("overlay")));
-        assert!(windows.iter().any(|value| value.as_str() == Some("control")));
+        assert!(windows
+            .iter()
+            .any(|value| value.as_str() == Some("overlay")));
+        assert!(windows
+            .iter()
+            .any(|value| value.as_str() == Some("control")));
     }
 }

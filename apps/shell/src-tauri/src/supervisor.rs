@@ -39,6 +39,7 @@ pub struct ServiceSpec {
     pub module: &'static str,
     pub sidecar: &'static str,
     pub args: Vec<String>,
+    pub env: Vec<(String, String)>,
     pub kind: ServiceKind,
 }
 
@@ -227,7 +228,8 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             name: "core",
             module: "services.core.main",
             sidecar: "marvex-core",
-            args: vec!["--serve".into(), "--host".into(), "127.0.0.1".into(), "--port".into(), CORE_PORT.to_string(), "--local-auth-token".into(), token.into()],
+            args: vec!["--serve".into(), "--host".into(), "127.0.0.1".into(), "--port".into(), CORE_PORT.to_string()],
+            env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
         },
         jsonl("provider_worker", "services.provider_worker.main", "marvex-provider-worker"),
@@ -238,6 +240,7 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             module: "services.voice_worker.main",
             sidecar: "marvex-voice-worker",
             args: vec!["--jsonl".into()],
+            env: Vec::new(),
             kind: ServiceKind::JsonlWorker {
                 start_command: r#"{"command":"start","command_id":"shell-voice-start","trace_id":"trace-shell-voice-worker"}"#.to_string(),
                 stop_command: r#"{"command":"stop","command_id":"shell-voice-stop","trace_id":"trace-shell-voice-worker"}"#.to_string(),
@@ -252,6 +255,7 @@ fn jsonl(name: &'static str, module: &'static str, sidecar: &'static str) -> Ser
         module,
         sidecar,
         args: vec!["--jsonl".into()],
+        env: Vec::new(),
         kind: ServiceKind::JsonlWorker {
             start_command: format!(r#"{{"command":"start","trace_id":"trace-shell-{name}"}}"#),
             stop_command: format!(r#"{{"command":"stop","trace_id":"trace-shell-{name}"}}"#),
@@ -570,6 +574,9 @@ fn spawn_service(
             command.env("MARVEX_UV_PATH", uv);
         }
     }
+    for (name, value) in &spec.env {
+        command.env(name, value);
+    }
     // Point the control plane server at the built control_plane_web SPA so the
     // shell's Control Plane window can load it same-origin. Prefer a bundled
     // copy in the resource dir; fall back to the dev checkout dist.
@@ -662,8 +669,24 @@ mod tests {
     fn core_command_receives_token_without_logging_it_in_status() {
         let specs = service_specs("secret-token");
         let core = specs.iter().find(|spec| spec.name == "core").expect("core");
-        assert!(core.args.iter().any(|arg| arg == "secret-token"));
+        assert!(!core.args.iter().any(|arg| arg == "secret-token"));
+        assert!(core
+            .env
+            .iter()
+            .any(|(name, value)| name == "MARVEX_LOCAL_AUTH_TOKEN" && value == "secret-token"));
         assert_eq!(core.module, "services.core.main");
+    }
+
+    #[test]
+    fn worker_commands_do_not_receive_core_token() {
+        let specs = service_specs("secret-token");
+        for spec in specs.iter().filter(|spec| spec.name != "core") {
+            assert!(!spec.args.iter().any(|arg| arg == "secret-token"));
+            assert!(!spec
+                .env
+                .iter()
+                .any(|(_name, value)| value == "secret-token"));
+        }
     }
 
     #[test]

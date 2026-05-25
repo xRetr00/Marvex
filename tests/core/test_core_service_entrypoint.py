@@ -270,6 +270,73 @@ def test_core_service_entrypoint_starts_control_plane_state_api():
     assert stream_payload["raw_audio_persisted"] is False
 
 
+def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
+    import services.core.main as core_main
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    captured: dict[str, object] = {}
+
+    def fake_run_dual_asgi_host(**kwargs):
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+
+    exit_code = run_core_service(
+        config=CoreServiceEntrypointConfig(
+            local_auth_token=EXPECTED_TOKEN,
+            port=9877,
+            control_port=9878,
+        ),
+    )
+
+    assert exit_code == 0
+    assert callable(captured["core_wsgi_app"])
+    assert callable(captured["control_wsgi_app"])
+    assert captured["startup_message"].startswith("Core service startup metadata: ")
+    asgi_config = captured["config"]
+    assert asgi_config.host == "127.0.0.1"
+    assert asgi_config.port == 9877
+    assert asgi_config.control_host == "127.0.0.1"
+    assert asgi_config.control_port == 9878
+
+
+def test_core_service_entrypoint_main_uses_env_token_for_supervisor_path(monkeypatch):
+    import services.core.main as core_main
+
+    captured: dict[str, object] = {}
+
+    def fake_run_core_service(*, config):
+        captured["config"] = config
+        return 0
+
+    monkeypatch.setenv("MARVEX_LOCAL_AUTH_TOKEN", "env-token-for-supervisor")
+    monkeypatch.setattr(core_main, "run_core_service", fake_run_core_service)
+
+    exit_code = core_main.main(["--serve"])
+
+    assert exit_code == 0
+    assert captured["config"].local_auth_token == "env-token-for-supervisor"
+
+
+def test_core_service_entrypoint_cli_token_overrides_env_token(monkeypatch):
+    import services.core.main as core_main
+
+    captured: dict[str, object] = {}
+
+    def fake_run_core_service(*, config):
+        captured["config"] = config
+        return 0
+
+    monkeypatch.setenv("MARVEX_LOCAL_AUTH_TOKEN", "env-token")
+    monkeypatch.setattr(core_main, "run_core_service", fake_run_core_service)
+
+    exit_code = core_main.main(["--serve", "--local-auth-token", "cli-token"])
+
+    assert exit_code == 0
+    assert captured["config"].local_auth_token == "cli-token"
+
+
 def _call_first_stream_frame(app, path: str, *, auth: str) -> tuple[str, dict]:
     environ: dict[str, object] = {}
     setup_testing_defaults(environ)
