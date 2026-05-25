@@ -9,4 +9,16 @@ describe("DynamicIsland", () => {
     const pill = screen.getByText("Idle").closest(".marvex-dynamic-island-pill");
     expect(pill).toBe(container.firstElementChild);
   });
+
+  it("uses the pretty-toast dynamic island pill geometry", () => {
+    const { container } = render(<DynamicIsland view="idle" idleContent={<span>Idle</span>} />);
+
+    const pill = container.querySelector(".marvex-dynamic-island-pill");
+    expect(pill).toHaveStyle({
+      background: "#000",
+      borderRadius: "30px",
+      padding: "14px 20px",
+      width: "min(360px, calc(100vw - 20px))",
+    });
+  });
 });
