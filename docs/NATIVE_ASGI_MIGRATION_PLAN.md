@@ -7,9 +7,10 @@ Move Marvex from WSGI compatibility bridges to native ASGI endpoint ownership wi
 ## Current State
 
 - Core and Control Plane run under Uvicorn on the existing two-port contract: Core API on `127.0.0.1:8765`, Control Plane on `127.0.0.1:8766`.
-- Core API routes remain WSGI behind `a2wsgi`.
+- Core API product routes are native FastAPI/ASGI on the default service host: `GET /health`, `GET /version`, `POST /v1/turns`, and `GET /v1/traces/{trace_id}`.
 - Control Plane routes are mixed. Native ASGI owns `/control/state`, `/control/state/stream`, `/control/browser-session/leases`, `/control/browser-session/claim`, `GET /control/sessions`, `POST /control/sessions`, `/control/health`, and `/control/version`.
-- The remaining Control Plane API and SPA/static serving remain WSGI behind `a2wsgi`.
+- Control Plane SPA/static serving is native ASGI for non-`/control` GET paths. Remaining Control Plane API routes still use the legacy WSGI dispatcher through the host compatibility seam until each route group is moved.
+- The `a2wsgi` runtime dependency has been removed. Legacy WSGI factories remain for compatibility tests and the injected narrow server path, not as the product Uvicorn bridge.
 - Browser Control Plane auth uses a shell-requested one-time claim URL and HttpOnly SameSite cookie. Bearer auth remains valid for privileged Rust/local callers.
 
 ## Migration Phases
@@ -38,12 +39,13 @@ Move Marvex from WSGI compatibility bridges to native ASGI endpoint ownership wi
    - Add route-level tests for malformed payloads, unauthorized requests, and policy-blocked operations before deleting WSGI equivalents.
 
 5. Core API native ASGI boundary.
-   - Move `/health` and `/version` first.
-   - Move `/v1/traces/{trace_id}` after trace-reader contracts are covered.
-   - Move `/v1/turns` last because it touches turn parsing, auth, session linkage, worker-backed execution, trace writes, and error envelopes.
+   - Status: implemented for the product Uvicorn host.
+   - Native routes: `GET /health`, `GET /version`, `GET /v1/traces/{trace_id}`, and `POST /v1/turns`.
+   - The injected WSGI server path remains for narrow unit tests and manual compatibility.
 
 6. Remove WSGI bridge.
-   - Delete remaining WSGI app factories and `a2wsgi` once all public routes are native ASGI.
+   - Status: bridge dependency removed; factory deletion still pending.
+   - Delete remaining WSGI app factories once all public routes are native ASGI.
    - Remove compatibility tests only after equivalent native route tests and packaged-runtime smoke pass.
    - Tighten boundary gates so new WSGI routes cannot be added.
 

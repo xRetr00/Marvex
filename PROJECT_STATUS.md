@@ -1,13 +1,28 @@
 # Project Status
 
-current_phase: native_asgi_control_plane_session_boundary_checkpoint
+current_phase: native_asgi_core_and_static_boundary_checkpoint
 
-implementation_status: native_asgi_control_plane_session_boundary_checkpoint
+implementation_status: native_asgi_core_and_static_boundary_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Native ASGI Control Plane Session Boundary Checkpoint
+Native ASGI Core and Static Boundary Checkpoint
+
+## Native ASGI Core and Static Boundary Checkpoint
+
+Core API product service routes now run as native ASGI handlers on the default
+Uvicorn host: `GET /health`, `GET /version`, `POST /v1/turns`, and
+`GET /v1/traces/{trace_id}`. The injected WSGI server path remains available for
+narrow unit tests and manual compatibility, but the product host no longer uses
+`a2wsgi`.
+
+The Control Plane SPA/static path is also native ASGI for non-`/control` GET
+requests using the existing static resolver and SPA fallback semantics. Control
+Plane API route migration is still incremental: state/SSE, browser sessions,
+backend session metadata, health, and version are native; the remaining
+read-only and mutation groups still use the legacy dispatcher until their route
+groups are moved with equivalent contract tests.
 
 ## Native ASGI Control Plane Session Boundary Checkpoint
 

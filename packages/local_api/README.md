@@ -9,9 +9,12 @@ assistant-envelope contracts.
 Current behavior:
 
 - `create_health_version_api_app(...)` creates a dependency-free WSGI app object.
-- `packages.local_api.asgi_host` wraps existing WSGI apps in an a2wsgi-backed
-  FastAPI/Uvicorn host adapter for product service mode without changing
-  endpoint ownership.
+- `packages.local_api.asgi_app` creates the native FastAPI app for the product
+  Core API service routes.
+- `packages.local_api.asgi_host` owns the FastAPI/Uvicorn host adapter for
+  product service mode. It keeps a narrow WSGI compatibility seam for injected
+  tests and manual runners, but the default Core service host uses native ASGI
+  route ownership.
 - `python -m packages.local_api.runner` starts a manual developer-only runner
   for that app object.
 - `GET /health` returns the existing `HealthCheck` contract shape.
@@ -162,16 +165,19 @@ ASGI host slice:
 - `AsgiHostConfig` keeps Core and Control Plane binds loopback-only by default.
 - `run_dual_asgi_host(...)` starts Core and Control Plane as two Uvicorn
   servers, preserving ports `8765` and `8766`.
-- Core remains WSGI behind a2wsgi. Control Plane may pass an already-built ASGI
-  app for routes that have migrated to native ownership.
+- Core API product routes are native ASGI on the default service host. The WSGI
+  app factory remains for narrow injected tests and manual compatibility only.
+- Control Plane passes an already-built ASGI app for routes that have migrated to
+  native ownership, including the browser-session/session routes and static SPA
+  serving.
 - FastAPI/Uvicorn server ownership stays out of `services.core`; Core imports
   only the adapter seam and must not own framework APIs directly.
 - Native ASGI migration is incremental. The migrated Control Plane routes are
   `/control/state`, `/control/state/stream`, `/control/browser-session/leases`,
   `/control/browser-session/claim`, `GET /control/sessions`,
   `POST /control/sessions`, `GET /control/health`, and
-  `GET /control/version`; the rest of the Control Plane remains behind the WSGI
-  fallback until explicitly moved.
+  `GET /control/version`, plus non-`/control` static SPA requests. The remaining
+  Control Plane API groups stay on the legacy dispatcher until explicitly moved.
 
 Auth decision:
 

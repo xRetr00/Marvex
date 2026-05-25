@@ -3,20 +3,18 @@
 library name: FastAPI
 official source: https://fastapi.tiangolo.com/
 maintenance status: active; release notes show current 2026 releases and Python 3.10+ support.
-why use it: FastAPI gives Marvex an ASGI-native app boundary for local service hosting while endpoint ownership migrates one route group at a time. The current native route ownership is limited to Control Plane state/SSE; Core and the remaining Control Plane routes still use compatibility adapters.
+why use it: FastAPI gives Marvex an ASGI-native app boundary for local service hosting while endpoint ownership migrates one route group at a time. Core API routes and the migrated Control Plane routes now run as native FastAPI handlers.
 why not custom code: A custom ASGI framework or socket loop would duplicate maintained request lifecycle, lifespan, and middleware behavior and would distract from Assistant OS boundaries.
-fallback if abandoned: Keep existing WSGI app contracts and replace the thin host adapter with Starlette, Litestar, or another ASGI adapter behind the host/control-plane adapter seams.
+fallback if abandoned: Keep the host adapter isolated and replace FastAPI with Starlette, Litestar, or another ASGI framework behind the host/control-plane adapter seams.
 pyproject dependency: fastapi
 declared dependency: fastapi>=0.135,<0.137
 
 library name: a2wsgi
 official source: https://github.com/abersheeran/a2wsgi
-maintenance status: active enough for this compatibility seam; PyPI release history shows 1.10.10 released in June 2025.
-why use it: FastAPI recommends a2wsgi for mounting WSGI applications, and it replaces Starlette's deprecated WSGI middleware while Marvex migrates endpoint ownership deliberately.
-why not custom code: A custom WSGI-to-ASGI adapter would duplicate protocol translation, thread-pool execution, backpressure, and streaming behavior that belongs in a maintained boundary adapter.
-fallback if abandoned: Keep the adapter isolated at the ASGI boundary and replace remaining WSGI routes with native ASGI endpoints or another maintained WSGI-to-ASGI bridge without changing Core or frontend contracts.
-pyproject dependency: a2wsgi
-declared dependency: a2wsgi>=1.10.10,<2
+decision: removed from Marvex runtime dependencies.
+why removed: The native-ASGI migration no longer needs a maintained WSGI-to-ASGI middleware bridge in the product host. Legacy WSGI factories remain only as narrow compatibility/test surfaces until route-equivalent native tests cover deletion.
+fallback if needed again: Re-introduce a maintained WSGI adapter only behind `packages.local_api.asgi_host`, never inside Core business logic or frontend-owned paths.
+pyproject dependency: none
 
 library name: Uvicorn
 official source: https://www.uvicorn.org/
