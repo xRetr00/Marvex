@@ -11,75 +11,83 @@
    tokens degrade gracefully.
 --------------------------------------------------------------------------- */
 :root {
-  --card: #fcfcfc;
-  --ring: #644a40;
-  --input: #d8d8d8;
-  --muted: #efefef;
-  --accent: #e8e8e8;
-  --border: #d8d8d8;
+  --card: oklch(1 0 0);
+  --ring: oklch(0.5 0 0);
+  --input: oklch(0.9 0 0);
+  --muted: oklch(0.95 0 0);
+  --accent: oklch(0.12 0 0 / 0.06);
+  --border: oklch(0.88 0 0);
   --radius: 0.625rem;
-  --chart-1: #644a40;
-  --chart-2: #ffdfb5;
-  --chart-3: #e8e8e8;
-  --chart-4: #ffe6c4;
-  --chart-5: #66493e;
-  --popover: #fcfcfc;
-  --primary: #644a40;
-  --sidebar: #fbfbfb;
-  --secondary: #ffdfb5;
-  --background: #f9f9f9;
-  --foreground: #202020;
+  --chart-1: oklch(0.55 0.12 250);
+  --chart-2: oklch(0.65 0.12 160);
+  --chart-3: oklch(0.72 0.14 55);
+  --chart-4: oklch(0.62 0.13 20);
+  --chart-5: oklch(0.6 0.11 300);
+  --popover: oklch(1 0 0);
+  --primary: oklch(0.12 0 0);
+  --sidebar: oklch(0.97 0 0);
+  --secondary: oklch(0.92 0 0);
+  --background: oklch(0.985 0 0);
+  --foreground: oklch(0.12 0 0);
   --destructive: #e54d2e;
-  --sidebar-ring: #b5b5b5;
-  --sidebar-accent: #f7f7f7;
-  --sidebar-border: #ebebeb;
-  --card-foreground: #202020;
-  --sidebar-primary: #343434;
-  --muted-foreground: #646464;
-  --accent-foreground: #202020;
-  --popover-foreground: #202020;
-  --primary-foreground: #ffffff;
-  --sidebar-foreground: #252525;
-  --secondary-foreground: #582d1d;
+  --sidebar-ring: oklch(0.5 0 0);
+  --sidebar-accent: oklch(0.12 0 0 / 0.06);
+  --sidebar-border: oklch(0.88 0 0);
+  --card-foreground: oklch(0.12 0 0);
+  --sidebar-primary: oklch(0.12 0 0);
+  --muted-foreground: oklch(0.45 0 0);
+  --accent-foreground: oklch(0.12 0 0);
+  --popover-foreground: oklch(0.12 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --sidebar-foreground: oklch(0.38 0 0);
+  --secondary-foreground: oklch(0.12 0 0);
   --destructive-foreground: #ffffff;
-  --sidebar-accent-foreground: #343434;
-  --sidebar-primary-foreground: #fbfbfb;
+  --sidebar-accent-foreground: oklch(0.12 0 0);
+  --sidebar-primary-foreground: oklch(0.985 0 0);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.04), 0 8px 24px rgba(0, 0, 0, 0.06);
+  --shadow-float: 0 8px 30px rgba(0, 0, 0, 0.12);
+  --shadow-composer: 0 4px 20px rgba(0, 0, 0, 0.08);
+  --shadow-composer-focus: 0 8px 30px rgba(0, 0, 0, 0.12);
 }
 
 .dark {
-  --card: #191919;
-  --ring: #ffe0c2;
-  --input: #484848;
-  --muted: #222222;
-  --accent: #2a2a2a;
-  --border: #2a2823;
+  --card: oklch(0.21 0 0);
+  --ring: oklch(0.45 0 0);
+  --input: oklch(0.27 0 0);
+  --muted: oklch(0.25 0 0);
+  --accent: oklch(0.94 0 0 / 0.06);
+  --border: oklch(0.25 0 0);
   --radius: 0.625rem;
-  --chart-1: #ffe0c2;
-  --chart-2: #393028;
-  --chart-3: #2a2a2a;
-  --chart-4: #42382e;
-  --chart-5: #ffe0c1;
-  --popover: #191919;
-  --primary: #ffe0c2;
-  --sidebar: #18181b;
-  --secondary: #393028;
-  --background: #111111;
-  --foreground: #eeeeee;
+  --chart-1: oklch(0.7 0.12 250);
+  --chart-2: oklch(0.72 0.12 160);
+  --chart-3: oklch(0.76 0.14 55);
+  --chart-4: oklch(0.68 0.13 20);
+  --chart-5: oklch(0.7 0.11 300);
+  --popover: oklch(0.21 0 0);
+  --primary: oklch(0.94 0 0);
+  --sidebar: oklch(0.175 0 0);
+  --secondary: oklch(0.27 0 0);
+  --background: oklch(0.195 0 0);
+  --foreground: oklch(0.94 0 0);
   --destructive: #e54d2e;
-  --sidebar-ring: #d4d4d8;
-  --sidebar-accent: #27272a;
-  --sidebar-border: #27272a;
-  --card-foreground: #eeeeee;
-  --sidebar-primary: #ffe0c2;
-  --muted-foreground: #b4b4b4;
-  --accent-foreground: #eeeeee;
-  --popover-foreground: #eeeeee;
-  --primary-foreground: #2a1e16;
-  --sidebar-foreground: #f4f4f5;
-  --secondary-foreground: #ffe0c2;
+  --sidebar-ring: oklch(0.45 0 0);
+  --sidebar-accent: oklch(0.94 0 0 / 0.06);
+  --sidebar-border: oklch(0.25 0 0);
+  --card-foreground: oklch(0.94 0 0);
+  --sidebar-primary: oklch(0.94 0 0);
+  --muted-foreground: oklch(0.78 0 0);
+  --accent-foreground: oklch(0.94 0 0);
+  --popover-foreground: oklch(0.94 0 0);
+  --primary-foreground: oklch(0.195 0 0);
+  --sidebar-foreground: oklch(0.78 0 0);
+  --secondary-foreground: oklch(0.94 0 0);
   --destructive-foreground: #ffffff;
-  --sidebar-accent-foreground: #f4f4f5;
-  --sidebar-primary-foreground: #2a1e16;
+  --sidebar-accent-foreground: oklch(0.94 0 0);
+  --sidebar-primary-foreground: oklch(0.195 0 0);
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.22), 0 10px 32px rgba(0, 0, 0, 0.22);
+  --shadow-float: 0 10px 34px rgba(0, 0, 0, 0.35);
+  --shadow-composer: 0 6px 28px rgba(0, 0, 0, 0.28);
+  --shadow-composer-focus: 0 10px 36px rgba(0, 0, 0, 0.38);
 }
 
 /* Map shadcn tokens onto Tailwind v4 color/radius utilities. */
@@ -144,4 +152,68 @@ button, input { font: inherit; }
   box-shadow:
     inset 0 1px 0 color-mix(in srgb, #ffffff 7%, transparent),
     0 12px 40px rgba(0, 0, 0, 0.35);
+}
+
+.marvex-chat-shell {
+  background: var(--sidebar);
+  color: var(--foreground);
+}
+
+.marvex-chat-header {
+  min-height: 54px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--sidebar);
+  border-bottom: 1px solid color-mix(in srgb, var(--sidebar-border) 75%, transparent);
+}
+
+.marvex-chat-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+  background: var(--background);
+  border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
+  border-top-left-radius: 12px;
+}
+
+.marvex-chat-scroll {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+  background: var(--background);
+}
+
+.marvex-chat-thread {
+  width: min(100%, 896px);
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 24px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.marvex-composer-bar {
+  position: sticky;
+  bottom: 0;
+  z-index: 1;
+  width: min(100%, 896px);
+  margin: 0 auto;
+  padding: 0 16px 16px;
+  background: var(--background);
+}
+
+.marvex-message-orb {
+  width: 28px;
+  height: 28px;
+  overflow: hidden;
+  border-radius: 8px;
+  flex-shrink: 0;
+  background: color-mix(in srgb, var(--muted) 60%, transparent);
+  border: 1px solid color-mix(in srgb, var(--border) 50%, transparent);
 }

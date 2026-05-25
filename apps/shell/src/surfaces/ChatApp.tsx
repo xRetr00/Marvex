@@ -19,7 +19,6 @@ import ChatInput from "@/components/prompt-input-dynamic-grow";
 import { Orb } from "@/components/chat-messages-for-ui/agent-simple-orb";
 import { Message, MessageContent } from "@/components/ui/message";
 import { RichMessage } from "@/components/marvex/RichMessage";
-import { BackgroundPlus } from "@/components/ui/background-plus";
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { StartupScreen } from "@/components/marvex/StartupScreen";
 import { StatusView } from "@/components/marvex/StatusView";
@@ -162,9 +161,8 @@ export function ChatApp() {
   const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry", settings: "Settings" };
 
   return (
-    <div className="flex flex-col h-screen min-h-0 relative z-[1]" style={{ background: "transparent", color: "var(--foreground)" }}>
-      <BackgroundPlus plusColor="#ffe0c2" plusSize={56} fade={false} className="pointer-events-none opacity-35" />
-      <header style={{ minHeight: 60, padding: "10px 20px", display: "flex", justifyContent: "space-between", alignItems: "center", borderBottom: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
+    <div className="marvex-chat-shell flex flex-col h-screen min-h-0 relative z-[1]">
+      <header className="marvex-chat-header">
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <button onClick={() => setSidebarOpen((v) => !v)} title="Sessions" style={iconBtn}><History size={16} /></button>
           <img src="/assets/Marvex_App_192.png" alt="Marvex" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "contain" }}
@@ -187,12 +185,12 @@ export function ChatApp() {
         </div>
       </header>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", position: "relative" }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", position: "relative", background: "var(--sidebar)", padding: "0 0 0 0" }}>
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside initial={{ x: -280, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -280, opacity: 0 }} transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
-              style={{ position: "absolute", inset: "0 auto 0 0", width: 280, zIndex: 5, background: "color-mix(in srgb, var(--card) 92%, transparent)", backdropFilter: "blur(16px)", borderRight: "1px solid var(--border)", display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--border)" }}>
+              style={{ position: "absolute", inset: "0 auto 0 0", width: 280, zIndex: 5, background: "var(--sidebar)", borderRight: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column" }}>
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--sidebar-border)" }}>
                 <span style={{ fontSize: 13, fontWeight: 600 }}>Sessions</span>
                 <button onClick={() => setSidebarOpen(false)} style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", display: "grid", placeItems: "center" }}><X size={16} /></button>
               </div>
@@ -202,7 +200,7 @@ export function ChatApp() {
               <div style={{ flex: 1, overflow: "auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
                 {sessions.map((s: SessionMeta) => (
                   <button key={s.id} onClick={() => openSession(s.id)}
-                    style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, background: s.id === sessionIdRef.current ? "var(--accent)" : "var(--secondary)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--foreground)" }}>
+                    style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, background: s.id === sessionIdRef.current ? "var(--sidebar-accent)" : "transparent", border: "1px solid var(--sidebar-border)", cursor: "pointer", color: "var(--foreground)" }}>
                     <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "New chat"}</div>
                     <div style={{ fontSize: 10, color: "var(--muted-foreground)" }}>{new Date(s.updatedAt).toLocaleString()}</div>
                   </button>
@@ -213,41 +211,50 @@ export function ChatApp() {
           )}
         </AnimatePresence>
 
-        <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
+        <div className="marvex-chat-main">
           {activeTab === "chat" && (
             <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <div style={{ flex: 1, overflow: "auto", padding: "18px 20px", display: "flex", flexDirection: "column", gap: 10, minHeight: 0 }}>
-                {messages.map((msg, idx) => (
-                  <Message key={`${msg.role}-${idx}`} from={msg.role === "user" ? "user" : "assistant"}>
-                    {msg.role === "assistant" ? (
-                      <MessageContent variant="flat" className="w-full max-w-[88%]"><RichMessage text={msg.text} stages={msg.stages} directives={msg.directives} /></MessageContent>
-                    ) : (
-                      <MessageContent variant={msg.role === "system" ? "flat" : "contained"}>{msg.text}</MessageContent>
-                    )}
-                    {msg.role === "assistant" && (
-                      <div className="size-8 overflow-hidden rounded-full ring-1 ring-border shrink-0"><Orb className="h-full w-full" agentState={orbState} /></div>
-                    )}
-                  </Message>
-                ))}
-                {pending && (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 0" }}>
-                    <div className="size-8 overflow-hidden rounded-full ring-1 ring-border shrink-0"><Orb className="h-full w-full" agentState="thinking" /></div>
-                    <Loader variant="loading-dots" text="Marvex is thinking" />
-                  </div>
-                )}
-                <div ref={messagesEndRef} />
+              <div className="marvex-chat-scroll">
+                <div className="marvex-chat-thread">
+                  {messages.map((msg, idx) => (
+                    <Message key={`${msg.role}-${idx}`} from={msg.role === "user" ? "user" : "assistant"} className="py-0">
+                      {msg.role === "assistant" ? (
+                        <MessageContent variant="flat" className="w-full max-w-[min(100%,72ch)] text-[13px] leading-[1.65]"><RichMessage text={msg.text} stages={msg.stages} directives={msg.directives} /></MessageContent>
+                      ) : (
+                        <MessageContent
+                          variant={msg.role === "system" ? "flat" : "contained"}
+                          className={msg.role === "system" ? "text-[13px] text-muted-foreground" : "w-fit max-w-[min(80%,56ch)] overflow-hidden break-words rounded-2xl rounded-br-lg border border-border/30 bg-gradient-to-br from-secondary to-muted px-3.5 py-2 text-[13px] leading-[1.65] shadow-[var(--shadow-card)]"}
+                        >
+                          {msg.text}
+                        </MessageContent>
+                      )}
+                      {msg.role === "assistant" && (
+                        <div className="marvex-message-orb"><Orb className="h-full w-full" agentState={orbState} /></div>
+                      )}
+                    </Message>
+                  ))}
+                  {pending && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0" }}>
+                      <div className="marvex-message-orb"><Orb className="h-full w-full" agentState="thinking" /></div>
+                      <Loader variant="loading-dots" text="Marvex is thinking" />
+                    </div>
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
               </div>
               {!pending && messages.length <= 1 && (
-                <div style={{ padding: "0 20px 6px", textAlign: "center" }}>
+                <div style={{ width: "min(100%, 896px)", margin: "0 auto", padding: "0 16px 6px", textAlign: "center" }}>
                   <Typewriter text={["How can I help you today?", "Search the web, write a file, plan a task...", "Ask me anything."]} speed={55} deleteSpeed={25} waitTime={2200} loop className="text-sm" />
                 </div>
               )}
-              <div style={{ padding: "12px 16px", borderTop: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
+              <div className="marvex-composer-bar">
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button title="Microphone" onClick={toggleVoiceCapture} style={{ ...iconBtn, width: 40, height: 40, borderRadius: 10, background: micActive ? "var(--primary)" : "var(--secondary)", color: micActive ? "var(--primary-foreground)" : "var(--foreground)" }}>
+                  <button title="Microphone" onClick={toggleVoiceCapture} style={{ ...iconBtn, width: 36, height: 36, borderRadius: 8, background: micActive ? "var(--primary)" : "transparent", color: micActive ? "var(--primary-foreground)" : "var(--muted-foreground)" }}>
                     {micActive ? <MicOff size={16} /> : <Mic size={16} />}
                   </button>
-                  <div style={{ flex: 1 }}><ChatInput placeholder="Ask Marvex..." disabled={pending} onSubmit={send} textColor="var(--foreground)" backgroundOpacity={0.06} /></div>
+                  <div style={{ flex: 1 }}>
+                    <ChatInput placeholder="Ask anything..." disabled={pending} onSubmit={send} textColor="var(--foreground)" backgroundOpacity={0.06} />
+                  </div>
                 </div>
               </div>
             </div>
@@ -268,7 +275,7 @@ export function ChatApp() {
         </div>
       </div>
 
-      <footer style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "10px 16px", borderTop: "1px solid var(--border)", background: "color-mix(in srgb, var(--card) 70%, transparent)", backdropFilter: "blur(16px)" }}>
+      <footer style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 10, padding: "8px 16px", borderTop: "1px solid var(--sidebar-border)", background: "var(--sidebar)" }}>
         <LimelightNav items={navItems} defaultActiveIndex={activeNavIndex} onTabChange={(idx) => navItems[idx]?.onClick()} />
         <div style={{ width: 1, height: 28, background: "var(--border)" }} />
         <button onClick={() => { persistMode("overlay"); void showOverlay(); }} title="Switch to Overlay (Marvex presence)" style={{ ...iconBtn, width: 44, height: 44, borderRadius: 12 }}><Radio size={18} /></button>

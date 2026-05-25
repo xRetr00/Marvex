@@ -1,5 +1,4 @@
 import React, { createContext, useContext, useEffect, useState, useRef, useCallback, memo, useMemo } from "react";
-import { Plus } from "lucide-react";
 
 type MenuOption = "Auto" | "Max" | "Search" | "Plan";
 
@@ -34,9 +33,9 @@ const SendButton = memo(({ isDisabled, textColor }: { isDisabled: boolean; textC
     type="submit"
     aria-label="Send message"
     disabled={isDisabled}
-    className={`ml-auto self-center h-8 w-8 flex items-center justify-center rounded-full border-0 p-0 transition-all z-20 ${isDisabled ? "opacity-40 cursor-not-allowed bg-gray-400 text-white/60" : "opacity-90 bg-[#0A1217] text-white hover:opacity-100 cursor-pointer hover:shadow-lg"}`}
+    className={`ml-auto self-center h-7 w-7 flex items-center justify-center rounded-xl border-0 p-0 transition-all z-20 ${isDisabled ? "cursor-not-allowed bg-muted text-muted-foreground/25" : "bg-foreground text-background hover:opacity-85 active:scale-95 cursor-pointer"}`}
   >
-    <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className={`block ${isDisabled ? "opacity-50" : "opacity-100"}`}>
+    <svg width="28" height="28" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg" className={`block ${isDisabled ? "opacity-50" : "opacity-100"}`}>
       <path d="M16 22L16 10M16 10L11 15M16 10L21 15" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" />
     </svg>
   </button>
@@ -60,8 +59,8 @@ const InputArea = memo(({ value, setValue, placeholder, handleKeyDown, disabled,
       <textarea
         ref={textareaRef} value={value} onChange={(e) => setValue(e.target.value)} onKeyDown={handleKeyDown}
         placeholder={placeholder} aria-label="Message Input" rows={1}
-        className={`w-full min-h-8 max-h-24 bg-transparent text-sm font-normal text-left self-center border-0 outline-none px-3 pr-10 py-1 z-20 relative resize-none overflow-y-auto placeholder-gray-400`}
-        style={{ color: textColor, fontFamily: '"Inter", sans-serif', letterSpacing: "-0.14px", lineHeight: "22px" }}
+        className="w-full min-h-24 max-h-36 bg-transparent text-[13px] font-normal text-left self-center border-0 outline-none px-4 pr-10 pt-3.5 pb-1.5 z-20 relative resize-none overflow-y-auto placeholder:text-muted-foreground/35"
+        style={{ color: textColor, fontFamily: '"Inter", sans-serif', letterSpacing: 0, lineHeight: "1.65" }}
         disabled={disabled}
       />
       <SendButton isDisabled={isSubmitDisabled} textColor={textColor} />
@@ -99,7 +98,7 @@ export default function ChatInput({
   return (
     <ChatInputContext.Provider value={ctx}>
       <form onSubmit={handleSubmit} className="w-full">
-        <div className="relative flex flex-col w-full bg-white/15 backdrop-blur-xl shadow-lg rounded-3xl p-2 overflow-visible group">
+        <div className="relative flex flex-col w-full overflow-visible rounded-2xl border border-border/30 bg-card/70 p-2 shadow-[var(--shadow-composer)] transition-shadow duration-300 focus-within:shadow-[var(--shadow-composer-focus)] group">
           <div className="flex items-center relative z-20">
             <InputArea value={value} setValue={setValue} placeholder={placeholder}
               handleKeyDown={handleKeyDown} disabled={disabled} isSubmitDisabled={isSubmitDisabled} textColor={textColor} />
