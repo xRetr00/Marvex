@@ -52,10 +52,12 @@ class BrowserSessionManager:
         session = _cookie_value(cookie_header, BROWSER_SESSION_COOKIE)
         if not session:
             return False
+        now = self._clock()
         expires_at = self._sessions.get(session)
-        if expires_at is None or expires_at < self._clock():
+        if expires_at is None or expires_at < now:
             self._sessions.pop(session, None)
             return False
+        self._sessions[session] = now + self._session_ttl_seconds
         return True
 
     def cookie_header(self, session: str) -> str:
