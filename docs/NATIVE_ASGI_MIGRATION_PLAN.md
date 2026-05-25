@@ -8,9 +8,8 @@ Move Marvex from WSGI compatibility bridges to native ASGI endpoint ownership wi
 
 - Core and Control Plane run under Uvicorn on the existing two-port contract: Core API on `127.0.0.1:8765`, Control Plane on `127.0.0.1:8766`.
 - Core API product routes are native FastAPI/ASGI on the default service host: `GET /health`, `GET /version`, `POST /v1/turns`, and `GET /v1/traces/{trace_id}`.
-- Control Plane routes are mixed. Native ASGI owns `/control/state`, `/control/state/stream`, `/control/browser-session/leases`, `/control/browser-session/claim`, `GET /control/sessions`, `POST /control/sessions`, `/control/health`, and `/control/version`.
-- Control Plane SPA/static serving is native ASGI for non-`/control` GET paths. Remaining Control Plane API routes still use the legacy WSGI dispatcher through the host compatibility seam until each route group is moved.
-- The `a2wsgi` runtime dependency has been removed. Legacy WSGI factories remain for compatibility tests and the injected narrow server path, not as the product Uvicorn bridge.
+- Control Plane APIs dispatch through `ControlPlaneRuntime` from native FastAPI routes. `/control/state/stream` remains an explicit native SSE route, and non-`/control` SPA/static serving is native ASGI.
+- The `a2wsgi` runtime dependency, WSGI factories, WSGI middleware bridge, `wsgiref` runner path, and WSGI compatibility tests are removed from runtime code.
 - Browser Control Plane auth uses a shell-requested one-time claim URL and HttpOnly SameSite cookie. Bearer auth remains valid for privileged Rust/local callers.
 
 ## Migration Phases
@@ -18,7 +17,7 @@ Move Marvex from WSGI compatibility bridges to native ASGI endpoint ownership wi
 1. Control Plane state/SSE boundary.
    - Status: implemented.
    - Native routes: `GET /control/state`, `GET /control/state/stream`.
-   - WSGI fallback remains mounted for all other Control Plane routes.
+   - No WSGI fallback remains.
 
 2. Control Plane browser-session and session metadata APIs.
    - Status: implemented.
@@ -27,27 +26,26 @@ Move Marvex from WSGI compatibility bridges to native ASGI endpoint ownership wi
    - Preserves one-time claim semantics, cookie attributes, safe session projections, and no-transcript persistence.
 
 3. Control Plane read-only inspection APIs.
-   - Status: started.
-   - Native routes: `GET /control/health`, `GET /control/version`.
-   - Remaining: snapshot, runtime execution, trace search, policies, logs, diagnostics, connectors, sources, autofetch, memory tree, marketplace browse, agent/persona projections, and voice status/read endpoints.
+   - Status: implemented.
+   - Native routes include health, version, snapshot, runtime execution, trace search, policies, logs, diagnostics, connectors, sources, autofetch, memory tree, marketplace browse, agent/persona projections, and voice status/read endpoints.
    - Keep response envelopes and safe-projection filtering unchanged.
    - Keep side-effecting endpoints WSGI until approval and mutation flows are migrated together.
 
 4. Control Plane mutation and approval APIs.
-   - Move approvals, runtime-policy updates, marketplace enable/disable/proposals, memory forget, source forget, dependency installs, voice start/stop/config/download/test commands, and feedback/learning actions.
+   - Status: implemented.
+   - Moved approvals, runtime-policy updates, marketplace enable/disable/proposals, memory forget, source forget, dependency installs, voice start/stop/config/download/test commands, and feedback/learning actions.
    - Preserve policy gating, explicit command semantics, and safe error envelopes.
    - Add route-level tests for malformed payloads, unauthorized requests, and policy-blocked operations before deleting WSGI equivalents.
 
 5. Core API native ASGI boundary.
    - Status: implemented for the product Uvicorn host.
    - Native routes: `GET /health`, `GET /version`, `GET /v1/traces/{trace_id}`, and `POST /v1/turns`.
-   - The injected WSGI server path remains for narrow unit tests and manual compatibility.
+   - Manual/dev runner paths use the ASGI app through the Uvicorn host seam.
 
 6. Remove WSGI bridge.
-   - Status: bridge dependency removed; factory deletion still pending.
-   - Delete remaining WSGI app factories once all public routes are native ASGI.
-   - Remove compatibility tests only after equivalent native route tests and packaged-runtime smoke pass.
-   - Tighten boundary gates so new WSGI routes cannot be added.
+   - Status: implemented.
+   - Remaining WSGI app factories and host compatibility surfaces are deleted.
+   - Boundary gates reject WSGI middleware/factories and `wsgiref` runtime imports.
 
 ## Per-Slice Rules
 

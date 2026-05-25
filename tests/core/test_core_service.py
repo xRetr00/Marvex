@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
 from pathlib import Path
-from wsgiref.util import setup_testing_defaults
 
 import pytest
 
@@ -24,6 +22,7 @@ from packages.contracts import (
     Sensitivity,
     VersionInfo,
 )
+from tests.local_api.asgi_helpers import asgi_call
 
 
 SCHEMA_VERSION = "0.1.1-draft"
@@ -229,22 +228,8 @@ def call_app(
     body: object | None = None,
     auth: str | None = None,
 ) -> tuple[str, dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    body_bytes = b"" if body is None else json.dumps(body).encode("utf-8")
-    environ["CONTENT_LENGTH"] = str(len(body_bytes))
-    environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, _headers, exc_info=None):
-        captured["status"] = status
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], json.loads(response_body)
+    status, _headers, payload = asgi_call(app, path, method=method, body=body, auth=auth)
+    return status, payload
 
 
 def local_api_payload(turn_input: AssistantTurnInput) -> dict:
@@ -260,11 +245,11 @@ def local_api_payload(turn_input: AssistantTurnInput) -> dict:
 
 
 def test_core_service_composes_with_existing_loopback_local_api_turn_path():
-    from packages.local_api import LocalApiConfig, create_health_version_api_app
+    from packages.local_api import LocalApiConfig, create_local_api_asgi_app
 
     service = make_service()
     service.start()
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         service,
         turn_handler=lambda request: service.submit_turn(request.assistant_turn_input),
         local_auth_token=EXPECTED_TOKEN,

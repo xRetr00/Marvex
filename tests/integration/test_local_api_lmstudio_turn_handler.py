@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from io import BytesIO
-from wsgiref.util import setup_testing_defaults
 
 from packages.assistant_runtime.input_normalization import (
     build_text_input_event,
@@ -16,11 +14,12 @@ from packages.contracts import (
     ProviderRequest,
     ProviderResponse,
 )
-from packages.local_api.health_version_api import (
+from packages.local_api import create_local_api_asgi_app
+from packages.local_api.contracts import (
     LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE,
     LocalTurnRequestEnvelope,
-    create_health_version_api_app,
 )
+from tests.local_api.asgi_helpers import asgi_call
 
 
 EXPECTED_TOKEN = "fake-local-token"
@@ -156,22 +155,8 @@ def call_app(
     body: object | None = None,
     auth: str | None = f"Bearer {EXPECTED_TOKEN}",
 ) -> tuple[str, dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = method
-    environ["PATH_INFO"] = path
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
-    body_bytes = b"" if body is None else json.dumps(body).encode("utf-8")
-    environ["CONTENT_LENGTH"] = str(len(body_bytes))
-    environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], json.loads(response_body)
+    status, _headers, payload = asgi_call(app, path, method=method, body=body, auth=auth)
+    return status, payload
 
 
 def test_lmstudio_handler_rejects_unsupported_execution_mode():
@@ -414,7 +399,7 @@ def test_lmstudio_malformed_provider_response_maps_to_safe_local_api_error(
         "create_provider",
         lambda config: MalformedProvider(),
     )
-    app = create_health_version_api_app(
+    app = create_local_api_asgi_app(
         make_provider(),
         turn_handler=create_local_api_lmstudio_turn_handler(),
         local_auth_token=EXPECTED_TOKEN,

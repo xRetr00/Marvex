@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import io
 import json
 from pathlib import Path
 
@@ -120,7 +119,7 @@ def test_control_plane_exposes_worker_model_download_endpoint(tmp_path: Path) ->
     status, payload = handle_voice_control_request(
         method="POST",
         path="/control/voice/worker/models/download",
-        environ={"CONTENT_LENGTH": str(len(body)), "wsgi.input": io.BytesIO(body)},
+        environ={"REQUEST_BODY": body},
         voice_control=None,
         voice_worker_control=facade,
     )

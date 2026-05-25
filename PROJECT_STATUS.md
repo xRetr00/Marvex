@@ -1,13 +1,29 @@
 # Project Status
 
-current_phase: native_asgi_core_and_static_boundary_checkpoint
+current_phase: native_asgi_migration_complete
 
-implementation_status: native_asgi_core_and_static_boundary_checkpoint
+implementation_status: native_asgi_migration_complete
 
 accepted_docs: true
 
 current_governance_gate:
-Native ASGI Core and Static Boundary Checkpoint
+Native ASGI Migration Complete
+
+## Native ASGI Migration Complete
+
+Core API and Control Plane HTTP boundaries now run through FastAPI/Uvicorn with
+native ASGI route ownership. The WSGI factories, WSGI host adapter, `a2wsgi`
+bridge, and `wsgiref` product/test seams are removed from runtime code.
+
+Public loopback behavior is unchanged: Core remains on `127.0.0.1:8765`,
+Control Plane remains on `127.0.0.1:8766`, bearer auth and Control Plane
+HttpOnly browser-session cookie auth are preserved, and startup/status payloads
+continue to redact raw token material.
+
+Control Plane routes now dispatch through `ControlPlaneRuntime` plus explicit
+native SSE/static handlers. Core service composition creates ASGI apps only and
+keeps FastAPI/Uvicorn ownership in the local API host adapter rather than in
+Core business logic.
 
 ## Native ASGI Core and Static Boundary Checkpoint
 
