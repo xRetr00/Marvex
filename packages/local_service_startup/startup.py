@@ -12,7 +12,7 @@ from typing import Mapping
 
 SCHEMA_VERSION = "0.1.1-draft"
 DEFAULT_SERVICE_NAME = "marvex-local-api"
-DEFAULT_SERVICE_VERSION = "0.1.0"
+DEFAULT_SERVICE_VERSION = "0.2.0"
 DEFAULT_BIND_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 TOKEN_BYTES = 32
@@ -163,4 +163,3 @@ def _warnings_for(config: LocalApiServiceStartupConfig) -> tuple[str, ...]:
     if config.discovery_mode == DiscoveryMode.FUTURE_LOCAL_FILE:
         return ("discovery_file_write_blocked",)
     return ()
-

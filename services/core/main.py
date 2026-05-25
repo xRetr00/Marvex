@@ -101,7 +101,10 @@ from packages.local_api.asgi_host import (
     build_asgi_startup_message,
     run_dual_asgi_host,
 )
-from packages.local_api.contracts import LOCAL_TURNS_EXECUTION_MODE
+from packages.local_api.contracts import (
+    LOCAL_TURNS_EXECUTION_MODE,
+    LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE,
+)
 from packages.memory_tree_runtime import (
     CanonicalSourceMetadata as MemoryTreeSourceMetadata,
     MemoryTreeRuntime,
@@ -2546,7 +2549,10 @@ def create_core_service_app(
         turn_handler=lambda request: _apply_ui_directives(service.submit_turn(request.assistant_turn_input)),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
-        accepted_turn_execution_modes=(LOCAL_TURNS_EXECUTION_MODE,),
+        accepted_turn_execution_modes=(
+            LOCAL_TURNS_EXECUTION_MODE,
+            LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE,
+        ),
     )
     return app, service
 
