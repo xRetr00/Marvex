@@ -1,18 +1,31 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import Callable
 
-from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest, load_voice_model_catalog
+from .assets import VoiceAssetManager, VoiceModelCatalog, VoiceModelDownloadRequest, VoiceModelInstallRequest, load_voice_model_catalog
 from .controller import VoiceWorkerController
 from .models import VoiceWorkerCommand
 
 
 class VoiceWorkerControlPlaneFacade:
-    def __init__(self, controller: VoiceWorkerController | None = None, assets: VoiceAssetManager | None = None) -> None:
-        self.controller = controller or VoiceWorkerController()
+    def __init__(
+        self,
+        controller: VoiceWorkerController | None = None,
+        assets: VoiceAssetManager | None = None,
+        model_catalog_loader: Callable[[], VoiceModelCatalog] = load_voice_model_catalog,
+    ) -> None:
+        if controller is not None:
+            self.controller = controller
+        elif assets is not None:
+            self.controller = VoiceWorkerController(asset_manager=assets)
+        else:
+            self.controller = VoiceWorkerController()
         self.assets = assets or self.controller.asset_manager
+        self._model_catalog_loader = model_catalog_loader
 
     def status(self) -> dict[str, object]:
+        self._refresh_assets()
         return self.controller.status().safe_projection()
 
     def devices(self) -> dict[str, object]:
@@ -31,16 +44,19 @@ class VoiceWorkerControlPlaneFacade:
         return self.assets.install_local(VoiceModelInstallRequest.model_validate(payload)).model_dump(mode="json")
 
     def download_model_voice(self, payload: dict[str, Any]) -> dict[str, object]:
-        return self.assets.download(VoiceModelDownloadRequest.model_validate(payload)).model_dump(mode="json")
+        result = self.assets.download(VoiceModelDownloadRequest.model_validate(payload)).model_dump(mode="json")
+        self._refresh_assets()
+        return result
 
     def remove_model_voice(self, payload: dict[str, Any]) -> dict[str, object]:
         return self.assets.remove(str(payload.get("model_id") or "")).model_dump(mode="json")
 
     def assets_status(self) -> dict[str, object]:
+        self._refresh_assets()
         return self.assets.registry().model_dump(mode="json")
 
     def model_catalog(self) -> dict[str, object]:
-        return load_voice_model_catalog().model_dump(mode="json")
+        return self._model_catalog_loader().model_dump(mode="json")
 
     def start_wakeword_supervisor(self) -> dict[str, object]:
         return self.controller.start_wakeword_supervisor(explicit_user_triggered=True).safe_projection()
@@ -53,6 +69,9 @@ class VoiceWorkerControlPlaneFacade:
 
     def wakeword_supervisor_health(self) -> dict[str, object]:
         return self.controller.wakeword_supervisor_health().safe_projection()
+
+    def _refresh_assets(self) -> None:
+        self.assets.discover_installed(self._model_catalog_loader())
 
 
 def _strip_raw_keys(value: Any) -> Any:

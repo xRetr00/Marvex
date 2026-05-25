@@ -73,7 +73,7 @@ export function App() {
             <img className="h-6 w-auto" src={logoSrc} alt="Marvex" />
             <div>
               <h1 className="text-base font-semibold">Marvex Control Plane</h1>
-              <p className="text-xs text-muted-foreground">Local admin dashboard for approvals, marketplaces, telemetry, capabilities, policies, and safe runtime views.</p>
+              <p className="text-xs text-muted-foreground">Local admin dashboard for approvals, marketplaces, telemetry, capabilities, policies, and runtime controls.</p>
             </div>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
@@ -103,7 +103,7 @@ export function App() {
         <main className="p-4 lg:p-6">
           <div className="mb-4 flex items-center justify-between gap-3">
             <h2 className="text-xl font-semibold">{title}</h2>
-            <span className="text-xs text-muted-foreground">Safe projections only</span>
+            <span className="text-xs text-muted-foreground">Local runtime controls</span>
           </div>
           {snapshotQuery.isLoading && <LoadingState />}
           {snapshotQuery.isError && <ErrorState message={snapshotQuery.error.message} />}

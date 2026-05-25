@@ -55,7 +55,7 @@ export function outcomeFromTurnResult(payload: unknown): TurnOutcome {
   if (typeof errMsg === "string" && errMsg.trim()) {
     const e = lower(errMsg);
     if (e.includes("no provider") || e.includes("not configured") || e.includes("no model")) {
-      return { kind: "no_provider", text: "No model or provider is configured. Open Control Plane → Providers to set one up." };
+      return { kind: "no_provider", text: "No model or provider is configured. Open Settings → Providers / Models to set one up." };
     }
     if (e.includes("provider") || e.includes("upstream") || e.includes("llm")) {
       return { kind: "provider_error", text: `Provider error: ${errMsg}` };

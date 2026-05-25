@@ -18,13 +18,9 @@ from packages.voice_runtime.base import SCHEMA_VERSION, VoiceRuntimeModel
 
 REQUIRED_VOICE_ASSETS: tuple[tuple[str, str, str], ...] = (
     ("moonshine-v2", "moonshine-v2", "stt"),
-    ("sensevoice-small", "sensevoice-small", "stt"),
     ("hey-marvex", "sherpa-onnx-kws", "wakeword"),
     ("kokoro-af-heart", "kokoro-onnx", "tts_voice"),
     ("kokoro-voices", "kokoro-onnx", "tts_voice"),
-    ("piper-default", "piper-tts", "tts_voice"),
-    ("silero-vad", "silero-vad", "vad"),
-    ("webrtcvad-wheels", "webrtcvad-wheels", "vad"),
 )
 
 
@@ -208,6 +204,14 @@ class VoiceAssetManager:
                 install_started=False,
                 exact_blocker=blocker,
             )
+        if not self._catalog_group_complete(request):
+            return _download_result_from_request(
+                request,
+                status="not_installed",
+                download_started=True,
+                install_started=False,
+                exact_blocker="model_catalog_group_incomplete",
+            )
         installed = self.install_local(
             VoiceModelInstallRequest(
                 model_id=request.model_id,
@@ -269,6 +273,29 @@ class VoiceAssetManager:
         self._paths.pop(model_id, None)
         return VoiceModelRemoveResult(model_id=model_id, removed=removed, reason_code="voice_worker.asset.removed" if removed else "voice_worker.asset.not_found")
 
+    def discover_installed(self, catalog: VoiceModelCatalog | None = None) -> InstalledModelRegistry:
+        grouped_assets: dict[tuple[str, str, str, str], list[VoiceModelCatalogAsset]] = {}
+        for asset in (catalog or load_voice_model_catalog()).assets:
+            install_relative_path = asset.install_relative_path or asset.relative_path
+            key = (asset.model_id, asset.backend_id, asset.model_kind, install_relative_path)
+            grouped_assets.setdefault(key, []).append(asset)
+
+        for (model_id, backend_id, model_kind, install_relative_path), assets in grouped_assets.items():
+            if model_id in self._installed and self.resolve_installed_path(model_id) is not None:
+                continue
+            if not all(self._catalog_asset_present(asset) for asset in assets):
+                continue
+            self.install_local(
+                VoiceModelInstallRequest(
+                    model_id=model_id,
+                    backend_id=backend_id,
+                    model_kind=model_kind,  # type: ignore[arg-type]
+                    relative_path=install_relative_path,
+                    explicit_user_triggered=True,
+                )
+            )
+        return self.registry()
+
     def resolve_installed_path(self, model_id: str) -> Path | None:
         item = self._installed.get(model_id)
         target = self._paths.get(model_id)
@@ -315,6 +342,28 @@ class VoiceAssetManager:
             status="not_installed",
             exact_blocker="model_path_not_found_under_voice_asset_root",
         )
+
+    def _catalog_asset_present(self, asset: VoiceModelCatalogAsset) -> bool:
+        target = (self.asset_root / asset.relative_path).resolve()
+        if not target.is_relative_to(self.asset_root):
+            return False
+        return target.exists()
+
+    def _catalog_group_complete(self, request: VoiceModelDownloadRequest) -> bool:
+        install_relative_path = request.install_relative_path or request.relative_path
+        if install_relative_path == request.relative_path:
+            return True
+        matching_assets = [
+            asset
+            for asset in load_voice_model_catalog().assets
+            if asset.model_id == request.model_id
+            and asset.backend_id == request.backend_id
+            and asset.model_kind == request.model_kind
+            and (asset.install_relative_path or asset.relative_path) == install_relative_path
+        ]
+        if len(matching_assets) <= 1:
+            return True
+        return all(self._catalog_asset_present(asset) for asset in matching_assets)
 
 
 def _looks_like_sha256(value: str) -> bool:

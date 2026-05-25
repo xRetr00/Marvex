@@ -10,7 +10,7 @@ from packages.capability_runtime.results import CapabilityResultEnvelope, SafeCa
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-tool-worker"
-SERVICE_VERSION = "0.1.0"
+SERVICE_VERSION = "0.2.0"
 
 
 class ToolWorkerModel(BaseModel):

@@ -139,7 +139,7 @@ class VoiceWorkerHealth(VoiceRuntimeModel):
 class VoiceWorkerVersionInfo(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     worker: str
-    worker_version: str = "0.1.0"
+    worker_version: str = "0.2.0"
     contract_versions: dict[str, str] = Field(
         default_factory=lambda: {
             "VoiceWorkerCommand": SCHEMA_VERSION,
