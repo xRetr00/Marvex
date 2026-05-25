@@ -2468,7 +2468,7 @@ requires-dist = [
     { name = "pydantic", specifier = ">=2,<3" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=9.0.3,<10" },
     { name = "pywinauto", marker = "sys_platform == 'win32'", specifier = ">=0.6" },
-    { name = "semantic-router", extras = ["hybrid"], specifier = "==0.1.14" },
+    { name = "semantic-router", specifier = "==0.1.15" },
     { name = "sherpa-onnx", specifier = "==1.13.2" },
     { name = "sherpa-onnx-core", specifier = "==1.13.2" },
     { name = "silero-vad", specifier = "==6.2.1" },
@@ -7488,7 +7488,7 @@ wheels = [
 
 [[package]]
 name = "semantic-router"
-version = "0.1.14"
+version = "0.1.15"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "aiohttp" },
@@ -7505,9 +7505,9 @@ dependencies = [
     { name = "tornado" },
     { name = "urllib3" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/90/3e/c144d4209817856349798fd7eb58d9ccd1bffd0ade700bb64d281193d1e9/semantic_router-0.1.14.tar.gz", hash = "sha256:7c95b889479d1d566cd0a73557ff26d46eb42ee034d26874f3085eb81021345f", size = 95575, upload-time = "2026-05-18T13:21:01.076Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/dc/a9/1a689e916e8b280f1fd8fb335cc059be626a22fe4533baa045d32fcd6de5/semantic_router-0.1.15.tar.gz", hash = "sha256:328256ddc3c2b713101ec69561d6585aecbf1198ea3461e1486289d8c3a35288", size = 95605, upload-time = "2026-05-23T12:58:15.444Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/66/f4/dfd3944b841e871198f7200bd7ddfd0af2ef91c2d0a8d41752bc37261fbd/semantic_router-0.1.14-py3-none-any.whl", hash = "sha256:70300ed1190e3bf96b0b96b0c48bd4cba6069c5f296aa6c7068b769f7ca4cdc1", size = 128147, upload-time = "2026-05-18T13:21:02.243Z" },
+    { url = "https://files.pythonhosted.org/packages/1e/c7/f4a20292aef9badd277efbb24d697c5b934693fb21e8e490d3ecb0fc83f0/semantic_router-0.1.15-py3-none-any.whl", hash = "sha256:c08978584c73c5ff8e75005202007ac8ee6593d77deaf8c7ec53f71e01e7f757", size = 128102, upload-time = "2026-05-23T12:58:14.295Z" },
 ]
 
 [[package]]
