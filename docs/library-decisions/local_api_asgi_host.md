@@ -3,18 +3,18 @@
 library name: FastAPI
 official source: https://fastapi.tiangolo.com/
 maintenance status: active; release notes show current 2026 releases and Python 3.10+ support.
-why use it: FastAPI gives Marvex an ASGI-native app boundary for local service hosting while keeping endpoint contracts behind existing local API and control-plane adapters.
+why use it: FastAPI gives Marvex an ASGI-native app boundary for local service hosting while endpoint ownership migrates one route group at a time. The current native route ownership is limited to Control Plane state/SSE; Core and the remaining Control Plane routes still use compatibility adapters.
 why not custom code: A custom ASGI framework or socket loop would duplicate maintained request lifecycle, lifespan, and middleware behavior and would distract from Assistant OS boundaries.
-fallback if abandoned: Keep existing WSGI app contracts and replace the thin host adapter with Starlette, Litestar, or another ASGI adapter behind `packages.local_api.asgi_host`.
+fallback if abandoned: Keep existing WSGI app contracts and replace the thin host adapter with Starlette, Litestar, or another ASGI adapter behind the host/control-plane adapter seams.
 pyproject dependency: fastapi
 declared dependency: fastapi>=0.135,<0.137
 
 library name: a2wsgi
 official source: https://github.com/abersheeran/a2wsgi
 maintenance status: active enough for this compatibility seam; PyPI release history shows 1.10.10 released in June 2025.
-why use it: FastAPI now recommends a2wsgi for mounting WSGI applications, and it replaces Starlette's deprecated WSGI middleware while Marvex migrates endpoint ownership deliberately.
+why use it: FastAPI recommends a2wsgi for mounting WSGI applications, and it replaces Starlette's deprecated WSGI middleware while Marvex migrates endpoint ownership deliberately.
 why not custom code: A custom WSGI-to-ASGI adapter would duplicate protocol translation, thread-pool execution, backpressure, and streaming behavior that belongs in a maintained boundary adapter.
-fallback if abandoned: Keep the adapter isolated in `packages.local_api.asgi_host` and replace it with native ASGI endpoints or another maintained WSGI-to-ASGI bridge without changing Core or frontend contracts.
+fallback if abandoned: Keep the adapter isolated at the ASGI boundary and replace remaining WSGI routes with native ASGI endpoints or another maintained WSGI-to-ASGI bridge without changing Core or frontend contracts.
 pyproject dependency: a2wsgi
 declared dependency: a2wsgi>=1.10.10,<2
 
