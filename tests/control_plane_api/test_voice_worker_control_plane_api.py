@@ -186,3 +186,14 @@ def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(t
     assert assets["required_blocked_count"] >= 5
     assert remove_status == "200 OK"
     assert remove["removed"] is False
+
+
+def test_control_plane_voice_worker_exposes_safe_model_catalog() -> None:
+    app = _app()
+
+    status, _headers, catalog = _call(app, "/control/voice/worker/models/catalog")
+
+    assert status == "200 OK"
+    assert catalog["raw_payload_persisted"] is False
+    assert any(asset["model_id"] == "moonshine-v2" for asset in catalog["assets"])
+    assert all(asset["explicit_user_triggered"] is True for asset in catalog["assets"])

@@ -93,6 +93,7 @@ def test_default_kokoro_runner_synthesizes_to_generated_audio_ref(tmp_path: Path
     (asset_dir / "model.onnx").write_bytes(b"onnx")
     (asset_dir / "voices.npy").write_bytes(b"voices")
     manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart/voices.npy", explicit_user_triggered=True))
     calls: list[tuple[str, str, str]] = []
 
     class FakeAudio:
