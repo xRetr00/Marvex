@@ -12,7 +12,7 @@ declared dependency: fastapi>=0.135,<0.137
 library name: a2wsgi
 official source: https://github.com/abersheeran/a2wsgi
 decision: removed from Marvex runtime dependencies.
-why removed: The native-ASGI migration no longer needs a maintained WSGI-to-ASGI middleware bridge in the product host. Legacy WSGI factories remain only as narrow compatibility/test surfaces until route-equivalent native tests cover deletion.
+why removed: The native-ASGI migration no longer needs a WSGI-to-ASGI middleware bridge. WSGI factories and compatibility tests have been deleted from runtime code.
 fallback if needed again: Re-introduce a maintained WSGI adapter only behind `packages.local_api.asgi_host`, never inside Core business logic or frontend-owned paths.
 pyproject dependency: none
 
