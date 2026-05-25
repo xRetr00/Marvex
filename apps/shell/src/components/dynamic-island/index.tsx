@@ -55,24 +55,37 @@ export default function DynamicIsland({
 
   return (
     <motion.div
-      className={`marvex-dynamic-island-pill mx-auto w-fit min-w-[100px] overflow-hidden rounded-full bg-black ${className}`}
+      className={`marvex-dynamic-island-pill mx-auto overflow-hidden bg-black ${className}`}
       layout
-      style={{ borderRadius: 32 }}
+      style={{
+        width: "min(360px, calc(100vw - 20px))",
+        boxSizing: "border-box",
+        background: "#000",
+        borderRadius: 30,
+        padding: "14px 20px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        color: "#fff",
+        userSelect: "none",
+        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
+      }}
       transition={
         shouldReduceMotion
           ? { duration: 0 }
           : {
               type: "spring" as const,
               bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE,
-              duration: 0.25,
+              duration: 0.45,
             }
       }
     >
       <AnimatePresence mode="wait">
         <motion.div
           key={view}
+          style={{ width: "100%", minWidth: 0 }}
           animate={shouldReduceMotion ? { scale: 1, opacity: 1 } : { scale: 1, opacity: 1, filter: "blur(0px)", originX: 0.5, originY: 0.5, transition: { delay: 0.05 } }}
-          initial={{ scale: 0.9, opacity: 0, filter: "blur(5px)", originX: 0.5, originY: 0.5 }}
+          initial={{ scale: 0.8, opacity: 0, filter: "blur(5px)", originX: 0.5, originY: 0.5 }}
           transition={{ type: "spring" as const, bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE }}
         >
           {content}
