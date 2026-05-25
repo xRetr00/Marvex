@@ -19,6 +19,9 @@ def test_packaged_runtime_smoke_script_documents_runtime_contract() -> None:
     assert "/control/health" in text
     assert "/control/state" in text
     assert "/control/state/stream" in text
+    assert "/browser-session/leases" in text
+    assert "/sessions" in text
+    assert "Invoke-RuntimeClaim" in text
     assert "[Diagnostics.Stopwatch]::StartNew()" in text
     assert "/v1/turns" in text
     assert "manifest.json" in text

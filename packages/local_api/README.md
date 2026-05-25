@@ -166,9 +166,12 @@ ASGI host slice:
   app for routes that have migrated to native ownership.
 - FastAPI/Uvicorn server ownership stays out of `services.core`; Core imports
   only the adapter seam and must not own framework APIs directly.
-- Native ASGI migration is incremental. The first migrated Control Plane routes
-  are `/control/state` and `/control/state/stream`; the rest of the Control
-  Plane remains behind the WSGI fallback until explicitly moved.
+- Native ASGI migration is incremental. The migrated Control Plane routes are
+  `/control/state`, `/control/state/stream`, `/control/browser-session/leases`,
+  `/control/browser-session/claim`, `GET /control/sessions`,
+  `POST /control/sessions`, `GET /control/health`, and
+  `GET /control/version`; the rest of the Control Plane remains behind the WSGI
+  fallback until explicitly moved.
 
 Auth decision:
 

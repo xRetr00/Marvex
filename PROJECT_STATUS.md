@@ -1,15 +1,34 @@
 # Project Status
 
-current_phase: native_asgi_control_plane_state_boundary_checkpoint
-current_phase: native_asgi_control_plane_state_boundary_checkpoint
+current_phase: native_asgi_control_plane_session_boundary_checkpoint
 
-implementation_status: native_asgi_control_plane_state_boundary_checkpoint
-implementation_status: native_asgi_control_plane_state_boundary_checkpoint
+implementation_status: native_asgi_control_plane_session_boundary_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Native ASGI Control Plane State Boundary Checkpoint
+Native ASGI Control Plane Session Boundary Checkpoint
+
+## Native ASGI Control Plane Session Boundary Checkpoint
+
+The native-ASGI endpoint ownership migration now includes Control Plane browser
+session and backend-owned session metadata routes. Native FastAPI routes own
+`POST /control/browser-session/leases`, `GET /control/browser-session/claim`,
+`GET /control/sessions`, and `POST /control/sessions`, sharing the same
+`BrowserSessionManager` and `BackendSessionCoordinator` used by the WSGI
+fallback and Core turn execution.
+
+The browser-session contract is unchanged: lease responses do not expose the
+raw bearer token, claims remain one-time and short-lived, claim success sets an
+HttpOnly SameSite cookie, and browser cookie auth remains scoped to Control
+Plane routes. Session responses remain safe projections only and do not persist
+raw prompts, assistant messages, transcripts, provider payloads, UI state, or
+tokens.
+
+The first read-only Control Plane inspection routes have also moved to native
+ASGI: `GET /control/health` and `GET /control/version`. They preserve the
+existing authenticated payloads and keep the WSGI bridge mounted for the
+remaining read-only and mutation APIs.
 
 ## Packaged Runtime Wheel Freshness Checkpoint
 

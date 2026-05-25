@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 from packages.contracts.state_event import AssistantStatusKind
 from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, create_control_plane_api_app
 from packages.control_plane_api.browser_session import BrowserSessionManager
+from packages.session_runtime import BackendSessionCoordinator
 from packages.state_bus import AssistantStateBus
 
 
@@ -50,10 +51,32 @@ def test_control_plane_asgi_app_mounts_wsgi_fallback_for_non_state_routes() -> N
         browser_session_manager=BrowserSessionManager(),
     )
 
-    response = TestClient(app).get("/control/health", headers={"Authorization": "Bearer state-token"})
+    response = TestClient(app).get("/control/diagnostics", headers={"Authorization": "Bearer state-token"})
 
     assert response.status_code == 200
-    assert response.json() == {"fallback_path": "/control/health"}
+    assert response.json() == {"fallback_path": "/control/diagnostics"}
+
+
+def test_control_plane_asgi_health_and_version_routes_are_native() -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=BrowserSessionManager(),
+    )
+    client = TestClient(app)
+
+    health = client.get("/control/health", headers={"Authorization": "Bearer state-token"})
+    version = client.get("/control/version", headers={"Authorization": "Bearer state-token"})
+
+    assert health.status_code == 200
+    assert health.json() == {"schema_version": "1", "status": "ok"}
+    assert "fallback_path" not in health.text
+    assert version.status_code == 200
+    assert version.json() == {"schema_version": "1", "service": "marvex-control-plane-api"}
+    assert "fallback_path" not in version.text
 
 
 def test_control_plane_asgi_state_route_accepts_shared_browser_cookie() -> None:
@@ -101,6 +124,99 @@ def test_control_plane_asgi_state_route_rejects_invalid_auth() -> None:
 
     assert response.status_code == 401
     assert response.json()["details"]["reason"] == "invalid"
+
+
+def test_control_plane_asgi_browser_session_routes_are_native_and_cookie_authenticates() -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    values: Iterator[str] = iter(("claim-token", "session-token"))
+    browser_sessions = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: next(values))
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=browser_sessions,
+        session_coordinator=BackendSessionCoordinator(),
+    )
+    client = TestClient(app)
+
+    lease_response = client.post("/control/browser-session/leases", headers={"Authorization": "Bearer state-token"})
+    assert lease_response.status_code == 200
+    lease = lease_response.json()
+    assert lease["claim_url"] == "/control/browser-session/claim?claim=claim-token"
+    assert lease["token_value_logged"] is False
+    assert "fallback_path" not in lease_response.text
+    assert "state-token" not in lease_response.text
+
+    claim_response = client.get(lease["claim_url"], follow_redirects=False)
+    assert claim_response.status_code == 302
+    assert claim_response.json() == {}
+    assert "HttpOnly" in claim_response.headers["set-cookie"]
+    assert "SameSite=Strict" in claim_response.headers["set-cookie"]
+    assert "fallback_path" not in claim_response.text
+
+    cookie_response = client.get("/control/sessions")
+    assert cookie_response.status_code == 200
+    assert cookie_response.json()["schema_version"] == "1"
+
+
+def test_control_plane_asgi_browser_session_claim_is_one_time() -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    values: Iterator[str] = iter(("claim-token", "session-token"))
+    browser_sessions = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: next(values))
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=browser_sessions,
+        session_coordinator=BackendSessionCoordinator(),
+    )
+    client = TestClient(app)
+    lease = client.post("/control/browser-session/leases", headers={"Authorization": "Bearer state-token"}).json()
+
+    assert client.get(lease["claim_url"], follow_redirects=False).status_code == 302
+    second_claim = client.get(lease["claim_url"], follow_redirects=False)
+
+    assert second_claim.status_code == 401
+    assert second_claim.json()["details"]["reason"] == "invalid_browser_session_claim"
+
+
+def test_control_plane_asgi_session_routes_are_native_safe_projections() -> None:
+    from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
+    coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000, id_factory=lambda: "session-native")
+    coordinator.create_session(title="Existing native session")
+    app = create_control_plane_asgi_app(
+        control_wsgi_app=_wsgi_fallback,
+        local_auth_token="state-token",
+        state_bus=AssistantStateBus(),
+        browser_session_manager=BrowserSessionManager(),
+        session_coordinator=coordinator,
+    )
+    client = TestClient(app)
+
+    list_response = client.get("/control/sessions", headers={"Authorization": "Bearer state-token"})
+    assert list_response.status_code == 200
+    listed = list_response.json()
+    assert listed["session_count"] == 1
+    assert listed["sessions"][0]["title"] == "Existing native session"
+    assert listed["transcript_persisted"] is False
+    assert "fallback_path" not in list_response.text
+    assert "state-token" not in list_response.text.lower()
+
+    create_response = client.post(
+        "/control/sessions",
+        headers={"Authorization": "Bearer state-token"},
+        json={"title": "Created native session"},
+    )
+
+    assert create_response.status_code == 200
+    created = create_response.json()
+    assert created["session"]["title"] == "Created native session"
+    assert created["session"]["session_ref"] == {"ref_type": "session", "ref_id": "session-native"}
+    assert created["transcript_persisted"] is False
+    assert "fallback_path" not in create_response.text
 
 
 def test_control_plane_asgi_state_stream_yields_updates_and_unsubscribes() -> None:

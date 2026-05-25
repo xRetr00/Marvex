@@ -313,6 +313,8 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
     captured: dict[str, object] = {}
 
     def fake_run_dual_asgi_host(**kwargs):
+        from fastapi.testclient import TestClient
+
         captured.update(kwargs)
         control_app = kwargs["control_wsgi_app"]
         core_app = kwargs["core_wsgi_app"]
@@ -321,6 +323,7 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
         session_id = create_payload["session"]["session_ref"]["ref_id"]
         turn_status, turn_payload = _call_app(core_app, "/v1/turns", method="POST", body=_turn_payload(session_id=session_id), auth=auth)
         list_status, list_payload = _call_app(control_app, "/control/sessions", auth=auth)
+        asgi_response = TestClient(kwargs["control_asgi_app"]).get("/control/sessions", headers={"Authorization": auth})
         captured["session_result"] = {
             "create_status": create_status,
             "session_id": session_id,
@@ -328,6 +331,8 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
             "turn_payload": turn_payload,
             "list_status": list_status,
             "list_payload": list_payload,
+            "asgi_status": asgi_response.status_code,
+            "asgi_payload": asgi_response.json(),
         }
         return 0
 
@@ -353,6 +358,9 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
     assert list_payload["sessions"][0]["session_ref"]["ref_id"] == session_id
     assert list_payload["sessions"][0]["turn_count"] == 1
     assert list_payload["sessions"][0]["transcript_persisted"] is False
+    assert result["asgi_status"] == 200
+    assert result["asgi_payload"]["sessions"][0]["session_ref"]["ref_id"] == session_id
+    assert result["asgi_payload"]["sessions"][0]["turn_count"] == 1
 
 
 def test_core_service_entrypoint_main_uses_env_token_for_supervisor_path(monkeypatch):

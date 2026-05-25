@@ -2664,6 +2664,7 @@ def run_core_service(
                     local_auth_token=effective_config.local_auth_token,
                     state_bus=state_bus,
                     browser_session_manager=browser_session_manager,
+                    session_coordinator=session_coordinator,
                 ),
                 config=asgi_config,
                 startup_message=build_asgi_startup_message(

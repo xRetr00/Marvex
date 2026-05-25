@@ -7,7 +7,8 @@ param(
 $ErrorActionPreference = "Stop"
 
 # Contract endpoints: /health, /control/health, /control/state,
-# /control/state/stream, and /v1/turns.
+# /control/state/stream, /control/browser-session/*, /control/sessions,
+# and /v1/turns.
 
 $ScriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $RepoRoot = Split-Path -Parent $ScriptRoot
@@ -159,6 +160,56 @@ function Invoke-RuntimePost([string]$Url, [string]$Token, [object]$Body) {
         -TimeoutSec 90
 }
 
+function Invoke-RuntimeGetWithCookie([string]$Url, [string]$Cookie) {
+    $request = [System.Net.HttpWebRequest]::Create($Url)
+    $request.Method = "GET"
+    $request.Timeout = 15000
+    $request.Headers.Add("Cookie", $Cookie)
+    try {
+        $response = $request.GetResponse()
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+    }
+    if ($null -eq $response) {
+        throw "cookie-authenticated request returned no response"
+    }
+    try {
+        if ([int]$response.StatusCode -ne 200) {
+            throw "cookie-authenticated request returned HTTP $([int]$response.StatusCode)"
+        }
+        $reader = New-Object System.IO.StreamReader($response.GetResponseStream())
+        try {
+            return ($reader.ReadToEnd() | ConvertFrom-Json)
+        } finally {
+            $reader.Dispose()
+        }
+    } finally {
+        $response.Dispose()
+    }
+}
+
+function Invoke-RuntimeClaim([string]$Url) {
+    $request = [System.Net.HttpWebRequest]::Create($Url)
+    $request.Method = "GET"
+    $request.AllowAutoRedirect = $false
+    try {
+        $response = $request.GetResponse()
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+    }
+    if ($null -eq $response) {
+        throw "browser session claim returned no response"
+    }
+    try {
+        return @{
+            StatusCode = [int]$response.StatusCode
+            SetCookie = [string]$response.Headers["Set-Cookie"]
+        }
+    } finally {
+        $response.Dispose()
+    }
+}
+
 function Read-StateStreamOnce([string]$Token) {
     $client = New-Object System.Net.Sockets.TcpClient
     try {
@@ -275,6 +326,31 @@ try {
     $streamText = Read-StateStreamOnce $token
     if ($streamText -notmatch "data:") {
         throw "state stream returned no SSE data"
+    }
+
+    Write-Step "checking Control Plane browser session and session APIs"
+    $browserLease = Invoke-RuntimePost "$($lease.control_base_url)/browser-session/leases" $token @{}
+    if (-not $browserLease.claim_url -or $browserLease.token_value_logged) {
+        throw "browser session lease metadata is unsafe"
+    }
+    $browserLeaseText = $browserLease | ConvertTo-Json -Depth 8
+    if ($browserLeaseText.Contains($token)) {
+        throw "browser session lease exposed raw token material"
+    }
+    $controlOrigin = [Uri]$lease.control_base_url
+    $claimUri = [Uri]::new($controlOrigin, [string]$browserLease.claim_url)
+    $claim = Invoke-RuntimeClaim $claimUri.AbsoluteUri
+    if ($claim.StatusCode -ne 302 -or -not $claim.SetCookie.Contains("HttpOnly") -or -not $claim.SetCookie.Contains("SameSite=Strict")) {
+        throw "browser session claim did not return a safe cookie"
+    }
+    $browserCookie = $claim.SetCookie.Split(";", 2)[0]
+    $sessions = Invoke-RuntimeGetWithCookie "$($lease.control_base_url)/sessions" $browserCookie
+    if ($sessions.schema_version -ne "1" -or $sessions.transcript_persisted) {
+        throw "browser-cookie session list response is unsafe"
+    }
+    $createdSession = Invoke-RuntimePost "$($lease.control_base_url)/sessions" $token @{ title = "Packaged runtime smoke" }
+    if ($createdSession.schema_version -ne "1" -or $createdSession.transcript_persisted -or -not $createdSession.session.session_ref.ref_id) {
+        throw "backend session create response is unsafe"
     }
 
     Write-Step "submitting worker-backed turn"
