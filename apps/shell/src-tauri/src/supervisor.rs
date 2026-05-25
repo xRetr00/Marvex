@@ -233,7 +233,17 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             name: "core",
             module: "services.core.main",
             sidecar: "marvex-core",
-            args: vec!["--serve".into(), "--host".into(), "127.0.0.1".into(), "--port".into(), CORE_PORT.to_string()],
+            args: vec![
+                "--serve".into(),
+                "--host".into(),
+                "127.0.0.1".into(),
+                "--port".into(),
+                CORE_PORT.to_string(),
+                "--provider".into(),
+                "provider_worker".into(),
+                "--worker-provider".into(),
+                "fake".into(),
+            ],
             env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
         },
@@ -307,6 +317,45 @@ fn first_marvex_wheel(resource_dir: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(String, String)> {
+    let mut env = Vec::new();
+    if let Some(uv) = find_uv(resource_dir) {
+        if uv.is_absolute() && uv.is_file() {
+            env.push(("MARVEX_UV_PATH".to_string(), uv.to_string_lossy().to_string()));
+        }
+    }
+    let web_dist = resource_dir
+        .map(|dir| dir.join("control_plane_web"))
+        .filter(|path| path.is_dir())
+        .or_else(|| {
+            let path = repo_root
+                .join("apps")
+                .join("control_plane_web")
+                .join("dist");
+            path.is_dir().then_some(path)
+        });
+    if let Some(path) = web_dist {
+        env.push((
+            "MARVEX_CONTROL_WEB_DIST".to_string(),
+            path.to_string_lossy().to_string(),
+        ));
+    }
+    let voice_assets = resource_dir
+        .map(|dir| dir.join("voice-assets"))
+        .filter(|path| path.is_dir())
+        .or_else(|| {
+            let path = repo_root.join("apps").join("shell").join("voice-assets");
+            path.is_dir().then_some(path)
+        });
+    if let Some(path) = voice_assets {
+        env.push((
+            "MARVEX_VOICE_ASSET_ROOT".to_string(),
+            path.to_string_lossy().to_string(),
+        ));
+    }
+    env
 }
 
 /// Ensure a runnable Python environment exists, creating it on first launch.
@@ -555,45 +604,14 @@ fn spawn_service(
         command
     };
 
-    // Expose the bundled uv to services so the Deps tab can install extra
-    // packages into this same venv (importable without a restart).
-    if let Some(uv) = find_uv(resource_dir) {
-        if uv.is_absolute() {
-            command.env("MARVEX_UV_PATH", uv);
-        }
+    let repo_root = project_root();
+    for (name, value) in resource_env_paths(resource_dir, &repo_root) {
+        command.env(name, value);
     }
     for (name, value) in &spec.env {
         command.env(name, value);
     }
-    // Point the control plane server at the built control_plane_web SPA so the
-    // shell's Control Plane window can load it same-origin. Prefer a bundled
-    // copy in the resource dir; fall back to the dev checkout dist.
-    let web_dist = resource_dir
-        .map(|dir| dir.join("control_plane_web"))
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| {
-            project_root()
-                .join("apps")
-                .join("control_plane_web")
-                .join("dist")
-        });
-    if web_dist.is_dir() {
-        command.env("MARVEX_CONTROL_WEB_DIST", web_dist);
-    }
     command.env("MARVEX_LOG_DIR", log_dir);
-    // Point the voice worker at the bundled/installed "Hey Marvex" model assets.
-    let voice_assets = resource_dir
-        .map(|dir| dir.join("voice-assets"))
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| {
-            project_root()
-                .join("apps")
-                .join("shell")
-                .join("voice-assets")
-        });
-    if voice_assets.is_dir() {
-        command.env("MARVEX_VOICE_ASSET_ROOT", voice_assets);
-    }
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -657,10 +675,16 @@ fn attach_log_pipe(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_uv, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
+        find_uv, resource_env_paths, service_kind_label, service_specs, sidecar_path, venv_root,
+        venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
         ServiceKind,
     };
-    use std::path::Path;
+    use serde_json::Value;
+    use std::{
+        fs,
+        path::Path,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn core_command_receives_token_without_logging_it_in_status() {
@@ -672,6 +696,18 @@ mod tests {
             .iter()
             .any(|(name, value)| name == "MARVEX_LOCAL_AUTH_TOKEN" && value == "secret-token"));
         assert_eq!(core.module, "services.core.main");
+    }
+
+    #[test]
+    fn core_service_uses_worker_backed_provider_path() {
+        let specs = service_specs("secret-token");
+        let core = specs.iter().find(|spec| spec.name == "core").expect("core");
+
+        assert!(core.args.windows(2).any(|pair| pair == ["--provider", "provider_worker"]));
+        assert!(core
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--worker-provider", "fake"]));
     }
 
     #[test]
@@ -726,5 +762,70 @@ mod tests {
         assert!(!names.contains(&"provider_worker"));
         assert!(!names.contains(&"intent_worker"));
         assert!(!names.contains(&"tool_worker"));
+    }
+
+    #[test]
+    fn runtime_manifest_lists_only_shell_supervised_services_without_token() {
+        let root = unique_temp_dir("manifest-contract");
+        let data_dir = root.join("data");
+        let log_dir = root.join("logs");
+        fs::create_dir_all(&data_dir).expect("data dir");
+        fs::create_dir_all(&log_dir).expect("log dir");
+        let status = SupervisorStatus::default();
+        status.set("runtime", "ready");
+        let config = RuntimeConfig {
+            token: "secret-token".to_string(),
+            log_dir,
+            data_dir: data_dir.clone(),
+            resource_dir: None,
+        };
+
+        write_runtime_manifest(&config, &RuntimeOutcome::Dev, &status);
+
+        let manifest_text = fs::read_to_string(data_dir.join("runtime").join("manifest.json"))
+            .expect("manifest");
+        let manifest: Value = serde_json::from_str(&manifest_text).expect("manifest json");
+        let services = manifest["services"].as_array().expect("services");
+        let names: Vec<_> = services
+            .iter()
+            .filter_map(|service| service["name"].as_str())
+            .collect();
+
+        assert_eq!(names, vec!["core", "voice_worker"]);
+        assert!(!manifest_text.contains("secret-token"));
+    }
+
+    #[test]
+    fn resource_env_paths_are_present_only_when_resources_exist() {
+        let root = unique_temp_dir("resource-env-contract");
+        let resource_dir = root.join("resources");
+        fs::create_dir_all(resource_dir.join("control_plane_web")).expect("control web");
+        fs::create_dir_all(resource_dir.join("voice-assets")).expect("voice assets");
+        fs::write(resource_dir.join("uv.exe"), b"uv").expect("uv");
+
+        let env = resource_env_paths(Some(&resource_dir), &root);
+
+        assert!(env.iter().any(|(name, value)| {
+            name == "MARVEX_UV_PATH" && value.ends_with("uv.exe")
+        }));
+        assert!(env.iter().any(|(name, value)| {
+            name == "MARVEX_CONTROL_WEB_DIST" && value.ends_with("control_plane_web")
+        }));
+        assert!(env.iter().any(|(name, value)| {
+            name == "MARVEX_VOICE_ASSET_ROOT" && value.ends_with("voice-assets")
+        }));
+
+        let missing = resource_env_paths(Some(&root.join("missing")), &root);
+        assert!(missing.is_empty());
+    }
+
+    fn unique_temp_dir(label: &str) -> std::path::PathBuf {
+        let suffix = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!("marvex-{label}-{suffix}"));
+        fs::create_dir_all(&path).expect("temp dir");
+        path
     }
 }

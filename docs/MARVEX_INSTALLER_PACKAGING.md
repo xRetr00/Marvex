@@ -23,14 +23,14 @@ Marvex uses **Tier 1: Production (Setuptools Console Scripts)** for runtime serv
 4. Installs wheel: `uv pip install marvex-0.1.0-py3-none-any.whl`
 5. Setuptools generates console script entry points:
    - `~/.marvex/runtime/venv/Scripts/marvex-core.exe`
-   - `~/.marvex/runtime/venv/Scripts/marvex-provider-worker.exe`
-   - `~/.marvex/runtime/venv/Scripts/marvex-intent-worker.exe`
-   - `~/.marvex/runtime/venv/Scripts/marvex-tool-worker.exe`
    - `~/.marvex/runtime/venv/Scripts/marvex-voice-worker.exe`
+   - Provider, intent, and tool worker entry points are still installed, but
+     Core owns those persistent JSONL workers internally instead of Tauri
+     supervising them as top-level service children.
 
 **Service invocation**:
 ```
-Supervisor → MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> ~/.marvex/runtime/venv/Scripts/marvex-core.exe --serve --port 8765
+Supervisor → MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> ~/.marvex/runtime/venv/Scripts/marvex-core.exe --serve --host 127.0.0.1 --port 8765 --provider provider_worker --worker-provider fake
 ```
 
 **Advantages**:
@@ -207,17 +207,22 @@ Write manifest to ~/.marvex/runtime/manifest.json
       "port": 8765
     },
     {
-      "name": "provider_worker",
-      "module": "services.provider_worker.main",
-      "console_script": "marvex-provider-worker",
-      "exe": "C:\\Users\\username\\.marvex\\runtime\\venv\\Scripts\\marvex-provider-worker.exe",
+      "name": "voice_worker",
+      "module": "services.voice_worker.main",
+      "console_script": "marvex-voice-worker",
+      "exe": "C:\\Users\\username\\.marvex\\runtime\\venv\\Scripts\\marvex-voice-worker.exe",
       "runtime_tier": "tier1_setuptools",
-      "kind": "jsonl"
+      "kind": "jsonl",
+      "port": null
     }
-    // ...
   ]
 }
 ```
+
+The manifest intentionally lists only shell-supervised service children:
+`core` and `voice_worker`. Provider, intent, and tool workers are Core-owned
+persistent JSONL worker processes and must not appear as Tauri-supervised
+manifest services.
 
 ---
 
@@ -252,16 +257,17 @@ else {
 
 **Core daemon**:
 ```bash
-MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> marvex-core.exe --serve --host 127.0.0.1 --port 8765
+MARVEX_LOCAL_AUTH_TOKEN=<TOKEN> marvex-core.exe --serve --host 127.0.0.1 --port 8765 --provider provider_worker --worker-provider fake
 ```
 
-**Worker services** (JSONL protocol):
+**Shell-supervised worker service**:
 ```bash
-marvex-provider-worker.exe --jsonl
-marvex-intent-worker.exe --jsonl
-marvex-tool-worker.exe --jsonl
 marvex-voice-worker.exe --jsonl
 ```
+
+ProviderWorker, IntentWorker, and ToolWorker still use the JSONL protocol, but
+they are spawned and reused by Core as backend-owned internals. The shell
+supervisor no longer launches disconnected provider/intent/tool worker children.
 
 ### Process Management
 
@@ -271,6 +277,42 @@ marvex-voice-worker.exe --jsonl
 - ✅ Auto-restart on failure (exponential backoff: 1s → 2s → 4s → ... → 30s max)
 - ✅ Graceful shutdown (stop commands for JSONL workers, kill for hung processes)
 - ✅ Logging to `~/.marvex/logs/` (stdout/stderr separated)
+
+---
+
+## Packaged Runtime Smoke
+
+The non-elevated smoke command verifies the release backend runtime without
+installing the Windows service:
+
+```powershell
+npm --prefix apps/control_plane_web run build
+npm --prefix apps/shell run build
+uv build --wheel
+Copy-Item dist/marvex-0.1.0-py3-none-any.whl apps/shell/runtime/marvex-0.1.0-py3-none-any.whl -Force
+cargo build --release --bin marvex-service --manifest-path apps/shell/src-tauri/Cargo.toml
+powershell -ExecutionPolicy Bypass -File scripts/smoke_packaged_runtime.ps1
+```
+
+Rebuild and copy the Python wheel before the service build. The smoke verifies
+the packaged resource path. For the default `target/release` service binary,
+the smoke stages `apps/shell/runtime/*.whl`, `uv.exe`, the built Control Plane
+web dist, and voice assets next to the binary before launch.
+
+The smoke starts `marvex-service.exe --console` with a temporary `ProgramData`
+root, obtains a token lease from `\\.\pipe\Marvex.TokenHandoff.v1`, verifies
+`/health`, `/control/health`, `/control/state`, `/control/state/stream`, and a
+protected `/v1/turns` call, checks that the manifest lists only `core` and
+`voice_worker`, and then requests a graceful console shutdown.
+
+Expected pass signals:
+- token lease reports `auth_token_present: true` and `token_value_logged: false`
+- `/v1/turns` metadata reports `provider_boundary: provider_worker_process`
+- manifest does not contain the raw bearer token
+- ports `8765` and `8766` are free again after shutdown
+
+`marvex-service --install` and `--uninstall` remain elevated service-management
+commands. `--console` is only the local smoke/debug mode.
 
 ---
 
@@ -473,8 +515,8 @@ Check logs:
 type $env:USERPROFILE\.marvex\logs\core.stdout.log
 type $env:USERPROFILE\.marvex\logs\core.stderr.log
 
-# Other services
-type $env:USERPROFILE\.marvex\logs\provider_worker.stdout.log
+# Voice worker
+type $env:USERPROFILE\.marvex\logs\voice_worker.stdout.log
 ```
 
 ### Venv Bootstrap Fails
@@ -486,9 +528,10 @@ type $env:USERPROFILE\.marvex\logs\runtime.bootstrap.log
 ### Token Issues
 
 Tokens are never logged (security). If token verification fails, check:
-1. Backend received token via CLI args
-2. Frontend received token from `shell_runtime_config()`
-3. Authorization header format: `Bearer <TOKEN>`
+1. Core received `MARVEX_LOCAL_AUTH_TOKEN` in its private environment
+2. Shell attach received a lease from the named-pipe token handoff broker
+3. Frontend received token from `shell_runtime_config()`
+4. Authorization header format: `Bearer <TOKEN>`
 
 ---
 
