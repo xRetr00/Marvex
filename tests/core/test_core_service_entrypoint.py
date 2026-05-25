@@ -55,6 +55,7 @@ def _turn_payload(
     *,
     trace_id: str = "trace-core-entrypoint",
     turn_id: str = "turn-core-entrypoint",
+    session_id: str | None = None,
 ) -> dict:
     return {
         "schema_version": SCHEMA_VERSION,
@@ -64,7 +65,11 @@ def _turn_payload(
             "trace_id": trace_id,
             "turn_id": turn_id,
             "input_event_id": "event-core-entrypoint",
-            "session_ref": None,
+            "session_ref": (
+                {"ref_type": "session", "ref_id": session_id}
+                if session_id is not None
+                else None
+            ),
             "identity_ref": None,
             "user_visible_input": "Hello through the real Core service entrypoint",
             "assistant_mode": AssistantMode.DEFAULT.value,
@@ -299,6 +304,70 @@ def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
     assert asgi_config.port == 9877
     assert asgi_config.control_host == "127.0.0.1"
     assert asgi_config.control_port == 9878
+
+
+def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane(monkeypatch):
+    import services.core.main as core_main
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    captured: dict[str, object] = {}
+
+    def fake_run_dual_asgi_host(**kwargs):
+        captured.update(kwargs)
+        control_app = kwargs["control_wsgi_app"]
+        core_app = kwargs["core_wsgi_app"]
+        create_status, create_payload = _call_app(
+            control_app,
+            "/control/sessions",
+            method="POST",
+            body={"title": "Shared session"},
+            auth=f"Bearer {EXPECTED_TOKEN}",
+        )
+        session_id = create_payload["session"]["session_ref"]["ref_id"]
+        turn_status, turn_payload = _call_app(
+            core_app,
+            "/v1/turns",
+            method="POST",
+            body=_turn_payload(session_id=session_id),
+            auth=f"Bearer {EXPECTED_TOKEN}",
+        )
+        list_status, list_payload = _call_app(
+            control_app,
+            "/control/sessions",
+            auth=f"Bearer {EXPECTED_TOKEN}",
+        )
+        captured["session_result"] = {
+            "create_status": create_status,
+            "session_id": session_id,
+            "turn_status": turn_status,
+            "turn_payload": turn_payload,
+            "list_status": list_status,
+            "list_payload": list_payload,
+        }
+        return 0
+
+    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+
+    exit_code = run_core_service(
+        config=CoreServiceEntrypointConfig(
+            local_auth_token=EXPECTED_TOKEN,
+            port=9877,
+            control_port=9878,
+        ),
+    )
+
+    assert exit_code == 0
+    result = captured["session_result"]
+    assert result["create_status"] == "200 OK"
+    assert result["turn_status"] == "200 OK"
+    assert result["turn_payload"]["metadata"]["session"]["turn_count"] == 1
+
+    session_id = result["session_id"]
+    list_payload = result["list_payload"]
+    assert result["list_status"] == "200 OK"
+    assert list_payload["sessions"][0]["session_ref"]["ref_id"] == session_id
+    assert list_payload["sessions"][0]["turn_count"] == 1
+    assert list_payload["sessions"][0]["transcript_persisted"] is False
 
 
 def test_core_service_entrypoint_main_uses_env_token_for_supervisor_path(monkeypatch):

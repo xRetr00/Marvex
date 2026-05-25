@@ -10,10 +10,12 @@ from packages.local_api.auth_policy import validate_local_bearer_token
 from packages.capability_runtime import AutonomyMode, AutonomyPolicy, PolicyDecisionAuditRecord
 from packages.marketplace_runtime import MarketplaceEnablementState, MarketplaceProposalStore
 from packages.memory_runtime import MemoryRef
+from packages.session_runtime import BackendSessionCoordinator
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
 from .approvals import InMemoryApprovalStore
 from .agents import handle_agent_control_request
+from .browser_session import BrowserSessionManager
 from .deps import handle_deps_request
 from .logs import logs_payload
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
@@ -61,9 +63,13 @@ def create_control_plane_api_app(
     persona_catalog_projection: dict[str, Any] | None = None,
     web_dist: str | None = None,
     log_reader: Any | None = None,
+    session_coordinator: BackendSessionCoordinator | None = None,
+    browser_session_manager: BrowserSessionManager | None = None,
 ) -> WsgiApp:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
+    sessions = session_coordinator or BackendSessionCoordinator()
+    browser_sessions = browser_session_manager or BrowserSessionManager()
 
     def app(environ: dict[str, Any], start_response: StartResponse) -> Iterable[bytes]:
         nonlocal runtime_policy
@@ -71,6 +77,28 @@ def create_control_plane_api_app(
         raw_path = str(environ.get("PATH_INFO", "/"))
         path, _separator, inline_query = raw_path.partition("?")
         query_string = str(environ.get("QUERY_STRING") or inline_query)
+
+        if method == "GET" and path == f"{CONTROL_PREFIX}/browser-session/claim":
+            claim = _first(parse_qs(query_string, keep_blank_values=False), "claim")
+            session = browser_sessions.claim(claim)
+            if session is None:
+                return _json_response(
+                    start_response,
+                    "401 Unauthorized",
+                    _auth_error("invalid_browser_session_claim"),
+                )
+            body = b"{}"
+            start_response(
+                "302 Found",
+                [
+                    ("Content-Type", "application/json"),
+                    ("Content-Length", str(len(body))),
+                    ("Set-Cookie", browser_sessions.cookie_header(session)),
+                    ("Location", "/"),
+                ],
+                None,
+            )
+            return [body]
 
         # Serve the bundled control_plane_web SPA (unauthenticated static assets)
         # for any non-/control GET so the window loads same-origin; the SPA's
@@ -94,8 +122,36 @@ def create_control_plane_api_app(
             expected_token=local_auth_token,
             trace_id="trace-control-plane-auth-required",
         )
-        if auth_error is not None:
+        if auth_error is not None and not browser_sessions.validate_cookie_header(_cookie_header(environ)):
             return _json_response(start_response, "401 Unauthorized", auth_error.model_dump(mode="json"))
+
+        if method == "POST" and path == f"{CONTROL_PREFIX}/browser-session/leases":
+            return _json_response(start_response, "200 OK", browser_sessions.create_lease())
+
+        if method == "GET" and path == f"{CONTROL_PREFIX}/sessions":
+            session_payloads = [handle.safe_projection() for handle in sessions.list_sessions()]
+            return _json_response(
+                start_response,
+                "200 OK",
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "sessions": session_payloads,
+                    "session_count": len(session_payloads),
+                    "transcript_persisted": False,
+                },
+            )
+        if method == "POST" and path == f"{CONTROL_PREFIX}/sessions":
+            title = _parse_session_title(environ)
+            handle = sessions.create_session(title=title)
+            return _json_response(
+                start_response,
+                "200 OK",
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "session": handle.safe_projection(),
+                    "transcript_persisted": False,
+                },
+            )
 
         voice_response = handle_voice_control_request(method=method, path=path, environ=environ, voice_control=voice_control, voice_worker_control=voice_worker_control)
         if voice_response is not None:
@@ -448,6 +504,35 @@ def _read_request_body(environ: dict[str, Any]) -> str:
 def _authorization_header(environ: dict[str, Any]) -> str | None:
     value = environ.get("HTTP_AUTHORIZATION")
     return value if isinstance(value, str) else None
+
+
+def _cookie_header(environ: dict[str, Any]) -> str | None:
+    value = environ.get("HTTP_COOKIE")
+    return value if isinstance(value, str) else None
+
+
+def _auth_error(reason: str) -> dict[str, Any]:
+    return ErrorEnvelope(
+        schema_version="0.1.1-draft",
+        trace_id="trace-control-plane-auth-required",
+        error_id="control-plane-auth-required",
+        code=ErrorCode.AUTH_REQUIRED,
+        message="Local API authentication required.",
+        recoverable=False,
+        source="control_plane_api",
+        details={"reason": reason},
+    ).model_dump(mode="json")
+
+
+def _parse_session_title(environ: dict[str, Any]) -> str | None:
+    try:
+        payload = json.loads(_read_request_body(environ))
+    except Exception:
+        return None
+    if not isinstance(payload, dict):
+        return None
+    value = payload.get("title")
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _trace_search_query(query_string: str) -> TraceSearchQuery:
