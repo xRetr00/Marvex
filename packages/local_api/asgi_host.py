@@ -71,13 +71,14 @@ def run_dual_asgi_host(
     *,
     core_wsgi_app: WsgiApp,
     control_wsgi_app: WsgiApp,
+    control_asgi_app: Any | None = None,
     config: AsgiHostConfig,
     server_factory: ServerFactory | None = None,
     startup_message: str | None = None,
 ) -> int:
     factory = server_factory or _uvicorn_server
     control_server = factory(
-        app=create_asgi_app(control_wsgi_app, title="Marvex Control Plane"),
+        app=control_asgi_app or create_asgi_app(control_wsgi_app, title="Marvex Control Plane"),
         host=config.control_host,
         port=config.control_port,
         name="control",

@@ -297,7 +297,7 @@ def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
 
     assert exit_code == 0
     assert callable(captured["core_wsgi_app"])
-    assert callable(captured["control_wsgi_app"])
+    assert callable(captured["control_wsgi_app"]) and captured["control_asgi_app"].title == "Marvex Control Plane"
     assert captured["startup_message"].startswith("Core service startup metadata: ")
     asgi_config = captured["config"]
     assert asgi_config.host == "127.0.0.1"

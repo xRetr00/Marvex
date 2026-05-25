@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -24,3 +25,16 @@ def test_packaged_runtime_smoke_script_documents_runtime_contract() -> None:
     assert "intent_worker" in text
     assert "tool_worker" in text
     assert "service.token" not in text
+
+
+def test_packaging_uses_valid_wheel_filename_for_uv_install() -> None:
+    tauri = json.loads((ROOT / "apps" / "shell" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    resources = tauri["bundle"]["resources"]
+    resource_text = json.dumps(resources, sort_keys=True)
+    smoke_text = SCRIPT.read_text(encoding="utf-8")
+
+    assert "marvex-runtime.whl" not in resource_text
+    assert "marvex-*.whl" in resource_text
+    assert "../runtime/wheels" in resource_text
+    assert 'Where-Object { $_.Name -ne "marvex-runtime.whl" }' in smoke_text
+    assert "wheelhouseDest" in smoke_text
