@@ -2662,7 +2662,8 @@ def run_core_service(
                 web_dist=os.environ.get("MARVEX_CONTROL_WEB_DIST") or None,
             ),
             config=asgi_config,
-            server_factory=server_factory or control_server_factory,
+            server_factory=server_factory,
+            control_server_factory=control_server_factory,
             startup_message=build_asgi_startup_message(
                 config=asgi_config,
                 service="marvex-core-service",
