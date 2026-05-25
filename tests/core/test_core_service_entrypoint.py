@@ -316,26 +316,11 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
         captured.update(kwargs)
         control_app = kwargs["control_wsgi_app"]
         core_app = kwargs["core_wsgi_app"]
-        create_status, create_payload = _call_app(
-            control_app,
-            "/control/sessions",
-            method="POST",
-            body={"title": "Shared session"},
-            auth=f"Bearer {EXPECTED_TOKEN}",
-        )
+        auth = f"Bearer {EXPECTED_TOKEN}"
+        create_status, create_payload = _call_app(control_app, "/control/sessions", method="POST", body={"title": "Shared session"}, auth=auth)
         session_id = create_payload["session"]["session_ref"]["ref_id"]
-        turn_status, turn_payload = _call_app(
-            core_app,
-            "/v1/turns",
-            method="POST",
-            body=_turn_payload(session_id=session_id),
-            auth=f"Bearer {EXPECTED_TOKEN}",
-        )
-        list_status, list_payload = _call_app(
-            control_app,
-            "/control/sessions",
-            auth=f"Bearer {EXPECTED_TOKEN}",
-        )
+        turn_status, turn_payload = _call_app(core_app, "/v1/turns", method="POST", body=_turn_payload(session_id=session_id), auth=auth)
+        list_status, list_payload = _call_app(control_app, "/control/sessions", auth=auth)
         captured["session_result"] = {
             "create_status": create_status,
             "session_id": session_id,
