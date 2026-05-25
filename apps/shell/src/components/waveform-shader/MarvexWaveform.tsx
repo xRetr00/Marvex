@@ -33,15 +33,15 @@ float luma(vec3 color) {
 void main() {
     vec2 fragCoord = gl_FragCoord.xy;
     float min_res = min(resolution.x, resolution.y);
-    vec2 uv = (fragCoord * 2.0 - resolution.xy) / min_res * 1.5;
+    vec2 uv = (fragCoord * 2.0 - resolution.xy) / min_res * 1.05;
     float t = time;
     const float w = 0.01; // Line Width
     const float f = 1.0;  // Frequency
     const float b = 60.0; // Bands
-    float amp = 0.8 * audioLevel; // Amplitude (was iChannel0 sample)
+    float amp = 1.35 * audioLevel; // Amplitude (was iChannel0 sample)
 
     float xd = abs(uv.x);
-    float falloff = (1.0 - exp(-xd * xd) + uv.x * uv.x * 0.05);
+    float falloff = (1.0 - exp(-xd * xd) + uv.x * uv.x * 0.025);
     vec4 d = vec4(vec3(0), 999999.0);
     float off = t * 2.0;
     float fm = (1.0 + 0.3 * sin(t));
@@ -55,7 +55,7 @@ void main() {
         vec4 yy1 = mix(y1, y2, i);
         vec4 yy2 = mix(y3, y4, i);
         vec4 y = mix(yy1, yy2, i);
-        y.w = abs(uv.y - y.w * am) - w + falloff * 0.05;
+        y.w = abs(uv.y - y.w * am) - w + falloff * 0.028;
         y.rgb *= y.rgb;
         d = smin(y, d, 0.05);
     }
@@ -140,7 +140,7 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
       const elapsed = (performance.now() - startTimeRef.current) / 1000;
       // Smooth toward the state target so the wave follows state without
       // random jitter from raw audio frames.
-      smoothRef.current += (targetRef.current - smoothRef.current) * 0.09;
+      smoothRef.current += (targetRef.current - smoothRef.current) * 0.16;
       gl.viewport(0, 0, canvas.width, canvas.height);
       gl.clearColor(0, 0, 0, 0);
       gl.clear(gl.COLOR_BUFFER_BIT);

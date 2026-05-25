@@ -51,20 +51,18 @@ body.marvex-overlay-document *::after {
 
 .marvex-dynamic-island-pill {
   background: #000;
-  border-radius: 999px;
-  box-shadow:
-    0 0 0 1px rgba(255, 224, 194, 0.14),
-    0 6px 18px rgba(0, 0, 0, 0.38);
+  border-radius: 30px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
 }
 
 .marvex-island-card {
-  width: 390px;
+  width: 100%;
   min-height: 76px;
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
-  padding: 14px 16px;
+  padding: 0;
   color: #fff;
   user-select: none;
 }

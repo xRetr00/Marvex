@@ -221,13 +221,13 @@ export function OverlaySurface() {
         <DynamicIsland
           view={view}
           idleContent={
-            <div style={{ padding: "7px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, width: "100%" }}>
               <motion.span
                 animate={{ opacity: [0.45, 0.9, 0.45] }}
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe0c2", display: "block" }}
               />
-              <MarvexWaveform audioLevel={0.12} width={36} height={16} active={false} />
+              <MarvexWaveform audioLevel={0.22} width={112} height={30} active={false} />
               <AnimatePresence mode="wait">
                 <TextShimmer text={statusText} key={statusText} />
               </AnimatePresence>
@@ -243,8 +243,7 @@ export function OverlaySurface() {
                     flexDirection: "column",
                     alignItems: "stretch",
                     gap: 8,
-                    width: isActive ? 320 : 180,
-                    padding: "12px 16px",
+                    width: "100%",
                   }}
                 >
                   <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
@@ -254,9 +253,9 @@ export function OverlaySurface() {
                     <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>{state.status}</span>
                   </div>
                   <MarvexWaveform
-                    audioLevel={isActive ? audioLevel : 0.18}
-                    width={isActive ? 288 : 140}
-                    height={isActive ? 76 : 34}
+                    audioLevel={isActive ? audioLevel : 0.22}
+                    width={320}
+                    height={80}
                     active={isActive || hovered}
                   />
                 </div>
