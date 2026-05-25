@@ -775,8 +775,8 @@ fn attach_log_pipe(
 mod tests {
     use super::{
         find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
-        runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
-        write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
+        runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_create_args,
+        venv_root, venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
         ServiceKind, Supervisor, PYTHON_RUNTIME_VERSION,
     };
     use serde_json::Value;
