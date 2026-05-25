@@ -3,7 +3,7 @@ use std::{
     fs::{self, File, OpenOptions},
     io::{BufRead, BufReader, Write},
     path::{Path, PathBuf},
-    process::{Child, Command, Stdio},
+    process::{Command, Stdio},
     sync::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
@@ -12,10 +12,15 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use process_wrap::std::{ChildWrapper, CommandWrap};
 use serde_json::json;
 
 #[cfg(windows)]
+use process_wrap::std::{CreationFlags, JobObject};
+#[cfg(windows)]
 use std::os::windows::process::CommandExt;
+#[cfg(windows)]
+use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
@@ -232,9 +237,6 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
         },
-        jsonl("provider_worker", "services.provider_worker.main", "marvex-provider-worker"),
-        jsonl("intent_worker", "services.intent_worker.main", "marvex-intent-worker"),
-        jsonl("tool_worker", "services.tool_worker.main", "marvex-tool-worker"),
         ServiceSpec {
             name: "voice_worker",
             module: "services.voice_worker.main",
@@ -247,20 +249,6 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
             },
         },
     ]
-}
-
-fn jsonl(name: &'static str, module: &'static str, sidecar: &'static str) -> ServiceSpec {
-    ServiceSpec {
-        name,
-        module,
-        sidecar,
-        args: vec!["--jsonl".into()],
-        env: Vec::new(),
-        kind: ServiceKind::JsonlWorker {
-            start_command: format!(r#"{{"command":"start","trace_id":"trace-shell-{name}"}}"#),
-            stop_command: format!(r#"{{"command":"stop","trace_id":"trace-shell-{name}"}}"#),
-        },
-    }
 }
 
 fn service_kind_label(kind: &ServiceKind) -> &'static str {
@@ -550,7 +538,7 @@ fn spawn_service(
     data_dir: &Path,
     resource_dir: Option<&Path>,
     venv: Option<&Path>,
-) -> Result<Child, String> {
+) -> Result<Box<dyn ChildWrapper>, String> {
     // Tier 1: Setuptools console scripts (preferred, production)
     // Tier 3: Dev fallback `uv run python -m <module>` (source checkout)
     let mut command = if let Some(exe) = sidecar_path(venv, spec.sidecar) {
@@ -610,14 +598,23 @@ fn spawn_service(
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
-    #[cfg(windows)]
-    command.creation_flags(CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP);
-    let mut child = command
-        .spawn()
+    let mut child = spawn_wrapped_child(command)
         .map_err(|err| format!("failed to spawn {}: {err}", spec.name))?;
-    attach_log_pipe(spec.name, "stdout", child.stdout.take(), log_dir);
-    attach_log_pipe(spec.name, "stderr", child.stderr.take(), log_dir);
+    attach_log_pipe(spec.name, "stdout", child.stdout().take(), log_dir);
+    attach_log_pipe(spec.name, "stderr", child.stderr().take(), log_dir);
     Ok(child)
+}
+
+fn spawn_wrapped_child(command: Command) -> std::io::Result<Box<dyn ChildWrapper>> {
+    let mut command = CommandWrap::from(command);
+    #[cfg(windows)]
+    {
+        command.wrap(CreationFlags(PROCESS_CREATION_FLAGS(
+            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+        )));
+        command.wrap(JobObject);
+    }
+    command.spawn()
 }
 
 fn project_root() -> PathBuf {
@@ -628,8 +625,8 @@ fn project_root() -> PathBuf {
         .unwrap_or_else(|_| PathBuf::from("."))
 }
 
-fn write_child_line(child: &mut Child, line: &str) {
-    if let Some(stdin) = child.stdin.as_mut() {
+fn write_child_line(child: &mut Box<dyn ChildWrapper>, line: &str) {
+    if let Some(stdin) = child.stdin().as_mut() {
         let _ = stdin.write_all(line.as_bytes());
         let _ = stdin.write_all(b"\n");
         let _ = stdin.flush();
@@ -712,11 +709,22 @@ mod tests {
         let specs = service_specs("token");
         let core = specs.iter().find(|s| s.name == "core").expect("core");
         assert_eq!(service_kind_label(&core.kind), "http");
-        let provider = specs
+        let voice = specs
             .iter()
-            .find(|s| s.name == "provider_worker")
-            .expect("provider");
-        assert_eq!(service_kind_label(&provider.kind), "jsonl");
+            .find(|s| s.name == "voice_worker")
+            .expect("voice worker");
+        assert_eq!(service_kind_label(&voice.kind), "jsonl");
         assert!(matches!(core.kind, ServiceKind::Core));
+    }
+
+    #[test]
+    fn shell_supervisor_does_not_spawn_core_owned_workers() {
+        let specs = service_specs("token");
+        let names: Vec<_> = specs.iter().map(|spec| spec.name).collect();
+
+        assert_eq!(names, vec!["core", "voice_worker"]);
+        assert!(!names.contains(&"provider_worker"));
+        assert!(!names.contains(&"intent_worker"));
+        assert!(!names.contains(&"tool_worker"));
     }
 }

@@ -213,6 +213,129 @@ class _CoreTurnExecutorRequest:
     provider_options: dict[str, object]
 
 
+class _JsonlWorkerProcessClient:
+    def __init__(
+        self,
+        *,
+        module: str,
+        start_trace_id: str,
+        stop_trace_id: str,
+        timeout_seconds: float | None = None,
+        python_executable: str = sys.executable,
+        process_factory: Callable[..., Any] | None = None,
+    ) -> None:
+        self._module = module
+        self._start_trace_id = start_trace_id
+        self._stop_trace_id = stop_trace_id
+        self._timeout_seconds = timeout_seconds
+        self._python_executable = python_executable
+        self._process_factory = process_factory or subprocess.Popen
+        self._process: Any | None = None
+        self._lock = threading.Lock()
+
+    def request(self, command: dict[str, object], *, timeout_seconds: float | None = None) -> dict[str, object]:
+        with self._lock:
+            self._ensure_started_locked()
+            return self._send_locked(
+                command,
+                timeout_seconds=self._effective_timeout(timeout_seconds),
+            )
+
+    def shutdown(self) -> None:
+        with self._lock:
+            process = self._process
+            if process is None or process.poll() is not None:
+                self._process = None
+                return
+            try:
+                self._send_locked(
+                    {"command": "stop", "trace_id": self._stop_trace_id},
+                    timeout_seconds=5,
+                )
+                process.wait(timeout=5)
+            except Exception:
+                self._kill_locked()
+            finally:
+                self._process = None
+
+    def _ensure_started_locked(self) -> None:
+        process = self._process
+        if process is not None and process.poll() is None:
+            return
+        self._process = self._process_factory(
+            (self._python_executable, "-m", self._module, "--jsonl"),
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.DEVNULL,
+            shell=False,
+            text=True,
+        )
+        started = self._send_locked(
+            {"command": "start", "trace_id": self._start_trace_id},
+            timeout_seconds=5,
+        )
+        if started.get("ok") is False:
+            self._kill_locked()
+            raise ConnectionError(f"{self._module} failed to start.")
+
+    def _send_locked(self, command: dict[str, object], *, timeout_seconds: float) -> dict[str, object]:
+        process = self._process
+        if process is None or process.poll() is not None:
+            raise ConnectionError(f"{self._module} process unavailable.")
+        if process.stdin is None or process.stdout is None:
+            raise ConnectionError(f"{self._module} process pipes unavailable.")
+        process.stdin.write(json.dumps(command) + "\n")
+        process.stdin.flush()
+        line = self._readline_with_timeout(process.stdout, timeout_seconds=timeout_seconds)
+        if not line.strip():
+            raise ConnectionError(f"{self._module} returned no response.")
+        payload = json.loads(line)
+        if not isinstance(payload, dict):
+            raise RuntimeError(f"{self._module} response was invalid.")
+        return payload
+
+    def _readline_with_timeout(self, stdout: Any, *, timeout_seconds: float) -> str:
+        completed = threading.Event()
+        result: list[str] = []
+        errors: list[BaseException] = []
+
+        def read_line() -> None:
+            try:
+                result.append(stdout.readline())
+            except BaseException as exc:
+                errors.append(exc)
+            finally:
+                completed.set()
+
+        thread = threading.Thread(target=read_line, daemon=True)
+        thread.start()
+        if not completed.wait(timeout=max(0.1, timeout_seconds)):
+            self._kill_locked()
+            raise TimeoutError(f"{self._module} response timed out.")
+        if errors:
+            raise RuntimeError(f"{self._module} response read failed.") from errors[0]
+        return result[0] if result else ""
+
+    def _effective_timeout(self, timeout_seconds: float | None) -> float:
+        return (timeout_seconds if timeout_seconds is not None else self._timeout_seconds or 15) + 5
+
+    def _kill_locked(self) -> None:
+        process = self._process
+        if process is None:
+            return
+        try:
+            process.kill()
+        except Exception:
+            try:
+                process.terminate()
+            except Exception:
+                pass
+        try:
+            process.wait(timeout=5)
+        except Exception:
+            pass
+
+
 class _CoreServiceFoundationTurnExecutor:
     def __init__(
         self,
@@ -245,11 +368,19 @@ class _ProviderWorkerProcessProvider:
         base_url: str | None = None,
         timeout_seconds: float | None = None,
         python_executable: str = sys.executable,
+        worker_client: _JsonlWorkerProcessClient | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
         self._timeout_seconds = timeout_seconds
         self._python_executable = python_executable
+        self._worker_client = worker_client or _JsonlWorkerProcessClient(
+            module="services.provider_worker.main",
+            start_trace_id="trace-core-provider-worker-start",
+            stop_trace_id="trace-core-provider-worker-stop",
+            timeout_seconds=timeout_seconds,
+            python_executable=python_executable,
+        )
 
     def send(self, request: ProviderRequest) -> ProviderResponse:
         send_command: dict[str, object] = {
@@ -262,25 +393,10 @@ class _ProviderWorkerProcessProvider:
             send_command["base_url"] = self._base_url
         if self._timeout_seconds is not None:
             send_command["timeout_seconds"] = self._timeout_seconds
-        stop_command = {"command": "stop", "trace_id": request.trace_id}
-        completed = subprocess.run(
-            [
-                self._python_executable,
-                "-m",
-                "services.provider_worker.main",
-                "--jsonl",
-            ],
-            input=json.dumps(send_command) + "\n" + json.dumps(stop_command) + "\n",
-            text=True,
-            capture_output=True,
-            timeout=(self._timeout_seconds or 15) + 5,
+        payload = self._worker_client.request(
+            send_command,
+            timeout_seconds=self._timeout_seconds,
         )
-        if completed.returncode != 0:
-            raise ConnectionError("ProviderWorker process unavailable.")
-        lines = [line for line in completed.stdout.splitlines() if line.strip()]
-        if not lines:
-            raise ConnectionError("ProviderWorker returned no response.")
-        payload = json.loads(lines[0])
         if isinstance(payload, dict) and payload.get("response") is not None:
             return ProviderResponse.model_validate(payload["response"])
         if isinstance(payload, dict) and payload.get("error") is not None:
@@ -321,25 +437,13 @@ class _ProviderWorkerProcessProvider:
             command["base_url"] = self._base_url
         if self._timeout_seconds is not None:
             command["timeout_seconds"] = self._timeout_seconds
-        stop_command = {"command": "stop", "trace_id": trace_id}
-        completed = subprocess.run(
-            [
-                self._python_executable,
-                "-m",
-                "services.provider_worker.main",
-                "--jsonl",
-            ],
-            input=json.dumps(command) + "\n" + json.dumps(stop_command) + "\n",
-            text=True,
-            capture_output=True,
-            timeout=(self._timeout_seconds or 15) + 5,
-        )
-        if completed.returncode != 0:
+        try:
+            payload = self._worker_client.request(
+                command,
+                timeout_seconds=self._timeout_seconds,
+            )
+        except Exception:
             return None
-        lines = [line for line in completed.stdout.splitlines() if line.strip()]
-        if not lines:
-            return None
-        payload = json.loads(lines[0])
         if not isinstance(payload, dict) or payload.get("ok") is not True:
             return None
         metadata = payload.get("metadata")
@@ -348,6 +452,9 @@ class _ProviderWorkerProcessProvider:
         structured = metadata.get("structured_output")
         return dict(structured) if isinstance(structured, dict) else None
 
+    def shutdown(self) -> None:
+        self._worker_client.shutdown()
+
 
 class _IntentWorkerProcessClassifier:
     def __init__(
@@ -355,9 +462,17 @@ class _IntentWorkerProcessClassifier:
         *,
         timeout_seconds: float | None = None,
         python_executable: str = sys.executable,
+        worker_client: _JsonlWorkerProcessClient | None = None,
     ) -> None:
         self._timeout_seconds = timeout_seconds
         self._python_executable = python_executable
+        self._worker_client = worker_client or _JsonlWorkerProcessClient(
+            module="services.intent_worker.main",
+            start_trace_id="trace-core-intent-worker-start",
+            stop_trace_id="trace-core-intent-worker-stop",
+            timeout_seconds=timeout_seconds,
+            python_executable=python_executable,
+        )
 
     def classify(self, turn_input: AssistantTurnInput) -> dict[str, object]:
         command = {
@@ -366,27 +481,16 @@ class _IntentWorkerProcessClassifier:
             "turn_id": turn_input.turn_id,
             "user_input_summary": turn_input.user_visible_input or "",
         }
-        completed = subprocess.run(
-            [
-                self._python_executable,
-                "-m",
-                "services.intent_worker.main",
-                "--jsonl",
-            ],
-            input=json.dumps(command) + "\n",
-            text=True,
-            capture_output=True,
-            timeout=(self._timeout_seconds or 15) + 5,
+        payload = self._worker_client.request(
+            command,
+            timeout_seconds=self._timeout_seconds,
         )
-        if completed.returncode != 0:
-            raise ConnectionError("IntentWorker process unavailable.")
-        lines = [line for line in completed.stdout.splitlines() if line.strip()]
-        if not lines:
-            raise ConnectionError("IntentWorker returned no response.")
-        payload = json.loads(lines[0])
         if not isinstance(payload, dict) or payload.get("classification") is None:
             raise RuntimeError("IntentWorker response was invalid.")
         return payload
+
+    def shutdown(self) -> None:
+        self._worker_client.shutdown()
 
 
 class _ToolWorkerProcessExecutor:
@@ -395,9 +499,17 @@ class _ToolWorkerProcessExecutor:
         *,
         timeout_seconds: float | None = None,
         python_executable: str = sys.executable,
+        worker_client: _JsonlWorkerProcessClient | None = None,
     ) -> None:
         self._timeout_seconds = timeout_seconds
         self._python_executable = python_executable
+        self._worker_client = worker_client or _JsonlWorkerProcessClient(
+            module="services.tool_worker.main",
+            start_trace_id="trace-core-tool-worker-start",
+            stop_trace_id="trace-core-tool-worker-stop",
+            timeout_seconds=timeout_seconds,
+            python_executable=python_executable,
+        )
 
     def execute(
         self,
@@ -419,27 +531,16 @@ class _ToolWorkerProcessExecutor:
             "resource_type": resource_type,
             "arguments": dict(arguments or {"input_present": bool(turn_input.user_visible_input)}),
         }
-        completed = subprocess.run(
-            [
-                self._python_executable,
-                "-m",
-                "services.tool_worker.main",
-                "--jsonl",
-            ],
-            input=json.dumps(command) + "\n",
-            text=True,
-            capture_output=True,
-            timeout=(self._timeout_seconds or 15) + 5,
+        payload = self._worker_client.request(
+            command,
+            timeout_seconds=self._timeout_seconds,
         )
-        if completed.returncode != 0:
-            raise ConnectionError("ToolWorker process unavailable.")
-        lines = [line for line in completed.stdout.splitlines() if line.strip()]
-        if not lines:
-            raise ConnectionError("ToolWorker returned no response.")
-        payload = json.loads(lines[0])
         if not isinstance(payload, dict) or payload.get("result") is None:
             raise RuntimeError("ToolWorker response was invalid.")
         return payload
+
+    def shutdown(self) -> None:
+        self._worker_client.shutdown()
 
 
 class _DesktopAgentProcessClient:
@@ -648,6 +749,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._desktop_agent = _DesktopAgentProcessClient(timeout_seconds=timeout_seconds)
         self._state_bus: AssistantStateBus | None = None
 
+    def shutdown(self) -> None:
+        for worker in (self._provider, self._intent_classifier, self._tool_executor):
+            shutdown = getattr(worker, "shutdown", None)
+            if callable(shutdown):
+                try:
+                    shutdown()
+                except Exception:
+                    pass
+
     def _publish(
         self,
         status: AssistantStatusKind,
@@ -678,11 +788,13 @@ class _CoreServiceProviderWorkerTurnExecutor:
             default_model=self._model,
         )
         if selected_provider_name != self._provider_name:
+            self._provider.shutdown()
             self._provider = _ProviderWorkerProcessProvider(
                 provider_name=selected_provider_name,
                 base_url=self._base_url,
                 timeout_seconds=self._timeout_seconds,
             )
+            self._provider_name = selected_provider_name
         self._model = selected_model
 
         _emit_core_event(
