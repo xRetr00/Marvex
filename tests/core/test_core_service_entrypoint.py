@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+# file size justification: Core service entrypoint tests intentionally keep CLI, auth, ASGI host, session wiring, and smoke regressions together until service startup contracts are split by owned boundary.
+
 import json
 import subprocess
 import sys
