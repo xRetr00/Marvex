@@ -121,6 +121,43 @@ def test_default_kokoro_runner_synthesizes_to_generated_audio_ref(tmp_path: Path
     assert calls[1] == ("hello there", "af_heart", "create")
 
 
+def test_kokoro_backend_is_not_ready_until_model_and_voices_are_installed(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    kokoro_dir = root / "tts" / "kokoro"
+    kokoro_dir.mkdir(parents=True)
+    (kokoro_dir / "kokoro-v1.0.onnx").write_bytes(b"onnx")
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="kokoro-af-heart",
+            backend_id="kokoro-onnx",
+            model_kind="tts_voice",
+            relative_path="tts/kokoro/kokoro-v1.0.onnx",
+            explicit_user_triggered=True,
+        )
+    )
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: object())
+
+    missing_voices = runtime.tts_status("kokoro-onnx", "af_heart")
+    assert missing_voices["status"] == "not_ready"
+    assert missing_voices["exact_blocker"] == "kokoro_voice_asset_missing_manual_install_required"
+
+    (kokoro_dir / "voices-v1.0.bin").write_bytes(b"voices")
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="kokoro-voices",
+            backend_id="kokoro-onnx",
+            model_kind="tts_voice",
+            relative_path="tts/kokoro/voices-v1.0.bin",
+            explicit_user_triggered=True,
+        )
+    )
+
+    ready = runtime.tts_status("kokoro-onnx", "af_heart")
+    assert ready["status"] == "ready"
+    assert ready["exact_blocker"] is None
+
+
 def test_default_piper_runner_synthesizes_chunks_to_generated_audio_ref(tmp_path: Path) -> None:
     root = tmp_path / "voice-assets"
     manager = VoiceAssetManager(asset_root=root)

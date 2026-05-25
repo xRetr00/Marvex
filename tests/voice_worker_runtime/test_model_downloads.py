@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import io
 import json
+import tarfile
 from pathlib import Path
 
 from packages.control_plane_api.voice import handle_voice_control_request
@@ -98,6 +100,41 @@ def test_asset_manager_download_uses_injected_fetcher_for_https_without_leaking_
     assert result.status == "installed"
     assert (tmp_path / "voice-assets" / "stt" / "moonshine-v2" / "model.onnx").exists()
     assert "downloaded model bytes" not in json.dumps(result.model_dump(mode="json")).lower()
+
+
+def test_asset_manager_download_extracts_archive_assets_before_registration(tmp_path: Path) -> None:
+    archive = io.BytesIO()
+    with tarfile.open(fileobj=archive, mode="w:gz") as tar:
+        info = tarfile.TarInfo(name="model/tokens.txt")
+        payload = b"hey marvex"
+        info.size = len(payload)
+        tar.addfile(info, io.BytesIO(payload))
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+
+    result = manager.download(
+        VoiceModelDownloadRequest(
+            model_id="hey-marvex",
+            backend_id="sherpa-onnx-kws",
+            model_kind="wakeword",
+            source_uri="https://models.example.test/hey-marvex.tar.gz",
+            relative_path="wakeword/hey-marvex",
+            extract=True,
+            explicit_user_triggered=True,
+        ),
+        fetcher=lambda _uri: archive.getvalue(),
+    )
+
+    assert result.status == "installed"
+    assert (tmp_path / "voice-assets" / "wakeword" / "hey-marvex" / "model" / "tokens.txt").read_bytes() == b"hey marvex"
+    assert manager.resolve_installed_path("hey-marvex") == (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").resolve()
+
+
+def test_required_registry_tracks_kokoro_voice_bundle_asset(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    required_ids = {item.model_id for item in manager.registry().required}
+
+    assert "kokoro-af-heart" in required_ids
+    assert "kokoro-voices" in required_ids
 
 
 def test_control_plane_exposes_worker_model_download_endpoint(tmp_path: Path) -> None:
