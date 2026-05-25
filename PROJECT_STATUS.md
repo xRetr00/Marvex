@@ -1,7 +1,9 @@
 # Project Status
 
 current_phase: native_asgi_control_plane_state_boundary_checkpoint
+current_phase: native_asgi_control_plane_state_boundary_checkpoint
 
+implementation_status: native_asgi_control_plane_state_boundary_checkpoint
 implementation_status: native_asgi_control_plane_state_boundary_checkpoint
 
 accepted_docs: true
