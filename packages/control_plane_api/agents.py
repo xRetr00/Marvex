@@ -144,9 +144,7 @@ def _parse_active_selection(environ: dict[str, Any], *, key: str) -> str | None:
 
 
 def _read_request_body(environ: dict[str, Any]) -> str:
-    length_text = str(environ.get("CONTENT_LENGTH") or "0")
-    content_length = int(length_text) if length_text.strip() else 0
-    raw_body = environ["wsgi.input"].read(content_length)
+    raw_body = environ.get("REQUEST_BODY", b"")
     return raw_body.decode("utf-8") if isinstance(raw_body, bytes) else str(raw_body)
 
 
