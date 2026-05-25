@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from collections.abc import Callable
+import time
+import uuid
 
 from packages.contracts import ConversationRef, SessionRef
 
 
 from .models import (
+    SafeSessionHandle,
     SafeConversationProjection,
     SafeSessionProjection,
     TurnLinkageMetadata,
@@ -71,6 +75,73 @@ class CurrentProcessSessionRegistry:
         )
 
 
+class BackendSessionCoordinator(CurrentProcessSessionRegistry):
+    def __init__(
+        self,
+        *,
+        clock: Callable[[], int] | None = None,
+        id_factory: Callable[[], str] | None = None,
+    ) -> None:
+        super().__init__()
+        self._clock = clock or (lambda: int(time.time() * 1000))
+        self._id_factory = id_factory or (lambda: f"session-{uuid.uuid4().hex}")
+        self._handles_by_session_ref_id: dict[str, SafeSessionHandle] = {}
+        self._trace_ids_by_session_ref_id: dict[str, set[str]] = defaultdict(set)
+
+    def create_session(self, *, title: str | None = None) -> SafeSessionHandle:
+        session_ref = SessionRef(ref_type="session", ref_id=self._id_factory())
+        return self.ensure_session(session_ref, title=title or "New chat")
+
+    def ensure_session(
+        self,
+        session_ref: SessionRef,
+        *,
+        title: str | None = None,
+    ) -> SafeSessionHandle:
+        existing = self._handles_by_session_ref_id.get(session_ref.ref_id)
+        if existing is not None:
+            if title is not None and existing.turn_count == 0:
+                existing = existing.model_copy(update={"title": _safe_title(title)})
+                self._handles_by_session_ref_id[session_ref.ref_id] = existing
+            return existing
+        now = self._clock()
+        handle = SafeSessionHandle(
+            schema_version="1",
+            session_ref=session_ref,
+            title=_safe_title(title or f"Session {session_ref.ref_id}"),
+            created_at_unix_ms=now,
+            updated_at_unix_ms=now,
+            turn_count=0,
+            trace_count=0,
+            transcript_persisted=False,
+        )
+        self._handles_by_session_ref_id[session_ref.ref_id] = handle
+        return handle
+
+    def record_turn(self, linkage: TurnLinkageMetadata) -> None:
+        super().record_turn(linkage)
+        if linkage.session_ref is None:
+            return
+        handle = self.ensure_session(linkage.session_ref)
+        self._trace_ids_by_session_ref_id[linkage.session_ref.ref_id].add(linkage.trace_id)
+        trace_count = len(self._trace_ids_by_session_ref_id[linkage.session_ref.ref_id])
+        updated = handle.model_copy(
+            update={
+                "updated_at_unix_ms": self._clock(),
+                "turn_count": handle.turn_count + 1,
+                "trace_count": trace_count,
+            }
+        )
+        self._handles_by_session_ref_id[linkage.session_ref.ref_id] = updated
+
+    def list_sessions(self) -> tuple[SafeSessionHandle, ...]:
+        return tuple(
+            sorted(
+                self._handles_by_session_ref_id.values(),
+                key=lambda handle: (-handle.updated_at_unix_ms, handle.session_ref.ref_id),
+            )
+        )
+
 def _unique_conversation_refs(
     turn_linkages: tuple[TurnLinkageMetadata, ...],
 ) -> tuple[ConversationRef, ...]:
@@ -92,3 +163,9 @@ def _unique_session_refs(
     }
     return tuple(refs_by_id[key] for key in sorted(refs_by_id))
 
+
+def _safe_title(value: str) -> str:
+    title = " ".join(value.strip().split())[:80]
+    if not title:
+        return "New chat"
+    return title

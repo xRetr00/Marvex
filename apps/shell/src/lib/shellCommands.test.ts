@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { submitChatTurn } from "./shellCommands";
+import { controlPlaneEntryUrl, createChatSession, listChatSessions, submitChatTurn } from "./shellCommands";
 import { invoke } from "./tauriBridge";
 
 vi.mock("./tauriBridge", () => ({
@@ -24,5 +24,19 @@ describe("shell command bridge", () => {
         selected_voice_id: "af_heart"
       }
     });
+  });
+
+  it("uses backend-owned chat session commands", async () => {
+    await createChatSession("Planning");
+    await listChatSessions();
+
+    expect(mockedInvoke).toHaveBeenCalledWith("create_chat_session", { title: "Planning" });
+    expect(mockedInvoke).toHaveBeenCalledWith("list_chat_sessions");
+  });
+
+  it("requests a Control Plane entry URL instead of a browser token", async () => {
+    await controlPlaneEntryUrl();
+
+    expect(mockedInvoke).toHaveBeenCalledWith("control_plane_entry_url");
   });
 });

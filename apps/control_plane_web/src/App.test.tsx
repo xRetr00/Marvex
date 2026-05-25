@@ -145,6 +145,21 @@ describe("Control Plane app", () => {
     await waitFor(() => expect(screen.getByText("Control Plane unavailable")).toBeInTheDocument());
     expect(screen.queryByText(/Bearer/i)).not.toBeInTheDocument();
   });
+
+  it("does not read bearer tokens from browser sessionStorage", async () => {
+    window.sessionStorage.setItem("marvex_control_plane_token", "secret-token");
+    const fetchSpy = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const headers = new Headers(init?.headers);
+      expect(headers.has("Authorization")).toBe(false);
+      return new Response(JSON.stringify(snapshot), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+
+    renderApp();
+
+    expect(await screen.findByText("Marvex Control Plane")).toBeInTheDocument();
+    expect(fetchSpy).toHaveBeenCalled();
+  });
 });
 
 

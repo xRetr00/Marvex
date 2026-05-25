@@ -52,17 +52,11 @@ export class ControlPlaneApiError extends Error {
   }
 }
 
-function authHeaders(): HeadersInit {
-  const sessionToken = window.sessionStorage.getItem("marvex_control_plane_token");
-  return sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {};
-}
-
 async function readJson(path: string, init: RequestInit = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
-      ...authHeaders(),
       ...init.headers
     }
   });

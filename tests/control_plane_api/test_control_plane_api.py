@@ -21,6 +21,7 @@ from packages.control_plane_api import (
     InMemoryApprovalStore,
     create_control_plane_api_app,
 )
+from packages.session_runtime import BackendSessionCoordinator
 
 
 def _approval_request() -> CapabilityApprovalRequest:
@@ -42,13 +43,23 @@ def _approval_request() -> CapabilityApprovalRequest:
     )
 
 
-def _call(app, path: str, *, method: str = "GET", token: str | None = "fake-control-token", body: dict | None = None):
+def _call(
+    app,
+    path: str,
+    *,
+    method: str = "GET",
+    token: str | None = "fake-control-token",
+    cookie: str | None = None,
+    body: dict | None = None,
+):
     environ: dict[str, object] = {}
     setup_testing_defaults(environ)
     environ["REQUEST_METHOD"] = method
     environ["PATH_INFO"] = path
     if token is not None:
         environ["HTTP_AUTHORIZATION"] = f"Bearer {token}"
+    if cookie is not None:
+        environ["HTTP_COOKIE"] = cookie
     raw = json.dumps(body or {}).encode("utf-8")
     environ["wsgi.input"] = io.BytesIO(raw)
     environ["CONTENT_LENGTH"] = str(len(raw))
@@ -78,7 +89,7 @@ class _FakeLogReader:
         ]
 
 
-def _app(*, log_reader=None):
+def _app(*, log_reader=None, session_coordinator=None, browser_session_manager=None):
     store = InMemoryApprovalStore.from_requests((_approval_request(),))
     snapshot = ControlPlaneSnapshot.foundation_default(
         schema_version="1",
@@ -117,6 +128,8 @@ def _app(*, log_reader=None):
         snapshot=snapshot,
         local_auth_token="fake-control-token",
         log_reader=log_reader,
+        session_coordinator=session_coordinator,
+        browser_session_manager=browser_session_manager,
     )
 
 
@@ -146,6 +159,90 @@ def test_logs_endpoint_returns_sanitized_api_owned_log_projection() -> None:
             "lines": ["service ready", "[redacted]", "[redacted]"],
         }
     ]
+
+
+def test_sessions_endpoint_lists_backend_owned_safe_session_handles() -> None:
+    coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000)
+    coordinator.create_session(title="Shell chat")
+    app = _app(session_coordinator=coordinator)
+
+    status, _headers, payload = _call(app, "/control/sessions")
+
+    assert status == "200 OK"
+    assert payload["schema_version"] == "1"
+    assert payload["session_count"] == 1
+    session = payload["sessions"][0]
+    assert session["title"] == "Shell chat"
+    assert session["turn_count"] == 0
+    assert session["trace_count"] == 0
+    assert session["transcript_persisted"] is False
+    assert "token" not in json.dumps(payload).lower()
+
+
+def test_sessions_endpoint_creates_backend_owned_session_handle() -> None:
+    coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000)
+    app = _app(session_coordinator=coordinator)
+
+    status, _headers, payload = _call(
+        app,
+        "/control/sessions",
+        method="POST",
+        body={"title": "New backend session"},
+    )
+
+    assert status == "200 OK"
+    assert payload["schema_version"] == "1"
+    assert payload["session"]["title"] == "New backend session"
+    assert payload["session"]["session_ref"]["ref_type"] == "session"
+    assert coordinator.list_sessions()[0].title == "New backend session"
+
+
+def test_browser_session_lease_claims_cookie_without_exposing_bearer_token() -> None:
+    from packages.control_plane_api.browser_session import BrowserSessionManager
+
+    manager = BrowserSessionManager(clock=lambda: 1000.0, token_factory=lambda: "fixed-token")
+    app = _app(browser_session_manager=manager)
+
+    lease_status, _headers, lease = _call(app, "/control/browser-session/leases", method="POST")
+
+    assert lease_status == "200 OK"
+    assert lease["claim_url"].startswith("/control/browser-session/claim?")
+    assert "fake-control-token" not in json.dumps(lease)
+    assert lease["token_value_logged"] is False
+
+    claim_path = lease["claim_url"]
+    claim_status, claim_headers, payload = _call(app, claim_path, token=None)
+    assert claim_status == "302 Found"
+    assert payload == {}
+    assert "HttpOnly" in claim_headers["Set-Cookie"]
+    assert "SameSite=Strict" in claim_headers["Set-Cookie"]
+
+    cookie = claim_headers["Set-Cookie"].split(";", 1)[0]
+    status, _headers, payload = _call(app, "/control/sessions", token=None, cookie=cookie)
+    assert status == "200 OK"
+    assert payload["schema_version"] == "1"
+
+
+def test_browser_session_claim_is_one_time_and_expiring() -> None:
+    from packages.control_plane_api.browser_session import BrowserSessionManager
+
+    now = {"value": 1000.0}
+    manager = BrowserSessionManager(clock=lambda: now["value"], token_factory=lambda: "fixed-token")
+    app = _app(browser_session_manager=manager)
+
+    _status, _headers, lease = _call(app, "/control/browser-session/leases", method="POST")
+    claim_path = lease["claim_url"]
+
+    assert _call(app, claim_path, token=None)[0] == "302 Found"
+    status, _headers, payload = _call(app, claim_path, token=None)
+    assert status == "401 Unauthorized"
+    assert payload["code"] == "AUTH_REQUIRED"
+
+    _status, _headers, lease = _call(app, "/control/browser-session/leases", method="POST")
+    now["value"] = 2000.0
+    status, _headers, payload = _call(app, lease["claim_url"], token=None)
+    assert status == "401 Unauthorized"
+    assert payload["details"]["reason"] == "invalid_browser_session_claim"
 
 
 def test_logs_endpoint_requires_auth() -> None:

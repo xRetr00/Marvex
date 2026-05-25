@@ -18,6 +18,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "json",
     "pathlib",
     "queue",
+    "secrets",
     "threading",
     "time",
     "packages.capability_runtime",
@@ -27,6 +28,7 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "packages.local_api.auth_policy",
     "packages.marketplace_runtime",
     "packages.memory_runtime",
+    "packages.session_runtime",
     "packages.telemetry.search",
     "packages.voice_runtime",
     "packages.voice_worker_runtime",
@@ -47,7 +49,6 @@ CONTROL_API_FORBIDDEN_IMPORTS = (
     "packages.core",
     "packages.provider_runtime",
     "packages.runtime_composition",
-    "packages.session_runtime",
     "services",
 )
 CONTROL_API_FORBIDDEN_TEXT = (

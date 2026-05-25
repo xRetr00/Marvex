@@ -179,6 +179,7 @@ async fn submit_chat_turn(
     let turn_id = format!("turn-shell-chat-{now}");
     let body = json!({
         "schema_version": "0.1.1-draft",
+        "execution_mode": "assistant_runtime_fake_provider",
         "assistant_turn_input": {
             "schema_version": "0.1.1-draft",
             "trace_id": trace_id,
@@ -191,7 +192,7 @@ async fn submit_chat_turn(
             "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
             "metadata": safe_shell_turn_metadata(metadata)
         },
-        "model": null,
+        "model": "fake-model",
         "instructions": null,
         "previous_response_id": null,
         "provider_options": {}
@@ -241,6 +242,45 @@ fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
 }
 
 #[tauri::command]
+async fn create_chat_session(
+    title: Option<String>,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
+    let response = http::http_post_json_with_timeout(
+        "127.0.0.1",
+        8766,
+        "/control/sessions",
+        Some(&token),
+        &json!({ "title": title.unwrap_or_else(|| "New chat".to_string()) }),
+        http::DEFAULT_HTTP_TIMEOUT,
+    )
+    .await?;
+    serde_json::from_str(&response.body)
+        .map_err(|err| format!("invalid Control Plane session response: {err}"))
+}
+
+#[tauri::command]
+async fn list_chat_sessions(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
+    let response = http::http_get("127.0.0.1", 8766, "/control/sessions", Some(&token)).await?;
+    serde_json::from_str(&response.body)
+        .map_err(|err| format!("invalid Control Plane session list response: {err}"))
+}
+
+#[tauri::command]
 async fn control_request(
     path: String,
     method: String,
@@ -273,6 +313,42 @@ async fn control_request(
     };
     serde_json::from_str(&response.body)
         .map_err(|err| format!("invalid Control Plane response: {err}"))
+}
+
+#[tauri::command]
+async fn control_plane_entry_url(
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<String, String> {
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
+    fetch_control_plane_entry_url(&token).await
+}
+
+async fn fetch_control_plane_entry_url(token: &str) -> Result<String, String> {
+    let response = http::http_post_json_with_timeout(
+        "127.0.0.1",
+        8766,
+        "/control/browser-session/leases",
+        Some(token),
+        &json!({}),
+        http::DEFAULT_HTTP_TIMEOUT,
+    )
+    .await?;
+    let payload: Value = serde_json::from_str(&response.body)
+        .map_err(|err| format!("invalid Control Plane browser-session lease: {err}"))?;
+    let claim_url = payload
+        .get("claim_url")
+        .and_then(Value::as_str)
+        .ok_or_else(|| "Control Plane browser-session lease missing claim_url".to_string())?;
+    if !claim_url.starts_with("/control/browser-session/claim?") || claim_url.contains("://") {
+        return Err("Control Plane browser-session lease returned unsafe claim URL".to_string());
+    }
+    Ok(format!("http://127.0.0.1:8766{claim_url}"))
 }
 
 /// Shut Marvex down cleanly: stop the locally-supervised backend (no-op in
@@ -362,14 +438,11 @@ fn show_overlay(app: AppHandle) -> Result<(), String> {
     apply_ui_mode(&app, UiMode::Overlay)
 }
 
-/// Open (or focus) the full original Control Plane in its own window. The window
-/// loads the Control Plane server same-origin (so the SPA's relative `/control`
-/// calls work) and an init script injects the local bearer token into
-/// sessionStorage, matching the Control Plane web app's auth expectation.
+/// Open (or focus) the full original Control Plane in its own window.
 #[tauri::command]
-fn open_control_plane(
+async fn open_control_plane(
     app: AppHandle,
-    state: tauri::State<Mutex<ShellState>>,
+    state: tauri::State<'_, Mutex<ShellState>>,
 ) -> Result<(), String> {
     let token = state
         .lock()
@@ -380,20 +453,18 @@ fn open_control_plane(
         window.show().map_err(|err| err.to_string())?;
         return window.set_focus().map_err(|err| err.to_string());
     }
-    // Load a shell-owned loader page that shows backend bring-up/errors and then
-    // navigates to the control plane server when it is ready. The init script
-    // injects the bearer token on whatever origin loads (including 127.0.0.1:8766
-    // after navigation), so the SPA authenticates without a blank/race window.
-    let escaped = token.replace('\\', "\\\\").replace('\'', "\\'");
-    let init = format!("window.sessionStorage.setItem('marvex_control_plane_token', '{escaped}');");
+    let entry_url = fetch_control_plane_entry_url(&token).await?;
     tauri::WebviewWindowBuilder::new(
         &app,
         "control",
-        tauri::WebviewUrl::App("control-loader".into()),
+        tauri::WebviewUrl::External(
+            entry_url
+                .parse()
+                .map_err(|err| format!("invalid Control Plane entry URL: {err}"))?,
+        ),
     )
     .title("Marvex Control Plane")
     .inner_size(1280.0, 860.0)
-    .initialization_script(&init)
     .build()
     .map_err(|err| err.to_string())?;
     Ok(())
@@ -455,7 +526,10 @@ pub fn run() {
             backend_health,
             gui_health,
             submit_chat_turn,
+            create_chat_session,
+            list_chat_sessions,
             control_request,
+            control_plane_entry_url,
             set_overlay_click_through,
             set_overlay_size,
             show_chat,
@@ -623,5 +697,16 @@ mod tests {
         assert!(windows
             .iter()
             .any(|value| value.as_str() == Some("control")));
+    }
+
+    #[test]
+    fn control_plane_window_does_not_inject_bearer_token_into_browser_storage() {
+        let source = include_str!("lib.rs");
+        let storage_call = concat!("window.", "sessionStorage", ".setItem");
+        let storage_key = concat!("marvex_control", "_plane_token");
+
+        assert!(!source.contains(storage_call));
+        assert!(!source.contains(storage_key));
+        assert!(source.contains("control_plane_entry_url"));
     }
 }

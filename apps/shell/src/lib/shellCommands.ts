@@ -78,6 +78,34 @@ export async function submitChatTurn(text: string, metadata?: ChatTurnMetadata):
   return invoke("submit_chat_turn", { text, metadata });
 }
 
+export type BackendSessionRef = {
+  ref_type: "session";
+  ref_id: string;
+};
+
+export type BackendSession = {
+  schema_version: string;
+  session_ref: BackendSessionRef;
+  title: string;
+  created_at_unix_ms: number;
+  updated_at_unix_ms: number;
+  turn_count: number;
+  trace_count: number;
+  transcript_persisted: false;
+};
+
+export async function createChatSession(title?: string): Promise<{ schema_version: string; session: BackendSession; transcript_persisted: false }> {
+  return invoke("create_chat_session", { title });
+}
+
+export async function listChatSessions(): Promise<{ schema_version: string; sessions: BackendSession[]; session_count: number; transcript_persisted: false }> {
+  return invoke("list_chat_sessions");
+}
+
+export async function controlPlaneEntryUrl(): Promise<string> {
+  return invoke<string>("control_plane_entry_url");
+}
+
 export async function controlRequest(path: string, method = "GET", body?: unknown): Promise<unknown> {
   return invoke("control_request", { path, method, body });
 }

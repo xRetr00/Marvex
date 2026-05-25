@@ -7,14 +7,12 @@ export interface StoredMessage {
 
 export interface SessionMeta {
   id: string;
-  createdAt: number;
   updatedAt: number;
   title: string;
 }
 
-const ACTIVE_KEY = "marvex.session.active";
-const INDEX_KEY = "marvex.session.index";
-const MSG_PREFIX = "marvex.session.messages.";
+const INDEX_KEY = "marvex.session.cache.index";
+const MSG_PREFIX = "marvex.session.cache.messages.";
 
 function readJson<T>(key: string, fallback: T): T {
   try {
@@ -29,62 +27,30 @@ function writeJson(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {
-    /* storage unavailable — degrade to in-memory only for this session */
+    /* storage unavailable — cache is optional */
   }
 }
 
-function makeId(): string {
-  const rand = Math.random().toString(36).slice(2, 10);
-  return `session-${Date.now()}-${rand}`;
+export function rememberSession(session: SessionMeta): void {
+  const list = listCachedSessions().filter((item) => item.id !== session.id);
+  list.push(session);
+  writeJson(INDEX_KEY, list.sort((a, b) => b.updatedAt - a.updatedAt));
 }
 
-function index(): SessionMeta[] {
-  return readJson<SessionMeta[]>(INDEX_KEY, []);
-}
-
-function upsertMeta(id: string, patch: Partial<SessionMeta>): void {
-  const list = index();
-  const now = Date.now();
-  const existing = list.find((m) => m.id === id);
-  if (existing) {
-    Object.assign(existing, patch, { updatedAt: now });
-  } else {
-    list.push({ id, createdAt: now, updatedAt: now, title: "New chat", ...patch });
-  }
-  writeJson(INDEX_KEY, list);
-}
-
-export function getActiveSessionId(): string {
-  let id = localStorage.getItem(ACTIVE_KEY);
-  if (!id) {
-    id = makeId();
-    localStorage.setItem(ACTIVE_KEY, id);
-    upsertMeta(id, { title: "New chat" });
-  }
-  return id;
-}
-
-export function newSession(): string {
-  const id = makeId();
-  localStorage.setItem(ACTIVE_KEY, id);
-  upsertMeta(id, { title: "New chat" });
-  return id;
-}
-
-export function setActiveSession(id: string): void {
-  localStorage.setItem(ACTIVE_KEY, id);
-}
-
-export function loadMessages(id: string): StoredMessage[] {
+export function loadCachedMessages(id: string): StoredMessage[] {
   return readJson<StoredMessage[]>(MSG_PREFIX + id, []);
 }
 
-export function saveMessages(id: string, messages: StoredMessage[]): void {
+export function saveCachedMessages(id: string, messages: StoredMessage[]): void {
   writeJson(MSG_PREFIX + id, messages);
   const firstUser = messages.find((m) => m.role === "user");
-  upsertMeta(id, firstUser ? { title: firstUser.text.slice(0, 48) } : {});
+  rememberSession({
+    id,
+    title: firstUser ? firstUser.text.slice(0, 48) : "New chat",
+    updatedAt: Date.now(),
+  });
 }
 
-export function listSessions(): SessionMeta[] {
-  return index().sort((a, b) => b.updatedAt - a.updatedAt);
+export function listCachedSessions(): SessionMeta[] {
+  return readJson<SessionMeta[]>(INDEX_KEY, []).sort((a, b) => b.updatedAt - a.updatedAt);
 }

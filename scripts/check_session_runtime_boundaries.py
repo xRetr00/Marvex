@@ -22,7 +22,9 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.contracts",
     "packages.session_runtime",
     "pydantic",
+    "time",
     "typing",
+    "uuid",
 )
 FORBIDDEN_IMPORT_PREFIXES = (
     "apps",
