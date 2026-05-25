@@ -20,7 +20,7 @@ Marvex uses **Tier 1: Production (Setuptools Console Scripts)** for runtime serv
 1. Tauri installer packages `uv.exe`, the valid `marvex-<version>-py3-none-any.whl`,
    and dependency wheels under `wheels/`
 2. On first app launch, supervisor detects missing venv
-3. Creates `~/.marvex/runtime/venv/` via `uv venv --python 3.11`
+3. Creates `~/.marvex/runtime/venv/` via `uv venv --python 3.12`
 4. Installs wheel from bundled resources: `uv pip install --no-index --find-links wheels marvex-<version>-py3-none-any.whl`
 5. Records a runtime wheel marker so later app updates reinstall Marvex when
    the bundled wheel changes.
@@ -171,7 +171,7 @@ Look for bundled resources?
 Generate bearer token
   ↓
 Create venv:
-  uv venv ~/.marvex/runtime/venv --python 3.11
+  uv venv ~/.marvex/runtime/venv --python 3.12
   ↓
 Install wheel into venv:
   uv pip install --no-index --find-links wheels marvex-<version>-py3-none-any.whl --python ~/.marvex/runtime/venv/Scripts/python.exe

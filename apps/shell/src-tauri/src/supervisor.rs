@@ -30,6 +30,7 @@ const CORE_PORT: u16 = 8765;
 const CONTROL_PORT: u16 = 8766;
 const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";
 const MARVEX_PACKAGE_NAME: &str = "marvex";
+const PYTHON_RUNTIME_VERSION: &str = "3.12";
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
@@ -453,7 +454,7 @@ fn ensure_runtime(
                 "venv".to_string(),
                 venv_arg,
                 "--python".to_string(),
-                "3.11".to_string(),
+                PYTHON_RUNTIME_VERSION.to_string(),
             ],
             data_dir,
             &bootstrap_log,
@@ -744,7 +745,7 @@ mod tests {
         find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
         runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
         write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
-        ServiceKind,
+        ServiceKind, PYTHON_RUNTIME_VERSION,
     };
     use serde_json::Value;
     use std::{
@@ -806,6 +807,11 @@ mod tests {
     fn uv_cache_lives_under_runtime_data_dir() {
         let cache = runtime_uv_cache_dir(Path::new("/data"));
         assert!(cache.ends_with("runtime/uv-cache") || cache.ends_with("runtime\\uv-cache"));
+    }
+
+    #[test]
+    fn packaged_runtime_uses_python_312_for_voice_wheels() {
+        assert_eq!(PYTHON_RUNTIME_VERSION, "3.12");
     }
 
     #[test]

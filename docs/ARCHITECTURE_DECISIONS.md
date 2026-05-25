@@ -86,7 +86,7 @@ spawn_dev_fallback(service_name, ...)
 | venv must exist | First launch slower | One-time cost (~1-2 min) |
 | Network dep (uv) | Requires internet for install | Network check + error handling |
 | Virtual env overhead | Minor (40-50 MB venv) | Acceptable for functionality |
-| Python 3.11 requirement | Excludes older Python | Acceptable modern baseline |
+| Python 3.12 packaged runtime requirement | Excludes older Python from the packaged Windows runtime | Matches the offline voice wheelhouse and remains an acceptable modern baseline |
 
 ---
 
@@ -318,7 +318,7 @@ Subsequent Launches:
   "runtime_tier": "tier1_setuptools",
   "bootstrap_timestamp": "2024-01-15T10:30:45Z",
   "wheel_version": "0.1.0",
-  "python_version": "3.11.8",
+  "python_version": "3.12.x",
   "services": {
     "core": {
       "console_script_path": "/home/user/.marvex/runtime/venv/Scripts/marvex-core.exe",

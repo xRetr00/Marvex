@@ -13,6 +13,9 @@ From the workspace root (`D:\Marvex`):
 
 # With verbose output
 .\build-installer.ps1 -Verbose
+
+# Build everything EXCEPT the final installer (fastest - good for development)
+.\build-installer.ps1 -SkipInstaller
 ```
 
 **Note**: The build system automatically reads the application version from `version.toml` in the repo root. See [Version Management](#version-management) for details.
@@ -29,7 +32,7 @@ The script validates these automatically (or use `-SkipValidation`):
 | npm | Bundled with Node | Automatic |
 | Rust/Cargo | Latest | https://rustup.rs/ |
 | uv | Latest | `pip install uv` |
-| Python | 3.11+ | https://www.python.org/ |
+| Python | 3.12+ | https://www.python.org/ |
 
 **Quick install check**:
 ```powershell
@@ -51,7 +54,7 @@ python --version
   - npm 10.x.x
   - Cargo 1.x.x
   - uv 0.x.x
-  - Python 3.11+
+  - Python 3.12+
 ```
 
 **What it does**: Ensures all required tools are installed and accessible.
@@ -182,7 +185,7 @@ npm --prefix apps/shell run tauri build
 ✓ npm: 10.2.4
 ✓ Cargo: cargo 1.77.0
 ✓ uv: uv 0.1.45
-✓ Python: 3.11.8
+✓ Python: 3.12.x
 
 [1/5] Building Python Wheel...
 ✓ Wheel built: marvex-<version>-py3-none-any.whl
@@ -384,11 +387,29 @@ Then rebuilds from scratch.
 
 ## Build Variants
 
+### Development (No Installer)
+```powershell
+.\build-installer.ps1 -SkipInstaller
+```
+Build everything **except** the final Tauri installer. Fastest option for development iteration.
+
+**Time**: ~8-12 min (skips 5-15 min Tauri build)
+
+Use this when:
+- Testing wheel, frontend, or voice assets
+- Iterating on build configuration
+- Don't need the installer yet
+
+Then run full build when ready:
+```powershell
+.\build-installer.ps1
+```
+
 ### Fastest (Dev Testing)
 ```powershell
 .\build-installer.ps1 -SkipValidation
 ```
-Assumes all tools are installed. Saves validation time.
+Assumes all tools are installed. Saves validation time (~1 sec).
 
 ### Verbose Output (Debugging)
 ```powershell
@@ -434,8 +455,13 @@ Supports runtime package installation
 | Wheel build | 1-2 min | Depends on network (deps download) |
 | Runtime prep | < 1s | File copies |
 | Frontend build | 3-5 min | First run (incremental: 1-2 min) |
+| Voice models | 1-2 min | Download + keyword generation |
+| **Subtotal** | **~8-12 min** | With `-SkipInstaller` |
 | Tauri build | 5-15 min | First run (incremental: 2-5 min) |
-| **TOTAL** | **15-30 min** | First run |
+| Installer gen | < 1 min | NSIS/MSI packaging |
+| **TOTAL** | **15-30 min** | Full build (first run) |
+
+**Note**: Use `-SkipInstaller` during development to reach the 8-12 min subtotal.
 
 ---
 
