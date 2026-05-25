@@ -28,15 +28,13 @@ if not exist "%VersionFile%" (
 )
 
 setlocal enabledelayedexpansion
-for /f "tokens=*" %%A in ('findstr "version = " "%VersionFile%"') do (
-    set "line=%%A"
-    if "!line:~0,1!" neq "#" (
-        for /f "tokens=3 delims="""  %%B in ("%%A") do (
-            set "AppVersion=%%B"
-        )
-    )
+set "AppVersion="
+for /f "tokens=3" %%A in ('findstr /B "version = " "%VersionFile%"') do (
+    set "AppVersion=%%A"
+    set "AppVersion=!AppVersion:"=!"
 )
 endlocal & set "AppVersion=%AppVersion%"
+
 if not defined AppVersion (
     echo [ERROR] Could not parse version from %VersionFile%
     exit /b 1
@@ -281,12 +279,22 @@ if not exist "%RuntimeDir%" (
 )
 
 call :WriteStep "Copying wheel to runtime..." 2 6
-copy /y "%WheelPath%" "%RuntimeDir%\marvex-runtime.whl" >nul
+del /q "%RuntimeDir%\marvex-*.whl" >nul 2>nul
+for %%F in ("%WheelPath%") do set "WheelFileName=%%~nxF"
+copy /y "%WheelPath%" "%RuntimeDir%\%WheelFileName%" >nul
 if errorlevel 1 (
     call :Die "Failed to copy wheel to runtime"
     exit /b 1
 )
-call :WriteSuccess "Wheel copied to %RuntimeDir%\marvex-runtime.whl"
+call :WriteSuccess "Wheel copied to %RuntimeDir%\%WheelFileName%"
+
+set "RuntimeWheels=%RuntimeDir%\wheels"
+if not exist "%RuntimeWheels%" mkdir "%RuntimeWheels%"
+del /q "%RuntimeWheels%\*.whl" >nul 2>nul
+for %%F in ("%RepoRoot%\dist\*.whl") do (
+    if /I not "%%~fF"=="%WheelPath%" copy /y "%%~fF" "%RuntimeWheels%\" >nul
+)
+call :WriteSuccess "Dependency wheels copied to %RuntimeWheels%"
 
 call :WriteStep "Locating uv executable..." 2 6
 set "uvPath="

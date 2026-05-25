@@ -6,7 +6,7 @@
 .DESCRIPTION
     Comprehensive build script that:
     1. Validates environment (Node, Cargo, Rust, uv, Python 3.11+)
-    2. Builds Python wheel (marvex-*.whl, staged as marvex-runtime.whl)
+    2. Builds Python wheel (marvex-*.whl, staged with its valid wheel filename)
     3. Prepares runtime resources (uv.exe bundling)
     4. Builds React/Vite frontend
     5. Builds Tauri app + generates NSIS/MSI installers
@@ -263,11 +263,24 @@ function Prepare-Runtime-Resources {
         Write-Success "Created $RuntimeDir"
     }
     
-    # Copy wheel to runtime (fixed filename for bundling)
+    # Copy wheel to runtime using its valid wheel filename.
     Write-Step "Copying wheel to runtime..." 2 5
-    $runtimeWheel = Join-Path $RuntimeDir "marvex-runtime.whl"
+    Get-ChildItem -Path $RuntimeDir -Filter "marvex-*.whl" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    $runtimeWheel = Join-Path $RuntimeDir (Split-Path $WheelPath -Leaf)
     Copy-Item -Path $WheelPath -Destination $runtimeWheel -Force
     Write-Success "Wheel copied to $runtimeWheel"
+
+    $runtimeWheels = Join-Path $RuntimeDir "wheels"
+    if (-not (Test-Path $runtimeWheels)) {
+        New-Item -Type Directory -Path $runtimeWheels | Out-Null
+    }
+    Get-ChildItem -Path $runtimeWheels -Filter "*.whl" -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+    Get-ChildItem -Path (Join-Path $RepoRoot "dist") -Filter "*.whl" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $WheelPath } |
+        Copy-Item -Destination $runtimeWheels -Force
+    Write-Success "Dependency wheels copied to $runtimeWheels"
     
     # Find uv.exe (bundled or system)
     Write-Step "Locating uv executable..." 2 5
