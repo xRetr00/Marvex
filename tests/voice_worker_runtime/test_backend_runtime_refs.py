@@ -64,7 +64,9 @@ def test_worker_test_stt_captures_audio_ref_for_runner_without_persistence(tmp_p
 def test_worker_generated_audio_sink_creates_ref_without_persisting_audio(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
     manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
     generated_audio = VoiceWorkerGeneratedAudioSink()
     observed: list[tuple[str, int]] = []
 

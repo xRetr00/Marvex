@@ -19,7 +19,7 @@ from packages.ports.core_service_port import CoreTurnExecutorPort
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-core-service"
-SERVICE_VERSION = "0.1.0"
+SERVICE_VERSION = "0.2.0"
 CONTRACT_VERSIONS = {
     "CoreService": SCHEMA_VERSION,
     "HealthCheck": SCHEMA_VERSION,

@@ -32,9 +32,7 @@ export async function fetchBackendStatus(): Promise<BackendStatus> {
   const svc = services.status === "fulfilled" ? services.value : {};
   let wakeword: WakewordState = "unknown";
   if (voice.status === "fulfilled" && voice.value && typeof voice.value === "object") {
-    const w = voice.value as { wakeword_status?: string; lifecycle_state?: string };
-    if (w.wakeword_status) wakeword = w.wakeword_status as WakewordState;
-    else if (w.lifecycle_state === "running") wakeword = "running";
+    wakeword = wakewordStateFromVoiceStatus(voice.value as Record<string, unknown>);
   } else if (typeof svc.voice_worker === "string" && svc.voice_worker.startsWith("running")) {
     wakeword = "running";
   }
@@ -45,6 +43,28 @@ export async function fetchBackendStatus(): Promise<BackendStatus> {
     services: svc,
     wakeword,
   };
+}
+
+function wakewordStateFromVoiceStatus(status: Record<string, unknown>): WakewordState {
+  const wakewordStatus = typeof status.wakeword_status === "string" ? status.wakeword_status : undefined;
+  const lifecycleState = typeof status.lifecycle_state === "string" ? status.lifecycle_state : undefined;
+  const modelStatus = status.wakeword_model_status && typeof status.wakeword_model_status === "object"
+    ? status.wakeword_model_status as Record<string, unknown>
+    : {};
+  const supervisorStatus = status.wakeword_supervisor_status && typeof status.wakeword_supervisor_status === "object"
+    ? status.wakeword_supervisor_status as Record<string, unknown>
+    : {};
+  const readiness = typeof modelStatus.readiness_status === "string"
+    ? modelStatus.readiness_status
+    : typeof modelStatus.status === "string"
+      ? modelStatus.status
+      : undefined;
+
+  if (wakewordStatus === "disabled") return "disabled";
+  if (readiness === "not_ready" || supervisorStatus.asset_ready === false) return "not_ready";
+  if (wakewordStatus === "running" || wakewordStatus === "enabled" || wakewordStatus === "not_ready") return wakewordStatus;
+  if (lifecycleState === "running") return "running";
+  return "unknown";
 }
 
 /** Poll backend readiness — fast while booting, slow once ready. */

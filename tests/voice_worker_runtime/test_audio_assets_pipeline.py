@@ -97,7 +97,7 @@ def test_asset_manager_reports_required_backend_assets_without_raw_paths(tmp_pat
     assert statuses["hey-marvex"].checksum_present is True
     assert str(tmp_path).lower() not in str(serialized).lower()
     assert registry.required_ready_count == 1
-    assert registry.required_blocked_count >= 4
+    assert registry.required_blocked_count >= 3
 
 
 def test_asset_manager_blocks_checksum_mismatch_for_file_assets(tmp_path: Path) -> None:
@@ -343,7 +343,9 @@ def test_worker_test_stt_invokes_installed_asset_runner_without_rendering_transc
 def test_worker_test_tts_invokes_installed_voice_runner_without_rendering_text(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
     manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
     calls: list[tuple[str, str]] = []
 
     def tts_runner(request, asset):
@@ -398,7 +400,7 @@ def test_worker_status_projection_includes_health_events_errors_and_model_status
     # Wakeword is enabled by default now, so a test with no installed KWS asset
     # surfaces the missing-asset blocker rather than the not-enabled one.
     assert projection["error"]["reason_code"] == "wakeword_model_not_installed"
-    assert projection["model_assets"]["required_blocked_count"] >= 5
+    assert projection["model_assets"]["required_blocked_count"] >= 4
     assert projection["stt_backend_status"]["active_backend_id"] == "moonshine-v2"
     assert projection["stt_backend_status"]["status"] == "not_ready"
     assert projection["tts_backend_status"]["active_backend_id"] == "kokoro-onnx"

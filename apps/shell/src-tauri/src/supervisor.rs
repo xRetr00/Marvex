@@ -25,12 +25,14 @@ use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 const MANIFEST_SCHEMA_VERSION: &str = "1";
-const MARVEX_VERSION: &str = "0.1.0";
+const MARVEX_VERSION: &str = "0.2.0";
 const CORE_PORT: u16 = 8765;
 const CONTROL_PORT: u16 = 8766;
 const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";
 const MARVEX_PACKAGE_NAME: &str = "marvex";
 const PYTHON_RUNTIME_VERSION: &str = "3.12";
+const PRODUCT_PROVIDER: &str = "lmstudio_responses";
+const PRODUCT_MODEL: &str = "qwen2.5-coder-7b";
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
@@ -265,7 +267,9 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
                 "--provider".into(),
                 "provider_worker".into(),
                 "--worker-provider".into(),
-                "fake".into(),
+                PRODUCT_PROVIDER.into(),
+                "--model".into(),
+                PRODUCT_MODEL.into(),
             ],
             env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
@@ -791,7 +795,7 @@ mod tests {
     }
 
     #[test]
-    fn core_service_uses_worker_backed_provider_path() {
+    fn core_service_uses_worker_backed_real_provider_path() {
         let specs = service_specs("secret-token");
         let core = specs.iter().find(|spec| spec.name == "core").expect("core");
 
@@ -799,7 +803,8 @@ mod tests {
         assert!(core
             .args
             .windows(2)
-            .any(|pair| pair == ["--worker-provider", "fake"]));
+            .any(|pair| pair == ["--worker-provider", "lmstudio_responses"]));
+        assert!(!core.args.windows(2).any(|pair| pair == ["--model", "fake-model"]));
     }
 
     #[test]

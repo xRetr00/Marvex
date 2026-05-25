@@ -20,6 +20,7 @@ from .browser_session import BrowserSessionManager
 from .deps import handle_deps_request
 from .logs import logs_payload
 from .models import ApprovalDecisionInput, ApprovalDecisionResponse, ControlPlaneSnapshot
+from .providers import handle_provider_control_request
 from .state import handle_state_snapshot
 from .voice import handle_voice_control_request
 
@@ -109,6 +110,7 @@ def _create_control_plane_dispatcher(
     log_reader: Any | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
+    provider_control: Any | None = None,
 ) -> ControlPlaneDispatcher:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -194,6 +196,11 @@ def _create_control_plane_dispatcher(
         deps_response = handle_deps_request(method=method, path=path, environ=environ, pip_runner=deps_pip_runner)
         if deps_response is not None:
             status, payload = deps_response
+            return _json_response(None, status, payload)
+
+        provider_response = handle_provider_control_request(method=method, path=path, environ=environ, provider_control=provider_control)
+        if provider_response is not None:
+            status, payload = provider_response
             return _json_response(None, status, payload)
 
         agent_response = handle_agent_control_request(method=method, path=path, environ=environ, agent_catalog_projection=agent_catalog_projection, persona_catalog_projection=persona_catalog_projection)
@@ -376,6 +383,21 @@ def _create_control_plane_dispatcher(
             return _json_response(None, "200 OK", logs_payload(log_reader))
         if method == "GET" and path == f"{CONTROL_PREFIX}/snapshot":
             payload = snapshot.model_dump(mode="json")
+            if provider_control is not None and hasattr(provider_control, "provider_catalog"):
+                provider_catalog = _safe_nested_mapping(provider_control.provider_catalog())
+                payload["providers"] = provider_catalog.get("providers", [])
+                payload["settings"] = {
+                    **dict(payload.get("settings", {})),
+                    "active_provider_id": provider_catalog.get("active_provider_id"),
+                }
+            trace_rows = _trace_rows(trace_reader=trace_reader, trace_ids=trace_ids)
+            if trace_rows:
+                payload["traces"] = trace_rows
+                payload["telemetry"] = {
+                    **dict(payload.get("telemetry", {})),
+                    "trace_count": len(trace_rows),
+                    "telemetry_event_count": sum(int(row.get("event_count", 0) or 0) for row in trace_rows),
+                }
             payload["approvals"] = approval_store.list_pending().model_dump(mode="json")
             return _json_response(None, "200 OK", payload)
         if method == "GET" and path == f"{CONTROL_PREFIX}/health":
@@ -617,6 +639,30 @@ def _safe_mapping(value: dict[str, Any]) -> dict[str, Any]:
         elif isinstance(item, int | float | bool) or item is None:
             safe[key_text] = item
     return safe
+
+
+def _trace_rows(*, trace_reader: Any | None, trace_ids: tuple[str, ...]) -> list[dict[str, Any]]:
+    ids = list(trace_ids)
+    if not ids and trace_reader is not None and hasattr(trace_reader, "_events_by_trace_id"):
+        try:
+            ids = list(getattr(trace_reader, "_events_by_trace_id").keys())[-50:]
+        except Exception:
+            ids = []
+    rows: list[dict[str, Any]] = []
+    for trace_id in ids[-50:]:
+        try:
+            envelope = trace_reader.read_trace(str(trace_id)) if trace_reader is not None else None
+        except Exception:
+            envelope = None
+        rows.append(
+            {
+                "trace_id": str(trace_id),
+                "event_count": int((envelope or {}).get("event_count", 0) or 0),
+                "truncated": bool((envelope or {}).get("truncated", False)),
+                "raw_payload_persisted": False,
+            }
+        )
+    return rows
 
 
 def _error(reason: str, path: str) -> dict[str, Any]:

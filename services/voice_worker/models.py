@@ -9,7 +9,7 @@ from packages.voice_worker_runtime.models import SCHEMA_VERSION
 
 
 SERVICE_NAME = "marvex-voice-worker"
-SERVICE_VERSION = "0.1.0"
+SERVICE_VERSION = "0.2.0"
 
 
 class VoiceWorkerServiceModel(BaseModel):

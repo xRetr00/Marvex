@@ -317,7 +317,7 @@ Subsequent Launches:
   "runtime_architecture": "tier1_setuptools_console_scripts",
   "runtime_tier": "tier1_setuptools",
   "bootstrap_timestamp": "2024-01-15T10:30:45Z",
-  "wheel_version": "0.1.0",
+  "wheel_version": "0.2.0",
   "python_version": "3.12.x",
   "services": {
     "core": {

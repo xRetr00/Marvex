@@ -194,7 +194,7 @@ Write manifest to ~/.marvex/runtime/manifest.json
 ```json
 {
   "schema_version": "1",
-  "marvex_version": "0.1.0",
+  "marvex_version": "0.2.0",
   "runtime_phase": "ready",
   "runtime_architecture": "tier1_setuptools_console_scripts",
   "created_at_unix_ms": 1234567890000,

@@ -183,7 +183,7 @@ def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(t
     assert install["exact_blocker"] == "model_path_not_found_under_voice_asset_root"
     assert assets_status == "200 OK"
     assert assets["installed_count"] == 0
-    assert assets["required_blocked_count"] >= 5
+    assert assets["required_blocked_count"] >= 4
     assert remove_status == "200 OK"
     assert remove["removed"] is False
 

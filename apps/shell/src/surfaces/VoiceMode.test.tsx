@@ -39,6 +39,17 @@ const catalog = {
       extract: false,
       required: true,
       explicit_user_triggered: true
+    },
+    {
+      model_id: "moonshine-v2",
+      backend_id: "moonshine-v2",
+      model_kind: "stt",
+      relative_path: "stt/moonshine/tokenizer.bin",
+      install_relative_path: "stt/moonshine",
+      source_uri: "https://download.moonshine.ai/model/medium-streaming-en/quantized/tokenizer.bin",
+      extract: false,
+      required: true,
+      explicit_user_triggered: true
     }
   ],
   raw_payload_persisted: false
@@ -54,7 +65,12 @@ vi.mock("@/lib/voiceControlClient", () => ({
   switchVoiceWorkerStt: vi.fn(async () => status),
   switchVoiceWorkerTts: vi.fn(async () => status),
   switchVoiceWorkerVoice: vi.fn(async () => status),
-  downloadVoiceModel: vi.fn(async () => ({ status: "installed" }))
+  downloadVoiceModel: vi.fn(async () => ({ status: "installed" })),
+  downloadVoiceModelGroup: vi.fn(async (_assets, onProgress) => {
+    onProgress?.({ asset: catalog.assets[0], completed: 1, total: 2 });
+    onProgress?.({ asset: catalog.assets[1], completed: 2, total: 2 });
+    return [{ status: "installed" }, { status: "installed" }];
+  })
 }));
 
 describe("VoiceMode", () => {
@@ -73,6 +89,7 @@ describe("VoiceMode", () => {
     await user.click(screen.getByRole("button", { name: "Download moonshine-v2" }));
 
     await waitFor(() => expect(voiceClient.switchVoiceWorkerTts).toHaveBeenCalledWith("piper-tts"));
-    expect(voiceClient.downloadVoiceModel).toHaveBeenCalledWith(catalog.assets[0]);
+    await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets, expect.any(Function)));
+    expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });
 });
