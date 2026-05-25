@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import json
 from dataclasses import dataclass
 from typing import Any
@@ -34,6 +35,30 @@ def test_asgi_host_builds_fastapi_apps_from_wsgi_apps():
     assert isinstance(app, FastAPI)
     assert app.title == "Marvex Test"
     assert app.routes
+
+
+def test_asgi_host_mounts_wsgi_apps_with_a2wsgi_middleware():
+    from packages.local_api.asgi_host import create_asgi_app
+
+    app = create_asgi_app(_wsgi_app, title="Marvex Test")
+    mounted_apps = [getattr(route, "app", None) for route in app.routes]
+    middleware = next(
+        (
+            mounted_app
+            for mounted_app in mounted_apps
+            if mounted_app is not None and mounted_app.__class__.__name__ == "WSGIMiddleware"
+        ),
+        None,
+    )
+
+    assert middleware is not None
+    assert middleware.__class__.__module__.split(".")[0] == "a2wsgi"
+
+
+def test_asgi_host_does_not_import_deprecated_starlette_wsgi_middleware():
+    source = Path("packages/local_api/asgi_host.py").read_text(encoding="utf-8")
+
+    assert "starlette.middleware.wsgi" not in source
 
 
 def test_asgi_host_rejects_remote_hosts_by_default():
