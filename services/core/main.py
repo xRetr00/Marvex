@@ -116,6 +116,7 @@ from packages.provider_selection_runtime import (
 )
 from packages.provider_structured_output import validate_raw_structured_output
 from packages.session_runtime import (
+    BackendSessionCoordinator,
     CurrentProcessSessionRegistry,
     build_turn_linkage_from_assistant_turn_input,
 )
@@ -342,12 +343,17 @@ class _CoreServiceFoundationTurnExecutor:
         *,
         foundation_turn_handler: Callable[[_CoreTurnExecutorRequest], Any],
         model: str,
+        session_registry: CurrentProcessSessionRegistry | None = None,
     ) -> None:
         self._foundation_turn_handler = foundation_turn_handler
         self._model = model
+        self._session_registry = session_registry or CurrentProcessSessionRegistry()
 
     def submit_turn(self, turn_input):
-        return self._foundation_turn_handler(
+        linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
+        self._session_registry.record_turn(linkage)
+        session_projection = _session_projection(self._session_registry, turn_input)
+        result = self._foundation_turn_handler(
             _CoreTurnExecutorRequest(
                 schema_version=turn_input.schema_version,
                 execution_mode=LOCAL_TURNS_EXECUTION_MODE,
@@ -358,6 +364,13 @@ class _CoreServiceFoundationTurnExecutor:
                 provider_options={},
             )
         )
+        if hasattr(result, "model_copy"):
+            metadata = {**getattr(result, "metadata", {}), "session": session_projection}
+            return result.model_copy(update={"metadata": metadata})
+        if isinstance(result, dict):
+            metadata = {**result.get("metadata", {}), "session": session_projection}
+            return {**result, "metadata": metadata}
+        return result
 
 
 class _ProviderWorkerProcessProvider:
@@ -2382,6 +2395,7 @@ def _persist_trace_events(
 def _create_foundation_turn_executor(
     *,
     trace_reader: InMemoryTraceReader,
+    session_registry: CurrentProcessSessionRegistry | None = None,
 ) -> _CoreServiceFoundationTurnExecutor:
     from packages.runtime_composition import create_local_api_fake_turn_handler
 
@@ -2390,6 +2404,7 @@ def _create_foundation_turn_executor(
             telemetry_sink=trace_reader
         ),
         model=DEFAULT_FOUNDATION_MODEL,
+        session_registry=session_registry,
     )
 
 
@@ -2398,6 +2413,7 @@ def create_core_service(
     trace_reader: InMemoryTraceReader | None = None,
     enable_foundation_turns: bool = True,
     config: CoreServiceEntrypointConfig | None = None,
+    session_registry: CurrentProcessSessionRegistry | None = None,
 ) -> CoreService:
     effective_trace_reader = trace_reader or InMemoryTraceReader()
     effective_config = config or CoreServiceEntrypointConfig()
@@ -2405,6 +2421,7 @@ def create_core_service(
         _create_turn_executor(
             trace_reader=effective_trace_reader,
             config=effective_config,
+            session_registry=session_registry,
         )
         if enable_foundation_turns
         else _HealthOnlyTurnExecutor()
@@ -2416,12 +2433,16 @@ def _create_turn_executor(
     *,
     trace_reader: InMemoryTraceReader,
     config: CoreServiceEntrypointConfig,
+    session_registry: CurrentProcessSessionRegistry | None = None,
 ) -> object:
     # NOTE: intent preflight + Tool/Provider worker routing only runs when a
     # worker-backed provider is selected. The default "fake" provider uses the
     # in-process foundation executor and intentionally skips intent preflight.
     if config.provider == "fake":
-        return _create_foundation_turn_executor(trace_reader=trace_reader)
+        return _create_foundation_turn_executor(
+            trace_reader=trace_reader,
+            session_registry=session_registry,
+        )
     provider_name = (
         config.worker_provider
         if config.provider == "provider_worker"
@@ -2461,7 +2482,7 @@ def _create_turn_executor(
         approval_decision=config.approval_decision,
         base_url=config.base_url,
         timeout_seconds=config.timeout_seconds,
-        session_registry=CurrentProcessSessionRegistry(),
+        session_registry=session_registry or CurrentProcessSessionRegistry(),
         provider_selection_runtime=selection_runtime,
         learning_pipeline=learning_pipeline,
         persistent_trace_store=persistent_store,
@@ -2491,8 +2512,13 @@ def create_core_service_app(
     *,
     config: CoreServiceEntrypointConfig,
     trace_reader: InMemoryTraceReader | None = None,
+    session_registry: CurrentProcessSessionRegistry | None = None,
 ) -> tuple[Any, CoreService]:
-    service = create_core_service(trace_reader=trace_reader, config=config)
+    service = create_core_service(
+        trace_reader=trace_reader,
+        config=config,
+        session_registry=session_registry,
+    )
     service.start()
     persistent_store = _persistent_store_from_config(config)
     effective_reader: Any = _CompositeTraceReader(
@@ -2529,6 +2555,7 @@ def create_control_plane_service_app(
     config: CoreServiceEntrypointConfig,
     trace_reader: Any | None = None,
     state_bus: AssistantStateBus | None = None,
+    session_coordinator: BackendSessionCoordinator | None = None,
 ) -> Any:
     web_dist = os.environ.get("MARVEX_CONTROL_WEB_DIST") or None
     log_dir = os.environ.get("MARVEX_LOG_DIR")
@@ -2541,6 +2568,7 @@ def create_control_plane_service_app(
         state_bus=state_bus or get_default_bus(),
         web_dist=web_dist,
         log_reader=log_reader,
+        session_coordinator=session_coordinator,
     )
 
 
@@ -2599,9 +2627,11 @@ def run_core_service(
         raise ValueError("local_auth_token is required for Core service startup")
 
     trace_reader = InMemoryTraceReader()
+    session_coordinator = BackendSessionCoordinator()
     app, service = create_core_service_app(
         config=effective_config,
         trace_reader=trace_reader,
+        session_registry=session_coordinator,
     )
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
@@ -2609,6 +2639,7 @@ def run_core_service(
         config=effective_config,
         trace_reader=trace_reader,
         state_bus=state_bus,
+        session_coordinator=session_coordinator,
     )
     if server_factory is make_server and control_server_factory is None:
         asgi_config = AsgiHostConfig(

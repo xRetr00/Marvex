@@ -1,5 +1,9 @@
 from packages.contracts import ConversationRef, SessionRef
-from packages.session_runtime import CurrentProcessSessionRegistry, TurnLinkageMetadata
+from packages.session_runtime import (
+    BackendSessionCoordinator,
+    CurrentProcessSessionRegistry,
+    TurnLinkageMetadata,
+)
 
 
 def make_linkage(index: int) -> TurnLinkageMetadata:
@@ -81,3 +85,35 @@ def test_registry_is_instance_owned_and_current_process_only():
     assert first.read_session_projection(session_ref) is not None
     assert second.read_session_projection(session_ref) is None
 
+
+def test_backend_session_coordinator_mints_safe_handles_without_transcripts_or_tokens():
+    coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000)
+
+    handle = coordinator.create_session(title="Planning")
+
+    projection = handle.safe_projection()
+    assert projection["session_ref"]["ref_type"] == "session"
+    assert projection["title"] == "Planning"
+    assert projection["turn_count"] == 0
+    assert projection["trace_count"] == 0
+    assert projection["transcript_persisted"] is False
+    serialized = repr(projection).lower()
+    assert "token" not in serialized
+    assert "bearer" not in serialized
+    assert "raw prompt" not in serialized
+
+
+def test_backend_session_coordinator_auto_registers_manual_session_refs():
+    coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000)
+    linkage = make_linkage(1)
+
+    coordinator.record_turn(linkage)
+
+    sessions = coordinator.list_sessions()
+    assert len(sessions) == 1
+    projection = sessions[0].safe_projection()
+    assert projection["session_ref"] == {"ref_type": "session", "ref_id": "session-001"}
+    assert projection["title"] == "Session session-001"
+    assert projection["turn_count"] == 1
+    assert projection["trace_count"] == 1
+    assert projection["transcript_persisted"] is False

@@ -3,11 +3,11 @@ import { MessageSquare, SlidersHorizontal, Mic, MicOff, Radio, History, X, Plus,
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showOverlay, submitChatTurn, openControlPlane, startBackend, marvexShutdown, marvexRestart, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showOverlay, submitChatTurn, openControlPlane, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
-import { getActiveSessionId, loadMessages, saveMessages, newSession, setActiveSession, listSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
+import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 
 import { LimelightNav } from "@/components/dock";
@@ -37,11 +37,9 @@ function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listen
 export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
-  const sessionIdRef = useRef<string>(getActiveSessionId());
-  const [messages, setMessages] = useState<ChatMessage[]>(() => {
-    const restored = loadMessages(sessionIdRef.current) as ChatMessage[];
-    return restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }];
-  });
+  const sessionIdRef = useRef<string | null>(null);
+  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready. How can I help?" }]);
+  const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [pending, setPending] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -53,6 +51,15 @@ export function ChatApp() {
 
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
+  const activateBackendSession = useCallback((session: BackendSession) => {
+    const id = session.session_ref.ref_id;
+    sessionIdRef.current = id;
+    rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
+    const restored = loadCachedMessages(id) as ChatMessage[];
+    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }]);
+    setSessions(listCachedSessions());
+  }, []);
+
   useEffect(() => {
     void getShellRuntimeConfig().then(setConfig).catch(() => setConfig(null));
     let cleanup: VoidFunction | undefined;
@@ -62,6 +69,16 @@ export function ChatApp() {
     }).then((unlisten) => { cleanup = unlisten; });
     return () => cleanup?.();
   }, []);
+
+  useEffect(() => {
+    if (!backend?.ready || sessionIdRef.current) return;
+    void listChatSessions()
+      .then(async (response) => {
+        const first = response.sessions[0] ?? (await createChatSession("New chat")).session;
+        activateBackendSession(first);
+      })
+      .catch(() => undefined);
+  }, [backend?.ready, activateBackendSession]);
 
   // Reveal chat once backend is ready AND the hello has played (hello always
   // plays on open).
@@ -77,7 +94,10 @@ export function ChatApp() {
   }, [messages, pending]);
 
   useEffect(() => {
-    saveMessages(sessionIdRef.current, messages as StoredMessage[]);
+    if (sessionIdRef.current) {
+      saveCachedMessages(sessionIdRef.current, messages as StoredMessage[]);
+      setSessions(listCachedSessions());
+    }
   }, [messages]);
 
   const send = useCallback(async (text: string) => {
@@ -85,7 +105,9 @@ export function ChatApp() {
     setPending(true);
     setMessages((prev) => [...prev, { role: "user", text }]);
     try {
-      const result = await submitChatTurn(text, { session_id: sessionIdRef.current });
+      const sessionId = sessionIdRef.current;
+      if (!sessionId) throw new Error("backend session unavailable");
+      const result = await submitChatTurn(text, { session_id: sessionId });
       const outcome = outcomeFromTurnResult(result);
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives }]);
     } catch (error) {
@@ -105,17 +127,17 @@ export function ChatApp() {
   const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
 
   const startNewSession = useCallback(() => {
-    const id = newSession();
-    sessionIdRef.current = id;
-    setMessages([{ role: "system", text: "New chat started." }]);
-    setSidebarOpen(false);
-    setActiveTab("chat");
+    void createChatSession("New chat").then(({ session }) => {
+      activateBackendSession(session);
+      setMessages([{ role: "system", text: "New chat started." }]);
+      setSidebarOpen(false);
+      setActiveTab("chat");
+    }).catch(() => undefined);
   }, []);
 
   const openSession = useCallback((id: string) => {
-    setActiveSession(id);
     sessionIdRef.current = id;
-    const restored = loadMessages(id) as ChatMessage[];
+    const restored = loadCachedMessages(id) as ChatMessage[];
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }]);
     setSidebarOpen(false);
     setActiveTab("chat");
@@ -168,14 +190,14 @@ export function ChatApp() {
                 <button onClick={startNewSession} style={{ ...iconBtn, width: "100%", height: 36, gap: 6 }}><Plus size={14} /> New chat</button>
               </div>
               <div style={{ flex: 1, overflow: "auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-                {listSessions().map((s: SessionMeta) => (
+                {sessions.map((s: SessionMeta) => (
                   <button key={s.id} onClick={() => openSession(s.id)}
                     style={{ textAlign: "left", padding: "8px 10px", borderRadius: 10, background: s.id === sessionIdRef.current ? "var(--accent)" : "var(--secondary)", border: "1px solid var(--border)", cursor: "pointer", color: "var(--foreground)" }}>
                     <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "New chat"}</div>
                     <div style={{ fontSize: 10, color: "var(--muted-foreground)" }}>{new Date(s.updatedAt).toLocaleString()}</div>
                   </button>
                 ))}
-                {listSessions().length === 0 && <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>No saved sessions yet.</span>}
+                {sessions.length === 0 && <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>No saved sessions yet.</span>}
               </div>
             </motion.aside>
           )}
