@@ -1,13 +1,29 @@
 # Project Status
 
-current_phase: intent_tool_worker_execution_slice_checkpoint
+current_phase: native_asgi_control_plane_state_boundary_checkpoint
 
-implementation_status: intent_tool_worker_execution_slice_checkpoint
+implementation_status: native_asgi_control_plane_state_boundary_checkpoint
 
 accepted_docs: true
 
 current_governance_gate:
-Intent and Tool Worker Execution Slice Checkpoint
+Native ASGI Control Plane State Boundary Checkpoint
+
+## Native ASGI Control Plane State Boundary Checkpoint
+
+Marvex has started the native-ASGI endpoint ownership migration. Core and
+Control Plane still run under the Uvicorn two-port host, but Control Plane
+`/control/state` and `/control/state/stream` are now owned by native ASGI routes
+with the existing WSGI Control Plane app mounted as fallback for all other
+routes. The state stream remains SSE, uses the same safe `AssistantStateEvent`
+frame shape, keeps bearer and HttpOnly browser-session cookie auth behavior, and
+unsubscribes from the state bus on stream close.
+
+The migration plan for the remaining WSGI-to-ASGI phases is tracked in
+`docs/NATIVE_ASGI_MIGRATION_PLAN.md`. Core `/v1/turns`, trace lookup,
+Control Plane sessions, browser-session claims, static SPA serving, approvals,
+voice controls, dependency installs, and other Control Plane APIs intentionally
+remain on the compatibility bridge until their dedicated slices move them.
 
 ## Windows Shell Overhaul: Async Bridge, Presence, Control Plane Window, Always-On Voice Checkpoint
 

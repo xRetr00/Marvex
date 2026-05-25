@@ -96,15 +96,19 @@ def test_dual_asgi_host_runs_both_servers_and_shuts_down_on_interrupt():
     from packages.local_api.asgi_host import AsgiHostConfig, run_dual_asgi_host
 
     servers: list[RecordingServer] = []
+    apps: dict[str, object] = {}
 
     def server_factory(*, app, host: str, port: int, name: str):
         server = RecordingServer(name=name, interrupt=name == "core")
+        apps[name] = app
         servers.append(server)
         return server
 
+    custom_control_app = object()
     exit_code = run_dual_asgi_host(
         core_wsgi_app=_wsgi_app,
         control_wsgi_app=_wsgi_app,
+        control_asgi_app=custom_control_app,
         config=AsgiHostConfig(port=9875, control_port=9876),
         server_factory=server_factory,
         startup_message="safe startup",
@@ -112,6 +116,7 @@ def test_dual_asgi_host_runs_both_servers_and_shuts_down_on_interrupt():
 
     assert exit_code == 0
     assert [server.name for server in servers] == ["control", "core"]
+    assert apps["control"] is custom_control_app
     assert all(server.ran for server in servers)
     assert all(server.should_exit for server in servers)
 

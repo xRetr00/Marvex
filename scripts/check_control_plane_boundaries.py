@@ -36,6 +36,11 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "typing",
     "urllib.parse",
 )
+CONTROL_API_ASGI_ADAPTER_ALLOWED_IMPORTS = (
+    "a2wsgi",
+    "asyncio",
+    "fastapi",
+)
 CONTROL_API_FORBIDDEN_IMPORTS = (
     "apps",
     "os",
@@ -157,6 +162,10 @@ def main() -> int:
             failures.append(f"Control Plane API contains forbidden token: {token}")
     for path in _python_files(CONTROL_API):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        rel = _rel(path)
+        allowed_imports = CONTROL_API_ALLOWED_IMPORTS
+        if rel == "packages/control_plane_api/asgi_app.py":
+            allowed_imports = allowed_imports + CONTROL_API_ASGI_ADAPTER_ALLOWED_IMPORTS
         for node in ast.walk(tree):
             if not isinstance(node, ast.Import | ast.ImportFrom):
                 continue
@@ -165,7 +174,7 @@ def main() -> int:
                 continue
             if _matches_prefix(module, CONTROL_API_FORBIDDEN_IMPORTS):
                 failures.append(f"{_rel(path)} imports forbidden boundary: {module}")
-            if not _matches_prefix(module, CONTROL_API_ALLOWED_IMPORTS):
+            if not _matches_prefix(module, allowed_imports):
                 failures.append(f"{_rel(path)} imports non-approved dependency: {module}")
 
     if FRONTEND.exists():

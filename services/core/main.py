@@ -24,6 +24,8 @@ from packages.control_plane_api import (
     InMemoryApprovalStore,
     create_control_plane_api_app,
 )
+from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+from packages.control_plane_api.browser_session import BrowserSessionManager
 from packages.control_plane_api.logs import LocalLogReader
 from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
@@ -2556,6 +2558,7 @@ def create_control_plane_service_app(
     trace_reader: Any | None = None,
     state_bus: AssistantStateBus | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
+    browser_session_manager: BrowserSessionManager | None = None,
 ) -> Any:
     web_dist = os.environ.get("MARVEX_CONTROL_WEB_DIST") or None
     log_dir = os.environ.get("MARVEX_LOG_DIR")
@@ -2569,6 +2572,7 @@ def create_control_plane_service_app(
         web_dist=web_dist,
         log_reader=log_reader,
         session_coordinator=session_coordinator,
+        browser_session_manager=browser_session_manager,
     )
 
 
@@ -2635,11 +2639,13 @@ def run_core_service(
     )
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
+    browser_session_manager = BrowserSessionManager()
     control_app = create_control_plane_service_app(
         config=effective_config,
         trace_reader=trace_reader,
         state_bus=state_bus,
         session_coordinator=session_coordinator,
+        browser_session_manager=browser_session_manager,
     )
     if server_factory is make_server and control_server_factory is None:
         asgi_config = AsgiHostConfig(
@@ -2653,6 +2659,12 @@ def run_core_service(
             return run_dual_asgi_host(
                 core_wsgi_app=app,
                 control_wsgi_app=control_app,
+                control_asgi_app=create_control_plane_asgi_app(
+                    control_wsgi_app=control_app,
+                    local_auth_token=effective_config.local_auth_token,
+                    state_bus=state_bus,
+                    browser_session_manager=browser_session_manager,
+                ),
                 config=asgi_config,
                 startup_message=build_asgi_startup_message(
                     config=asgi_config,

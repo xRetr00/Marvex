@@ -10,9 +10,9 @@ from packages.contracts.state_event import AssistantStateEvent, AssistantStatusK
 
 
 _SCHEMA_VERSION = "0.1.1-draft"
-_SSE_HEARTBEAT_INTERVAL_SECONDS = 5.0
-_SSE_ACTIVE_INTERVAL_SECONDS = 0.04  # ~25 Hz while listening/talking
-_ACTIVE_STATUSES = frozenset({
+SSE_HEARTBEAT_INTERVAL_SECONDS = 5.0
+SSE_ACTIVE_INTERVAL_SECONDS = 0.04  # ~25 Hz while listening/talking
+ACTIVE_STATUSES = frozenset({
     AssistantStatusKind.LISTENING,
     AssistantStatusKind.TALKING,
 })
@@ -20,9 +20,19 @@ _ACTIVE_STATUSES = frozenset({
 StartResponse = Any
 
 
-def _sse_line(event: AssistantStateEvent) -> bytes:
+def state_sse_frame(event: AssistantStateEvent) -> str:
     payload = json.dumps(event.model_dump(mode="json"), sort_keys=True)
-    return f"data: {payload}\n\n".encode("utf-8")
+    return f"data: {payload}\n\n"
+
+
+def _sse_line(event: AssistantStateEvent) -> bytes:
+    return state_sse_frame(event).encode("utf-8")
+
+
+def state_snapshot_event(*, state_bus: Any | None) -> AssistantStateEvent:
+    if state_bus is not None and hasattr(state_bus, "snapshot"):
+        return state_bus.snapshot
+    return _idle_event()
 
 
 def handle_state_snapshot(
@@ -30,10 +40,7 @@ def handle_state_snapshot(
     state_bus: Any | None,
 ) -> tuple[str, dict[str, Any]]:
     """Return the current AssistantStateEvent snapshot as a JSON-serialisable dict."""
-    if state_bus is not None and hasattr(state_bus, "snapshot"):
-        snap: AssistantStateEvent = state_bus.snapshot
-        return "200 OK", snap.model_dump(mode="json")
-    return "200 OK", _idle_event().model_dump(mode="json")
+    return "200 OK", state_snapshot_event(state_bus=state_bus).model_dump(mode="json")
 
 
 def handle_state_stream(
@@ -85,7 +92,7 @@ def handle_state_stream(
 
         while True:
             snap = state_bus.snapshot if has_snapshot else None
-            timeout = _SSE_ACTIVE_INTERVAL_SECONDS if (snap is not None and snap.status in _ACTIVE_STATUSES) else _SSE_HEARTBEAT_INTERVAL_SECONDS
+            timeout = SSE_ACTIVE_INTERVAL_SECONDS if (snap is not None and snap.status in ACTIVE_STATUSES) else SSE_HEARTBEAT_INTERVAL_SECONDS
             try:
                 ev = event_q.get(timeout=timeout)
                 yield _sse_line(ev)
