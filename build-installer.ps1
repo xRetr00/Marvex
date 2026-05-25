@@ -5,11 +5,11 @@
     
 .DESCRIPTION
     Comprehensive build script that:
-    1. Validates environment (Node, Cargo, Rust, uv, Python 3.11+)
+    1. Validates environment (Node, Cargo, Rust, uv, Python 3.12+)
     2. Builds Python wheel (marvex-*.whl, staged with its valid wheel filename)
     3. Prepares runtime resources (uv.exe bundling)
     4. Builds React/Vite frontend
-    5. Builds Tauri app + generates NSIS/MSI installers
+    5. Builds Tauri app + generates NSIS/MSI installers (unless -SkipInstaller)
     
     This script implements Tier 1 (Production) packaging:
     - Console scripts from setuptools (not frozen PyInstaller)
@@ -24,12 +24,17 @@
     
 .EXAMPLE
     .\build-installer.ps1 -Verbose
+
+.EXAMPLE
+    .\build-installer.ps1 -SkipInstaller
+    # Build everything except the final installer (faster for development)
 #>
 
 param(
     [switch]$SkipValidation,
     [switch]$Clean,
-    [switch]$Verbose
+    [switch]$Verbose,
+    [switch]$SkipInstaller
 )
 
 $ErrorActionPreference = "Stop"
@@ -146,17 +151,17 @@ function Validate-Environment {
     }
     Write-Success "uv: $uvVersion"
     
-    # Check Python 3.11+
+    # Check Python 3.12+
     $pythonVersion = python --version 2>$null
     if (-not $pythonVersion) {
-        Write-Error-Exit "Python not found. Install Python 3.11+ from https://www.python.org/"
+        Write-Error-Exit "Python not found. Install Python 3.12+ from https://www.python.org/"
     }
     Write-Success "Python: $pythonVersion"
     
-    # Verify Python is 3.11+
+    # Verify Python is 3.12+
     $pyVer = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>$null
-    if ([version]$pyVer -lt [version]"3.11") {
-        Write-Error-Exit "Python 3.11 or higher required. Found: $pyVer"
+    if ([version]$pyVer -lt [version]"3.12") {
+        Write-Error-Exit "Python 3.12 or higher required. Found: $pyVer"
     }
     
     Write-Success "Marvex App Version: $AppVersion"
@@ -567,6 +572,9 @@ function Main {
     Write-Host "╔════════════════════════════════════════════════════════════╗" -ForegroundColor Magenta
     Write-Host "║             MARVEX INSTALLER BUILD SCRIPT                  ║" -ForegroundColor Magenta
     Write-Host "║         Tier 1: Production (Setuptools Console Scripts)    ║" -ForegroundColor Magenta
+    if ($SkipInstaller) {
+        Write-Host "║             (Skipping final installer generation)           ║" -ForegroundColor Yellow
+    }
     Write-Host "╚════════════════════════════════════════════════════════════╝" -ForegroundColor Magenta
     Write-Host ""
     
@@ -578,8 +586,19 @@ function Main {
     Build-Frontend
     Verify-Frontend-Assets
     Prepare-Voice-And-Service
-    Build-Tauri-App
-    Locate-Installers
+    
+    if (-not $SkipInstaller) {
+        Build-Tauri-App
+        Locate-Installers
+    }
+    else {
+        Write-Section "Skipping Tauri Build & Installer Generation"
+        Write-Host "✓ All build steps completed (wheel, frontend, voice assets)" -ForegroundColor Green
+        Write-Host ""
+        Write-Host "To generate the final installer:" -ForegroundColor Cyan
+        Write-Host "  .\build-installer.ps1" -ForegroundColor Yellow
+        Write-Host ""
+    }
     
     Print-Summary
 }

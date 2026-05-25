@@ -3,11 +3,12 @@ setlocal EnableExtensions EnableDelayedExpansion
 
 rem Build Marvex Windows installer (NSIS/MSI) from source.
 rem Usage:
-rem   build-installer.bat [-SkipValidation] [-Clean] [-Verbose]
+rem   build-installer.bat [-SkipValidation] [-Clean] [-Verbose] [-SkipInstaller]
 
 set "SkipValidation=0"
 set "Clean=0"
 set "Verbose=0"
+set "SkipInstaller=0"
 
 call :ParseArgs %*
 
@@ -63,13 +64,17 @@ if errorlevel 1 exit /b 1
 call :PrepareVoiceAndService
 if errorlevel 1 exit /b 1
 
-call :BuildTauriApp
-if errorlevel 1 exit /b 1
+if "%SkipInstaller%"=="1" (
+    call :PrintSummarySkipped
+) else (
+    call :BuildTauriApp
+    if errorlevel 1 exit /b 1
 
-call :LocateInstallers
-if errorlevel 1 exit /b 1
+    call :LocateInstallers
+    if errorlevel 1 exit /b 1
 
-call :PrintSummary
+    call :PrintSummary
+)
 exit /b 0
 
 rem ============================================================================
@@ -85,6 +90,8 @@ if /I "%arg%"=="-Clean" set "Clean=1"
 if /I "%arg%"=="/Clean" set "Clean=1"
 if /I "%arg%"=="-Verbose" set "Verbose=1"
 if /I "%arg%"=="/Verbose" set "Verbose=1"
+if /I "%arg%"=="-SkipInstaller" set "SkipInstaller=1"
+if /I "%arg%"=="/SkipInstaller" set "SkipInstaller=1"
 shift
 goto :ParseArgs
 
@@ -164,7 +171,7 @@ call :WriteSuccess "uv: !uvVersion!"
 set "pythonVersion="
 for /f "delims=" %%A in ('python --version 2^>nul') do set "pythonVersion=%%A"
 if not defined pythonVersion (
-    call :Die "Python not found. Install Python 3.11+ from https://www.python.org/"
+    call :Die "Python not found. Install Python 3.12+ from https://www.python.org/"
     exit /b 1
 )
 call :WriteSuccess "Python: !pythonVersion!"
@@ -178,16 +185,16 @@ for /f "delims=" %%A in ('python -c "import sys; print(sys.version_info.major); 
     if !lineIndex! EQU 2 set "pyMinor=%%A"
 )
 if not defined pyMajor (
-    call :Die "Python 3.11 or higher required."
+    call :Die "Python 3.12 or higher required."
     exit /b 1
 )
 set "pyVer=!pyMajor!.!pyMinor!"
 if !pyMajor! LSS 3 (
-    call :Die "Python 3.11 or higher required. Found: !pyVer!"
+    call :Die "Python 3.12 or higher required. Found: !pyVer!"
     exit /b 1
 )
-if !pyMajor! EQU 3 if !pyMinor! LSS 11 (
-    call :Die "Python 3.11 or higher required. Found: !pyVer!"
+if !pyMajor! EQU 3 if !pyMinor! LSS 12 (
+    call :Die "Python 3.12 or higher required. Found: !pyVer!"
     exit /b 1
 )
 
@@ -555,6 +562,28 @@ if defined msiInstaller (
     echo   [WARN] MSI installer not found
 )
 
+echo.
+exit /b 0
+
+rem ============================================================================
+rem Summary (Skip Installer Mode)
+rem ============================================================================
+
+:PrintSummarySkipped
+call :WriteSection "Build Complete (Installer Skipped)!"
+
+echo All build steps completed:
+echo   [OK] Python wheel built
+echo   [OK] Runtime resources prepared
+echo   [OK] Frontend built
+echo   [OK] Voice models fetched
+echo.
+echo Skipped:
+echo   - Tauri app compilation
+echo   - Installer generation
+echo.
+echo To generate the final installer:
+echo   build-installer.bat
 echo.
 exit /b 0
 
