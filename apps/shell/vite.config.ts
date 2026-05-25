@@ -15,6 +15,28 @@ export default defineConfig({
     port: 5174,
     strictPort: false
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (!id.includes("node_modules")) return undefined;
+          if (id.includes("@react-three")) return "vendor-three-react";
+          if (id.includes("three/examples")) return "vendor-three-examples";
+          if (id.includes("three/src/renderers")) return "vendor-three-renderers";
+          if (id.includes("three/src/math")) return "vendor-three-math";
+          if (id.includes("three/src/materials")) return "vendor-three-materials";
+          if (id.includes("three/src/geometries")) return "vendor-three-geometries";
+          if (id.includes("three/src/")) return "vendor-three-core";
+          if (id.includes("three")) return "vendor-three";
+          if (id.includes("react")) return "vendor-react";
+          if (id.includes("framer-motion") || id.includes("motion")) return "vendor-motion";
+          if (id.includes("lucide-react") || id.includes("@remixicon")) return "vendor-icons";
+          if (id.includes("zod")) return "vendor-validation";
+          return "vendor";
+        }
+      }
+    }
+  },
   clearScreen: false,
   test: {
     environment: "jsdom",
