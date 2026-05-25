@@ -1,16 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
 import json
 from dataclasses import dataclass
-from typing import Any
+from pathlib import Path
 
-
-def _wsgi_app(environ: dict[str, Any], start_response):
-    path = str(environ.get("PATH_INFO", "/"))
-    body = json.dumps({"path": path}).encode("utf-8")
-    start_response("200 OK", [("Content-Type", "application/json"), ("Content-Length", str(len(body)))])
-    return [body]
+from fastapi import FastAPI
 
 
 @dataclass
@@ -24,29 +18,6 @@ class RecordingServer:
         self.ran = True
         if self.interrupt:
             raise KeyboardInterrupt
-
-
-def test_asgi_host_builds_fastapi_apps_from_wsgi_apps():
-    from fastapi import FastAPI
-    from packages.local_api.asgi_host import create_asgi_app
-
-    app = create_asgi_app(_wsgi_app, title="Marvex Test")
-
-    assert isinstance(app, FastAPI)
-    assert app.title == "Marvex Test"
-    assert app.routes
-
-
-def test_asgi_host_builds_native_fallback_without_wsgi_middleware():
-    from packages.local_api.asgi_host import create_asgi_app
-
-    app = create_asgi_app(_wsgi_app, title="Marvex Test")
-    mounted_apps = [getattr(route, "app", None) for route in app.routes]
-
-    assert all(
-        mounted_app is None or mounted_app.__class__.__name__ != "WSGIMiddleware"
-        for mounted_app in mounted_apps
-    )
 
 
 def test_asgi_host_does_not_import_wsgi_middleware():
@@ -100,11 +71,11 @@ def test_dual_asgi_host_runs_both_servers_and_shuts_down_on_interrupt():
         servers.append(server)
         return server
 
-    custom_control_app = object()
+    core_app = FastAPI(title="Core Test")
+    custom_control_app = FastAPI(title="Control Test")
     exit_code = run_dual_asgi_host(
-        core_wsgi_app=_wsgi_app,
-        control_wsgi_app=_wsgi_app,
-        control_asgi_app=custom_control_app,
+        core_app=core_app,
+        control_app=custom_control_app,
         config=AsgiHostConfig(port=9875, control_port=9876),
         server_factory=server_factory,
         startup_message="safe startup",
@@ -113,6 +84,7 @@ def test_dual_asgi_host_runs_both_servers_and_shuts_down_on_interrupt():
     assert exit_code == 0
     assert [server.name for server in servers] == ["control", "core"]
     assert apps["control"] is custom_control_app
+    assert apps["core"] is core_app
     assert all(server.ran for server in servers)
     assert all(server.should_exit for server in servers)
 

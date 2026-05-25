@@ -164,12 +164,25 @@ def test_core_service_entrypoint_starts_local_api_and_shuts_down_cleanly():
         captured["server"] = server
         return server
 
+    def control_server_factory(host, port, app):
+        captured["control_host"] = host
+        captured["control_port"] = port
+        return MainNoopServer()
+
+    class MainNoopServer:
+        def serve_forever(self) -> None:
+            return
+
+        def server_close(self) -> None:
+            captured["control_closed"] = True
+
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
             local_auth_token=EXPECTED_TOKEN,
             port=9877,
         ),
         server_factory=server_factory,
+        control_server_factory=control_server_factory,
     )
 
     assert exit_code == 0

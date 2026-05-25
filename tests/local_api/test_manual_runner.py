@@ -2,8 +2,6 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime, timedelta
-from io import BytesIO
-from wsgiref.util import setup_testing_defaults
 
 from packages.contracts import (
     AssistantTurnResult,
@@ -13,6 +11,7 @@ from packages.contracts import (
     VersionInfo,
 )
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
+from tests.local_api.asgi_helpers import asgi_call
 
 EXPECTED_TOKEN = "fake-local-token"
 
@@ -74,18 +73,7 @@ def make_provider() -> HealthVersionProvider:
 
 
 def call_app(app, path: str) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "GET"
-    environ["PATH_INFO"] = path
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(body)
+    return asgi_call(app, path)
 
 
 def make_turn_payload() -> dict:
@@ -121,27 +109,11 @@ def call_turns_app(
     auth: str | None = f"Bearer {EXPECTED_TOKEN}",
     unreadable_body: bool = False,
 ) -> tuple[str, dict[str, str], dict]:
-    environ: dict[str, object] = {}
-    setup_testing_defaults(environ)
-    environ["REQUEST_METHOD"] = "POST"
-    environ["PATH_INFO"] = "/v1/turns"
-    if auth is not None:
-        environ["HTTP_AUTHORIZATION"] = auth
     if unreadable_body:
-        environ["CONTENT_LENGTH"] = "99"
-        environ["wsgi.input"] = RaisingInput()
+        body = b"{unreadable"
     else:
-        body_bytes = json.dumps(body or make_turn_payload()).encode("utf-8")
-        environ["CONTENT_LENGTH"] = str(len(body_bytes))
-        environ["wsgi.input"] = BytesIO(body_bytes)
-    captured: dict[str, object] = {}
-
-    def start_response(status, headers, exc_info=None):
-        captured["status"] = status
-        captured["headers"] = dict(headers)
-
-    response_body = b"".join(app(environ, start_response)).decode("utf-8")
-    return captured["status"], captured["headers"], json.loads(response_body)
+        body = body or make_turn_payload()
+    return asgi_call(app, "/v1/turns", method="POST", body=body, auth=auth)
 
 
 class RecordingServer:
