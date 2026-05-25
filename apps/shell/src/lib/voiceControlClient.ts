@@ -1,0 +1,99 @@
+import { controlRequest } from "./shellCommands";
+
+export type VoiceModelKind = "stt" | "tts_voice" | "wakeword" | "vad";
+
+export type VoiceModelCatalogAsset = {
+  schema_version?: string;
+  model_id: string;
+  backend_id: string;
+  model_kind: VoiceModelKind;
+  source_uri: string;
+  relative_path: string;
+  install_relative_path?: string | null;
+  extract?: boolean;
+  checksum_sha256?: string | null;
+  required?: boolean;
+  explicit_user_triggered: true;
+  raw_payload_persisted?: false;
+};
+
+export type VoiceWorkerStatus = {
+  schema_version: string;
+  lifecycle_state: string;
+  process_started: boolean;
+  active_stt_backend_id: string;
+  active_tts_backend_id: string;
+  active_voice_id: string;
+  wakeword_status: string;
+  model_assets?: {
+    installed?: Array<Record<string, unknown>>;
+    installed_count?: number;
+    required?: Array<Record<string, unknown>>;
+    required_ready_count?: number;
+    required_blocked_count?: number;
+  };
+  stt_backend_status?: Record<string, unknown>;
+  tts_backend_status?: Record<string, unknown>;
+  wakeword_model_status?: Record<string, unknown>;
+};
+
+export type VoiceModelCatalog = {
+  schema_version: string;
+  assets: VoiceModelCatalogAsset[];
+  raw_payload_persisted: false;
+};
+
+export function fetchVoiceWorkerStatus(): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker", "GET") as Promise<VoiceWorkerStatus>;
+}
+
+export function fetchVoiceWorkerAssets(): Promise<VoiceWorkerStatus["model_assets"]> {
+  return controlRequest("/voice/worker/assets", "GET") as Promise<VoiceWorkerStatus["model_assets"]>;
+}
+
+export function fetchVoiceModelCatalog(): Promise<VoiceModelCatalog> {
+  return controlRequest("/voice/worker/models/catalog", "GET") as Promise<VoiceModelCatalog>;
+}
+
+export function startVoiceWorker(): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/start", "POST", {}) as Promise<VoiceWorkerStatus>;
+}
+
+export function stopVoiceWorker(): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/stop", "POST", {}) as Promise<VoiceWorkerStatus>;
+}
+
+export function testVoiceWorkerStt(): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/test-stt", "POST", {}) as Promise<VoiceWorkerStatus>;
+}
+
+export function testVoiceWorkerTts(text = "Voice test."): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/test-tts", "POST", { text }) as Promise<VoiceWorkerStatus>;
+}
+
+export function switchVoiceWorkerStt(backendId: string): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/stt/switch", "POST", { backend_id: backendId }) as Promise<VoiceWorkerStatus>;
+}
+
+export function switchVoiceWorkerTts(backendId: string): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/tts/switch", "POST", { backend_id: backendId }) as Promise<VoiceWorkerStatus>;
+}
+
+export function switchVoiceWorkerVoice(voiceId: string): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/voice/switch", "POST", { voice_id: voiceId }) as Promise<VoiceWorkerStatus>;
+}
+
+export function downloadVoiceModel(asset: VoiceModelCatalogAsset): Promise<unknown> {
+  const body: Record<string, unknown> = {
+    model_id: asset.model_id,
+    backend_id: asset.backend_id,
+    model_kind: asset.model_kind,
+    source_uri: asset.source_uri,
+    relative_path: asset.relative_path,
+    extract: Boolean(asset.extract),
+    explicit_user_triggered: true
+  };
+  if (asset.install_relative_path) body.install_relative_path = asset.install_relative_path;
+  if (asset.checksum_sha256) body.checksum_sha256 = asset.checksum_sha256;
+  return controlRequest("/voice/worker/models/download", "POST", body);
+}
