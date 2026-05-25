@@ -9,7 +9,7 @@ use std::{
         Arc, Mutex,
     },
     thread,
-    time::{Duration, SystemTime, UNIX_EPOCH},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 
 use process_wrap::std::{ChildWrapper, CommandWrap};
@@ -223,6 +223,26 @@ impl Supervisor {
 
     pub fn shutdown(&self) {
         self.shutdown.store(true, Ordering::SeqCst);
+    }
+
+    pub fn wait_for_services_stopped(&self, timeout: Duration) -> bool {
+        if !self.launched.load(Ordering::SeqCst) {
+            return true;
+        }
+        let deadline = Instant::now() + timeout;
+        loop {
+            let snapshot = self.status.snapshot();
+            let all_stopped = service_specs(&self.config.token)
+                .iter()
+                .all(|spec| matches!(snapshot.get(spec.name).map(String::as_str), Some("stopped")));
+            if all_stopped {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(100));
+        }
     }
 
     pub fn shutdown_flag(&self) -> Arc<AtomicBool> {
@@ -745,13 +765,17 @@ mod tests {
         find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
         runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_root, venv_script,
         write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
-        ServiceKind, PYTHON_RUNTIME_VERSION,
+        ServiceKind, Supervisor, PYTHON_RUNTIME_VERSION,
     };
     use serde_json::Value;
     use std::{
         fs,
         path::Path,
-        time::{SystemTime, UNIX_EPOCH},
+        sync::{
+            atomic::AtomicBool,
+            Arc,
+        },
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     #[test]
@@ -793,6 +817,27 @@ mod tests {
     #[test]
     fn missing_sidecar_falls_back_to_dev_command() {
         assert!(sidecar_path(Some(Path::new("missing")), "marvex-core").is_none());
+    }
+
+    #[test]
+    fn shutdown_wait_returns_after_supervised_services_are_stopped() {
+        let status = Arc::new(SupervisorStatus::default());
+        status.set("core", "stopped");
+        status.set("voice_worker", "stopped");
+        let supervisor = Supervisor {
+            shutdown: Arc::new(AtomicBool::new(true)),
+            status,
+            config: Arc::new(RuntimeConfig {
+                token: "secret-token".into(),
+                log_dir: Path::new("/logs").to_path_buf(),
+                data_dir: Path::new("/data").to_path_buf(),
+                resource_dir: None,
+            }),
+            launched: Arc::new(AtomicBool::new(true)),
+            bootstrapping: Arc::new(AtomicBool::new(false)),
+        };
+
+        assert!(supervisor.wait_for_services_stopped(Duration::from_millis(1)));
     }
 
     #[test]

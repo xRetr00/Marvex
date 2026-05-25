@@ -102,6 +102,7 @@ fn run_service() -> windows_service::Result<()> {
 
     if let Some(supervisor) = supervisor {
         supervisor.shutdown();
+        let _ = supervisor.wait_for_services_stopped(Duration::from_secs(20));
     }
     status_handle
         .set_service_status(status(ServiceState::Stopped, ServiceControlAccept::empty()))?;
@@ -120,7 +121,7 @@ fn run_console() {
     }
     if let Some(supervisor) = supervisor {
         supervisor.shutdown();
-        std::thread::sleep(Duration::from_secs(2));
+        let _ = supervisor.wait_for_services_stopped(Duration::from_secs(20));
     }
 }
 
