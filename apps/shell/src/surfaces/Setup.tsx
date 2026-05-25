@@ -129,7 +129,7 @@ export function SetupPage({ onComplete }: SetupProps) {
         {/* Logo */}
         <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} className="flex items-center justify-center gap-3">
           <img src="/assets/Marvex_WordMark_NoBackground.png" alt="Marvex" className="h-10 object-contain" onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
-          <ScrambleText text="Marvex" className="text-2xl font-bold tracking-tight" style={{ color: "var(--primary)" }} />
+          <ScrambleText text="Setup" className="text-2xl font-bold tracking-tight" style={{ color: "var(--primary)" }} />
         </motion.div>
 
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.3 }} className="space-y-2">

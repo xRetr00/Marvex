@@ -282,10 +282,19 @@ function Prepare-Runtime-Resources {
     }
     Get-ChildItem -Path $runtimeWheels -Filter "*.whl" -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
-    Get-ChildItem -Path (Join-Path $RepoRoot "dist") -Filter "*.whl" -ErrorAction SilentlyContinue |
-        Where-Object { $_.FullName -ne $WheelPath } |
-        Copy-Item -Destination $runtimeWheels -Force
-    Write-Success "Dependency wheels copied to $runtimeWheels"
+    $requirementsFile = Join-Path $env:TEMP "marvex-runtime-requirements.txt"
+    Write-Host "  Exporting locked runtime requirements..."
+    $exportOutput = uv export --format requirements.txt --no-dev --no-emit-project --no-hashes --output-file $requirementsFile 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Exit "Failed to export locked runtime requirements: $exportOutput"
+    }
+    Write-Host "  Downloading locked dependency wheels..."
+    $downloadOutput = uv run python -m pip download --only-binary=:all: --dest $runtimeWheels --requirement $requirementsFile 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Exit "Failed to download dependency wheels: $downloadOutput"
+    }
+    Remove-Item -Path $requirementsFile -Force -ErrorAction SilentlyContinue
+    Write-Success "Locked dependency wheels downloaded to $runtimeWheels"
     
     # Find uv.exe (bundled or system)
     Write-Step "Locating uv executable..." 2 5

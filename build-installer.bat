@@ -309,10 +309,21 @@ call :WriteSuccess "Wheel copied to %RuntimeDir%\%WheelFileName%"
 set "RuntimeWheels=%RuntimeDir%\wheels"
 if not exist "%RuntimeWheels%" mkdir "%RuntimeWheels%"
 del /q "%RuntimeWheels%\*.whl" >nul 2>nul
-for %%F in ("%RepoRoot%\dist\*.whl") do (
-    if /I not "%%~fF"=="%WheelPath%" copy /y "%%~fF" "%RuntimeWheels%\" >nul
+set "RequirementsFile=%TEMP%\marvex-runtime-requirements.txt"
+echo   Exporting locked runtime requirements...
+uv export --format requirements.txt --no-dev --no-emit-project --no-hashes --output-file "%RequirementsFile%"
+if errorlevel 1 (
+    call :Die "Failed to export locked runtime requirements"
+    exit /b 1
 )
-call :WriteSuccess "Dependency wheels copied to %RuntimeWheels%"
+echo   Downloading locked dependency wheels...
+uv run python -m pip download --only-binary=:all: --dest "%RuntimeWheels%" --requirement "%RequirementsFile%"
+if errorlevel 1 (
+    call :Die "Failed to download dependency wheels"
+    exit /b 1
+)
+del /q "%RequirementsFile%" >nul 2>nul
+call :WriteSuccess "Locked dependency wheels downloaded to %RuntimeWheels%"
 
 call :WriteStep "Locating uv executable..." 2 6
 set "uvPath="

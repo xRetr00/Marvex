@@ -312,6 +312,19 @@ fn venv_script(venv: &Path, name: &str) -> PathBuf {
     }
 }
 
+fn venv_create_args(venv: &Path, clear_existing: bool) -> Vec<String> {
+    let mut args = vec![
+        "venv".to_string(),
+        venv.to_string_lossy().to_string(),
+        "--python".to_string(),
+        PYTHON_RUNTIME_VERSION.to_string(),
+    ];
+    if clear_existing {
+        args.push("--clear".to_string());
+    }
+    args
+}
+
 /// Resolve an installed sidecar console-script path inside a venv, returning
 /// `None` when the venv is absent or the script is not present on disk (so the
 /// caller falls back to the dev `uv run` path).
@@ -467,15 +480,10 @@ fn ensure_runtime(
 
     if !existing_console_script {
         status.set("runtime", "creating environment");
-        let venv_arg = venv.to_string_lossy().to_string();
+        let venv_args = venv_create_args(&venv, venv.exists());
         if !run_tool(
             &uv,
-            &[
-                "venv".to_string(),
-                venv_arg,
-                "--python".to_string(),
-                PYTHON_RUNTIME_VERSION.to_string(),
-            ],
+            &venv_args,
             data_dir,
             &bootstrap_log,
         ) {
@@ -857,6 +865,18 @@ mod tests {
     #[test]
     fn packaged_runtime_uses_python_312_for_voice_wheels() {
         assert_eq!(PYTHON_RUNTIME_VERSION, "3.12");
+    }
+
+    #[test]
+    fn incomplete_existing_venv_is_cleared_before_recreate() {
+        let root = unique_temp_dir("partial-venv-clear");
+        let venv = venv_root(&root);
+        fs::create_dir_all(&venv).expect("partial venv");
+
+        let args = venv_create_args(&venv, venv.exists());
+
+        assert!(args.iter().any(|arg| arg == "--clear"));
+        assert!(args.iter().any(|arg| arg == "3.12"));
     }
 
     #[test]
