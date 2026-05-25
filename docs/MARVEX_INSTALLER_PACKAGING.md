@@ -113,13 +113,16 @@ npm --prefix apps/shell run build
 ```powershell
 npm --prefix apps/shell run tauri build
 # Output: apps/shell/src-tauri/target/release/bundle/
-#   - Marvex_0.1.0_x64-setup.exe (NSIS)
-#   - Marvex_0.1.0_x64_en-US.msi (WiX)
+#   - Marvex_<VERSION>_x64-setup.exe (NSIS)
+#   - Marvex_<VERSION>_x64_en-US.msi (WiX)
+# VERSION is read from version.toml in repo root
 ```
 
 ### Tauri Configuration
 
 **File**: `apps/shell/src-tauri/tauri.conf.json`
+
+**Version**: Reads from `version.toml` (repo root), manually synced to `tauri.conf.json` line 4
 
 **Bundled resources**:
 ```json

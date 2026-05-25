@@ -1,0 +1,33 @@
+# ============================================================================
+# Marvex Central Version File
+# ============================================================================
+# 
+# This is the SINGLE SOURCE OF TRUTH for Marvex version across all build
+# systems and tools.
+#
+# On EVERY VERSION BUMP (e.g., 0.1.0 → 0.1.1):
+#   1. Update [app] version below
+#   2. MANUALLY sync these 3 files (takes ~30 seconds):
+#      - pyproject.toml:               line 7  (version = "...")
+#      - apps/shell/src-tauri/tauri.conf.json:     line 4  ("version": "...")
+#      - apps/shell/src-tauri/Cargo.toml:  line 3  (version = "...")
+#
+# WHY MANUAL?
+#   - setuptools requires static version in pyproject.toml
+#   - Tauri reads static version in tauri.conf.json at build time
+#   - Cargo.toml is synced with Tauri version
+#   These tools don't support reading from external files during build.
+#
+# BUILD SCRIPTS (Automatic):
+#   - build-installer.ps1: reads [app] version, injects into wheel build
+#   - build-installer.bat:  reads [app] version, injects into wheel build
+#
+# DOCS (Manual reference):
+#   - Docs referencing current version should point to this file
+#   - Version-specific docs (e.g., "v1", "v2") are left as-is
+#
+# ============================================================================
+
+[app]
+version = "0.1.0"
+wheel_name = "marvex-runtime.whl"

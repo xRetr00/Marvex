@@ -20,6 +20,28 @@ set "ControlPlaneDir=%RepoRoot%\apps\control_plane_web"
 set "RuntimeDir=%ShellDir%\runtime"
 set "DistDir=%ShellDir%\dist"
 
+rem Load version from central file
+set "VersionFile=%RepoRoot%\version.toml"
+if not exist "%VersionFile%" (
+    echo [ERROR] version.toml not found at %VersionFile%
+    exit /b 1
+)
+
+setlocal enabledelayedexpansion
+for /f "tokens=*" %%A in ('findstr "version = " "%VersionFile%"') do (
+    set "line=%%A"
+    if "!line:~0,1!" neq "#" (
+        for /f "tokens=3 delims="""  %%B in ("%%A") do (
+            set "AppVersion=%%B"
+        )
+    )
+)
+endlocal & set "AppVersion=%AppVersion%"
+if not defined AppVersion (
+    echo [ERROR] Could not parse version from %VersionFile%
+    exit /b 1
+)
+
 call :Banner
 
 call :ValidateEnvironment
@@ -170,6 +192,8 @@ if !pyMajor! EQU 3 if !pyMinor! LSS 11 (
     call :Die "Python 3.11 or higher required. Found: !pyVer!"
     exit /b 1
 )
+
+call :WriteSuccess "Marvex App Version: !AppVersion!"
 
 echo.
 exit /b 0

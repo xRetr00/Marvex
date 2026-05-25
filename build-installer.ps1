@@ -43,6 +43,24 @@ $RuntimeDir = Join-Path $ShellDir "runtime"
 $DistDir = Join-Path $ShellDir "dist"
 
 # ============================================================================
+# Load Version from Central File
+# ============================================================================
+
+$VersionFile = Join-Path $RepoRoot "version.toml"
+if (-not (Test-Path $VersionFile)) {
+    Write-Host "✗ ERROR: version.toml not found at $VersionFile" -ForegroundColor Red
+    exit 1
+}
+
+$versionContent = Get-Content -LiteralPath $VersionFile
+$versionLine = $versionContent | Where-Object { $_ -match '^\s*version\s*=' } | Select-Object -First 1
+if (-not $versionLine -or $versionLine -notmatch 'version\s*=\s*"([^"]+)"') {
+    Write-Host "✗ ERROR: Could not parse version from $VersionFile" -ForegroundColor Red
+    exit 1
+}
+$AppVersion = $matches[1]
+
+# ============================================================================
 # Logging helpers
 # ============================================================================
 
@@ -140,6 +158,8 @@ function Validate-Environment {
     if ([version]$pyVer -lt [version]"3.11") {
         Write-Error-Exit "Python 3.11 or higher required. Found: $pyVer"
     }
+    
+    Write-Success "Marvex App Version: $AppVersion"
     
     Write-Host ""
 }

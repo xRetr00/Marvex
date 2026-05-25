@@ -334,6 +334,9 @@ Subsequent Launches:
 - ✅ Monitoring: detect Tier 1 vs Tier 3
 - ✅ Analytics: understand user environments
 - ✅ Support: quick problem diagnosis
+- ✅ Version tracking: logs which app/wheel version is running
+
+**Note**: `wheel_version` is read from `version.toml` at build time and stored in manifest.
 
 ---
 
@@ -348,6 +351,7 @@ Subsequent Launches:
 | Tier Structure | 2-tier (not 3) | Remove dead code |
 | Bootstrap | Runtime (not bundled) | Smaller installer, flexibility |
 | Observability | Runtime manifest | Debugging, support, monitoring |
+| Version Management | Central `version.toml` | Single source of truth across all build systems |
 
 ---
 

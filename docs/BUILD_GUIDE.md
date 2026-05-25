@@ -15,6 +15,8 @@ From the workspace root (`D:\Marvex`):
 .\build-installer.ps1 -Verbose
 ```
 
+**Note**: The build system automatically reads the application version from `version.toml` in the repo root. See [Version Management](#version-management) for details.
+
 ---
 
 ## Pre-Requisites
@@ -457,6 +459,29 @@ Supports runtime package installation
 - [ ] Install package via Deps tab
 
 ✅ Release:
-- [ ] Version bumped in package.json + Cargo.toml
+- [ ] Version bumped in `version.toml` and synced to pyproject.toml + tauri.conf.json
 - [ ] Release notes written
 - [ ] Installer tested on Windows 10 + Windows 11
+
+---
+
+## Version Management
+
+**Central version file**: `version.toml` (repo root)
+
+**On every version bump** (e.g., `0.1.0` → `0.1.1`):
+
+1. Update `version.toml`:
+   ```toml
+   [app]
+   version = "0.1.1"
+   ```
+
+2. Manually sync to these files (build scripts read `version.toml`, but these tools require static files):
+   - `pyproject.toml` — line 7: `version = "0.1.1"`
+   - `apps/shell/src-tauri/tauri.conf.json` — line 4: `"version": "0.1.1"`
+   - `apps/shell/src-tauri/Cargo.toml` — line 3: `version = "0.1.1"`
+
+3. Build normally—`build-installer.ps1` automatically reads the new version from `version.toml`
+
+**Why manual sync?** External tools (setuptools, Tauri, Cargo) read these files at build time and don't support reading from external sources. This approach keeps complexity minimal while automating the build scripts.
