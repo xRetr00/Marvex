@@ -2071,6 +2071,7 @@ dependencies = [
  "tauri-plugin-positioner",
  "tauri-plugin-single-instance",
  "tokio",
+ "windows",
  "windows-service",
 ]
 
