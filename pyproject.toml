@@ -33,7 +33,7 @@ dependencies = [
   "pywinauto>=0.6; sys_platform == \"win32\"",
   "uiautomation>=2.0; sys_platform == \"win32\"",
   "uvicorn==0.47.0",
-  "aliyun-python-sdk-core==2.16.0",
+  "aliyun-python-sdk-core==2.13.10",
 ]
 
 [project.scripts]

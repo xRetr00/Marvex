@@ -290,7 +290,7 @@ function Prepare-Runtime-Resources {
     }
     $distWheelhouse = Join-Path $RepoRoot "dist"
     Write-Host "  Downloading locked dependency wheels..."
-    $downloadOutput = uv run python -m pip download --only-binary=:all: --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $requirementsFile 2>&1
+    $downloadOutput = uv run python -m pip download --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $requirementsFile 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Exit "Failed to download dependency wheels: $downloadOutput"
     }
