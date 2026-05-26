@@ -503,3 +503,64 @@ def test_local_api_boundary_gate_allows_approved_core_service_entrypoint():
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
     assert "PASS local API boundaries" in completed.stdout
+
+
+def test_composite_trace_reader_lists_in_memory_and_persistent_trace_ids(tmp_path):
+    from datetime import UTC, datetime
+
+    from packages.contracts import TraceLevel, TraceStage
+    from packages.telemetry import InMemoryTraceReader, PersistentTraceStore, make_trace_event
+    from services.core.main import _CompositeTraceReader
+
+    in_memory = InMemoryTraceReader()
+    persistent = PersistentTraceStore(
+        trace_file_path=tmp_path / "telemetry" / "traces.jsonl",
+        local_user_root=tmp_path,
+    )
+    event = make_trace_event(
+        schema_version=SCHEMA_VERSION,
+        trace_id="trace-in-memory",
+        turn_id="turn-in-memory",
+        stage=TraceStage.TURN_COMPLETED,
+        level=TraceLevel.INFO,
+        message="Turn completed.",
+        data={"status": "completed"},
+        timestamp=datetime(2026, 5, 18, tzinfo=UTC),
+    )
+    in_memory.emit(event)
+    persistent.emit(event.model_copy(update={"trace_id": "trace-persisted"}))
+    reader = _CompositeTraceReader(in_memory=in_memory, persistent=persistent)
+
+    assert reader.trace_ids(limit=10) == ("trace-persisted", "trace-in-memory")
+
+
+def test_persist_trace_events_does_not_duplicate_existing_event_ids(tmp_path):
+    from datetime import UTC, datetime
+
+    from packages.contracts import TraceLevel, TraceStage
+    from packages.telemetry import InMemoryTraceReader, PersistentTraceStore, make_trace_event
+    from services.core.main import _persist_trace_events
+
+    reader = InMemoryTraceReader()
+    store = PersistentTraceStore(
+        trace_file_path=tmp_path / "telemetry" / "traces.jsonl",
+        local_user_root=tmp_path,
+    )
+    reader.emit(
+        make_trace_event(
+            schema_version=SCHEMA_VERSION,
+            trace_id="trace-persist-once",
+            turn_id="turn-persist-once",
+            stage=TraceStage.TURN_RECEIVED,
+            level=TraceLevel.INFO,
+            message="Turn received.",
+            data={"status": "received"},
+            timestamp=datetime(2026, 5, 18, tzinfo=UTC),
+        )
+    )
+
+    _persist_trace_events(store, reader, "trace-persist-once")
+    _persist_trace_events(store, reader, "trace-persist-once")
+
+    envelope = store.read_trace("trace-persist-once")
+    assert envelope["event_count"] == 1

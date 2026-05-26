@@ -185,3 +185,15 @@ def test_persistent_trace_store_write_failure_uses_safe_error(tmp_path):
     error = exc_info.value
     assert error.error_code == "TELEMETRY_WRITE_FAILED"
     assert "secret-token" not in str(error)
+
+
+def test_persistent_trace_store_lists_recent_trace_ids_from_local_files(tmp_path):
+    from packages.telemetry import PersistentTraceStore
+
+    trace_file = tmp_path / "telemetry" / "traces.ndjson"
+    store = PersistentTraceStore(trace_file_path=trace_file, local_user_root=tmp_path)
+
+    for index in range(4):
+        store.emit(make_event(trace_id=f"trace-persist-{index}", token="secret-token"))
+
+    assert store.trace_ids(limit=2) == ("trace-persist-2", "trace-persist-3")

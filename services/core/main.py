@@ -2402,10 +2402,20 @@ def _persist_trace_events(
     if store is None:
         return
     try:
+        persisted = store.read_trace(trace_id) or {}
+        persisted_events = persisted.get("events")
+        persisted_event_ids = {
+            str(event.get("event_id"))
+            for event in persisted_events
+            if isinstance(event, dict) and event.get("event_id") is not None
+        } if isinstance(persisted_events, list) else set()
         raw_events = reader._events_by_trace_id.get(trace_id, ())  # type: ignore[attr-defined]
         for event in raw_events:
+            if event.event_id in persisted_event_ids:
+                continue
             try:
                 store.emit(event)
+                persisted_event_ids.add(event.event_id)
             except Exception:
                 pass
     except Exception:
@@ -2621,6 +2631,28 @@ class _CompositeTraceReader:
             except Exception:
                 pass
         return self._in_memory.read_trace(trace_id)
+
+    def trace_ids(self, *, limit: int = 50) -> tuple[str, ...]:
+        max_count = max(1, min(limit, 500))
+        ordered: list[str] = []
+        seen: set[str] = set()
+        if self._persistent is not None and hasattr(self._persistent, "trace_ids"):
+            try:
+                for trace_id in self._persistent.trace_ids(limit=max_count):
+                    text = str(trace_id)
+                    if text in seen:
+                        ordered.remove(text)
+                    seen.add(text)
+                    ordered.append(text)
+            except Exception:
+                pass
+        for trace_id in self._in_memory.trace_ids(limit=max_count):
+            text = str(trace_id)
+            if text in seen:
+                ordered.remove(text)
+            seen.add(text)
+            ordered.append(text)
+        return tuple(ordered[-max_count:])
 
 
 def _apply_provider_control(service: CoreService, catalog: dict[str, Any]) -> None:

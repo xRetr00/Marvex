@@ -49,6 +49,10 @@ class InMemoryTraceReader:
     def emit(self, event: TraceEvent) -> None:
         self._events_by_trace_id[event.trace_id].append(event)
 
+    def trace_ids(self, *, limit: int = 50) -> tuple[str, ...]:
+        max_count = max(1, min(limit, 500))
+        return tuple(self._events_by_trace_id.keys())[-max_count:]
+
     def read_trace(self, trace_id: str) -> dict[str, Any] | None:
         events = self._events_by_trace_id.get(trace_id)
         if not events:

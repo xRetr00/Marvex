@@ -333,7 +333,8 @@ def _create_control_plane_dispatcher(
             return _json_response(None, "200 OK", _runtime_execution_payload(snapshot, approval_store))
         if method == "GET" and path == f"{CONTROL_PREFIX}/traces/search":
             query = _trace_search_query(query_string)
-            result = search_traces(trace_reader, query, trace_ids=trace_ids) if trace_reader is not None else None
+            searchable_trace_ids = trace_ids or _reader_trace_ids(trace_reader)
+            result = search_traces(trace_reader, query, trace_ids=searchable_trace_ids) if trace_reader is not None else None
             payload = result.safe_projection() if result is not None else {"schema_version": SCHEMA_VERSION, "traces": [], "match_count": 0, "truncated": False, "raw_payload_persisted": False}
             return _json_response(None, "200 OK", payload)
         if method == "GET" and path == f"{CONTROL_PREFIX}/policies":
@@ -642,27 +643,68 @@ def _safe_mapping(value: dict[str, Any]) -> dict[str, Any]:
 
 
 def _trace_rows(*, trace_reader: Any | None, trace_ids: tuple[str, ...]) -> list[dict[str, Any]]:
-    ids = list(trace_ids)
-    if not ids and trace_reader is not None and hasattr(trace_reader, "_events_by_trace_id"):
-        try:
-            ids = list(getattr(trace_reader, "_events_by_trace_id").keys())[-50:]
-        except Exception:
-            ids = []
+    ids = list(trace_ids or _reader_trace_ids(trace_reader))
     rows: list[dict[str, Any]] = []
     for trace_id in ids[-50:]:
         try:
             envelope = trace_reader.read_trace(str(trace_id)) if trace_reader is not None else None
         except Exception:
             envelope = None
-        rows.append(
-            {
-                "trace_id": str(trace_id),
-                "event_count": int((envelope or {}).get("event_count", 0) or 0),
-                "truncated": bool((envelope or {}).get("truncated", False)),
-                "raw_payload_persisted": False,
-            }
-        )
+        rows.append(_trace_row(trace_id=str(trace_id), envelope=envelope))
     return rows
+
+
+def _reader_trace_ids(trace_reader: Any | None, *, limit: int = 50) -> tuple[str, ...]:
+    if trace_reader is None:
+        return ()
+    trace_ids = getattr(trace_reader, "trace_ids", None)
+    if callable(trace_ids):
+        try:
+            return tuple(str(trace_id) for trace_id in trace_ids(limit=limit))[-limit:]
+        except Exception:
+            return ()
+    if hasattr(trace_reader, "_events_by_trace_id"):
+        try:
+            return tuple(str(trace_id) for trace_id in getattr(trace_reader, "_events_by_trace_id").keys())[-limit:]
+        except Exception:
+            return ()
+    return ()
+
+
+def _trace_row(*, trace_id: str, envelope: dict[str, Any] | None) -> dict[str, Any]:
+    safe_envelope = envelope if isinstance(envelope, dict) else {}
+    events = safe_envelope.get("events")
+    safe_events = [event for event in events if isinstance(event, dict)] if isinstance(events, list) else []
+    first_event = safe_events[0] if safe_events else {}
+    latest_event = safe_events[-1] if safe_events else {}
+    row: dict[str, Any] = {
+        "trace_id": str(safe_envelope.get("trace_id") or trace_id),
+        "scope": str(safe_envelope.get("scope") or "unknown"),
+        "source": str(safe_envelope.get("source") or "unknown"),
+        "event_count": int(safe_envelope.get("event_count", len(safe_events)) or 0),
+        "truncated": bool(safe_envelope.get("truncated", False)),
+        "raw_payload_persisted": False,
+    }
+    if first_event.get("timestamp") is not None:
+        row["first_timestamp"] = str(first_event.get("timestamp"))
+    if latest_event.get("timestamp") is not None:
+        row["last_timestamp"] = str(latest_event.get("timestamp"))
+    for source_key, output_key in (
+        ("stage", "latest_stage"),
+        ("level", "latest_level"),
+        ("status", "latest_status"),
+        ("message", "latest_message"),
+        ("tool_status", "tool_status"),
+        ("approval_status", "approval_status"),
+        ("finish_reason", "finish_reason"),
+    ):
+        value = latest_event.get(source_key)
+        if isinstance(value, str | int | float | bool):
+            row[output_key] = value
+    malformed_count = safe_envelope.get("malformed_record_count")
+    if isinstance(malformed_count, int):
+        row["malformed_record_count"] = malformed_count
+    return _safe_nested_mapping(row)
 
 
 def _error(reason: str, path: str) -> dict[str, Any]:

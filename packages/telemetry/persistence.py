@@ -73,6 +73,22 @@ class PersistentTraceStore:
         except OSError as exc:
             raise TelemetryPersistenceError() from exc
 
+    def trace_ids(self, *, limit: int = 50) -> tuple[str, ...]:
+        max_count = max(1, min(limit, 500))
+        ordered: list[str] = []
+        seen: set[str] = set()
+        for record in self._iter_records():
+            if not isinstance(record, dict):
+                continue
+            trace_id = record.get("trace_id")
+            if not _valid_trace_id(trace_id):
+                continue
+            if trace_id in seen:
+                ordered.remove(trace_id)
+            seen.add(trace_id)
+            ordered.append(trace_id)
+        return tuple(ordered[-max_count:])
+
     def read_trace(self, trace_id: str) -> dict[str, Any] | None:
         events: list[TraceEvent] = []
         malformed_count = 0
@@ -253,6 +269,12 @@ def _turn_id_from_event_id(event_id: str) -> str | None:
         return None
     turn_id, _separator, _stage = event_id.partition(":")
     return turn_id or None
+
+
+def _valid_trace_id(value: Any) -> bool:
+    return isinstance(value, str) and bool(value.strip()) and all(
+        character in _REF_ID_SAFE_CHARS for character in value
+    )
 
 
 def _is_relative_to(path: Path, root: Path) -> bool:

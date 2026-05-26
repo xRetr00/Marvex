@@ -150,3 +150,24 @@ def test_in_memory_trace_reader_is_instance_owned_not_module_global():
     )
     assert "GLOBAL" not in source
     assert "InMemoryTraceReader()" not in source
+
+
+def test_in_memory_trace_reader_lists_recent_trace_ids_without_exposing_events():
+    from packages.telemetry import InMemoryTraceReader
+
+    reader = InMemoryTraceReader()
+    for index in range(4):
+        reader.emit(
+            make_trace_event(
+                schema_version="0.1.1-draft",
+                trace_id=f"trace-reader-{index}",
+                turn_id=f"turn-reader-{index}",
+                stage=TraceStage.TURN_COMPLETED,
+                level=TraceLevel.INFO,
+                message="Turn completed.",
+                data={"status": "completed"},
+                timestamp=datetime(2026, 5, 15, 9, 30, tzinfo=UTC),
+            )
+        )
+
+    assert reader.trace_ids(limit=2) == ("trace-reader-2", "trace-reader-3")

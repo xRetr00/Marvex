@@ -57,7 +57,51 @@ class _FakeLogReader:
         ]
 
 
-def _app(*, log_reader=None, session_coordinator=None, browser_session_manager=None):
+class _TraceListingReader:
+    def __init__(self):
+        self._envelopes = {
+            "trace-listed-1": {
+                "schema_version": "0.1.1-draft",
+                "trace_id": "trace-listed-1",
+                "scope": "current_process",
+                "source": "in_memory",
+                "events": [
+                    {
+                        "trace_id": "trace-listed-1",
+                        "turn_id": "turn-listed-1",
+                        "event_id": "turn-listed-1:turn_received",
+                        "timestamp": "2026-05-18T09:30:00Z",
+                        "stage": "turn_received",
+                        "level": "info",
+                        "message": "Core agentic turn received.",
+                        "status": "received",
+                    },
+                    {
+                        "trace_id": "trace-listed-1",
+                        "turn_id": "turn-listed-1",
+                        "event_id": "turn-listed-1:turn_completed",
+                        "timestamp": "2026-05-18T09:30:02Z",
+                        "stage": "turn_completed",
+                        "level": "info",
+                        "message": "Core agentic turn finalized.",
+                        "status": "finalized",
+                        "tool_status": "not_executed",
+                    },
+                ],
+                "event_count": 2,
+                "truncated": False,
+            }
+        }
+
+    def trace_ids(self, limit: int = 50):
+        assert limit == 50
+        return tuple(self._envelopes)
+
+    def read_trace(self, trace_id: str):
+        return self._envelopes.get(trace_id)
+
+
+def _app(*, log_reader=None, session_coordinator=None, browser_session_manager=None, trace_reader=None):
     store = InMemoryApprovalStore.from_requests((_approval_request(),))
     snapshot = ControlPlaneSnapshot.foundation_default(
         schema_version="1",
@@ -98,6 +142,7 @@ def _app(*, log_reader=None, session_coordinator=None, browser_session_manager=N
         log_reader=log_reader,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
+        trace_reader=trace_reader,
     )
 
 
@@ -302,6 +347,44 @@ def test_control_plane_snapshot_exposes_safe_views_only() -> None:
     assert "authorization" not in serialized
     assert "transcript" not in serialized
     assert "raw_payload\": true" not in serialized
+
+
+def test_control_plane_snapshot_lists_detailed_trace_rows_from_reader() -> None:
+    app = _app(trace_reader=_TraceListingReader())
+
+    status, _headers, payload = _call(app, "/control/snapshot")
+
+    assert status == "200 OK"
+    assert payload["traces"] == [
+        {
+            "trace_id": "trace-listed-1",
+            "scope": "current_process",
+            "source": "in_memory",
+            "event_count": 2,
+            "first_timestamp": "2026-05-18T09:30:00Z",
+            "last_timestamp": "2026-05-18T09:30:02Z",
+            "latest_stage": "turn_completed",
+            "latest_level": "info",
+            "latest_status": "finalized",
+            "latest_message": "Core agentic turn finalized.",
+            "tool_status": "not_executed",
+            "truncated": False,
+            "raw_payload_persisted": False,
+        }
+    ]
+    assert payload["telemetry"]["trace_count"] == 1
+    assert payload["telemetry"]["telemetry_event_count"] == 2
+    assert "token" not in json.dumps(payload).lower()
+
+
+def test_control_plane_trace_search_uses_reader_trace_ids_when_not_supplied() -> None:
+    app = _app(trace_reader=_TraceListingReader())
+
+    status, _headers, payload = _call(app, "/control/traces/search?status=finalized")
+
+    assert status == "200 OK"
+    assert payload["match_count"] == 1
+    assert payload["traces"][0]["trace_id"] == "trace-listed-1"
 
 
 def test_pending_approval_state_still_comes_from_capability_runtime() -> None:
