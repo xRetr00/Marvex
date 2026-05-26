@@ -317,7 +317,7 @@ if errorlevel 1 (
     exit /b 1
 )
 echo   Downloading locked dependency wheels...
-uv run python -m pip download --only-binary=:all: --find-links "%RepoRoot%\dist" --dest "%RuntimeWheels%" --requirement "%RequirementsFile%"
+uv run python -m pip download --only-binary=:all: --find-links "%RepoRoot%\dist" --index-url https://pypi.org/simple --dest "%RuntimeWheels%" --requirement "%RequirementsFile%"
 if errorlevel 1 (
     call :Die "Failed to download dependency wheels"
     exit /b 1
