@@ -27,6 +27,7 @@ from packages.control_plane_api import (
 from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
 from packages.control_plane_api.browser_session import BrowserSessionManager
 from packages.control_plane_api.logs import LocalLogReader
+from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
 from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
     GITHUB_CONNECTOR_REF,
@@ -2581,6 +2582,7 @@ def create_control_plane_service_app(
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
     provider_control: Any | None = None,
+    voice_worker_control: Any | None = None,
 ) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
@@ -2594,6 +2596,7 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
+        voice_worker_control=voice_worker_control or VoiceWorkerControlPlaneFacade(),
     )
 
 

@@ -36,6 +36,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
 
   const services = backend?.services ?? {};
   const workerNames = Object.keys(services).filter((n) => n !== "runtime");
+  const voiceWorkerProcessRunning = serviceOk(String(services.voice_worker ?? ""));
   const providers = Array.isArray((snapshot as { providers?: unknown[] } | null)?.providers) ? (snapshot as { providers: Record<string, unknown>[] }).providers : [];
   const settings = (snapshot as { settings?: Record<string, unknown> } | null)?.settings ?? {};
   const telemetry = (snapshot as { telemetry?: Record<string, unknown> } | null)?.telemetry ?? {};
@@ -61,7 +62,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
 
       <Card title="Voice / Wake word">
         <Row label="Wake word" value={String((voice as { wakeword_status?: string } | null)?.wakeword_status ?? backend?.wakeword ?? "unknown")} ok={backend?.wakeword === "running" || backend?.wakeword === "enabled"} />
-        <Row label="Lifecycle" value={String((voice as { lifecycle_state?: string } | null)?.lifecycle_state ?? "—")} />
+        <Row label="Lifecycle" value={voiceLifecycleLabel(voice, voiceWorkerProcessRunning)} ok={voiceWorkerProcessRunning || Boolean((voice as { process_started?: boolean } | null)?.process_started)} />
         <Row label="STT backend" value={String((voice as { active_stt_backend_id?: string } | null)?.active_stt_backend_id ?? "—")} />
         <Row label="TTS backend" value={String((voice as { active_tts_backend_id?: string } | null)?.active_tts_backend_id ?? "—")} />
         <Row label="Active voice" value={String((voice as { active_voice_id?: string } | null)?.active_voice_id ?? "—")} />
@@ -70,7 +71,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
       <Card title="Provider / LLM">
         {providers.length === 0 && <Muted>No providers reported.</Muted>}
         {providers.map((p, i) => (
-          <Row key={i} label={String(p.provider_id ?? p.id ?? `provider ${i + 1}`)} value={String(p.model ?? p.status ?? "")} />
+          <Row key={i} label={String(p.provider_id ?? p.id ?? `provider ${i + 1}`)} value={String(p.active_model ?? p.model ?? p.status ?? "—")} ok={Boolean(p.healthy)} />
         ))}
         <Row label="Default model" value={String((settings as { default_model?: string }).default_model ?? "—")} />
       </Card>
@@ -102,6 +103,12 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
       </Card>
     </div>
   );
+}
+
+function voiceLifecycleLabel(voice: Record<string, unknown> | null, processRunning: boolean) {
+  const lifecycle = String((voice as { lifecycle_state?: string } | null)?.lifecycle_state ?? "—");
+  if (lifecycle === "stopped" && processRunning) return "process running";
+  return lifecycle;
 }
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {

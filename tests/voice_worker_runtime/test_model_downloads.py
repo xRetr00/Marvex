@@ -8,7 +8,12 @@ from pathlib import Path
 
 from packages.control_plane_api.voice import handle_voice_control_request
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceWorkerControlPlaneFacade
-from packages.voice_worker_runtime.assets import VoiceModelCatalog, VoiceModelCatalogAsset, VoiceModelDownloadRequest
+from packages.voice_worker_runtime.assets import (
+    VoiceModelCatalog,
+    VoiceModelCatalogAsset,
+    VoiceModelDownloadRequest,
+    load_voice_model_catalog,
+)
 
 
 def test_asset_manager_downloads_file_source_into_safe_asset_root_and_registers_it(tmp_path: Path) -> None:
@@ -174,6 +179,34 @@ def test_asset_manager_discovers_bundled_catalog_assets_from_voice_asset_root(tm
 
     assert registry.installed_count == 1
     assert manager.is_ready(model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword") is True
+
+
+def test_load_voice_model_catalog_honors_packaged_manifest_env(tmp_path: Path, monkeypatch) -> None:
+    manifest = tmp_path / "voice_models.manifest.json"
+    manifest.write_text(
+        json.dumps(
+            {
+                "schema_version": "1",
+                "assets": [
+                    {
+                        "model_id": "custom-stt",
+                        "backend_id": "custom-backend",
+                        "model_kind": "stt",
+                        "source_uri": "https://models.example.test/custom/model.onnx",
+                        "relative_path": "stt/custom/model.onnx",
+                        "required": True,
+                        "explicit_user_triggered": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("MARVEX_VOICE_MODEL_MANIFEST", str(manifest))
+
+    catalog = load_voice_model_catalog()
+
+    assert [asset.model_id for asset in catalog.assets] == ["custom-stt"]
 
 
 def test_asset_manager_discovers_multi_file_model_only_after_all_catalog_parts_exist(tmp_path: Path) -> None:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+from pathlib import Path
 from typing import Any
 from typing import Callable
 
@@ -20,7 +22,11 @@ class VoiceWorkerControlPlaneFacade:
         elif assets is not None:
             self.controller = VoiceWorkerController(asset_manager=assets)
         else:
-            self.controller = VoiceWorkerController()
+            asset_root = os.environ.get("MARVEX_VOICE_ASSET_ROOT")
+            if asset_root and asset_root.strip():
+                self.controller = VoiceWorkerController(asset_manager=VoiceAssetManager(asset_root=Path(asset_root)))
+            else:
+                self.controller = VoiceWorkerController()
         self.assets = assets or self.controller.asset_manager
         self._model_catalog_loader = model_catalog_loader
 

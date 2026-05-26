@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import tarfile
 import zipfile
@@ -371,7 +372,7 @@ def _looks_like_sha256(value: str) -> bool:
 
 
 def load_voice_model_catalog(manifest_path: Path | None = None) -> VoiceModelCatalog:
-    path = manifest_path or Path(__file__).resolve().parents[2] / "voice_models.manifest.json"
+    path = _voice_model_manifest_path(manifest_path)
     if not path.exists():
         return VoiceModelCatalog(assets=())
     data = json.loads(path.read_text(encoding="utf-8"))
@@ -392,6 +393,15 @@ def load_voice_model_catalog(manifest_path: Path | None = None) -> VoiceModelCat
             )
         )
     return VoiceModelCatalog(assets=tuple(assets))
+
+
+def _voice_model_manifest_path(manifest_path: Path | None = None) -> Path:
+    if manifest_path is not None:
+        return manifest_path
+    env_path = os.environ.get("MARVEX_VOICE_MODEL_MANIFEST")
+    if env_path and env_path.strip():
+        return Path(env_path).expanduser().resolve()
+    return Path(__file__).resolve().parents[2] / "voice_models.manifest.json"
 
 
 def _is_archive(name: str) -> bool:

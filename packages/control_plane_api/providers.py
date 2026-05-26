@@ -4,6 +4,7 @@ import json
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
+from urllib.request import urlopen
 
 from .voice import _read_json
 
@@ -22,6 +23,7 @@ class ProviderControlState:
     models: list[str] = field(default_factory=list)
     multi_models: list[str] = field(default_factory=list)
     secret_present: bool = False
+    secret_display: str = ""
 
     def projection(self) -> dict[str, Any]:
         return {
@@ -33,7 +35,7 @@ class ProviderControlState:
             "models": list(self.models),
             "multi_models": list(self.multi_models),
             "secret_present": self.secret_present,
-            "secret_display": "********" if self.secret_present else "",
+            "secret_display": self.secret_display if self.secret_present else "",
             "secret_value_present": False,
         }
 
@@ -51,20 +53,20 @@ class InMemoryProviderControl:
             ProviderControlState(
                 provider_id="lmstudio_responses",
                 label="LM Studio",
-                configured=True,
-                healthy=True,
-                active_model="qwen2.5-coder-7b",
-                models=["qwen2.5-coder-7b", "llama-3.1-8b", "local/default"],
-                multi_models=["qwen2.5-coder-7b"],
-                secret_present=True,
+                configured=False,
+                healthy=False,
+                active_model="",
+                models=[],
+                multi_models=[],
+                secret_present=False,
             ),
             ProviderControlState(
                 provider_id="litellm",
                 label="LiteLLM / Cloud Gateway",
                 configured=False,
                 healthy=False,
-                active_model="openrouter/auto",
-                models=["openrouter/auto", "openai/gpt-4.1", "anthropic/claude"],
+                active_model="",
+                models=[],
                 multi_models=[],
                 secret_present=False,
             ),
@@ -111,12 +113,28 @@ class InMemoryProviderControl:
         if not secret_value.strip():
             raise ValueError("secret_required")
         row.secret_present = True
+        row.secret_display = _mask_secret(secret_value)
         row.configured = True
         return self._changed()
 
     def remove_secret(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
         row.secret_present = False
+        row.secret_display = ""
+        return self._changed()
+
+    def refresh_models(self, provider_id: str) -> dict[str, Any]:
+        row = self._provider(provider_id)
+        if provider_id == "lmstudio_responses":
+            models = _discover_lmstudio_models()
+            row.healthy = bool(models)
+            if models:
+                row.models = models
+                if row.active_model not in row.models:
+                    row.active_model = row.models[0]
+                row.configured = True
+        if provider_id == "litellm":
+            row.models = sorted(set(row.models + ["openrouter/auto"]))
         return self._changed()
 
     def _provider(self, provider_id: str) -> ProviderControlState:
@@ -163,6 +181,11 @@ def handle_provider_control_request(
             if not isinstance(models, list):
                 raise ValueError("models_required")
             return "200 OK", _safe_catalog(control.set_multi_models(provider_id, models))
+        if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/models/refresh") and method == "POST":
+            provider_id = _provider_path_id(path, suffix="/models/refresh")
+            if not hasattr(control, "refresh_models"):
+                return "200 OK", _safe_catalog(control.provider_catalog())
+            return "200 OK", _safe_catalog(control.refresh_models(provider_id))
         if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/secret"):
             provider_id = _provider_path_id(path, suffix="/secret")
             if method == "POST":
@@ -193,6 +216,32 @@ def _safe_catalog(payload: dict[str, Any]) -> dict[str, Any]:
     if any(part in serialized.lower() for part in ("sk-real-secret-value", "bearer ")):
         raise ValueError("unsafe_provider_payload")
     return _safe_nested(payload)
+
+
+def _mask_secret(value: str) -> str:
+    cleaned = value.strip()
+    if len(cleaned) <= 8:
+        return "*" * len(cleaned)
+    return f"{cleaned[:4]}****{cleaned[-4:]}"
+
+
+def _discover_lmstudio_models() -> list[str]:
+    try:
+        with urlopen("http://127.0.0.1:1234/v1/models", timeout=1.5) as response:  # noqa: S310 - loopback-only model discovery.
+            payload = json.loads(response.read().decode("utf-8"))
+    except Exception:
+        return []
+    rows = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    models: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        model_id = str(row.get("id") or "").strip()
+        if model_id and model_id not in models:
+            models.append(model_id)
+    return models
 
 
 def _safe_nested(value: Any) -> Any:

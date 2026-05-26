@@ -23,24 +23,6 @@ type ModelDownloadState = {
   error?: string;
 };
 
-const STT_MODELS = [
-  { id: "moonshine-v2", label: "Moonshine v2" },
-  { id: "sensevoice-small", label: "SenseVoice Small" },
-  { id: "sherpa-onnx-asr", label: "Sherpa ONNX ASR" }
-];
-
-const TTS_LIBS = [
-  { id: "kokoro-onnx", label: "Kokoro ONNX" },
-  { id: "piper-tts", label: "Piper TTS" },
-  { id: "sherpa-onnx-tts", label: "Sherpa ONNX TTS" }
-];
-
-const VOICES = [
-  { id: "af_heart", label: "Kokoro AF Heart" },
-  { id: "piper-default", label: "Piper Default" },
-  { id: "sherpa-voice", label: "Sherpa Voice" }
-];
-
 export function VoiceMode() {
   const [status, setStatus] = useState<VoiceWorkerStatus | null>(null);
   const [catalog, setCatalog] = useState<VoiceModelCatalogAsset[]>([]);
@@ -80,6 +62,15 @@ export function VoiceMode() {
     }
     return map;
   }, [catalog]);
+  const sttOptions = useMemo(() => {
+    return optionList(catalog.filter((asset) => asset.model_kind === "stt").map((asset) => asset.model_id), status?.active_stt_backend_id ?? "moonshine-v2");
+  }, [catalog, status?.active_stt_backend_id]);
+  const ttsOptions = useMemo(() => {
+    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.backend_id), status?.active_tts_backend_id ?? "kokoro-onnx");
+  }, [catalog, status?.active_tts_backend_id]);
+  const voiceOptions = useMemo(() => {
+    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.model_id), status?.active_voice_id ?? "af_heart");
+  }, [catalog, status?.active_voice_id]);
 
   const run = async (label: string, action: () => Promise<unknown>) => {
     setBusy(label);
@@ -134,9 +125,9 @@ export function VoiceMode() {
       </section>
 
       <section style={gridStyle}>
-        <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={STT_MODELS} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
-        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "kokoro-onnx"} options={TTS_LIBS} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
-        <SelectField label="Voice" value={status?.active_voice_id ?? "af_heart"} options={VOICES} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
+        <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
+        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "kokoro-onnx"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
+        <SelectField label="Voice" value={status?.active_voice_id ?? "af_heart"} options={voiceOptions} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
       </section>
 
       <section style={gridStyle}>
@@ -156,7 +147,7 @@ export function VoiceMode() {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {required.map((asset) => {
             const modelId = String(asset.model_id ?? "");
-            const downloadTargets = catalogByModel.get(modelId) ?? [];
+            const downloadTargets = catalogTargetsFor(asset, catalogByModel, catalog);
             const downloadState = downloads[modelId];
             const statusLabel = downloadState?.state === "downloading"
               ? `Downloading ${downloadState.completed}/${downloadState.total}`
@@ -197,6 +188,29 @@ function SelectField({ label, value, options, onChange }: { label: string; value
       </select>
     </label>
   );
+}
+
+function optionList(values: Array<string | undefined>, active: string): Array<{ id: string; label: string }> {
+  const ids = new Set<string>();
+  if (active) ids.add(active);
+  for (const value of values) {
+    const normalized = String(value ?? "").trim();
+    if (normalized) ids.add(normalized);
+  }
+  return [...ids].map((id) => ({ id, label: id }));
+}
+
+function catalogTargetsFor(
+  required: Record<string, unknown>,
+  catalogByModel: Map<string, VoiceModelCatalogAsset[]>,
+  catalog: VoiceModelCatalogAsset[],
+): VoiceModelCatalogAsset[] {
+  const modelId = String(required.model_id ?? "");
+  const exact = catalogByModel.get(modelId);
+  if (exact?.length) return exact;
+  const backendId = String(required.backend_id ?? "");
+  const modelKind = String(required.model_kind ?? "");
+  return catalog.filter((asset) => asset.backend_id === backendId && asset.model_kind === modelKind);
 }
 
 function StatusTile({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {

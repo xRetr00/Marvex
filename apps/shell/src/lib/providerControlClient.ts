@@ -40,6 +40,10 @@ export async function selectProviderMultiModels(providerId: string, models: stri
   return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/models/multi`, "POST", { models }));
 }
 
+export async function refreshProviderModels(providerId: string): Promise<ProviderCatalog> {
+  return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/models/refresh`, "POST"));
+}
+
 export async function setProviderSecret(providerId: string, secret: string): Promise<ProviderCatalog> {
   return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/secret`, "POST", { secret }));
 }

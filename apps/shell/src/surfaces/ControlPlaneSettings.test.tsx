@@ -2,18 +2,21 @@ import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
-import { controlRequest } from "@/lib/shellCommands";
+import { controlRequest, openControlPlane } from "@/lib/shellCommands";
 
 vi.mock("@/lib/shellCommands", () => ({
   controlRequest: vi.fn(),
+  openControlPlane: vi.fn(),
 }));
 
 const mockedControlRequest = vi.mocked(controlRequest);
+const mockedOpenControlPlane = vi.mocked(openControlPlane);
 
 describe("ControlPlaneSettings", () => {
   beforeEach(() => {
     let secretPresent = false;
     mockedControlRequest.mockReset();
+    mockedOpenControlPlane.mockReset();
     mockedControlRequest.mockImplementation(async (path: string, method = "GET", body?: unknown) => {
       if (path === "/providers" || path.startsWith("/providers/")) {
         if (path.endsWith("/secret") && method === "POST") secretPresent = true;
@@ -32,7 +35,7 @@ describe("ControlPlaneSettings", () => {
               models: ["qwen2.5-coder-7b", "llama-3.1-8b"],
               multi_models: ["qwen2.5-coder-7b"],
               secret_present: secretPresent,
-              secret_display: secretPresent ? "********" : "",
+              secret_display: secretPresent ? "sk-p****cret" : "",
               secret_value_present: false,
             },
           ],
@@ -63,10 +66,13 @@ describe("ControlPlaneSettings", () => {
     await userEvent.type(screen.getByLabelText("Provider API key"), "sk-plain-text-secret");
     await userEvent.click(screen.getByRole("button", { name: /Save key/i }));
     await userEvent.click(screen.getByRole("button", { name: /Install Browser automation/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Open full control plane/i }));
 
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
+    expect(mockedOpenControlPlane).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("sk-plain-text-secret")).not.toBeInTheDocument();
-    expect(await screen.findByText("********")).toBeInTheDocument();
+    expect(await screen.findByText("sk-p****cret")).toBeInTheDocument();
+    expect(screen.getByText("core.stderr.log")).toBeInTheDocument();
   });
 });

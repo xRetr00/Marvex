@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
+from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore, InMemoryProviderControl
 from tests.control_plane_api.asgi_helpers import asgi_call, create_control_plane_test_app
 
 
@@ -140,3 +140,15 @@ def test_provider_secret_update_only_returns_masked_presence() -> None:
     assert "sk-real-secret-value" not in serialized
     assert remove_status == "200 OK"
     assert removed["providers"][0]["secret_present"] is False
+
+
+def test_in_memory_provider_secret_projection_includes_prefix_suffix_without_raw_secret() -> None:
+    control = InMemoryProviderControl()
+
+    payload = control.set_secret("litellm", "sk-real-secret-value")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["secret_present"] is True
+    assert provider["secret_display"] == "sk-r****alue"
+    serialized = json.dumps(payload)
+    assert "sk-real-secret-value" not in serialized

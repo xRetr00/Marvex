@@ -176,8 +176,8 @@ def main() -> int:
         failures.append("scripts/run_all_checks.py must run check_intent_context_prompt_boundaries.py")
 
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    if "semantic-router==0.1.14" not in pyproject and "semantic-router[hybrid]==0.1.14" not in pyproject:
-        failures.append("pyproject.toml must declare semantic-router==0.1.14 or semantic-router[hybrid]==0.1.14")
+    if "semantic-router==0.1.15" not in pyproject and "semantic-router[hybrid]==0.1.15" not in pyproject:
+        failures.append("pyproject.toml must declare semantic-router==0.1.15 or semantic-router[hybrid]==0.1.15")
     for blocked_dependency in ("guardrails-ai", "langgraph", "langchain"):
         if blocked_dependency in pyproject:
             failures.append(f"pyproject.toml must not declare deferred or blocked dependency: {blocked_dependency}")

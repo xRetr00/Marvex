@@ -1,13 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Database, KeyRound, PlugZap, RefreshCw, Save, Server, Trash2, Wrench } from "lucide-react";
+import { Copy, Database, ExternalLink, Eye, EyeOff, KeyRound, PlugZap, Plus, RefreshCw, Save, Server, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { controlRequest, type LogTail } from "@/lib/shellCommands";
+import { ModernLogViewer } from "@/components/marvex/ModernLogViewer";
+import { controlRequest, openControlPlane, type LogTail } from "@/lib/shellCommands";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
 import {
   fetchProviders,
+  refreshProviderModels,
   removeProviderSecret,
   selectProvider,
   selectProviderModel,
+  selectProviderMultiModels,
   setProviderSecret,
   type ProviderCatalog,
   type ProviderRow,
@@ -35,6 +38,8 @@ export function ControlPlaneSettings() {
   const [mcp, setMcp] = useState<Record<string, unknown>[]>([]);
   const [skills, setSkills] = useState<Record<string, unknown>[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
+  const [modelDraft, setModelDraft] = useState("");
+  const [showKeyDraft, setShowKeyDraft] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -85,8 +90,25 @@ export function ControlPlaneSettings() {
 
   const onSelectProvider = (providerId: string) => void run("provider", () => selectProvider(providerId));
   const onSelectModel = (model: string) => {
-    if (!activeProvider) return;
+    if (!activeProvider || !model.trim()) return;
+    void run("model", () => selectProviderModel(activeProvider.provider_id, model.trim()));
+  };
+  const onAddModel = () => {
+    if (!activeProvider || !modelDraft.trim()) return;
+    const model = modelDraft.trim();
+    setModelDraft("");
     void run("model", () => selectProviderModel(activeProvider.provider_id, model));
+  };
+  const onRefreshModels = () => {
+    if (!activeProvider) return;
+    void run("model discovery", () => refreshProviderModels(activeProvider.provider_id));
+  };
+  const onToggleMultiModel = (model: string, enabled: boolean) => {
+    if (!activeProvider) return;
+    const current = new Set(activeProvider.multi_models ?? []);
+    if (enabled) current.add(model);
+    else current.delete(model);
+    void run("multi models", () => selectProviderMultiModels(activeProvider.provider_id, [...current]));
   };
   const onSaveKey = () => {
     if (!activeProvider || !keyDraft.trim()) return;
@@ -98,15 +120,23 @@ export function ControlPlaneSettings() {
     if (!activeProvider) return;
     void run("secret", () => removeProviderSecret(activeProvider.provider_id));
   };
+  const onCopyMaskedKey = () => {
+    const display = activeProvider?.secret_display;
+    if (!display) return;
+    void navigator.clipboard?.writeText(display).catch(() => undefined);
+  };
 
   return (
     <div style={page}>
       <header style={header}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <h2 style={title}>Settings</h2>
           <p style={subtitle}>Local runtime controls for providers, models, dependencies, MCP, skills, logs, traces, and telemetry.</p>
         </div>
-        <Button size="sm" variant="ghost" onClick={() => void load()} title="Refresh"><RefreshCw size={14} /></Button>
+        <div style={headerActions}>
+          <Button size="sm" variant="outline" onClick={() => void openControlPlane()}><ExternalLink size={14} />Open full control plane</Button>
+          <Button size="sm" variant="ghost" onClick={() => void load()} title="Refresh"><RefreshCw size={14} />Refresh</Button>
+        </div>
       </header>
       {error && <div style={notice}>{error}</div>}
 
@@ -120,12 +150,28 @@ export function ControlPlaneSettings() {
               ))}
             </select>
           </label>
-          <label style={field}>
-            <span>Active model</span>
-            <select aria-label="Active model" value={activeProvider?.active_model ?? ""} onChange={(event) => onSelectModel(event.target.value)} style={select}>
-              {(activeProvider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}
-            </select>
-          </label>
+          <div style={splitControls}>
+            <label style={field}>
+              <span>Active model</span>
+              <select aria-label="Active model" value={activeProvider?.active_model ?? ""} onChange={(event) => onSelectModel(event.target.value)} style={select}>
+                {(activeProvider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}
+              </select>
+            </label>
+            <Button size="sm" variant="outline" onClick={onRefreshModels} disabled={!activeProvider || Boolean(busy)}><RefreshCw size={14} />Discover</Button>
+          </div>
+          <div style={inlineField}>
+            <input aria-label="Add model" value={modelDraft} onChange={(event) => setModelDraft(event.target.value)} placeholder="Model id" style={input} />
+            <Button aria-label="Add model" size="sm" variant="outline" onClick={onAddModel} disabled={!modelDraft.trim() || Boolean(busy)}><Plus size={14} /></Button>
+          </div>
+          <div style={modelList}>
+            <strong style={subhead}>Multi models</strong>
+            {(activeProvider?.models ?? []).length === 0 ? <Muted>No models discovered yet.</Muted> : (activeProvider?.models ?? []).map((model) => (
+              <label key={model} style={checkRow}>
+                <input type="checkbox" checked={Boolean(activeProvider?.multi_models?.includes(model))} onChange={(event) => onToggleMultiModel(model, event.target.checked)} />
+                <span>{model}</span>
+              </label>
+            ))}
+          </div>
           <div style={providerRows}>
             {(providers?.providers ?? []).map((provider) => <ProviderTile key={provider.provider_id} provider={provider} active={provider.provider_id === providers?.active_provider_id} />)}
           </div>
@@ -134,11 +180,17 @@ export function ControlPlaneSettings() {
         <Panel icon={<KeyRound size={16} />} title="Credentials">
           <div style={secretState}>
             <span>Current key</span>
-            <strong>{activeProvider?.secret_present ? (activeProvider.secret_display || "********") : "not set"}</strong>
+            <strong>{activeProvider?.secret_present ? (activeProvider.secret_display || "saved") : "not set"}</strong>
+            <Button aria-label="Copy masked key" size="sm" variant="ghost" onClick={onCopyMaskedKey} disabled={!activeProvider?.secret_display}><Copy size={14} /></Button>
           </div>
           <label style={field}>
             <span>Provider API key</span>
-            <input aria-label="Provider API key" value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} type="password" placeholder="Paste key" style={input} />
+            <div style={inlineField}>
+              <input aria-label="Provider API key" value={keyDraft} onChange={(event) => setKeyDraft(event.target.value)} type={showKeyDraft ? "text" : "password"} placeholder="Paste key" style={input} />
+              <Button aria-label={showKeyDraft ? "Hide key input" : "Show key input"} size="sm" variant="ghost" type="button" onClick={() => setShowKeyDraft((value) => !value)}>
+                {showKeyDraft ? <EyeOff size={14} /> : <Eye size={14} />}
+              </Button>
+            </div>
           </label>
           <div style={actions}>
             <Button size="sm" onClick={onSaveKey} disabled={!keyDraft.trim() || Boolean(busy)}><Save size={14} />Save key</Button>
@@ -153,7 +205,7 @@ export function ControlPlaneSettings() {
           <div style={list}>
             {deps.map((dep) => (
               <div key={dep.id} style={row}>
-                <div><strong>{dep.label}</strong><span>{dep.feature}</span></div>
+                <div style={{ minWidth: 0 }}><strong>{dep.label}</strong><span>{dep.feature}</span></div>
                 <Button size="sm" variant={dep.installed ? "ghost" : "outline"} disabled={dep.installed || Boolean(busy)} onClick={() => void run(`dep:${dep.id}`, () => installDep(dep.id))}>
                   {dep.installed ? "Installed" : `Install ${dep.label}`}
                 </Button>
@@ -174,12 +226,7 @@ export function ControlPlaneSettings() {
           <MiniTable title="Traces" rows={snapshot.traces ?? []} primaryKey="trace_id" />
         </Panel>
         <Panel icon={<Database size={16} />} title="Logs">
-          {logs.length === 0 ? <Muted>No logs exposed yet.</Muted> : logs.map((log) => (
-            <div key={log.name} style={logBlock}>
-              <strong>{log.name}</strong>
-              <pre>{log.lines.slice(-12).join("\n")}</pre>
-            </div>
-          ))}
+          <ModernLogViewer logs={logs} />
         </Panel>
       </section>
     </div>
@@ -224,24 +271,29 @@ function Muted({ children }: { children: React.ReactNode }) {
   return <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>{children}</span>;
 }
 
-const page: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 14, maxWidth: 1120 };
-const header: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center" };
+const page: React.CSSProperties = { display: "flex", flexDirection: "column", gap: 14, width: "min(1120px, 100%)", maxWidth: 1120, minWidth: 0, overflow: "hidden" };
+const header: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", minWidth: 0 };
+const headerActions: React.CSSProperties = { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", justifyContent: "flex-end" };
 const title: React.CSSProperties = { margin: 0, fontSize: 18, fontWeight: 750 };
 const subtitle: React.CSSProperties = { margin: "3px 0 0", color: "var(--muted-foreground)", fontSize: 12 };
-const grid2: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14 };
-const panel: React.CSSProperties = { borderRadius: 8, padding: 14, display: "flex", flexDirection: "column", gap: 12 };
+const grid2: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(320px, 1fr))", gap: 14, minWidth: 0 };
+const panel: React.CSSProperties = { borderRadius: 8, padding: 14, display: "flex", flexDirection: "column", gap: 12, minWidth: 0, overflow: "hidden" };
 const panelTitle: React.CSSProperties = { margin: 0, display: "flex", gap: 8, alignItems: "center", fontSize: 13, fontWeight: 750 };
-const field: React.CSSProperties = { display: "grid", gap: 5, fontSize: 12, color: "var(--muted-foreground)" };
-const select: React.CSSProperties = { height: 34, borderRadius: 8, border: "1px solid var(--border)", background: "var(--secondary)", color: "var(--foreground)", padding: "0 10px" };
-const input: React.CSSProperties = { height: 34, borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px" };
+const field: React.CSSProperties = { display: "grid", gap: 5, fontSize: 12, color: "var(--muted-foreground)", minWidth: 0 };
+const select: React.CSSProperties = { height: 34, minWidth: 0, borderRadius: 8, border: "1px solid var(--border)", background: "var(--secondary)", color: "var(--foreground)", padding: "0 10px" };
+const input: React.CSSProperties = { height: 34, minWidth: 0, width: "100%", borderRadius: 8, border: "1px solid var(--border)", background: "var(--background)", color: "var(--foreground)", padding: "0 10px" };
+const splitControls: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "end" };
+const inlineField: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center", minWidth: 0 };
 const providerRows: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 };
-const tile: React.CSSProperties = { display: "grid", gap: 5, borderRadius: 8, border: "1px solid var(--border)", padding: 10, background: "color-mix(in srgb, var(--card) 80%, transparent)", fontSize: 12 };
-const secretState: React.CSSProperties = { display: "flex", justifyContent: "space-between", gap: 8, fontSize: 12 };
+const tile: React.CSSProperties = { display: "grid", gap: 5, borderRadius: 8, border: "1px solid var(--border)", padding: 10, background: "color-mix(in srgb, var(--card) 80%, transparent)", fontSize: 12, minWidth: 0 };
+const secretState: React.CSSProperties = { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: 8, alignItems: "center", fontSize: 12 };
 const actions: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8 };
 const chips: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6 };
 const chip: React.CSSProperties = { border: "1px solid var(--border)", borderRadius: 999, padding: "3px 8px", background: "var(--secondary)", fontSize: 11 };
 const list: React.CSSProperties = { display: "grid", gap: 8 };
-const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--border)", borderRadius: 8, padding: 9, fontSize: 12 };
-const miniTable: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12 };
-const logBlock: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12 };
+const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--border)", borderRadius: 8, padding: 9, fontSize: 12, minWidth: 0 };
+const miniTable: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12, minWidth: 0 };
+const modelList: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12 };
+const checkRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, minWidth: 0 };
+const subhead: React.CSSProperties = { fontSize: 12 };
 const notice: React.CSSProperties = { border: "1px solid var(--destructive)", color: "var(--destructive)", borderRadius: 8, padding: 10, fontSize: 12 };

@@ -445,6 +445,19 @@ fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(Str
             path.to_string_lossy().to_string(),
         ));
     }
+    let voice_manifest = resource_dir
+        .map(|dir| dir.join("voice_models.manifest.json"))
+        .filter(|path| path.is_file())
+        .or_else(|| {
+            let path = repo_root.join("voice_models.manifest.json");
+            path.is_file().then_some(path)
+        });
+    if let Some(path) = voice_manifest {
+        env.push((
+            "MARVEX_VOICE_MODEL_MANIFEST".to_string(),
+            path.to_string_lossy().to_string(),
+        ));
+    }
     env
 }
 
@@ -972,6 +985,7 @@ mod tests {
         let resource_dir = root.join("resources");
         fs::create_dir_all(resource_dir.join("control_plane_web")).expect("control web");
         fs::create_dir_all(resource_dir.join("voice-assets")).expect("voice assets");
+        fs::write(resource_dir.join("voice_models.manifest.json"), b"{\"assets\":[]}").expect("voice manifest");
         fs::write(resource_dir.join("uv.exe"), b"uv").expect("uv");
 
         let env = resource_env_paths(Some(&resource_dir), &root);
@@ -984,6 +998,9 @@ mod tests {
         }));
         assert!(env.iter().any(|(name, value)| {
             name == "MARVEX_VOICE_ASSET_ROOT" && value.ends_with("voice-assets")
+        }));
+        assert!(env.iter().any(|(name, value)| {
+            name == "MARVEX_VOICE_MODEL_MANIFEST" && value.ends_with("voice_models.manifest.json")
         }));
 
         let missing = resource_env_paths(Some(&root.join("missing")), &root);

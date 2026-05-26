@@ -50,6 +50,26 @@ const catalog = {
       extract: false,
       required: true,
       explicit_user_triggered: true
+    },
+    {
+      model_id: "whisper-large-v3",
+      backend_id: "whisper.cpp",
+      model_kind: "stt",
+      relative_path: "stt/whisper-large-v3/model.bin",
+      source_uri: "https://models.example.test/whisper-large-v3/model.bin",
+      extract: false,
+      required: false,
+      explicit_user_triggered: true
+    },
+    {
+      model_id: "piper-en-us",
+      backend_id: "piper-tts",
+      model_kind: "tts_voice",
+      relative_path: "tts/piper-en-us/model.onnx",
+      source_uri: "https://models.example.test/piper-en-us/model.onnx",
+      extract: false,
+      required: false,
+      explicit_user_triggered: true
     }
   ],
   raw_payload_persisted: false
@@ -82,14 +102,17 @@ describe("VoiceMode", () => {
     expect(screen.getByLabelText("STT model")).toHaveValue("moonshine-v2");
     expect(screen.getByLabelText("TTS library")).toHaveValue("kokoro-onnx");
     expect(screen.getByLabelText("Voice")).toHaveValue("af_heart");
-    expect(screen.getByText("moonshine-v2")).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "whisper-large-v3" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "piper-tts" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "piper-en-us" })).toBeInTheDocument();
+    expect(screen.getAllByText("moonshine-v2").length).toBeGreaterThan(0);
     expect(screen.getByText("kokoro-af-heart")).toBeInTheDocument();
 
     await user.selectOptions(screen.getByLabelText("TTS library"), "piper-tts");
     await user.click(screen.getByRole("button", { name: "Download moonshine-v2" }));
 
     await waitFor(() => expect(voiceClient.switchVoiceWorkerTts).toHaveBeenCalledWith("piper-tts"));
-    await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets, expect.any(Function)));
+    await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets.filter((asset) => asset.model_id === "moonshine-v2"), expect.any(Function)));
     expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });
 });
