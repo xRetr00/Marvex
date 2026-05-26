@@ -47,6 +47,7 @@ class WakewordSupervisorTickResult(VoiceRuntimeModel):
     detected: bool
     consecutive_failures: int
     current_backoff_ms: int
+    tick_count: int = Field(default=0, ge=0)
     backend_id: str
     phrase: str
     exact_blocker: str | None = None
@@ -64,6 +65,7 @@ class WakewordSupervisorHealth(VoiceRuntimeModel):
     started: bool
     consecutive_failures: int
     current_backoff_ms: int
+    tick_count: int = Field(default=0, ge=0)
     last_tick_at: str | None = None
     next_tick_allowed_at: str | None = None
     asset_ready: bool
@@ -253,6 +255,7 @@ class WakewordWorkerSupervisor:
             },
             consecutive_failures=self._consecutive_failures,
             current_backoff_ms=self._current_backoff_ms,
+            tick_count=self._tick_counter,
             last_tick_at=self._last_tick_at.isoformat() if self._last_tick_at else None,
             next_tick_allowed_at=self._next_tick_allowed_at.isoformat()
             if self._next_tick_allowed_at
@@ -277,6 +280,7 @@ class WakewordWorkerSupervisor:
             detected=detected,
             consecutive_failures=self._consecutive_failures,
             current_backoff_ms=self._current_backoff_ms,
+            tick_count=self._tick_counter,
             backend_id=self._config.wakeword.backend_id,
             phrase=self._config.wakeword.phrase,
             exact_blocker=exact_blocker,

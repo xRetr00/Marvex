@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 
 from packages.control_plane_api import ControlPlaneSnapshot, InMemoryApprovalStore
 from tests.control_plane_api.asgi_helpers import asgi_call as _call, create_control_plane_test_app
@@ -163,6 +164,48 @@ def test_control_plane_voice_worker_wakeword_supervisor_lifecycle_is_explicit_an
     serialized = json.dumps({"health": health, "started": started, "tick": tick, "stopped": stopped}).lower()
     assert "pcm" not in serialized
     assert "transcript_text" not in serialized
+
+
+def test_voice_worker_control_plane_facade_keeps_background_wakeword_telemetry(tmp_path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="hey-marvex",
+            backend_id="sherpa-onnx-kws",
+            model_kind="wakeword",
+            relative_path="wakeword/hey-marvex",
+            explicit_user_triggered=True,
+        )
+    )
+
+    def wakeword_runner(_frames, asset, *, phrase: str, threshold: float):
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+
+    controller = VoiceWorkerController(
+        config=VoiceWorkerConfig.default(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner),
+    )
+    worker = VoiceWorkerControlPlaneFacade(controller, tick_interval_seconds=0.01)
+
+    try:
+        worker.command("start")
+        deadline = time.monotonic() + 1
+        status = worker.status()
+        while status["telemetry"]["wakeword_detections"] < 1 and time.monotonic() < deadline:
+            time.sleep(0.02)
+            status = worker.status()
+
+        assert status["wakeword_supervisor_status"]["lifecycle_state"] == "running"
+        assert status["wakeword_supervisor_status"]["last_tick_at"] is not None
+        assert status["wakeword_supervisor_status"]["tick_count"] >= 1
+        assert status["telemetry"]["wakeword_tick_count"] >= 1
+        assert status["telemetry"]["wakeword_last_tick_at"] is not None
+        assert status["telemetry"]["wakeword_detections"] >= 1
+    finally:
+        worker.command("stop")
 
 
 def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(tmp_path) -> None:

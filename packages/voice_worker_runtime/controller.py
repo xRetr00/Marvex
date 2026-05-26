@@ -496,6 +496,7 @@ class VoiceWorkerController:
         event_counts: dict[str, int] = {}
         for event in self._events:
             event_counts[event.event_type.value] = event_counts.get(event.event_type.value, 0) + 1
+        wakeword_health = self.wakeword_supervisor.health()
         return {
             "event_count": len(self._events),
             "event_counts": event_counts,
@@ -508,6 +509,8 @@ class VoiceWorkerController:
             "playback_events": sum(1 for event in self._events if event.event_type in {VoiceWorkerEventType.PLAYBACK_STARTED, VoiceWorkerEventType.PLAYBACK_FINISHED, VoiceWorkerEventType.BARGE_IN_DETECTED}),
             "barge_in_events": sum(1 for event in self._events if event.event_type == VoiceWorkerEventType.BARGE_IN_DETECTED),
             "error_events": sum(1 for event in self._events if event.event_type == VoiceWorkerEventType.ERROR),
+            "wakeword_tick_count": wakeword_health.tick_count,
+            "wakeword_last_tick_at": wakeword_health.last_tick_at,
             "durations_counts_only": True,
             "raw_audio_persisted": False,
             "raw_transcript_persisted": False,
