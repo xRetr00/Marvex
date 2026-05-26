@@ -161,27 +161,26 @@ mod tests {
 
     #[test]
     fn service_app_data_root_prefers_explicit_override() {
+        let explicit_root = PathBuf::from("explicit-marvex-data-root");
         let root = app_data_root_from_env(
-            Some(PathBuf::from(r"D:\MarvexData")),
-            Some(PathBuf::from(r"C:\Users\xRetro\AppData\Local")),
-            Some(PathBuf::from(r"C:\ProgramData")),
+            Some(explicit_root.clone()),
+            Some(PathBuf::from("local-app-data-root")),
+            Some(PathBuf::from("program-data-root")),
         );
 
-        assert_eq!(root, PathBuf::from(r"D:\MarvexData"));
+        assert_eq!(root, explicit_root);
     }
 
     #[test]
     fn service_app_data_root_matches_tauri_local_app_data_identifier() {
+        let local_app_data = PathBuf::from("local-app-data-root");
         let root = app_data_root_from_env(
             None,
-            Some(PathBuf::from(r"C:\Users\xRetro\AppData\Local")),
-            Some(PathBuf::from(r"C:\ProgramData")),
+            Some(local_app_data.clone()),
+            Some(PathBuf::from("program-data-root")),
         );
 
-        assert_eq!(
-            root,
-            PathBuf::from(r"C:\Users\xRetro\AppData\Local").join("com.marvex.shell")
-        );
+        assert_eq!(root, local_app_data.join("com.marvex.shell"));
         assert!(!root.to_string_lossy().contains("ProgramData"));
     }
 }
