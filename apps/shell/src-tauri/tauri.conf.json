@@ -25,7 +25,7 @@
       {
         "label": "overlay",
         "title": "Marvex Status",
-        "url": "/overlay",
+        "url": "/?surface=overlay",
         "width": 140,
         "height": 60,
         "decorations": false,

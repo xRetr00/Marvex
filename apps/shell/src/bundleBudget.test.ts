@@ -6,6 +6,7 @@ const assetsDir = resolve(process.cwd(), "dist/assets");
 const maxChunkBytes = 500 * 1024;
 const chunkBudgets: Array<{ pattern: RegExp; maxBytes: number }> = [
   { pattern: /^vendor-three-.*\.js$/, maxBytes: 760 * 1024 },
+  { pattern: /^vendor-.*\.js$/, maxBytes: 600 * 1024 },
 ];
 
 describe("shell production bundle budget", () => {

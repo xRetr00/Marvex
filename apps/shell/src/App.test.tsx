@@ -46,4 +46,25 @@ describe("App shell fallback", () => {
       expect(screen.getByText("Marvex could not load this window.")).toBeInTheDocument();
     });
   });
+
+  it("loads the overlay surface through an index query route for packaged builds", async () => {
+    vi.resetModules();
+    window.history.pushState({}, "", "/?surface=overlay");
+    vi.doMock("./lib/modeStore", () => ({
+      getPersistedMode: () => "overlay",
+      isSetupDone: () => true,
+    }));
+    vi.doMock("./lib/shellCommands", () => ({
+      showChat: vi.fn(async () => undefined),
+      showOverlay: vi.fn(async () => undefined),
+    }));
+    vi.doMock("./surfaces/overlay", () => ({
+      OverlaySurface: () => <div>overlay surface</div>,
+    }));
+
+    const { App } = await import("./App");
+    render(<App />);
+
+    expect(await screen.findByText("overlay surface")).toBeInTheDocument();
+  });
 });

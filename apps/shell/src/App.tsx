@@ -132,7 +132,8 @@ function OverlayDocumentScope({ children }: { children: ReactNode }) {
 
 export function App() {
   const path = window.location.pathname;
-  if (path.includes("overlay")) {
+  const surface = new URLSearchParams(window.location.search).get("surface");
+  if (path.includes("overlay") || surface === "overlay") {
     return (
       <OverlayDocumentScope>
         <ErrorBoundary FallbackComponent={OverlayErrorFallback}>

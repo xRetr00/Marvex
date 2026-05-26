@@ -4,6 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
 export default defineConfig({
+  base: "./",
   plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
@@ -28,10 +29,6 @@ export default defineConfig({
           if (id.includes("three/src/geometries")) return "vendor-three-geometries";
           if (id.includes("three/src/")) return "vendor-three-core";
           if (id.includes("three")) return "vendor-three";
-          if (id.includes("react")) return "vendor-react";
-          if (id.includes("framer-motion") || id.includes("motion")) return "vendor-motion";
-          if (id.includes("lucide-react") || id.includes("@remixicon")) return "vendor-icons";
-          if (id.includes("zod")) return "vendor-validation";
           return "vendor";
         }
       }

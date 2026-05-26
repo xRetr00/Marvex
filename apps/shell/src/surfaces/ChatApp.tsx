@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, Settings, Mic, MicOff, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
+import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
@@ -13,11 +13,9 @@ import { startVoiceWorker, stopVoiceWorker } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
-import { Typewriter } from "@/components/typewriter";
 import { ScrambleText } from "@/components/scramble-text";
-import ChatInput from "@/components/prompt-input-dynamic-grow";
-import { Message, MessageContent } from "@/components/ui/message";
-import { RichMessage } from "@/components/marvex/RichMessage";
+import { BackgroundPlus } from "@/components/ui/background-plus";
+import { MarvexChatShell } from "@/components/chatbot-main/MarvexChatShell";
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { StartupScreen } from "@/components/marvex/StartupScreen";
 import { StatusView } from "@/components/marvex/StatusView";
@@ -52,8 +50,6 @@ export function ChatApp() {
   const backend = useBackendStatus();
   const [helloDone, setHelloDone] = useState(false);
   const [booted, setBooted] = useState(false);
-
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
 
   const activateBackendSession = useCallback((session: BackendSession) => {
     const id = session.session_ref.ref_id;
@@ -92,10 +88,6 @@ export function ChatApp() {
       return () => clearTimeout(t);
     }
   }, [backend?.ready, helloDone, booted]);
-
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, pending]);
 
   useEffect(() => {
     if (sessionIdRef.current) {
@@ -214,66 +206,33 @@ export function ChatApp() {
         </AnimatePresence>
 
         <div className="marvex-chat-main">
-          {activeTab === "chat" && (
-            <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden", minHeight: 0 }}>
-              <div className="marvex-chat-scroll">
-                <div className="marvex-chat-thread">
-                  {messages.map((msg, idx) => (
-                    <Message key={`${msg.role}-${idx}`} from={msg.role === "user" ? "user" : "assistant"} className="py-0">
-                      {msg.role === "assistant" ? (
-                        <MessageContent variant="flat" className="w-full max-w-[min(100%,72ch)] text-[13px] leading-[1.65]"><RichMessage text={msg.text} stages={msg.stages} directives={msg.directives} /></MessageContent>
-                      ) : (
-                        <MessageContent
-                          variant={msg.role === "system" ? "flat" : "contained"}
-                          className={msg.role === "system" ? "text-[13px] text-muted-foreground" : "w-fit max-w-[min(80%,56ch)] overflow-hidden break-words rounded-2xl rounded-br-lg border border-border/30 bg-gradient-to-br from-secondary to-muted px-3.5 py-2 text-[13px] leading-[1.65] shadow-[var(--shadow-card)]"}
-                        >
-                          {msg.text}
-                        </MessageContent>
-                      )}
-                      {msg.role === "assistant" && (
-                        <div className="marvex-message-orb"><AgentOrb agentState={orbState} /></div>
-                      )}
-                    </Message>
-                  ))}
-                  {pending && (
-                    <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0" }}>
-                      <div className="marvex-message-orb"><AgentOrb agentState="thinking" /></div>
-                      <Loader variant="loading-dots" text="Marvex is thinking" />
-                    </div>
-                  )}
-                  <div ref={messagesEndRef} />
-                </div>
-              </div>
-              {!pending && messages.length <= 1 && (
-                <div style={{ width: "min(100%, 896px)", margin: "0 auto", padding: "0 16px 6px", textAlign: "center" }}>
-                  <Typewriter text={["How can I help you today?", "Search the web, write a file, plan a task...", "Ask me anything."]} speed={55} deleteSpeed={25} waitTime={2200} loop className="text-sm" />
-                </div>
-              )}
-              <div className="marvex-composer-bar">
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <button title="Microphone" onClick={toggleVoiceCapture} style={{ ...iconBtn, width: 36, height: 36, borderRadius: 8, background: micActive ? "var(--primary)" : "transparent", color: micActive ? "var(--primary-foreground)" : "var(--muted-foreground)" }}>
-                    {micActive ? <MicOff size={16} /> : <Mic size={16} />}
-                  </button>
-                  <div style={{ flex: 1 }}>
-                    <ChatInput placeholder="Ask anything..." disabled={pending} onSubmit={send} textColor="var(--foreground)" backgroundOpacity={0.06} />
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <BackgroundPlus plusColor="#fb3a5d" plusSize={60} fade={false} className="marvex-chat-bg pointer-events-none opacity-20" />
+          <div className="marvex-chat-content">
+            {activeTab === "chat" && (
+              <MarvexChatShell
+                assistantOrbState={orbState}
+                messages={messages}
+                micActive={micActive}
+                onSubmit={send}
+                onToggleVoice={toggleVoiceCapture}
+                pending={pending}
+                renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
+              />
+            )}
 
-          {activeTab === "status" && (
-            <div style={{ flex: 1, overflow: "auto", padding: 20 }}><StatusView backend={backend} /></div>
-          )}
-          {activeTab === "voice" && (
-            <div style={{ flex: 1, overflow: "auto", padding: 20 }}><VoiceMode /></div>
-          )}
-          {activeTab === "logs" && (
-            <div style={{ flex: 1, overflow: "auto", padding: 20 }}><LogsView /></div>
-          )}
-          {activeTab === "settings" && (
-            <div style={{ flex: 1, overflow: "auto", padding: 20 }}><ControlPlaneSettings /></div>
-          )}
+            {activeTab === "status" && (
+              <div style={{ flex: 1, overflow: "auto", padding: 20 }}><StatusView backend={backend} /></div>
+            )}
+            {activeTab === "voice" && (
+              <div style={{ flex: 1, overflow: "auto", padding: 20 }}><VoiceMode /></div>
+            )}
+            {activeTab === "logs" && (
+              <div style={{ flex: 1, overflow: "auto", padding: 20 }}><LogsView /></div>
+            )}
+            {activeTab === "settings" && (
+              <div style={{ flex: 1, overflow: "auto", padding: 20 }}><ControlPlaneSettings /></div>
+            )}
+          </div>
         </div>
       </div>
 

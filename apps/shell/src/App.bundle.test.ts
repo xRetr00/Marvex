@@ -3,6 +3,7 @@ import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const source = readFileSync(resolve(process.cwd(), "src/App.tsx"), "utf-8");
+const viteConfig = readFileSync(resolve(process.cwd(), "vite.config.ts"), "utf-8");
 
 describe("shell route bundle boundaries", () => {
   it("loads top-level surfaces lazily instead of static importing them", () => {
@@ -16,5 +17,9 @@ describe("shell route bundle boundaries", () => {
     for (const pattern of staticSurfaceImports) {
       expect(source).not.toMatch(pattern);
     }
+  });
+
+  it("builds packaged assets with relative URLs for Tauri resource loading", () => {
+    expect(viteConfig).toMatch(/base:\s*["']\.\/["']/);
   });
 });

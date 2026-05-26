@@ -175,37 +175,26 @@ button, input { font: inherit; }
   flex-direction: column;
   overflow: hidden;
   min-height: 0;
+  position: relative;
+  isolation: isolate;
   background: var(--background);
   border-top: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent);
   border-top-left-radius: 12px;
 }
 
-.marvex-chat-scroll {
-  flex: 1;
-  overflow: auto;
-  min-height: 0;
-  background: var(--background);
+.marvex-chat-bg {
+  z-index: 0;
 }
 
-.marvex-chat-thread {
-  width: min(100%, 896px);
-  min-height: 100%;
-  margin: 0 auto;
-  padding: 24px 16px;
+.marvex-chat-content {
+  position: relative;
+  z-index: 1;
+  flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 20px;
-}
-
-.marvex-composer-bar {
-  position: sticky;
-  bottom: 0;
-  z-index: 1;
-  width: min(100%, 896px);
-  margin: 0 auto;
-  padding: 0 16px 16px;
-  background: var(--background);
+  overflow: hidden;
+  min-height: 0;
 }
 
 .marvex-message-orb {
