@@ -57,6 +57,10 @@ ALLOWED_CORE_SERVICE_IMPORT_PREFIXES = (
     "packages.state_bus",
     "packages.telemetry",
     "packages.ui_directives",
+    # Approved composition edge: the Core service entrypoint wires the
+    # Control Plane's voice worker facade so the shell can operate the
+    # voice worker without relying on endpoint-local lazy construction.
+    "packages.voice_worker_runtime",
     "packages.web_search_runtime",
     "subprocess",
     "sys",
@@ -89,6 +93,12 @@ FORBIDDEN_CORE_SERVICE_TOKENS = (
     "raw prompt",
     "raw_provider",
 )
+APPROVED_CORE_SERVICE_TOKEN_CONTEXTS = {
+    "voice_worker": (
+        "from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade",
+        "voice_worker_control=VoiceWorkerControlPlaneFacade(),",
+    ),
+}
 
 
 def implementation_allowed(contract_name: str) -> bool:
@@ -150,7 +160,10 @@ def _scan_core_service_entrypoint(service, failures: list[str]) -> None:
         text = path.read_text(encoding="utf-8")
         lowered = text.lower()
         for token in FORBIDDEN_CORE_SERVICE_TOKENS:
-            if token in lowered:
+            remaining = lowered
+            for approved_context in APPROVED_CORE_SERVICE_TOKEN_CONTEXTS.get(token, ()):
+                remaining = remaining.replace(approved_context.lower(), "")
+            if token in remaining:
                 failures.append(f"{rel} contains forbidden service entrypoint token: {token}")
 
         tree = ast.parse(text, filename=str(path))
