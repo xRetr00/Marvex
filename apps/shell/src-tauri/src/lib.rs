@@ -417,10 +417,41 @@ fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
                 width, height,
             )))
             .map_err(|err| err.to_string())?;
+        apply_overlay_window_region(&window, width, height);
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
     Ok(())
 }
+
+#[cfg(windows)]
+fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height: u32) {
+    use windows::Win32::Foundation::HWND;
+    use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
+
+    let Ok(hwnd) = window.hwnd() else {
+        return;
+    };
+    let hwnd = HWND(hwnd.0);
+    let diameter = width.min(height).max(1) as i32;
+    let region = unsafe {
+        CreateRoundRectRgn(
+            0,
+            0,
+            width.saturating_add(1) as i32,
+            height.saturating_add(1) as i32,
+            diameter,
+            diameter,
+        )
+    };
+    if region.is_invalid() {
+        return;
+    }
+    // On success Windows owns the region handle after SetWindowRgn.
+    let _ = unsafe { SetWindowRgn(hwnd, Some(region), true) };
+}
+
+#[cfg(not(windows))]
+fn apply_overlay_window_region(_window: &tauri::WebviewWindow, _width: u32, _height: u32) {}
 
 #[tauri::command]
 fn show_chat(app: AppHandle) -> Result<(), String> {

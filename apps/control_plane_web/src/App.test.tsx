@@ -142,8 +142,32 @@ describe("Control Plane app", () => {
 
     renderApp();
 
-    await waitFor(() => expect(screen.getByText("Control Plane unavailable")).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText("401 Auth Required")).toBeInTheDocument());
+    expect(screen.getByText("Local API authentication required.")).toBeInTheDocument();
     expect(screen.queryByText(/Bearer/i)).not.toBeInTheDocument();
+  });
+
+  it("renders a modern logs page from the protected logs endpoint", async () => {
+    const responses: Record<string, unknown> = {
+      "/control/snapshot": snapshot,
+      "/control/logs": {
+        schema_version: "1",
+        logs: [{ name: "runtime.bootstrap.log", source: "control_plane_api", lines: ["boot started", "service ready"] }],
+        raw_log_payload_persisted: false
+      }
+    };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input), "http://localhost").pathname;
+      return new Response(JSON.stringify(responses[path]), { status: 200, headers: { "Content-Type": "application/json" } });
+    }));
+
+    renderApp();
+
+    await userEvent.click(await screen.findByRole("button", { name: /Logs/i }));
+    expect(await screen.findByText("runtime.bootstrap.log")).toBeInTheDocument();
+    expect(await screen.findByPlaceholderText("Search logs")).toBeInTheDocument();
+    expect(await screen.findByText("2 lines")).toBeInTheDocument();
+    expect(await screen.findByText("service ready")).toBeInTheDocument();
   });
 
   it("does not read bearer tokens from browser sessionStorage", async () => {

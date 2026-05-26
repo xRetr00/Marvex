@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { controlRequest, type LogTail } from "@/lib/shellCommands";
 import { Button } from "@/components/ui/button";
+import { ModernLogViewer } from "./ModernLogViewer";
 
 type LogsApiResponse = {
   schema_version: string;
@@ -79,18 +80,7 @@ export function LogsView() {
         )}
       </section>
 
-      {apiError ? (
-        <Muted>{apiError}</Muted>
-      ) : logs.length === 0 ? (
-        <Muted>No log events exposed by the Control Plane API yet.</Muted>
-      ) : logs.map((file) => (
-        <section key={file.name} style={{ background: "var(--card)", borderRadius: 14, padding: 0, border: "1px solid var(--border)", overflow: "hidden" }}>
-          <div style={{ padding: "10px 14px", borderBottom: "1px solid var(--border)", fontWeight: 600, fontSize: 12 }}>{file.name}</div>
-          <pre style={{ margin: 0, padding: 12, maxHeight: 240, overflow: "auto", fontSize: 11, fontFamily: "ui-monospace, monospace", color: "var(--muted-foreground)", whiteSpace: "pre-wrap" }}>
-            {file.lines.join("\n") || "(empty)"}
-          </pre>
-        </section>
-      ))}
+      {apiError ? <Muted>{apiError}</Muted> : <ModernLogViewer logs={logs} />}
     </div>
   );
 }

@@ -17,7 +17,7 @@ describe("WaveformCanvas", () => {
 });
 
 describe("overlay sizing", () => {
-  it("keeps the native window close to the rendered island bounds", () => {
-    expect(toOverlayWindowSize({ width: 128.2, height: 42.1 })).toEqual({ width: 144, height: 58 });
+  it("keeps the native window exactly on the rendered island bounds", () => {
+    expect(toOverlayWindowSize({ width: 128.2, height: 42.1 })).toEqual({ width: 128, height: 42 });
   });
 });

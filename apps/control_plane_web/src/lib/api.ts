@@ -13,6 +13,7 @@ import {
   feedbackEventsSchema,
   learningApplySchema,
   learningCandidatesSchema,
+  logsSchema,
   mcpMarketplaceSchema,
   memoryForgetSchema,
   memoryInspectSchema,
@@ -60,15 +61,20 @@ async function readJson(path: string, init: RequestInit = {}) {
       ...init.headers
     }
   });
-  const payload = await response.json();
+  const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new ControlPlaneApiError(payload?.message ?? "Control Plane request failed", response.status);
+    const message = typeof payload?.message === "string" && payload.message ? payload.message : response.statusText || "Control Plane request failed";
+    throw new ControlPlaneApiError(message, response.status);
   }
   return payload;
 }
 
 export async function fetchSnapshot(): Promise<ControlSnapshot> {
   return controlSnapshotSchema.parse(await readJson("/snapshot"));
+}
+
+export async function fetchLogs() {
+  return logsSchema.parse(await readJson("/logs"));
 }
 
 export async function fetchApprovals(): Promise<ApprovalList> {

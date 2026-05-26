@@ -114,6 +114,15 @@ export const learningCandidatesSchema = z.object({ schema_version: z.string(), m
 export const learningApplySchema = safeRecord;
 export const voiceStatusSchema = safeRecord;
 export const voiceActionSchema = safeRecord;
+export const logsSchema = z.object({
+  schema_version: z.string(),
+  logs: z.array(z.object({
+    name: z.string(),
+    source: z.string().optional(),
+    lines: z.array(z.string())
+  })),
+  raw_log_payload_persisted: z.literal(false)
+});
 
 export const agentCatalogSchema = z.object({
   schema_version: z.string(),
@@ -161,3 +170,4 @@ export type LearningCandidates = z.infer<typeof learningCandidatesSchema>;
 export type VoiceStatus = z.infer<typeof voiceStatusSchema>;
 export type AgentCatalog = z.infer<typeof agentCatalogSchema>;
 export type PersonaCatalog = z.infer<typeof personaCatalogSchema>;
+export type LogsPayload = z.infer<typeof logsSchema>;

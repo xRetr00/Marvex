@@ -38,7 +38,7 @@ const SHIMMER_STYLE: React.CSSProperties = {
   whiteSpace: "nowrap",
 };
 
-const OVERLAY_SHADOW_PADDING = 8;
+const OVERLAY_SHADOW_PADDING = 0;
 
 type OverlayBounds = {
   width: number;

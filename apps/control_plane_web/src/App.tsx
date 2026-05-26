@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, Mic, MonitorCog, Moon, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, UserRound, Wrench } from "lucide-react";
-import { fetchSnapshot } from "./lib/api";
+import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, Mic, MonitorCog, Moon, ScrollText, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, UserRound, Wrench } from "lucide-react";
+import { ControlPlaneApiError, fetchLogs, fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
@@ -10,6 +10,7 @@ import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
 import { BackgroundPlus } from "@/components/ui/background-plus";
+import { ModernLogViewer } from "./components/ModernLogViewer";
 
 const views = [
   { id: "dashboard", label: "Dashboard", icon: Gauge },
@@ -19,6 +20,7 @@ const views = [
   { id: "traces", label: "Traces", icon: Activity },
   { id: "trace_search", label: "Trace Search", icon: Search },
   { id: "telemetry", label: "Telemetry", icon: MonitorCog },
+  { id: "logs", label: "Logs", icon: ScrollText },
   { id: "providers", label: "Providers", icon: Server },
   { id: "agent_persona", label: "Agents / Personas", icon: UserRound },
   { id: "capabilities", label: "Capabilities / Tools", icon: Wrench },
@@ -106,7 +108,7 @@ export function App() {
             <span className="text-xs text-muted-foreground">Local runtime controls</span>
           </div>
           {snapshotQuery.isLoading && <LoadingState />}
-          {snapshotQuery.isError && <ErrorState message={snapshotQuery.error.message} />}
+          {snapshotQuery.isError && <ErrorState error={snapshotQuery.error} />}
           {snapshotQuery.data && <View active={active} snapshot={snapshotQuery.data} />}
         </main>
       </div>
@@ -122,6 +124,7 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "traces") return <SafeTable title="Traces" rows={snapshot.traces} empty="No safe trace projections available." />;
   if (active === "trace_search") return <TraceSearchView />;
   if (active === "telemetry") return <SafeTable title="Telemetry" rows={[snapshot.telemetry]} empty="No telemetry summary available." />;
+  if (active === "logs") return <LogsControlView />;
   if (active === "providers") return <SafeTable title="Providers" rows={snapshot.providers} empty="No providers registered." />;
   if (active === "agent_persona") return <AgentPersonaControlView />;
   if (active === "capabilities") return <div className="space-y-4"><SafeTable title="Capability Registry" rows={snapshot.capabilities} empty="No capabilities eligible." /><SafeTable title="Tools" rows={snapshot.tools} empty="No tools available." /></div>;
@@ -147,8 +150,16 @@ function LoadingState() {
   return <Card><CardContent className="p-6 text-sm text-muted-foreground">Loading local control plane data...</CardContent></Card>;
 }
 
-function ErrorState({ message }: { message: string }) {
-  return <Card><CardContent className="p-6"><div className="font-medium">Control Plane unavailable</div><p className="mt-1 text-sm text-muted-foreground">{message}</p></CardContent></Card>;
+function ErrorState({ error }: { error: Error }) {
+  const status = error instanceof ControlPlaneApiError ? error.status : undefined;
+  const title = status === 401 || status === 403
+    ? `${status} Auth Required`
+    : status === 404
+      ? "404 Not Found"
+      : status && status >= 500
+        ? `${status} Runtime Error`
+        : "Control Plane unavailable";
+  return <Card><CardContent className="p-6"><div className="font-medium">{title}</div><p className="mt-1 text-sm text-muted-foreground">{error.message}</p></CardContent></Card>;
 }
 
 
@@ -168,4 +179,11 @@ function RuntimeExecutionView({ snapshot }: { snapshot: import("./lib/schemas").
   const finalRows = [{ status: finalStatus, raw_transcript_persisted: false }];
   const approvalRows = snapshot.approvals?.approvals.map((approval) => ({ approval_request_id: approval.approval_request_id, state: approval.status, risk_level: approval.risk_level, execution_started: false })) ?? [];
   return <div className="space-y-4"><SafeTable title="Tool Calls / Provider Proposals" rows={proposalRows} empty="No provider proposals." /><SafeTable title="Approval Resume / Deny / Cancel" rows={approvalRows} empty="No pending approval state." /><SafeTable title="Browser Actions" rows={browserRows} empty="No browser actions." /><SafeTable title="MCP Calls" rows={mcpRows} empty="No MCP calls." /><SafeTable title="Provider Continuation" rows={continuationRows} empty="No provider continuation state." /><SafeTable title="Final Response" rows={finalRows} empty="No final response state." /><SafeTable title="Trace Links" rows={traceRef === "none" ? [] : [{ trace_ref: traceRef }]} empty="No trace refs." /></div>;
+}
+
+function LogsControlView() {
+  const query = useQuery({ queryKey: ["logs"], queryFn: fetchLogs, retry: false });
+  if (query.isLoading) return <LoadingState />;
+  if (query.isError) return <ErrorState error={query.error} />;
+  return <ModernLogViewer logs={query.data?.logs ?? []} />;
 }
