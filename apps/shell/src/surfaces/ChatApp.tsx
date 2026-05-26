@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, useCallback } from "react";
+import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
 import { MessageSquare, Settings, Mic, MicOff, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
@@ -16,7 +16,6 @@ import { Loader } from "@/components/loader";
 import { Typewriter } from "@/components/typewriter";
 import { ScrambleText } from "@/components/scramble-text";
 import ChatInput from "@/components/prompt-input-dynamic-grow";
-import { Orb } from "@/components/chat-messages-for-ui/agent-simple-orb";
 import { Message, MessageContent } from "@/components/ui/message";
 import { RichMessage } from "@/components/marvex/RichMessage";
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
@@ -28,8 +27,11 @@ import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
+type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
-function agentStateFromStatus(status: AssistantStatusKind): "thinking" | "listening" | "talking" | null {
+const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
+
+function agentStateFromStatus(status: AssistantStatusKind): AgentOrbState {
   if (status === "listening") return "listening";
   if (status === "talking") return "talking";
   if (status === "thinking" || status === "working" || status === "using_tools" || status === "mcp" || status === "skills" || status === "searching_web") return "thinking";
@@ -229,13 +231,13 @@ export function ChatApp() {
                         </MessageContent>
                       )}
                       {msg.role === "assistant" && (
-                        <div className="marvex-message-orb"><Orb className="h-full w-full" agentState={orbState} /></div>
+                        <div className="marvex-message-orb"><AgentOrb agentState={orbState} /></div>
                       )}
                     </Message>
                   ))}
                   {pending && (
                     <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "2px 0" }}>
-                      <div className="marvex-message-orb"><Orb className="h-full w-full" agentState="thinking" /></div>
+                      <div className="marvex-message-orb"><AgentOrb agentState="thinking" /></div>
                       <Loader variant="loading-dots" text="Marvex is thinking" />
                     </div>
                   )}
@@ -281,6 +283,41 @@ export function ChatApp() {
         <button onClick={() => { persistMode("overlay"); void showOverlay(); }} title="Switch to Overlay (Marvex presence)" style={{ ...iconBtn, width: 44, height: 44, borderRadius: 12 }}><Radio size={18} /></button>
       </footer>
     </div>
+  );
+}
+
+function AgentOrb({ agentState }: { agentState: AgentOrbState }) {
+  return (
+    <OrbBoundary>
+      <Suspense fallback={<OrbFallback />}>
+        <LazyOrb className="h-full w-full" agentState={agentState} />
+      </Suspense>
+    </OrbBoundary>
+  );
+}
+
+class OrbBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    if (this.state.failed) return <OrbFallback />;
+    return this.props.children;
+  }
+}
+
+function OrbFallback() {
+  return (
+    <div
+      aria-label="Marvex orb fallback"
+      className="h-full w-full"
+      style={{
+        background: "radial-gradient(circle at 35% 30%, #ffffff 0%, #cadcfc 28%, #a0b9d1 62%, rgba(15,23,42,0.15) 100%)",
+      }}
+    />
   );
 }
 

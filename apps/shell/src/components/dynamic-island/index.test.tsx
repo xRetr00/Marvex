@@ -21,4 +21,14 @@ describe("DynamicIsland", () => {
       width: "min(360px, calc(100vw - 20px))",
     });
   });
+
+  it("allows an explicit compact width for the native overlay bootstrap window", () => {
+    const { container } = render(<DynamicIsland view="idle" idleContent={<span>Idle</span>} width={124} />);
+
+    const pill = container.querySelector(".marvex-dynamic-island-pill");
+    expect(pill).toHaveStyle({
+      width: "124px",
+      minWidth: "124px",
+    });
+  });
 });

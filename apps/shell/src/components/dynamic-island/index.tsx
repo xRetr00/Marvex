@@ -22,6 +22,7 @@ export interface DynamicIslandProps {
   ringContent?: ReactNode;
   timerContent?: ReactNode;
   view?: View;
+  width?: number | string;
 }
 
 export default function DynamicIsland({
@@ -31,6 +32,7 @@ export default function DynamicIsland({
   ringContent,
   timerContent,
   className = "",
+  width,
 }: DynamicIslandProps) {
   const [internalView, setInternalView] = useState<View>("idle");
   const [variantKey, setVariantKey] = useState<string>("idle");
@@ -58,7 +60,8 @@ export default function DynamicIsland({
       className={`marvex-dynamic-island-pill mx-auto overflow-hidden bg-black ${className}`}
       layout
       style={{
-        width: "min(360px, calc(100vw - 20px))",
+        width: typeof width === "number" ? `${width}px` : (width ?? "min(360px, calc(100vw - 20px))"),
+        minWidth: width === undefined ? undefined : typeof width === "number" ? `${width}px` : width,
         boxSizing: "border-box",
         background: "#000",
         borderRadius: 30,

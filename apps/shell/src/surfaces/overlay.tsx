@@ -220,17 +220,15 @@ export function OverlaySurface() {
       >
         <DynamicIsland
           view={view}
+          width={expanded ? 360 : 124}
           idleContent={
-            <div style={{ display: "flex", alignItems: "center", gap: 10, minWidth: 0, width: "100%" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0, width: "100%" }}>
               <motion.span
                 animate={{ opacity: [0.45, 0.9, 0.45] }}
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
-                style={{ width: 8, height: 8, borderRadius: "50%", background: "#ffe0c2", display: "block" }}
+                style={{ width: 7, height: 7, borderRadius: "50%", background: "#ffe0c2", display: "block", flex: "0 0 auto" }}
               />
-              <MarvexWaveform audioLevel={0.22} width={112} height={30} active={false} />
-              <AnimatePresence mode="wait">
-                <TextShimmer text={statusText} key={statusText} />
-              </AnimatePresence>
+              <MarvexWaveform audioLevel={0.22} width={64} height={24} active={false} />
             </div>
           }
           ringContent={
