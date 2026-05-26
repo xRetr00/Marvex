@@ -135,7 +135,8 @@ fn console_stop_requested(stop_file: Option<&PathBuf>) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::console_stop_requested;
+    use super::{app_data_root_from_env, console_stop_requested};
+    use std::path::PathBuf;
     use std::{
         fs,
         time::{SystemTime, UNIX_EPOCH},
@@ -157,11 +158,56 @@ mod tests {
         assert!(console_stop_requested(Some(&path)));
         let _ = fs::remove_file(path);
     }
+
+    #[test]
+    fn service_app_data_root_prefers_explicit_override() {
+        let root = app_data_root_from_env(
+            Some(PathBuf::from(r"D:\MarvexData")),
+            Some(PathBuf::from(r"C:\Users\xRetro\AppData\Local")),
+            Some(PathBuf::from(r"C:\ProgramData")),
+        );
+
+        assert_eq!(root, PathBuf::from(r"D:\MarvexData"));
+    }
+
+    #[test]
+    fn service_app_data_root_matches_tauri_local_app_data_identifier() {
+        let root = app_data_root_from_env(
+            None,
+            Some(PathBuf::from(r"C:\Users\xRetro\AppData\Local")),
+            Some(PathBuf::from(r"C:\ProgramData")),
+        );
+
+        assert_eq!(
+            root,
+            PathBuf::from(r"C:\Users\xRetro\AppData\Local").join("com.marvex.shell")
+        );
+        assert!(!root.to_string_lossy().contains("ProgramData"));
+    }
 }
 
-fn program_data_root() -> PathBuf {
-    let base = std::env::var("ProgramData").unwrap_or_else(|_| "C:\\ProgramData".to_string());
-    PathBuf::from(base).join("Marvex")
+fn app_data_root() -> PathBuf {
+    app_data_root_from_env(
+        std::env::var_os("MARVEX_APP_DATA_DIR").map(PathBuf::from),
+        std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
+        std::env::var_os("ProgramData").map(PathBuf::from),
+    )
+}
+
+fn app_data_root_from_env(
+    explicit_root: Option<PathBuf>,
+    local_app_data: Option<PathBuf>,
+    program_data: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(root) = explicit_root.filter(|path| !path.as_os_str().is_empty()) {
+        return root;
+    }
+    if let Some(root) = local_app_data.filter(|path| !path.as_os_str().is_empty()) {
+        return root.join("com.marvex.shell");
+    }
+    program_data
+        .unwrap_or_else(|| PathBuf::from("data"))
+        .join("com.marvex.shell")
 }
 
 fn exe_dir() -> Option<PathBuf> {
@@ -175,9 +221,9 @@ fn exe_dir() -> Option<PathBuf> {
 fn start_backend() -> Option<crate::supervisor::Supervisor> {
     let token = crate::token::generate_local_bearer_token().ok()?;
     crate::token_handoff::delete_legacy_shared_token();
-    let root = program_data_root();
+    let root = app_data_root();
     let log_dir = root.join("logs");
-    let data_dir = root.join("data");
+    let data_dir = root;
     let supervisor =
         crate::supervisor::Supervisor::start(token.clone(), log_dir, data_dir, exe_dir()).ok()?;
     let _broker = crate::token_handoff::start_token_broker(token, supervisor.shutdown_flag());

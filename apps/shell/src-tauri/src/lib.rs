@@ -570,14 +570,11 @@ pub fn run() {
             marvex_restart
         ])
         .setup(|app| {
-            let log_dir = app
-                .path()
-                .app_log_dir()
-                .unwrap_or_else(|_| PathBuf::from("logs"));
             let data_dir = app
                 .path()
                 .app_local_data_dir()
                 .unwrap_or_else(|_| PathBuf::from("data"));
+            let log_dir = data_dir.join("logs");
             let resource_dir = app.path().resource_dir().ok();
             // Thin-client mode: if the always-on backend Windows service has
             // published its token, attach to the running service instead of
