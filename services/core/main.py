@@ -26,8 +26,7 @@ from packages.control_plane_api import (
 )
 from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
 from packages.control_plane_api.browser_session import BrowserSessionManager
-from packages.control_plane_api.logs import LocalLogReader
-from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
+from packages.control_plane_api.logs import LocalLogReader, LocalLogWriter
 from packages.state_bus import AssistantStateBus, get_default_bus
 from packages.adapters.connectors.github_connector import (
     GITHUB_CONNECTOR_REF,
@@ -348,10 +347,14 @@ class _CoreServiceFoundationTurnExecutor:
         *,
         foundation_turn_handler: Callable[[_CoreTurnExecutorRequest], Any],
         model: str,
+        trace_reader: InMemoryTraceReader,
+        persistent_trace_store: PersistentTraceStore | None = None,
         session_registry: CurrentProcessSessionRegistry | None = None,
     ) -> None:
         self._foundation_turn_handler = foundation_turn_handler
         self._model = model
+        self._trace_reader = trace_reader
+        self._persistent_trace_store = persistent_trace_store
         self._session_registry = session_registry or CurrentProcessSessionRegistry()
 
     def submit_turn(self, turn_input):
@@ -369,6 +372,8 @@ class _CoreServiceFoundationTurnExecutor:
                 provider_options={},
             )
         )
+        _write_trace_operational_logs(self._trace_reader, turn_input.trace_id)
+        _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         if hasattr(result, "model_copy"):
             metadata = {**getattr(result, "metadata", {}), "session": session_projection}
             return result.model_copy(update={"metadata": metadata})
@@ -1867,17 +1872,89 @@ def _emit_core_event(
     *,
     level: TraceLevel = TraceLevel.INFO,
 ) -> None:
-    trace_reader.emit(
-        make_trace_event(
-            schema_version=turn_input.schema_version,
-            trace_id=turn_input.trace_id,
-            turn_id=turn_input.turn_id,
-            stage=stage,
-            level=level,
-            message=message,
-            data={"turn_id": turn_input.turn_id, **data},
-        )
+    event = make_trace_event(
+        schema_version=turn_input.schema_version,
+        trace_id=turn_input.trace_id,
+        turn_id=turn_input.turn_id,
+        stage=stage,
+        level=level,
+        message=message,
+        data={"turn_id": turn_input.turn_id, **data},
     )
+    trace_reader.emit(event)
+    _write_operational_event_log(
+        trace_id=event.trace_id,
+        turn_id=turn_input.turn_id,
+        timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+        stage=event.stage.value,
+        level=event.level.value,
+        message=event.message,
+        data=event.data,
+    )
+
+
+def _write_trace_operational_logs(trace_reader: InMemoryTraceReader, trace_id: str) -> None:
+    envelope = trace_reader.read_trace(trace_id)
+    if not isinstance(envelope, dict):
+        return
+    events = envelope.get("events")
+    if not isinstance(events, list):
+        return
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        _write_operational_event_log(
+            trace_id=str(event.get("trace_id") or trace_id),
+            turn_id=str(event.get("turn_id") or "unknown"),
+            timestamp=str(event.get("timestamp") or "unknown"),
+            stage=str(event.get("stage") or "unknown"),
+            level=str(event.get("level") or "unknown"),
+            message=str(event.get("message") or ""),
+            data=event,
+        )
+
+
+def _write_operational_event_log(
+    *,
+    trace_id: str,
+    turn_id: str,
+    timestamp: str,
+    stage: str,
+    level: str,
+    message: str,
+    data: dict[str, object],
+) -> None:
+    log_dir = os.environ.get("MARVEX_LOG_DIR")
+    if not log_dir:
+        return
+    writer = LocalLogWriter(log_dir)
+    status = str(data.get("status") or "none")
+    line = (
+        f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} "
+        f"level={level} status={status} message={message}"
+    )
+    writer.append_line("turns.log", line)
+    writer.append_line("behavior.log", line)
+    writer.append_line(
+        "telemetry.log",
+        f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} level={level} status={status}",
+    )
+    writer.append_line(
+        "spine.log",
+        f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} status={status}",
+    )
+    tool_status = data.get("tool_status")
+    if isinstance(tool_status, str | int | float | bool):
+        writer.append_line(
+            "tools.log",
+            f"{timestamp} trace={trace_id} turn={turn_id} tool_status={tool_status} stage={stage}",
+        )
+    followup_status = data.get("followup_status") or data.get("proactive_status")
+    if isinstance(followup_status, str | int | float | bool):
+        writer.append_line(
+            "followups.log",
+            f"{timestamp} trace={trace_id} turn={turn_id} followup_status={followup_status} stage={stage}",
+        )
 
 
 def _tool_final_text(tool_response: dict[str, object]) -> str:
@@ -2425,6 +2502,7 @@ def _persist_trace_events(
 def _create_foundation_turn_executor(
     *,
     trace_reader: InMemoryTraceReader,
+    config: CoreServiceEntrypointConfig | None = None,
     session_registry: CurrentProcessSessionRegistry | None = None,
 ) -> _CoreServiceFoundationTurnExecutor:
     from packages.runtime_composition import create_local_api_fake_turn_handler
@@ -2434,6 +2512,8 @@ def _create_foundation_turn_executor(
             telemetry_sink=trace_reader
         ),
         model=DEFAULT_FOUNDATION_MODEL,
+        trace_reader=trace_reader,
+        persistent_trace_store=_persistent_store_from_config(config or CoreServiceEntrypointConfig()),
         session_registry=session_registry,
     )
 
@@ -2471,6 +2551,7 @@ def _create_turn_executor(
     if config.provider == "fake":
         return _create_foundation_turn_executor(
             trace_reader=trace_reader,
+            config=config,
             session_registry=session_registry,
         )
     provider_name = (
@@ -2528,8 +2609,11 @@ def _create_turn_executor(
 def _persistent_store_from_config(
     config: CoreServiceEntrypointConfig,
 ) -> PersistentTraceStore | None:
-    """Create PersistentTraceStore from config; returns None when path is empty."""
+    """Create PersistentTraceStore from explicit path or MARVEX_LOG_DIR."""
     raw_path = (config.telemetry_store_path or "").strip()
+    if not raw_path:
+        log_dir = os.environ.get("MARVEX_LOG_DIR")
+        raw_path = str(Path(log_dir) / "traces.jsonl") if log_dir else ""
     if not raw_path:
         return None
     try:
@@ -2592,7 +2676,6 @@ def create_control_plane_service_app(
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
     provider_control: Any | None = None,
-    voice_worker_control: Any | None = None,
 ) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
@@ -2606,7 +2689,6 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
-        voice_worker_control=voice_worker_control or VoiceWorkerControlPlaneFacade(),
     )
 
 

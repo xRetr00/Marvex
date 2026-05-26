@@ -174,6 +174,49 @@ def test_logs_endpoint_returns_sanitized_api_owned_log_projection() -> None:
     ]
 
 
+def test_logs_endpoint_includes_trace_derived_turn_spine_and_tool_logs() -> None:
+    app = _app(trace_reader=_TraceListingReader())
+
+    status, _headers, payload = _call(app, "/control/logs")
+
+    assert status == "200 OK"
+    logs_by_name = {log["name"]: log["lines"] for log in payload["logs"]}
+    assert "turns.trace.log" in logs_by_name
+    assert "spine.trace.log" in logs_by_name
+    assert "tools.trace.log" in logs_by_name
+    assert logs_by_name["turns.trace.log"] == [
+        "2026-05-18T09:30:00Z trace=trace-listed-1 turn=turn-listed-1 stage=turn_received level=info status=received message=Core agentic turn received.",
+        "2026-05-18T09:30:02Z trace=trace-listed-1 turn=turn-listed-1 stage=turn_completed level=info status=finalized message=Core agentic turn finalized.",
+    ]
+    assert logs_by_name["spine.trace.log"] == [
+        "trace=trace-listed-1 scope=current_process source=in_memory events=2 first=2026-05-18T09:30:00Z last=2026-05-18T09:30:02Z latest_stage=turn_completed latest_status=finalized"
+    ]
+    assert logs_by_name["tools.trace.log"] == [
+        "2026-05-18T09:30:02Z trace=trace-listed-1 turn=turn-listed-1 tool_status=not_executed stage=turn_completed"
+    ]
+    assert "token" not in json.dumps(payload).lower()
+
+
+def test_local_log_writer_appends_sanitized_structured_lines(tmp_path) -> None:
+    from packages.control_plane_api.logs import LocalLogReader, LocalLogWriter
+
+    writer = LocalLogWriter(tmp_path)
+    writer.append_line(
+        "turns.log",
+        "trace=trace-1 status=received Authorization: Bearer secret-token",
+    )
+
+    payload = LocalLogReader((tmp_path,)).tail_logs()
+
+    assert payload == [
+        {
+            "name": "turns.log",
+            "source": "control_plane_api",
+            "lines": ["[redacted]"],
+        }
+    ]
+
+
 def test_sessions_endpoint_lists_backend_owned_safe_session_handles() -> None:
     coordinator = BackendSessionCoordinator(clock=lambda: 1770000000000)
     coordinator.create_session(title="Shell chat")

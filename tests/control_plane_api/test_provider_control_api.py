@@ -152,3 +152,13 @@ def test_in_memory_provider_secret_projection_includes_prefix_suffix_without_raw
     assert provider["secret_display"] == "sk-r****alue"
     serialized = json.dumps(payload)
     assert "sk-real-secret-value" not in serialized
+
+
+def test_in_memory_provider_model_refresh_uses_injected_loopback_discovery() -> None:
+    control = InMemoryProviderControl(model_discovery=lambda provider_id: ["qwen2.5-coder-7b"] if provider_id == "lmstudio_responses" else [])
+
+    payload = control.refresh_models("lmstudio_responses")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "lmstudio_responses")
+    assert provider["healthy"] is True
+    assert provider["active_model"] == "qwen2.5-coder-7b"

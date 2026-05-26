@@ -381,7 +381,7 @@ def _create_control_plane_dispatcher(
         if method == "GET" and path == f"{CONTROL_PREFIX}/diagnostics":
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, **_safe_mapping(diagnostics or {}), "raw_payload_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/logs":
-            return _json_response(None, "200 OK", logs_payload(log_reader))
+            return _json_response(None, "200 OK", logs_payload(log_reader, trace_reader=trace_reader))
         if method == "GET" and path == f"{CONTROL_PREFIX}/snapshot":
             payload = snapshot.model_dump(mode="json")
             if provider_control is not None and hasattr(provider_control, "provider_catalog"):

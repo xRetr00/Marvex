@@ -4,13 +4,13 @@ import json
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from typing import Any
-from urllib.request import urlopen
 
 from .voice import _read_json
 
 
 SCHEMA_VERSION = "1"
 CONTROL_PROVIDERS_PREFIX = "/control/providers"
+ProviderModelDiscovery = Callable[[str], list[str]]
 
 
 @dataclass
@@ -48,7 +48,12 @@ class InMemoryProviderControl:
     turn and never return plaintext credentials.
     """
 
-    def __init__(self, providers: tuple[ProviderControlState, ...] | None = None, on_change: Callable[[dict[str, Any]], None] | None = None) -> None:
+    def __init__(
+        self,
+        providers: tuple[ProviderControlState, ...] | None = None,
+        on_change: Callable[[dict[str, Any]], None] | None = None,
+        model_discovery: ProviderModelDiscovery | None = None,
+    ) -> None:
         rows = providers or (
             ProviderControlState(
                 provider_id="lmstudio_responses",
@@ -74,6 +79,7 @@ class InMemoryProviderControl:
         self._providers = {row.provider_id: row for row in rows}
         self.active_provider_id = rows[0].provider_id
         self._on_change = on_change
+        self._model_discovery = model_discovery or _empty_model_discovery
 
     def provider_catalog(self) -> dict[str, Any]:
         return {
@@ -126,7 +132,7 @@ class InMemoryProviderControl:
     def refresh_models(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
         if provider_id == "lmstudio_responses":
-            models = _discover_lmstudio_models()
+            models = self._model_discovery(provider_id)
             row.healthy = bool(models)
             if models:
                 row.models = models
@@ -225,23 +231,8 @@ def _mask_secret(value: str) -> str:
     return f"{cleaned[:4]}****{cleaned[-4:]}"
 
 
-def _discover_lmstudio_models() -> list[str]:
-    try:
-        with urlopen("http://127.0.0.1:1234/v1/models", timeout=1.5) as response:  # noqa: S310 - loopback-only model discovery.
-            payload = json.loads(response.read().decode("utf-8"))
-    except Exception:
-        return []
-    rows = payload.get("data") if isinstance(payload, dict) else None
-    if not isinstance(rows, list):
-        return []
-    models: list[str] = []
-    for row in rows:
-        if not isinstance(row, dict):
-            continue
-        model_id = str(row.get("id") or "").strip()
-        if model_id and model_id not in models:
-            models.append(model_id)
-    return models
+def _empty_model_discovery(_provider_id: str) -> list[str]:
+    return []
 
 
 def _safe_nested(value: Any) -> Any:

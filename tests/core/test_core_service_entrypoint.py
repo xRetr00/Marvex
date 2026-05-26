@@ -564,3 +564,43 @@ def test_persist_trace_events_does_not_duplicate_existing_event_ids(tmp_path):
 
     envelope = store.read_trace("trace-persist-once")
     assert envelope["event_count"] == 1
+
+
+def test_core_service_turn_writes_safe_operational_logs_when_log_dir_is_configured(tmp_path, monkeypatch):
+    from packages.contracts import AssistantTurnInput
+    from services.core.main import CoreServiceEntrypointConfig, create_core_service
+
+    monkeypatch.setenv("MARVEX_LOG_DIR", str(tmp_path))
+    service = create_core_service(
+        config=CoreServiceEntrypointConfig(local_auth_token=EXPECTED_TOKEN, provider="fake")
+    )
+    service.start()
+
+    result = service.submit_turn(AssistantTurnInput.model_validate(_turn_payload()["assistant_turn_input"]))
+
+    assert result.error is None
+    turns_log = tmp_path / "turns.log"
+    behavior_log = tmp_path / "behavior.log"
+    telemetry_log = tmp_path / "telemetry.log"
+    traces_jsonl = tmp_path / "traces.jsonl"
+    assert turns_log.exists()
+    assert behavior_log.exists()
+    assert telemetry_log.exists()
+    assert traces_jsonl.exists()
+    turns_text = turns_log.read_text(encoding="utf-8")
+    assert "trace=trace-core-entrypoint" in turns_text
+    assert "turn=turn-core-entrypoint" in turns_text
+    assert "stage=" in turns_text
+    assert "secret" not in turns_text.lower()
+    assert "trace-core-entrypoint" in traces_jsonl.read_text(encoding="utf-8")
+
+
+def test_core_service_defaults_trace_persistence_to_log_dir(tmp_path, monkeypatch):
+    from services.core.main import CoreServiceEntrypointConfig, _persistent_store_from_config
+
+    monkeypatch.setenv("MARVEX_LOG_DIR", str(tmp_path))
+
+    store = _persistent_store_from_config(CoreServiceEntrypointConfig())
+
+    assert store is not None
+    assert store._trace_file_path == tmp_path / "traces.jsonl"
