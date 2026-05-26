@@ -9,6 +9,7 @@ export interface SessionMeta {
   id: string;
   updatedAt: number;
   title: string;
+  lastProviderResponseId?: string;
 }
 
 const INDEX_KEY = "marvex.session.cache.index";
@@ -32,8 +33,10 @@ function writeJson(key: string, value: unknown): void {
 }
 
 export function rememberSession(session: SessionMeta): void {
-  const list = listCachedSessions().filter((item) => item.id !== session.id);
-  list.push(session);
+  const cached = listCachedSessions();
+  const existing = cached.find((item) => item.id === session.id);
+  const list = cached.filter((item) => item.id !== session.id);
+  list.push({ ...existing, ...session });
   writeJson(INDEX_KEY, list.sort((a, b) => b.updatedAt - a.updatedAt));
 }
 

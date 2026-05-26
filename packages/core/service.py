@@ -119,7 +119,11 @@ class CoreService:
             build=dict(self._config.build),
         )
 
-    def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+    def submit_turn(
+        self,
+        turn_input: AssistantTurnInput,
+        previous_response_id: str | None = None,
+    ) -> AssistantTurnResult:
         if self._state == CoreServiceState.INITIALIZED:
             return self._error_result(
                 turn_input,
@@ -137,7 +141,10 @@ class CoreService:
                 reason="service_shutting_down",
             )
         try:
-            raw_result = self._turn_executor.submit_turn(turn_input)
+            raw_result = self._turn_executor.submit_turn(
+                turn_input,
+                previous_response_id=previous_response_id,
+            )
             result = AssistantTurnResult.model_validate(raw_result)
         except Exception:
             return self._error_result(

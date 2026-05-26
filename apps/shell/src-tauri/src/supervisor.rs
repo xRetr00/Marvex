@@ -270,6 +270,8 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
                 PRODUCT_PROVIDER.into(),
                 "--model".into(),
                 PRODUCT_MODEL.into(),
+                "--web-search".into(),
+                "multi".into(),
             ],
             env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
@@ -826,6 +828,14 @@ mod tests {
             .windows(2)
             .any(|pair| pair == ["--worker-provider", "lmstudio_responses"]));
         assert!(!core.args.windows(2).any(|pair| pair == ["--model", "fake-model"]));
+    }
+
+    #[test]
+    fn product_core_uses_real_web_search_adapter() {
+        let specs = service_specs("secret-token");
+        let core = specs.iter().find(|spec| spec.name == "core").expect("core");
+
+        assert!(core.args.windows(2).any(|pair| pair == ["--web-search", "multi"]));
     }
 
     #[test]

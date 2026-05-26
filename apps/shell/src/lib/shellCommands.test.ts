@@ -22,7 +22,18 @@ describe("shell command bridge", () => {
         agent_profile_id: "agent.deep_search",
         persona_profile_id: "persona.marvex.female",
         selected_voice_id: "af_heart"
-      }
+      },
+      previousResponseId: undefined
+    });
+  });
+
+  it("passes the prior provider response id separately from metadata", async () => {
+    await submitChatTurn("follow up", { session_id: "session-1" }, "resp-previous-001");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("submit_chat_turn", {
+      text: "follow up",
+      metadata: { session_id: "session-1" },
+      previousResponseId: "resp-previous-001"
     });
   });
 

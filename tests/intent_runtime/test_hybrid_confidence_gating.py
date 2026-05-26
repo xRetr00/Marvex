@@ -32,6 +32,8 @@ def test_conversational_inputs_default_to_provider_chat() -> None:
 def test_special_routes_require_clear_signal_and_surface_confidence_details() -> None:
     examples = {
         "search latest browser-use version": IntentKind.WEB_SEARCH,
+        "What model did OpenAI release this month?": IntentKind.WEB_SEARCH,
+        "What changed in OpenAI models during May 2026?": IntentKind.WEB_SEARCH,
         "list MCP tools": IntentKind.MCP_NEEDED,
         "what changed in my memory tree about Marvex?": IntentKind.MEMORY_TREE_NEEDED,
         "Use the calculator tool for 2+2": IntentKind.CAPABILITY_TOOL,

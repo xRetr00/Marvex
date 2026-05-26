@@ -592,22 +592,34 @@ def test_core_service_turn_writes_safe_operational_logs_when_log_dir_is_configur
     )
     service.start()
 
-    result = service.submit_turn(AssistantTurnInput.model_validate(_turn_payload()["assistant_turn_input"]))
+    result = service.submit_turn(
+        AssistantTurnInput.model_validate(_turn_payload()["assistant_turn_input"]),
+        previous_response_id="resp-previous-log",
+    )
 
     assert result.error is None
     turns_log = tmp_path / "turns.log"
     behavior_log = tmp_path / "behavior.log"
     telemetry_log = tmp_path / "telemetry.log"
+    provider_log = tmp_path / "provider.log"
+    continuation_log = tmp_path / "continuation.log"
     traces_jsonl = tmp_path / "traces.jsonl"
     assert turns_log.exists()
     assert behavior_log.exists()
     assert telemetry_log.exists()
+    assert provider_log.exists()
+    assert continuation_log.exists()
     assert traces_jsonl.exists()
     turns_text = turns_log.read_text(encoding="utf-8")
     assert "trace=trace-core-entrypoint" in turns_text
     assert "turn=turn-core-entrypoint" in turns_text
     assert "stage=" in turns_text
     assert "secret" not in turns_text.lower()
+    provider_text = provider_log.read_text(encoding="utf-8")
+    assert "stage=provider_request_sent" in provider_text
+    assert "previous_response_id_present=True" in provider_text
+    continuation_text = continuation_log.read_text(encoding="utf-8")
+    assert "previous_response_id_present=True" in continuation_text
     assert "trace-core-entrypoint" in traces_jsonl.read_text(encoding="utf-8")
 
 

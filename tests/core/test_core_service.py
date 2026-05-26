@@ -83,19 +83,31 @@ def make_success_result(turn_input: AssistantTurnInput) -> AssistantTurnResult:
 class RecordingTurnExecutor:
     def __init__(self) -> None:
         self.turns: list[AssistantTurnInput] = []
+        self.previous_response_ids: list[str | None] = []
 
-    def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+    def submit_turn(self, turn_input: AssistantTurnInput, previous_response_id: str | None = None) -> AssistantTurnResult:
         self.turns.append(turn_input)
+        self.previous_response_ids.append(previous_response_id)
         return make_success_result(turn_input)
 
 
 class ExplodingTurnExecutor:
-    def submit_turn(self, _turn_input: AssistantTurnInput) -> AssistantTurnResult:
+    def submit_turn(
+        self,
+        _turn_input: AssistantTurnInput,
+        previous_response_id: str | None = None,
+    ) -> AssistantTurnResult:
+        del previous_response_id
         raise RuntimeError("raw executor failure with secret detail")
 
 
 class MismatchedTurnExecutor:
-    def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
+    def submit_turn(
+        self,
+        turn_input: AssistantTurnInput,
+        previous_response_id: str | None = None,
+    ) -> AssistantTurnResult:
+        del previous_response_id
         return make_success_result(turn_input).model_copy(
             update={"trace_id": "trace-from-wrong-turn"}
         )
@@ -137,6 +149,19 @@ def test_core_service_health_and_version_use_approved_contracts():
         "HealthCheck": SCHEMA_VERSION,
         "VersionInfo": SCHEMA_VERSION,
     }
+
+
+def test_core_service_passes_explicit_previous_response_id_to_executor():
+    executor = RecordingTurnExecutor()
+    service = make_service(executor)
+    service.start()
+    turn_input = make_turn_input()
+
+    result = service.submit_turn(turn_input, previous_response_id="resp-previous-001")
+
+    assert result.error is None
+    assert executor.turns == [turn_input]
+    assert executor.previous_response_ids == ["resp-previous-001"]
 
 
 def test_core_service_lifecycle_rejects_turns_until_started_and_after_shutdown():
@@ -247,11 +272,15 @@ def local_api_payload(turn_input: AssistantTurnInput) -> dict:
 def test_core_service_composes_with_existing_loopback_local_api_turn_path():
     from packages.local_api import LocalApiConfig, create_local_api_asgi_app
 
-    service = make_service()
+    executor = RecordingTurnExecutor()
+    service = make_service(executor)
     service.start()
     app = create_local_api_asgi_app(
         service,
-        turn_handler=lambda request: service.submit_turn(request.assistant_turn_input),
+        turn_handler=lambda request: service.submit_turn(
+            request.assistant_turn_input,
+            previous_response_id=request.previous_response_id,
+        ),
         local_auth_token=EXPECTED_TOKEN,
     )
 
@@ -261,7 +290,7 @@ def test_core_service_composes_with_existing_loopback_local_api_turn_path():
         app,
         "/v1/turns",
         method="POST",
-        body=local_api_payload(make_turn_input()),
+        body={**local_api_payload(make_turn_input()), "previous_response_id": "resp-loopback-previous"},
         auth=f"Bearer {EXPECTED_TOKEN}",
     )
 
@@ -276,6 +305,7 @@ def test_core_service_composes_with_existing_loopback_local_api_turn_path():
     result = AssistantTurnResult.model_validate(turn_payload)
     assert result.trace_id == "trace-core-service"
     assert result.error is None
+    assert executor.previous_response_ids == ["resp-loopback-previous"]
 
 
 def test_core_service_source_has_no_forbidden_boundary_imports_or_tokens():

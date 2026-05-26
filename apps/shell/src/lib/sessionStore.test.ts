@@ -14,4 +14,20 @@ describe("sessionStore", () => {
     const ids = listCachedSessions().map((s) => s.id);
     expect(ids).toEqual(["session-backend-1"]);
   });
+
+  it("preserves the last provider response id when message saves refresh metadata", () => {
+    rememberSession({
+      id: "session-backend-1",
+      title: "Backend",
+      updatedAt: 100,
+      lastProviderResponseId: "resp-001",
+    });
+
+    saveCachedMessages("session-backend-1", [{ role: "user", text: "next" }]);
+
+    expect(listCachedSessions()[0]).toMatchObject({
+      id: "session-backend-1",
+      lastProviderResponseId: "resp-001",
+    });
+  });
 });

@@ -343,6 +343,8 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.FILE_READ_LIST_SEARCH
     if any(part in lowered for part in ("delete", "send", "upload", "install", "write", "run command")):
         return IntentKind.RISKY_ACTION
+    if _freshness_needed(text):
+        return IntentKind.WEB_SEARCH
     return IntentKind.PROVIDER_SIMPLE_CHAT
 
 
@@ -372,7 +374,15 @@ def _risk_for(kind: IntentKind, text: str) -> tuple[IntentRiskSignal, ToolRiskLe
 
 def _freshness_needed(text: str) -> bool:
     lowered = text.lower()
-    return any(part in lowered for part in ("latest", "current", "recent", "today", "version", "price", "release", "docs", "api", "dependency"))
+    if any(part in lowered for part in ("latest", "current", "recent", "today", "version", "price", "release", "docs", "api", "dependency")):
+        return True
+    if re.search(r"\b(this|last|next)\s+(day|week|month|quarter|year)\b", lowered):
+        return True
+    if re.search(r"\b(in|during|since|as of)\s+(20\d{2}|january|february|march|april|may|june|july|august|september|october|november|december)\b", lowered):
+        return True
+    if any(part in lowered for part in ("announced", "launched", "released", "rolled out", "changed", "new model", "new api", "available now")):
+        return True
+    return False
 
 
 def _kind_index(kind: IntentKind) -> int:

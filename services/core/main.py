@@ -78,6 +78,7 @@ from packages.contracts import (
     StageStatus,
     StageSummary,
     ToolResultRef,
+    TraceEvent,
     TraceLevel,
     TraceStage,
 )
@@ -355,10 +356,18 @@ class _CoreServiceFoundationTurnExecutor:
         self._model = model
         self._trace_reader = trace_reader
         self._persistent_trace_store = persistent_trace_store
+        _attach_persistent_trace_store(self._trace_reader, self._persistent_trace_store)
         self._session_registry = session_registry or CurrentProcessSessionRegistry()
 
-    def submit_turn(self, turn_input):
-        linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
+    def submit_turn(
+        self,
+        turn_input,
+        previous_response_id: str | None = None,
+    ):
+        linkage = build_turn_linkage_from_assistant_turn_input(
+            turn_input,
+            previous_response_id=previous_response_id,
+        )
         self._session_registry.record_turn(linkage)
         session_projection = _session_projection(self._session_registry, turn_input)
         result = self._foundation_turn_handler(
@@ -368,7 +377,7 @@ class _CoreServiceFoundationTurnExecutor:
                 assistant_turn_input=turn_input,
                 model=self._model,
                 instructions=None,
-                previous_response_id=None,
+                previous_response_id=previous_response_id,
                 provider_options={},
             )
         )
@@ -754,6 +763,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         self._model = model
         self._trace_reader = trace_reader
+        self._persistent_trace_store = persistent_trace_store
+        _attach_persistent_trace_store(self._trace_reader, self._persistent_trace_store)
         self._web_search_provider = web_search_provider
         self._memory_tree_runtime = memory_tree_runtime
         self._memory_loop = memory_loop
@@ -763,7 +774,6 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._session_registry = session_registry or CurrentProcessSessionRegistry()
         self._provider_selection = provider_selection_runtime
         self._learning_pipeline = learning_pipeline
-        self._persistent_trace_store = persistent_trace_store
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
         self._connector_autofetch_runtime = connector_autofetch_runtime
@@ -814,8 +824,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
             session_ref=session_ref,
         )
 
-    def submit_turn(self, turn_input: AssistantTurnInput) -> AssistantTurnResult:
-        linkage = build_turn_linkage_from_assistant_turn_input(turn_input)
+    def submit_turn(
+        self,
+        turn_input: AssistantTurnInput,
+        previous_response_id: str | None = None,
+    ) -> AssistantTurnResult:
+        linkage = build_turn_linkage_from_assistant_turn_input(
+            turn_input,
+            previous_response_id=previous_response_id,
+        )
         self._session_registry.record_turn(linkage)
         session_projection = _session_projection(self._session_registry, turn_input)
 
@@ -937,7 +954,13 @@ class _CoreServiceProviderWorkerTurnExecutor:
             return self._run_mcp_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if ("memory" in route_intents or "memory_tree_needed" in route_intents) and intent_kind not in {"grounded_answer", "web_search"}:
             loop.step("grounded_answer")
-            return self._run_memory_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            return self._run_memory_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=previous_response_id,
+            )
         if "skill_needed" in route_intents:
             self._publish(AssistantStatusKind.SKILLS, detail="skill_needed", trace_id=turn_input.trace_id)
             loop.step("tool")
@@ -1021,7 +1044,13 @@ class _CoreServiceProviderWorkerTurnExecutor:
             self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
             loop.step("web_search")
             loop.step("grounded_answer")
-            return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            return self._run_grounded_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=previous_response_id,
+            )
 
         self._publish(AssistantStatusKind.THINKING, detail="provider_turn", trace_id=turn_input.trace_id)
         loop.step("provider")
@@ -1035,7 +1064,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             provider=self._provider,
             model=self._model,
             instructions=_with_ui_toolset(provider_instructions, self._provider_name),
-            telemetry_sink=self._trace_reader,
+            telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
+            previous_response_id=previous_response_id,
         )
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         loop.step("finalize", stop_reason="finalized")
@@ -1131,34 +1161,16 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata: dict[str, object],
         cognition: CognitionTurnAssembly,
         loop: "_AgenticLoopProjection",
+        previous_response_id: str | None = None,
     ) -> AssistantTurnResult:
         web_refs = tuple(cognition.web_evidence_refs)
         if not web_refs and not cognition.memory_evidence_refs:
-            provider_result = self._run_provider_answer_path(
-                turn_input,
-                metadata={
-                    **metadata,
-                    "grounding": {
-                        "web_search_executed": cognition.web_search_required,
-                        "citation_validation": "citation.evidence_missing",
-                        "fabricated": False,
-                    },
-                },
-                cognition=cognition,
-                loop=loop,
-                stage_name="grounded_answer",
-                provider_options={
-                    "grounding_evidence_missing": True,
-                    "raw_evidence_persisted": False,
-                },
-            )
-            if provider_result.assistant_final_response is not None:
-                return provider_result
             loop.step("finalize", stop_reason="finalized")
             grounded = {
                 "web_search_executed": cognition.web_search_required,
                 "citation_validation": "citation.evidence_missing",
                 "fabricated": False,
+                "evidence_ref_count": 0,
             }
             metadata = {**metadata, "grounding": grounded}
             return _entrypoint_text_result(
@@ -1180,6 +1192,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "grounded_citation_ids": list(citation_ids[:4]),
                 "raw_evidence_persisted": False,
             },
+            previous_response_id=previous_response_id,
         )
         response_text = provider_result.assistant_final_response.text if provider_result.assistant_final_response is not None else ""
         draft = GroundedAnswerDraft(text=response_text or "Evidence is missing for this grounded answer.", citation_ids=_citation_ids_from_text(response_text, allowed=citation_ids))
@@ -1289,9 +1302,16 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata: dict[str, object],
         cognition: CognitionTurnAssembly,
         loop: "_AgenticLoopProjection",
+        previous_response_id: str | None = None,
     ) -> AssistantTurnResult:
         if cognition.memory_evidence_refs:
-            return self._run_grounded_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            return self._run_grounded_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=previous_response_id,
+            )
         memory_projection = {
             "memory_records_recalled": _included_context_count(cognition, "memory_projection"),
             "memory_store_available": self._memory_loop is not None,
@@ -1304,6 +1324,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             loop=loop,
             stage_name="memory",
             provider_options={"memory_context_requested": True, "raw_memory_persisted": False},
+            previous_response_id=previous_response_id,
         )
 
     def _run_provider_answer_path(
@@ -1315,6 +1336,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         loop: "_AgenticLoopProjection",
         stage_name: str,
         provider_options: dict[str, object] | None = None,
+        previous_response_id: str | None = None,
     ) -> AssistantTurnResult:
         provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
         structured_requested = self._structured_output_required or bool(
@@ -1334,7 +1356,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 self._provider_name,
             ),
             provider_options=effective_provider_options,
-            telemetry_sink=self._trace_reader,
+            telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
+            previous_response_id=previous_response_id,
         )
         if structured_requested:
             result = self._apply_structured_output_if_requested(
@@ -1356,7 +1379,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "memory_loop": _memory_write_projection(memory_write),
             }
         )
-        return result.model_copy(update={"metadata": _with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input)})
+        updated = result.model_copy(
+            update={"metadata": _with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input)}
+        )
+        _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
+        return updated
 
     def _apply_structured_output_if_requested(
         self,
@@ -1627,7 +1654,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
 
 class _HealthOnlyTurnExecutor:
-    def submit_turn(self, turn_input):
+    def submit_turn(self, turn_input, previous_response_id: str | None = None):
+        del previous_response_id
         return AssistantTurnResult(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
@@ -1821,19 +1849,54 @@ class _DemoMemoryTreeRuntime:
         return _DemoMemorySearch()
 
 
+def _attach_persistent_trace_store(
+    trace_reader: object,
+    persistent_trace_store: PersistentTraceStore | None,
+) -> None:
+    if persistent_trace_store is None:
+        return
+    try:
+        setattr(trace_reader, "_marvex_persistent_trace_store", persistent_trace_store)
+    except Exception:
+        pass
+
+
 def _with_loop_metadata(
     metadata: dict[str, object],
     loop: _AgenticLoopProjection,
     trace_reader: InMemoryTraceReader,
     turn_input: AssistantTurnInput,
 ) -> dict[str, object]:
+    completed_data: dict[str, object] = {
+        "status": loop.stop_reason,
+        "tool_status": "succeeded" if loop.executed_count else "not_executed",
+    }
+    cognition_projection = metadata.get("cognition")
+    if isinstance(cognition_projection, dict):
+        intent_kind = cognition_projection.get("intent_kind")
+        if isinstance(intent_kind, str) and intent_kind:
+            completed_data["intent_kind"] = intent_kind
+    grounding_projection = metadata.get("grounding")
+    if isinstance(grounding_projection, dict):
+        for key in ("web_search_executed", "evidence_ref_count", "citation_validation"):
+            value = grounding_projection.get(key)
+            if isinstance(value, str | int | float | bool):
+                completed_data[key] = value
+    model_answer_stage = metadata.get("model_answer_stage")
+    if isinstance(model_answer_stage, str) and model_answer_stage:
+        completed_data["model_answer_stage"] = model_answer_stage
     _emit_core_event(
         trace_reader,
         turn_input,
         TraceStage.TURN_COMPLETED if loop.stop_reason == "finalized" else TraceStage.TURN_FAILED,
         "Core agentic turn finalized.",
-        {"status": loop.stop_reason, "tool_status": "succeeded" if loop.executed_count else "not_executed"},
+        completed_data,
         level=TraceLevel.INFO if loop.stop_reason == "finalized" else TraceLevel.WARNING,
+    )
+    _persist_trace_events(
+        getattr(trace_reader, "_marvex_persistent_trace_store", None),
+        trace_reader,
+        turn_input.trace_id,
     )
     trace = trace_reader.read_trace(turn_input.trace_id)
     telemetry_event_count = int((trace or {}).get("event_count", 0) or 0)
@@ -1893,6 +1956,32 @@ def _emit_core_event(
     )
 
 
+class _OperationalTelemetrySink:
+    def __init__(self, trace_reader: InMemoryTraceReader) -> None:
+        self._trace_reader = trace_reader
+
+    def emit(self, event: TraceEvent) -> None:
+        self._trace_reader.emit(event)
+        data = event.data if isinstance(event.data, dict) else {}
+        turn_id = str(data.get("turn_id") or _turn_id_from_event_id(event.event_id) or "unknown")
+        _write_operational_event_log(
+            trace_id=event.trace_id,
+            turn_id=turn_id,
+            timestamp=event.timestamp.isoformat().replace("+00:00", "Z"),
+            stage=event.stage.value,
+            level=event.level.value,
+            message=event.message,
+            data=data,
+        )
+
+
+def _turn_id_from_event_id(event_id: str) -> str | None:
+    turn_id, separator, _stage = event_id.partition(":")
+    if not separator:
+        return None
+    return turn_id or None
+
+
 def _write_trace_operational_logs(trace_reader: InMemoryTraceReader, trace_id: str) -> None:
     envelope = trace_reader.read_trace(trace_id)
     if not isinstance(envelope, dict):
@@ -1943,6 +2032,44 @@ def _write_operational_event_log(
         "spine.log",
         f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} status={status}",
     )
+    if stage in {
+        "provider_request_created",
+        "provider_request_sent",
+        "provider_response_received",
+    }:
+        provider_bits = [f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} status={status}"]
+        model = data.get("model")
+        if isinstance(model, str | int | float | bool):
+            provider_bits.append(f"model={model}")
+        previous_present = data.get("previous_response_id_present")
+        if isinstance(previous_present, str | int | float | bool):
+            provider_bits.append(f"previous_response_id_present={previous_present}")
+        response_id_present = data.get("provider_response_id_present")
+        if isinstance(response_id_present, str | int | float | bool):
+            provider_bits.append(f"provider_response_id_present={response_id_present}")
+        finish_reason = data.get("finish_reason")
+        if isinstance(finish_reason, str | int | float | bool):
+            provider_bits.append(f"finish_reason={finish_reason}")
+        writer.append_line("provider.log", " ".join(provider_bits))
+    web_search_executed = data.get("web_search_executed")
+    evidence_ref_count = data.get("evidence_ref_count")
+    citation_validation = data.get("citation_validation")
+    if any(isinstance(value, str | int | float | bool) for value in (web_search_executed, evidence_ref_count, citation_validation)):
+        writer.append_line(
+            "search.log",
+            (
+                f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} "
+                f"web_search_executed={web_search_executed} "
+                f"evidence_ref_count={evidence_ref_count} "
+                f"citation_validation={citation_validation}"
+            ),
+        )
+    previous_present = data.get("previous_response_id_present")
+    if isinstance(previous_present, str | int | float | bool):
+        writer.append_line(
+            "continuation.log",
+            f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} previous_response_id_present={previous_present}",
+        )
     tool_status = data.get("tool_status")
     if isinstance(tool_status, str | int | float | bool):
         writer.append_line(
@@ -2023,29 +2150,9 @@ def _turn_input_with_prompt(
     return turn_input.model_copy(update={"user_visible_input": prompt_text}), instructions
 
 
-# Builtin UI toolset the model can call to control what the shell renders. Kept
-# as documentation of the convention the backend parser (packages.ui_directives)
-# understands; delivered to real models via their provider system prompt so it
-# never perturbs deterministic grounded/prompt-fidelity turns.
-_UI_TOOLSET_GUIDANCE = (
-    "UI toolset: render rich cards by appending one fenced block to your reply:\n"
-    "```marvex:ui\n"
-    '{"directives": [ ... ]}\n'
-    "```\n"
-    "Kinds: product (actual shopping results only), info, image, plan. "
-    "Never add a block for greetings or simple answers."
-)
-
-# Real instruction-following models that benefit from the UI toolset prompt.
-# Deterministic fake / provider_worker turns are intentionally left untouched so
-# grounded + prompt-fidelity smokes stay stable.
-_REAL_LM_PROVIDERS = {"lmstudio_responses", "litellm"}
-
-
 def _with_ui_toolset(instructions: str | None, provider_name: str) -> str | None:
-    if provider_name not in _REAL_LM_PROVIDERS:
-        return instructions
-    return (instructions + "\n\n" + _UI_TOOLSET_GUIDANCE).strip() if instructions else _UI_TOOLSET_GUIDANCE
+    del provider_name
+    return instructions
 
 
 def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:
@@ -2641,7 +2748,12 @@ def create_core_service_app(
     )
     app = create_local_api_asgi_app(
         service,
-        turn_handler=lambda request: _apply_ui_directives(service.submit_turn(request.assistant_turn_input)),
+        turn_handler=lambda request: _apply_ui_directives(
+            service.submit_turn(
+                request.assistant_turn_input,
+                previous_response_id=request.previous_response_id,
+            )
+        ),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
         accepted_turn_execution_modes=(

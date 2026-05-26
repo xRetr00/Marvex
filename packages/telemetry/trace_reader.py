@@ -24,9 +24,15 @@ _EVENT_PROJECTION_KEYS = {
     "service",
     "tool_status",
     "approval_status",
+    "model",
+    "previous_response_id_present",
+    "provider_response_id_present",
     "provider_tool_proposal_count",
     "provider_continuation_input_ready",
     "provider_final_response_status",
+    "web_search_executed",
+    "evidence_ref_count",
+    "citation_validation",
 }
 _USAGE_KEY_PARTS = (
     "count",

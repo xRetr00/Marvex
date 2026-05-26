@@ -162,6 +162,7 @@ fn gui_health(state: tauri::State<Mutex<ShellState>>) -> Result<Value, String> {
 async fn submit_chat_turn(
     text: String,
     metadata: Option<Value>,
+    previous_response_id: Option<String>,
     state: tauri::State<'_, Mutex<ShellState>>,
 ) -> Result<Value, String> {
     let text = text.trim().to_string();
@@ -177,6 +178,10 @@ async fn submit_chat_turn(
     let now = monotonic_id();
     let trace_id = format!("trace-shell-chat-{now}");
     let turn_id = format!("turn-shell-chat-{now}");
+    let previous_response_id = previous_response_id.and_then(|id| {
+        let trimmed = id.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
     let body = json!({
         "schema_version": "0.1.1-draft",
         "execution_mode": "assistant_runtime_lmstudio_responses",
@@ -194,7 +199,7 @@ async fn submit_chat_turn(
         },
         "model": "qwen2.5-coder-7b",
         "instructions": null,
-        "previous_response_id": null,
+        "previous_response_id": previous_response_id,
         "provider_options": {}
     });
     let response = http::http_post_json_with_timeout(

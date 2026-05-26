@@ -74,8 +74,12 @@ export type ChatTurnMetadata = {
   session_id?: string;
 };
 
-export async function submitChatTurn(text: string, metadata?: ChatTurnMetadata): Promise<unknown> {
-  return invoke("submit_chat_turn", { text, metadata });
+export async function submitChatTurn(
+  text: string,
+  metadata?: ChatTurnMetadata,
+  previousResponseId?: string,
+): Promise<unknown> {
+  return invoke("submit_chat_turn", { text, metadata, previousResponseId });
 }
 
 export type BackendSessionRef = {

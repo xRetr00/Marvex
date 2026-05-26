@@ -264,7 +264,11 @@ def test_provider_stage_emits_trace_lifecycle_through_telemetry_sink():
         TraceStage.TURN_COMPLETED,
     ]
     assert all(event.trace_id == "trace-provider-stage" for event in sink.events)
-    assert sink.events[0].data == {"stage": "provider_stage"}
+    assert sink.events[0].data == {
+        "stage": "provider_stage",
+        "model": "neutral-model",
+        "previous_response_id_present": False,
+    }
     assert sink.events[2].data["status"] == "success"
 
 

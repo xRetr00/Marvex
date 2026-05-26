@@ -40,6 +40,7 @@ export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
   const sessionIdRef = useRef<string | null>(null);
+  const previousResponseIdsRef = useRef<Record<string, string>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready." }]);
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [pending, setPending] = useState(false);
@@ -54,6 +55,8 @@ export function ChatApp() {
   const activateBackendSession = useCallback((session: BackendSession) => {
     const id = session.session_ref.ref_id;
     sessionIdRef.current = id;
+    const cached = listCachedSessions().find((item) => item.id === id);
+    if (cached?.lastProviderResponseId) previousResponseIdsRef.current[id] = cached.lastProviderResponseId;
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
     const restored = loadCachedMessages(id) as ChatMessage[];
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
@@ -103,7 +106,18 @@ export function ChatApp() {
     try {
       const sessionId = sessionIdRef.current;
       if (!sessionId) throw new Error("backend session unavailable");
-      const result = await submitChatTurn(text, { session_id: sessionId });
+      const result = await submitChatTurn(text, { session_id: sessionId }, previousResponseIdsRef.current[sessionId]);
+      const nextProviderResponseId = providerResponseIdFromTurnResult(result);
+      if (nextProviderResponseId) {
+        previousResponseIdsRef.current[sessionId] = nextProviderResponseId;
+        const cached = listCachedSessions().find((item) => item.id === sessionId);
+        rememberSession({
+          id: sessionId,
+          title: (cached?.title ?? text.slice(0, 48)) || "New chat",
+          updatedAt: Date.now(),
+          lastProviderResponseId: nextProviderResponseId,
+        });
+      }
       const outcome = outcomeFromTurnResult(result);
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives }]);
     } catch (error) {
@@ -132,6 +146,7 @@ export function ChatApp() {
   const startNewSession = useCallback(() => {
     void createChatSession("New chat").then(({ session }) => {
       activateBackendSession(session);
+      delete previousResponseIdsRef.current[session.session_ref.ref_id];
       setMessages([{ role: "system", text: "New chat started." }]);
       setSidebarOpen(false);
       setActiveTab("chat");
@@ -140,6 +155,12 @@ export function ChatApp() {
 
   const openSession = useCallback((id: string) => {
     sessionIdRef.current = id;
+    const cached = listCachedSessions().find((item) => item.id === id);
+    if (cached?.lastProviderResponseId) {
+      previousResponseIdsRef.current[id] = cached.lastProviderResponseId;
+    } else {
+      delete previousResponseIdsRef.current[id];
+    }
     const restored = loadCachedMessages(id) as ChatMessage[];
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
     setSidebarOpen(false);
@@ -243,6 +264,19 @@ export function ChatApp() {
       </footer>
     </div>
   );
+}
+
+function providerResponseIdFromTurnResult(result: unknown): string | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const refs = (result as { provider_turn_refs?: unknown }).provider_turn_refs;
+  if (!Array.isArray(refs)) return undefined;
+  const first = refs.find((ref) => {
+    if (!ref || typeof ref !== "object") return false;
+    const refId = (ref as { ref_id?: unknown }).ref_id;
+    return typeof refId === "string" && refId.trim().length > 0;
+  });
+  const refId = (first as { ref_id?: unknown } | undefined)?.ref_id;
+  return typeof refId === "string" ? refId.trim() : undefined;
 }
 
 function AgentOrb({ agentState }: { agentState: AgentOrbState }) {

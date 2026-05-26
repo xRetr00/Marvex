@@ -422,7 +422,7 @@ def _compact_candidates(candidates: list[ContextCandidate], *, max_tokens: int) 
 
 def _freshness_for(text: str | None) -> WebSearchFreshness:
     lowered = (text or "").lower()
-    if any(marker in lowered for marker in ("latest", "current", "today", "version", "release")):
+    if any(marker in lowered for marker in ("latest", "current", "today", "version", "release", "released", "this month", "this week", "this year", "announced", "launched", "changed")):
         return WebSearchFreshness.CURRENT
     if "recent" in lowered:
         return WebSearchFreshness.RECENT

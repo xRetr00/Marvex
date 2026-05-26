@@ -70,6 +70,24 @@ def test_cognition_assembles_intent_context_prompt_and_step_plan_for_fresh_turn(
     assert "latest browser-use release" not in projection.model_dump_json().lower()
 
 
+def test_cognition_uses_web_search_for_temporal_release_question_without_search_keyword() -> None:
+    result = CognitionRuntime(web_search_provider=FakeSearchProvider()).assemble_turn(
+        _turn_input("What model did OpenAI release this month?")
+    )
+
+    assert result.intent_projection.selected_intent["intent_kind"] == "web_search"
+    assert result.web_search_required is True
+    assert result.grounding_required is True
+    assert result.web_search_bundle is not None
+    assert result.evidence_refs[0].ref_id == "web.evidence.1"
+    assert [step.step_kind for step in result.step_plan.steps] == [
+        "plan",
+        "web_search",
+        "grounded_answer",
+        "finalize",
+    ]
+
+
 def test_cognition_safe_tool_turn_has_tool_step_without_grounding() -> None:
     result = CognitionRuntime().assemble_turn(_turn_input("Use the calculator tool for 2+2"))
 

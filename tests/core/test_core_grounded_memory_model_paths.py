@@ -139,17 +139,17 @@ def test_grounded_route_invokes_provider_with_real_evidence_and_validates_citati
     assert "Evidence says Cedar is the preferred codename." in provider.requests[0].input_text
 
 
-def test_grounded_route_without_evidence_falls_back_to_provider_without_fake_citations() -> None:
+def test_grounded_route_without_evidence_returns_deterministic_missing_evidence_response() -> None:
     provider = RecordingProvider("I need actual evidence before I can cite this.")
     result = _executor(provider, intent_kind="grounded_answer", web_search_provider=None).submit_turn(
         _turn_input("Give a grounded answer about a missing source.")
     )
 
     assert result.assistant_final_response is not None
-    assert result.assistant_final_response.text == "I need actual evidence before I can cite this."
-    assert len(provider.requests) == 1
-    assert "[web.evidence.1]" not in provider.requests[0].input_text
+    assert "Evidence is missing" in result.assistant_final_response.text
+    assert len(provider.requests) == 0
     assert result.metadata["grounding"]["citation_validation"] == "citation.evidence_missing"
+    assert result.metadata["grounding"]["evidence_ref_count"] == 0
 
 
 def test_memory_route_invokes_provider_with_recalled_memory(tmp_path: Path) -> None:
@@ -199,7 +199,7 @@ def test_non_test_code_does_not_contain_fake_grounded_answer_templates() -> None
     offenders: list[str] = []
     for path in root.rglob("*.py"):
         rel = path.relative_to(root).as_posix()
-        if rel.startswith(("tests/", ".venv/", ".git/", ".claude/")):
+        if rel.startswith(("tests/", ".venv/", ".git/", ".claude/", ".worktrees/")):
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         for token in forbidden:

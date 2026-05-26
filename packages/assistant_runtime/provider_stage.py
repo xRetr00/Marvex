@@ -69,7 +69,11 @@ def run_provider_stage_turn(
         turn_id=turn_input.turn_id,
         stage=TraceStage.PROVIDER_REQUEST_CREATED,
         message="Provider request created.",
-        data={"stage": PROVIDER_STAGE_NAME},
+        data={
+            "stage": PROVIDER_STAGE_NAME,
+            "model": model,
+            "previous_response_id_present": bool(previous_response_id),
+        },
     )
     _emit(
         telemetry_sink=telemetry_sink,
@@ -78,7 +82,11 @@ def run_provider_stage_turn(
         turn_id=turn_input.turn_id,
         stage=TraceStage.PROVIDER_REQUEST_SENT,
         message="Provider request sent.",
-        data={"stage": PROVIDER_STAGE_NAME},
+        data={
+            "stage": PROVIDER_STAGE_NAME,
+            "model": model,
+            "previous_response_id_present": bool(previous_response_id),
+        },
     )
 
     try:
@@ -291,6 +299,7 @@ def _emit_provider_response(
         "stage": PROVIDER_STAGE_NAME,
         "status": status,
         "finish_reason": response.finish_reason.value,
+        "provider_response_id_present": bool(response.response_id),
     }
     if response.error is not None:
         data["error_code"] = response.error.code.value
