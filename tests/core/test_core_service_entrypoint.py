@@ -493,6 +493,22 @@ def test_core_service_entrypoint_boundary_gate_passes():
     assert "PASS service placeholder policy" in completed.stdout
 
 
+def test_core_control_plane_app_explicitly_composes_voice_worker_facade(monkeypatch):
+    from services.core import main
+    from services.core.main import CoreServiceEntrypointConfig
+    import packages.voice_worker_runtime as voice_worker_runtime
+
+    captured: dict[str, object] = {}
+    facade = object()
+
+    monkeypatch.setattr(voice_worker_runtime, "VoiceWorkerControlPlaneFacade", lambda: facade)
+    monkeypatch.setattr(main, "ControlPlaneRuntime", lambda **kwargs: captured.update(kwargs) or kwargs)
+
+    main.create_control_plane_service_app(config=CoreServiceEntrypointConfig(local_auth_token=EXPECTED_TOKEN))
+
+    assert captured["voice_worker_control"] is facade
+
+
 def test_local_api_boundary_gate_allows_approved_core_service_entrypoint():
     completed = subprocess.run(
         [sys.executable, "scripts/check_local_api_boundaries.py"],
