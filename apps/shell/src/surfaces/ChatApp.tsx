@@ -40,7 +40,7 @@ export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
   const sessionIdRef = useRef<string | null>(null);
-  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready. How can I help?" }]);
+  const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready." }]);
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [pending, setPending] = useState(false);
   const [micActive, setMicActive] = useState(false);
@@ -56,7 +56,7 @@ export function ChatApp() {
     sessionIdRef.current = id;
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
     const restored = loadCachedMessages(id) as ChatMessage[];
-    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }]);
+    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
     setSessions(listCachedSessions());
   }, []);
 
@@ -141,7 +141,7 @@ export function ChatApp() {
   const openSession = useCallback((id: string) => {
     sessionIdRef.current = id;
     const restored = loadCachedMessages(id) as ChatMessage[];
-    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready. How can I help?" }]);
+    setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
     setSidebarOpen(false);
     setActiveTab("chat");
   }, []);
