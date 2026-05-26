@@ -2679,6 +2679,8 @@ def create_control_plane_service_app(
 ) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
+    from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
+
     return ControlPlaneRuntime(
         approval_store=InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
@@ -2689,6 +2691,7 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
+        voice_worker_control=VoiceWorkerControlPlaneFacade(),
     )
 
 
