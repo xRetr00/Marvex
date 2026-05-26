@@ -6,7 +6,8 @@ from io import StringIO
 
 import pytest
 
-from packages.voice_worker_runtime import VoiceWorkerCommand, VoiceWorkerController, VoiceWorkerLifecycleState, VoiceWorkerProcessAdapter, VoiceWorkerProcessSpec, VoiceWorkerProcessSupervisor
+from packages.voice_runtime import WakeWordDetectionResult
+from packages.voice_worker_runtime import FakeLocalAudioAdapter, VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerBackendRuntime, VoiceWorkerCommand, VoiceWorkerConfig, VoiceWorkerController, VoiceWorkerLifecycleState, VoiceWorkerProcessAdapter, VoiceWorkerProcessSpec, VoiceWorkerProcessSupervisor
 from packages.voice_worker_runtime.worker_main import run_worker_contract_loop, run_worker_loop
 
 
@@ -214,6 +215,44 @@ def test_worker_main_once_mode_starts_and_stops_controller_without_remote_bindin
     assert payload["status"]["lifecycle_state"] == "running"
     assert payload["status"]["local_only"] is True
     assert payload["status"]["hidden_recording_allowed"] is False
+    assert controller.status().lifecycle_state == VoiceWorkerLifecycleState.STOPPED
+
+
+def test_worker_main_loop_ticks_wakeword_supervisor_between_stop_checks(tmp_path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="hey-marvex",
+            backend_id="sherpa-onnx-kws",
+            model_kind="wakeword",
+            relative_path="wakeword/hey-marvex",
+            explicit_user_triggered=True,
+        )
+    )
+    ticks: list[int] = []
+
+    def wakeword_runner(frames, asset, *, phrase: str, threshold: float):
+        ticks.append(len(frames))
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+
+    config = VoiceWorkerConfig.default()
+    controller = VoiceWorkerController(
+        config=config.model_copy(update={"wakeword": config.wakeword.model_copy(update={"enabled": True})}),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner),
+    )
+    stop_checks = {"count": 0}
+
+    def should_stop() -> bool:
+        stop_checks["count"] += 1
+        return stop_checks["count"] > 1
+
+    run_worker_loop(controller=controller, host="127.0.0.1", port=8767, should_stop=should_stop, sleep_seconds=0)
+
+    assert ticks == [4]
+    assert controller.status().telemetry["wakeword_detections"] == 1
     assert controller.status().lifecycle_state == VoiceWorkerLifecycleState.STOPPED
 
 

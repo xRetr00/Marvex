@@ -365,6 +365,35 @@ def test_worker_test_tts_invokes_installed_voice_runner_without_rendering_text(t
     assert result.status.tts_backend_status["status"] == "ready"
 
 
+def test_worker_test_tts_plays_generated_audio_when_synthesis_succeeds(tmp_path: Path) -> None:
+    class PlaybackAudio(FakeLocalAudioAdapter):
+        def __init__(self) -> None:
+            super().__init__()
+            self.played_refs: list[str] = []
+
+        def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int):
+            self.played_refs.append(audio_ref)
+            return super().play_audio(device_id=device_id, audio_ref=audio_ref, sample_rate=sample_rate)
+
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
+    audio = PlaybackAudio()
+
+    def tts_runner(request, asset):
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/af_heart", backend_id=asset.backend_id, voice_id=request.voice_id, duration_ms=180)
+
+    controller = VoiceWorkerController(audio=audio, asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, tts_runner=tts_runner))
+
+    result = controller.handle(VoiceWorkerCommand(command="test_tts", command_id="cmd-tts", payload={"text": "play this"}))
+
+    assert audio.played_refs == ["memory://voice/generated/cmd-tts/af_heart"]
+    assert result.status.playback_status in {"playing", "completed"}
+    assert result.status.safe_projection()["telemetry"]["playback_events"] >= 1
+
+
 def test_worker_wakeword_uses_installed_asset_runner_when_configured(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "wakeword" / "hey-marvex").mkdir(parents=True)

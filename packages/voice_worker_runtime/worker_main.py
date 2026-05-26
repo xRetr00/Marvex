@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import threading
 import time
 from collections.abc import Callable
 from typing import Any, TextIO
@@ -30,6 +31,7 @@ def run_worker_loop(
     try:
         while not stop():
             time.sleep(sleep_seconds)
+            _tick_wakeword_if_active(controller)
     except KeyboardInterrupt:
         pass
     finally:
@@ -47,39 +49,61 @@ def run_worker_contract_loop(
 ) -> dict[str, Any]:
     if host not in {"127.0.0.1", "localhost", "::1"}:
         raise ValueError("voice worker host must be loopback-only")
-    final_status: dict[str, Any] = controller.status().safe_projection()
-    for raw_line in input_stream:
-        line = raw_line.strip()
-        if not line:
-            continue
-        command_name = ""
-        try:
-            payload = json.loads(line)
-            command_name = str(payload.get("command", "")) if isinstance(payload, dict) else ""
-            command = VoiceWorkerCommand.model_validate(payload)
-            result = controller.handle(command)
-            response = result.safe_projection()
-            final_status = result.status.safe_projection()
-        except Exception:
-            trace_id = _safe_payload_text(payload, "trace_id", fallback="trace-voice-worker-invalid") if isinstance(payload, dict) else "trace-voice-worker-invalid"
-            command_id = _safe_payload_text(payload, "command_id", fallback="voice-worker-command-invalid") if isinstance(payload, dict) else "voice-worker-command-invalid"
-            response = {
-                "schema_version": "1",
-                "trace_id": trace_id,
-                "command_id": command_id,
-                "error": VoiceWorkerErrorEnvelope.safe_error(
-                    trace_id=trace_id,
-                    reason_code="voice_worker_command_invalid",
-                    message="Voice worker command validation failed.",
-                ).model_dump(mode="json"),
-                "raw_audio_persisted": False,
-                "raw_transcript_persisted": False,
-            }
-        output_stream.write(json.dumps(response, sort_keys=True) + "\n")
-        output_stream.flush()
-        if isinstance(response, dict) and response.get("command_id") and command_name == "stop":
-            break
+    lock = threading.RLock()
+    stop_event = threading.Event()
+
+    def tick_loop() -> None:
+        while not stop_event.wait(1.0):
+            with lock:
+                _tick_wakeword_if_active(controller)
+
+    tick_thread = threading.Thread(target=tick_loop, name="marvex-voice-wakeword-supervisor", daemon=True)
+    tick_thread.start()
+    try:
+        with lock:
+            final_status: dict[str, Any] = controller.status().safe_projection()
+        for raw_line in input_stream:
+            line = raw_line.strip()
+            if not line:
+                continue
+            command_name = ""
+            try:
+                payload = json.loads(line)
+                command_name = str(payload.get("command", "")) if isinstance(payload, dict) else ""
+                command = VoiceWorkerCommand.model_validate(payload)
+                with lock:
+                    result = controller.handle(command)
+                    response = result.safe_projection()
+                    final_status = result.status.safe_projection()
+            except Exception:
+                trace_id = _safe_payload_text(payload, "trace_id", fallback="trace-voice-worker-invalid") if isinstance(payload, dict) else "trace-voice-worker-invalid"
+                command_id = _safe_payload_text(payload, "command_id", fallback="voice-worker-command-invalid") if isinstance(payload, dict) else "voice-worker-command-invalid"
+                response = {
+                    "schema_version": "1",
+                    "trace_id": trace_id,
+                    "command_id": command_id,
+                    "error": VoiceWorkerErrorEnvelope.safe_error(
+                        trace_id=trace_id,
+                        reason_code="voice_worker_command_invalid",
+                        message="Voice worker command validation failed.",
+                    ).model_dump(mode="json"),
+                    "raw_audio_persisted": False,
+                    "raw_transcript_persisted": False,
+                }
+            output_stream.write(json.dumps(response, sort_keys=True) + "\n")
+            output_stream.flush()
+            if isinstance(response, dict) and response.get("command_id") and command_name == "stop":
+                break
+    finally:
+        stop_event.set()
+        tick_thread.join(timeout=2.0)
     return {"host": host, "port": port, "status": final_status}
+
+
+def _tick_wakeword_if_active(controller: VoiceWorkerController) -> None:
+    status = controller.status()
+    if status.process_started and status.wakeword_supervisor_status.get("started") is True:
+        controller.tick_wakeword_supervisor()
 
 
 def _safe_payload_text(payload: dict[str, Any], key: str, *, fallback: str) -> str:

@@ -291,6 +291,43 @@ def test_controller_supervisor_methods_are_explicit_and_safe_projection_includes
     assert "transcript_text" not in serialized
 
 
+def test_controller_start_command_starts_wakeword_supervisor_when_ready(tmp_path: Path) -> None:
+    manager = _install_hey_marvex_asset(tmp_path)
+    controller = VoiceWorkerController(
+        config=_enabled_wakeword_config(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager),
+    )
+
+    result = controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
+
+    assert result.status.wakeword_supervisor_status["lifecycle_state"] == "running"
+    assert result.status.wakeword_supervisor_status["started"] is True
+
+
+def test_controller_wakeword_tick_records_detection_event_for_telemetry(tmp_path: Path) -> None:
+    manager = _install_hey_marvex_asset(tmp_path)
+
+    def wakeword_runner(_frames, asset, *, phrase: str, threshold: float):
+        return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+
+    controller = VoiceWorkerController(
+        config=_enabled_wakeword_config(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner),
+    )
+    controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
+
+    tick = controller.tick_wakeword_supervisor()
+    projection = controller.status().safe_projection()
+
+    assert tick.detected is True
+    assert projection["recent_events"][-1]["event_type"] == "wakeword_detected"
+    assert projection["telemetry"]["wakeword_detections"] == 1
+
+
 def test_controller_stop_command_clean_shuts_down_supervisor(tmp_path: Path) -> None:
     manager = _install_hey_marvex_asset(tmp_path)
     controller = VoiceWorkerController(

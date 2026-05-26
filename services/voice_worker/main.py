@@ -8,6 +8,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from packages.voice_worker_runtime.assets import VoiceAssetManager
+from packages.voice_worker_runtime import SoundDeviceAudioAdapter
 from packages.voice_worker_runtime.controller import VoiceWorkerController
 from packages.voice_worker_runtime.worker_main import run_worker_contract_loop, run_worker_loop
 
@@ -41,9 +42,19 @@ def _controller() -> VoiceWorkerController:
     root via MARVEX_VOICE_ASSET_ROOT (set by the installer/service) so shipped
     "Hey Marvex" models are found offline."""
     asset_root = os.environ.get("MARVEX_VOICE_ASSET_ROOT")
+    audio = _audio_adapter()
     if asset_root and asset_root.strip():
-        return VoiceWorkerController(asset_manager=VoiceAssetManager(asset_root=Path(asset_root)))
-    return VoiceWorkerController()
+        return VoiceWorkerController(audio=audio, asset_manager=VoiceAssetManager(asset_root=Path(asset_root)))
+    return VoiceWorkerController(audio=audio)
+
+
+def _audio_adapter():
+    try:
+        adapter = SoundDeviceAudioAdapter()
+        adapter.list_input_devices()
+        return adapter
+    except Exception:
+        return None
 
 
 def run_once(*, host: str, port: int) -> int:

@@ -115,7 +115,26 @@ class VoiceWorkerController:
     def tick_wakeword_supervisor(self) -> WakewordSupervisorTickResult:
         self.asset_manager.discover_installed()
         self.wakeword_supervisor.update_config(self.config)
-        return self.wakeword_supervisor.tick()
+        tick = self.wakeword_supervisor.tick()
+        if tick.detected:
+            self._error = None
+            self._record(
+                VoiceWorkerEventType.WAKEWORD_DETECTED,
+                trace_id=f"trace-wakeword-supervisor-{len(self._events) + 1}",
+                summary=tick.safe_projection(),
+            )
+        elif tick.exact_blocker and tick.exact_blocker not in {
+            "wakeword_supervisor.backoff_active",
+            "wakeword_supervisor.not_started",
+            "wakeword.not_detected",
+        }:
+            self._error = VoiceWorkerErrorEnvelope.safe_error(
+                trace_id=f"trace-wakeword-supervisor-{len(self._events) + 1}",
+                reason_code=tick.exact_blocker,
+                message="Wakeword supervisor tick failed.",
+            )
+            self._record(VoiceWorkerEventType.ERROR, trace_id=self._error.trace_id, summary=tick.safe_projection())
+        return tick
 
     def wakeword_supervisor_health(self) -> WakewordSupervisorHealth:
         self.asset_manager.discover_installed()
@@ -288,7 +307,11 @@ class VoiceWorkerController:
     def _handle_start(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self._state = VoiceWorkerLifecycleState.RUNNING
         self._heartbeat = VoiceWorkerHeartbeat.now(lifecycle_state=self._state)
-        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary={"explicit_user_triggered": True})
+        summary: dict[str, Any] = {"explicit_user_triggered": True}
+        if self.config.wakeword.enabled:
+            wakeword_health = self.start_wakeword_supervisor(explicit_user_triggered=True)
+            summary["wakeword_supervisor"] = wakeword_health.safe_projection()
+        return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=summary)
 
     def _handle_stop(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.audio.stop_playback()
@@ -413,7 +436,17 @@ class VoiceWorkerController:
             self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=reason, message="TTS backend test did not complete.")
         else:
             self._error = None
-        return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary=synthesis_summary(result))
+        event = self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary=synthesis_summary(result))
+        if result.status == "succeeded" and result.audio_ref:
+            self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True})
+            playback = self.audio.play_audio(
+                device_id=self.config.audio.output_device_id,
+                audio_ref=result.audio_ref,
+                sample_rate=result.sample_rate,
+            )
+            self._playback_status = playback.status
+            self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary=playback.model_dump(mode="json"))
+        return event
 
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
