@@ -21,6 +21,8 @@ def run_core_turn(text: str, *, trace_id: str, turn_id: str = "turn-core-intent-
             text,
             "--provider",
             "provider_worker",
+            "--worker-provider",
+            "fake",
             "--model",
             "fake-model",
             "--trace-id",

@@ -741,6 +741,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         provider_selection_runtime: ProviderSelectionRuntime | None = None,
         learning_pipeline: LearningPipelineRunner | None = None,
         persistent_trace_store: PersistentTraceStore | None = None,
+        approval_store: InMemoryApprovalStore | None = None,
         skill_manifests: tuple[SkillManifest, ...] = (),
         skill_loader: SkillInstructionLoader | None = None,
         connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
@@ -774,6 +775,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._session_registry = session_registry or CurrentProcessSessionRegistry()
         self._provider_selection = provider_selection_runtime
         self._learning_pipeline = learning_pipeline
+        self._approval_store = approval_store
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
         self._connector_autofetch_runtime = connector_autofetch_runtime
@@ -930,6 +932,18 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if "capability_tool" in route_intents:
             self._publish(AssistantStatusKind.USING_TOOLS, detail="capability_tool", trace_id=turn_input.trace_id)
             loop.step("tool")
+            if _tool_diagnostics_requested(turn_input.user_visible_input):
+                return self._run_tool_path(
+                    turn_input,
+                    metadata=metadata,
+                    cognition=cognition,
+                    loop=loop,
+                    action="read capability diagnostics",
+                    capability="read",
+                    resource_type="local_status",
+                    capability_id="builtin.capability_diagnostics",
+                    arguments={},
+                )
             return self._run_tool_path(
                 turn_input,
                 metadata=metadata,
@@ -1245,26 +1259,26 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 message="File read/list/search requires an explicit configured root.",
                 metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
             )
-        file_path = _file_path_from_input(turn_input.user_visible_input)
+        file_request = _file_request_from_input(turn_input.user_visible_input)
         result = self._run_tool_path(
             turn_input,
             metadata=metadata,
             cognition=cognition,
             loop=loop,
-            action="read file",
-            capability="file_read",
+            action=str(file_request["action"]),
+            capability=str(file_request["capability"]),
             resource_type="file",
-            capability_id="file.read",
-            arguments={"root": self._file_capability_root, "path": file_path, "max_preview_chars": 1200},
+            capability_id=str(file_request["capability_id"]),
+            arguments={"root": self._file_capability_root, **dict(file_request["arguments"])},
         )
         if result.error is not None or result.assistant_final_response is None:
             return result
         safe_result = dict(dict(result.metadata.get("tool", {})).get("result", {})).get("safe_result", {})
-        preview = str(dict(safe_result).get("preview", ""))
+        final_text = _file_final_text(dict(safe_result), requested_extension=file_request.get("extension"))
         return result.model_copy(
             update={
                 "assistant_final_response": result.assistant_final_response.model_copy(
-                    update={"text": f"File preview from {file_path}: {preview}"}
+                    update={"text": final_text}
                 )
             }
         )
@@ -1641,6 +1655,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 ),
             )
         loop.step("approval", stop_reason="waiting_for_human_approval")
+        if self._approval_store is not None:
+            self._approval_store.add_pending(approval_request)
         metadata = {
             **metadata,
             "approval_request": approval_request.model_dump(mode="json"),
@@ -1885,6 +1901,20 @@ def _with_loop_metadata(
     model_answer_stage = metadata.get("model_answer_stage")
     if isinstance(model_answer_stage, str) and model_answer_stage:
         completed_data["model_answer_stage"] = model_answer_stage
+    approval_request = metadata.get("approval_request")
+    if isinstance(approval_request, dict):
+        approval_request_id = approval_request.get("approval_request_id")
+        if isinstance(approval_request_id, str) and approval_request_id:
+            completed_data["approval_request_id"] = approval_request_id
+            completed_data["approval_status"] = "pending"
+    approval_projection = metadata.get("approval")
+    if isinstance(approval_projection, dict):
+        approval_request_id = approval_projection.get("approval_request_id")
+        decision = approval_projection.get("decision")
+        if isinstance(approval_request_id, str) and approval_request_id:
+            completed_data["approval_request_id"] = approval_request_id
+        if isinstance(decision, str) and decision:
+            completed_data["approval_status"] = decision
     _emit_core_event(
         trace_reader,
         turn_input,
@@ -2070,6 +2100,13 @@ def _write_operational_event_log(
             "continuation.log",
             f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} previous_response_id_present={previous_present}",
         )
+    approval_status = data.get("approval_status")
+    approval_request_id = data.get("approval_request_id")
+    if isinstance(approval_status, str | int | float | bool):
+        approval_line = f"{timestamp} trace={trace_id} turn={turn_id} stage={stage} approval_status={approval_status}"
+        if isinstance(approval_request_id, str | int | float | bool):
+            approval_line += f" approval_request_id={approval_request_id}"
+        writer.append_line("approvals.log", approval_line)
     tool_status = data.get("tool_status")
     if isinstance(tool_status, str | int | float | bool):
         writer.append_line(
@@ -2089,12 +2126,23 @@ def _tool_final_text(tool_response: dict[str, object]) -> str:
     safe_result = dict(result.get("safe_result") or {})
     if "result" in safe_result:
         return f"The calculator result is {safe_result['result']}."
+    if "capability_count" in safe_result:
+        return (
+            "Capabilities available: "
+            f"{safe_result.get('capability_count')} total, "
+            f"{safe_result.get('eligible_count')} eligible for this local runtime."
+        )
     return "Capability completed with a safe result."
 
 
 def _calculator_expression(text: str | None) -> str:
     match = re.search(r"\d+(?:\s*[+\-*/]\s*\d+)+", text or "")
     return match.group(0) if match else "0+0"
+
+
+def _tool_diagnostics_requested(text: str | None) -> bool:
+    lowered = (text or "").lower()
+    return any(part in lowered for part in ("list tools", "show tools", "available tools", "what tools", "capabilities"))
 
 
 def _run_desktop_agent_context(
@@ -2462,12 +2510,73 @@ def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
     }
 
 
+def _file_request_from_input(text: str | None) -> dict[str, object]:
+    lowered = (text or "").lower()
+    path = _file_path_from_input(text)
+    if any(marker in lowered for marker in ("list", "names", "filenames", "show me")):
+        if "desktop" in lowered:
+            path = "Desktop"
+        extension = ".pdf" if "pdf" in lowered else None
+        return {
+            "action": "list files",
+            "capability": "list",
+            "capability_id": "file.list",
+            "arguments": {"path": path, "max_entries": 200},
+            "extension": extension,
+        }
+    if "search" in lowered:
+        return {
+            "action": "search files",
+            "capability": "search",
+            "capability_id": "file.search",
+            "arguments": {"path": path, "query": _file_search_query(text), "max_matches": 50},
+            "extension": None,
+        }
+    return {
+        "action": "read file",
+        "capability": "read",
+        "capability_id": "file.read",
+        "arguments": {"path": path, "max_preview_chars": 1200},
+        "extension": None,
+    }
+
+
 def _file_path_from_input(text: str | None) -> str:
     value = (text or "").strip()
     match = re.search(r"(?:read|inspect)\s+file\s+(.+)$", value, flags=re.IGNORECASE)
     if match:
         return match.group(1).strip().strip("\"'")
+    if re.search(r"\bdesktop\b", value, flags=re.IGNORECASE):
+        return "Desktop"
     return value.strip().strip("\"'") or "."
+
+
+def _file_search_query(text: str | None) -> str:
+    value = (text or "").strip()
+    match = re.search(r"search\s+(?:files?\s+)?(?:for\s+)?(.+)$", value, flags=re.IGNORECASE)
+    return (match.group(1) if match else value).strip().strip("\"'") or value
+
+
+def _file_final_text(safe_result: dict[str, object], *, requested_extension: object = None) -> str:
+    operation = str(safe_result.get("operation") or "")
+    if operation == "list":
+        entries = [str(entry) for entry in safe_result.get("entries", []) if isinstance(entry, str)]
+        extension = str(requested_extension or "")
+        if extension:
+            entries = [entry for entry in entries if entry.lower().endswith(extension.lower())]
+        path = str(safe_result.get("path") or ".")
+        if not entries:
+            return f"No matching files found in {path}."
+        return f"Files in {path}: " + ", ".join(entries)
+    if operation == "search":
+        matches = safe_result.get("matches")
+        if not isinstance(matches, list) or not matches:
+            return "No file matches found."
+        paths = [str(dict(match).get("path")) for match in matches if isinstance(match, dict)]
+        return "File matches: " + ", ".join(path for path in paths if path)
+    preview = str(safe_result.get("preview", ""))
+    path = str(safe_result.get("path") or ".")
+    return f"File preview from {path}: {preview}"
 
 
 def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
@@ -2631,6 +2740,7 @@ def create_core_service(
     enable_foundation_turns: bool = True,
     config: CoreServiceEntrypointConfig | None = None,
     session_registry: CurrentProcessSessionRegistry | None = None,
+    approval_store: InMemoryApprovalStore | None = None,
 ) -> CoreService:
     effective_trace_reader = trace_reader or InMemoryTraceReader()
     effective_config = config or CoreServiceEntrypointConfig()
@@ -2639,6 +2749,7 @@ def create_core_service(
             trace_reader=effective_trace_reader,
             config=effective_config,
             session_registry=session_registry,
+            approval_store=approval_store,
         )
         if enable_foundation_turns
         else _HealthOnlyTurnExecutor()
@@ -2651,6 +2762,7 @@ def _create_turn_executor(
     trace_reader: InMemoryTraceReader,
     config: CoreServiceEntrypointConfig,
     session_registry: CurrentProcessSessionRegistry | None = None,
+    approval_store: InMemoryApprovalStore | None = None,
 ) -> object:
     # NOTE: intent preflight + Tool/Provider worker routing only runs when a
     # worker-backed provider is selected. The default "fake" provider uses the
@@ -2695,7 +2807,7 @@ def _create_turn_executor(
         web_search_provider=_web_search_provider_from_config(config),
         memory_tree_runtime=_memory_tree_from_config(config),
         memory_loop=_memory_loop_from_config(config),
-        file_capability_root=config.file_capability_root,
+        file_capability_root=_effective_file_capability_root(config),
         resume_approval=config.resume_approval,
         approval_decision=config.approval_decision,
         base_url=config.base_url,
@@ -2704,6 +2816,7 @@ def _create_turn_executor(
         provider_selection_runtime=selection_runtime,
         learning_pipeline=learning_pipeline,
         persistent_trace_store=persistent_store,
+        approval_store=approval_store,
         skill_manifests=_skill_manifests_from_config(config),
         skill_loader=skill_loader,
         connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
@@ -2729,16 +2842,26 @@ def _persistent_store_from_config(
         return None
 
 
+def _effective_file_capability_root(config: CoreServiceEntrypointConfig) -> str | None:
+    configured = (config.file_capability_root or "").strip()
+    if configured:
+        return configured
+    env_root = os.environ.get("MARVEX_FILE_CAPABILITY_ROOT", "").strip()
+    return env_root or None
+
+
 def create_core_service_app(
     *,
     config: CoreServiceEntrypointConfig,
     trace_reader: InMemoryTraceReader | None = None,
     session_registry: CurrentProcessSessionRegistry | None = None,
+    approval_store: InMemoryApprovalStore | None = None,
 ) -> tuple[Any, CoreService]:
     service = create_core_service(
         trace_reader=trace_reader,
         config=config,
         session_registry=session_registry,
+        approval_store=approval_store,
     )
     service.start()
     persistent_store = _persistent_store_from_config(config)
@@ -2785,6 +2908,7 @@ def create_control_plane_service_app(
     config: CoreServiceEntrypointConfig,
     trace_reader: Any | None = None,
     state_bus: AssistantStateBus | None = None,
+    approval_store: InMemoryApprovalStore | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
     provider_control: Any | None = None,
@@ -2794,7 +2918,7 @@ def create_control_plane_service_app(
     from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
 
     return ControlPlaneRuntime(
-        approval_store=InMemoryApprovalStore(),
+        approval_store=approval_store or InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
         local_auth_token=config.local_auth_token or "",
         trace_reader=trace_reader,
@@ -2908,10 +3032,12 @@ def run_core_service(
 
     trace_reader = InMemoryTraceReader()
     session_coordinator = BackendSessionCoordinator()
+    approval_store = InMemoryApprovalStore()
     core_app, service = create_core_service_app(
         config=effective_config,
         trace_reader=trace_reader,
         session_registry=session_coordinator,
+        approval_store=approval_store,
     )
     effective_trace_reader: Any = _CompositeTraceReader(
         in_memory=trace_reader,
@@ -2925,6 +3051,7 @@ def run_core_service(
         config=effective_config,
         trace_reader=effective_trace_reader,
         state_bus=state_bus,
+        approval_store=approval_store,
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control,

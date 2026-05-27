@@ -29,6 +29,7 @@ _EVENT_PROJECTION_KEYS = {
     "service",
     "tool_status",
     "approval_status",
+    "approval_request_id",
     "model",
     "previous_response_id_present",
     "provider_response_id_present",

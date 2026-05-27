@@ -726,6 +726,9 @@ fn spawn_service(
         command.env(name, value);
     }
     command.env("MARVEX_LOG_DIR", log_dir);
+    if matches!(spec.kind, ServiceKind::Core) {
+        command.env("MARVEX_FILE_CAPABILITY_ROOT", default_file_capability_root(data_dir));
+    }
     command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -735,6 +738,14 @@ fn spawn_service(
     attach_log_pipe(spec.name, "stdout", child.stdout().take(), log_dir);
     attach_log_pipe(spec.name, "stderr", child.stderr().take(), log_dir);
     Ok(child)
+}
+
+fn default_file_capability_root(data_dir: &Path) -> PathBuf {
+    std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+        .map(PathBuf::from)
+        .filter(|path| !path.as_os_str().is_empty())
+        .unwrap_or_else(|| data_dir.to_path_buf())
 }
 
 fn spawn_wrapped_child(command: Command) -> std::io::Result<Box<dyn ChildWrapper>> {
@@ -789,7 +800,7 @@ fn attach_log_pipe(
 #[cfg(test)]
 mod tests {
     use super::{
-        find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
+        default_file_capability_root, find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
         runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_create_args,
         venv_root, venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
         ServiceKind, Supervisor, PYTHON_RUNTIME_VERSION,
@@ -797,7 +808,7 @@ mod tests {
     use serde_json::Value;
     use std::{
         fs,
-        path::Path,
+        path::{Path, PathBuf},
         sync::{
             atomic::AtomicBool,
             Arc,
@@ -888,6 +899,16 @@ mod tests {
     fn uv_cache_lives_under_runtime_data_dir() {
         let cache = runtime_uv_cache_dir(Path::new("/data"));
         assert!(cache.ends_with("runtime/uv-cache") || cache.ends_with("runtime\\uv-cache"));
+    }
+
+    #[test]
+    fn default_file_capability_root_is_local_user_scoped_when_available() {
+        let root = default_file_capability_root(Path::new("/data"));
+
+        assert!(!root.as_os_str().is_empty());
+        if let Some(profile) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+            assert_eq!(root, PathBuf::from(profile));
+        }
     }
 
     #[test]

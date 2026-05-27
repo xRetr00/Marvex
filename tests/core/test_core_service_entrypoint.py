@@ -367,6 +367,45 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
     assert result["asgi_payload"]["sessions"][0]["turn_count"] == 1
 
 
+def test_core_service_entrypoint_shares_pending_approvals_with_control_plane(monkeypatch):
+    import services.core.main as core_main
+    from services.core.main import CoreServiceEntrypointConfig, run_core_service
+
+    captured: dict[str, object] = {}
+
+    def fake_run_dual_asgi_host(**kwargs):
+        auth = f"Bearer {EXPECTED_TOKEN}"
+        core_payload = _turn_payload()
+        core_payload["assistant_turn_input"]["user_visible_input"] = "open browser page"
+        turn_status, turn_payload = _call_app(kwargs["core_app"], "/v1/turns", method="POST", body=core_payload, auth=auth)
+        approvals_status, approvals_payload = _call_app(kwargs["control_app"], "/control/approvals", auth=auth)
+        captured["result"] = {
+            "turn_status": turn_status,
+            "turn_payload": turn_payload,
+            "approvals_status": approvals_status,
+            "approvals_payload": approvals_payload,
+        }
+        return 0
+
+    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+
+    exit_code = run_core_service(
+        config=CoreServiceEntrypointConfig(
+            local_auth_token=EXPECTED_TOKEN,
+            port=9877,
+            control_port=9878,
+        ),
+    )
+
+    assert exit_code == 0
+    result = captured["result"]
+    assert result["turn_status"] == "200 OK"
+    assert result["turn_payload"]["metadata"]["agentic_loop"]["stop_reason"] == "waiting_for_human_approval"
+    assert result["approvals_status"] == "200 OK"
+    assert result["approvals_payload"]["pending_count"] == 1
+    assert result["approvals_payload"]["approvals"][0]["approval_request_id"].startswith("approval-turn-core-entrypoint")
+
+
 def test_core_service_entrypoint_main_uses_env_token_for_supervisor_path(monkeypatch):
     import services.core.main as core_main
 
@@ -632,3 +671,12 @@ def test_core_service_defaults_trace_persistence_to_log_dir(tmp_path, monkeypatc
 
     assert store is not None
     assert store._trace_file_path == tmp_path / "traces.jsonl"
+
+
+def test_core_service_file_capability_root_can_come_from_environment(tmp_path, monkeypatch):
+    from services.core.main import CoreServiceEntrypointConfig, _effective_file_capability_root
+
+    monkeypatch.setenv("MARVEX_FILE_CAPABILITY_ROOT", str(tmp_path))
+
+    assert _effective_file_capability_root(CoreServiceEntrypointConfig()) == str(tmp_path)
+    assert _effective_file_capability_root(CoreServiceEntrypointConfig(file_capability_root="explicit")) == "explicit"

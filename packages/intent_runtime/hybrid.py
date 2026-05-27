@@ -321,6 +321,12 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.GROUNDED_ANSWER
     if "evidence" in lowered and any(part in lowered for part in ("web", "memory", "grounded", "answer")):
         return IntentKind.GROUNDED_ANSWER
+    if _local_file_write_needed(lowered):
+        return IntentKind.RISKY_ACTION
+    if _local_file_read_needed(lowered):
+        return IntentKind.FILE_READ_LIST_SEARCH
+    if _tool_diagnostics_needed(lowered):
+        return IntentKind.CAPABILITY_TOOL
     if any(part in lowered for part in ("latest", "current", "recent", "version", "search web", "search ")):
         return IntentKind.WEB_SEARCH
     if any(part in lowered for part in ("memory tree", "source grounded", "evidence")):
@@ -339,7 +345,7 @@ def _deterministic_intent(text: str) -> IntentKind:
         return IntentKind.SETTINGS_CONTROL_PLANE
     if any(part in lowered for part in ("open yt", "youtube", "go to ", "open ", "browser")):
         return IntentKind.BROWSER_COMPUTER_USE
-    if any(part in lowered for part in ("read file", "list files", "search files", "inspect file")):
+    if _local_file_read_needed(lowered):
         return IntentKind.FILE_READ_LIST_SEARCH
     if any(part in lowered for part in ("delete", "send", "upload", "install", "write", "run command")):
         return IntentKind.RISKY_ACTION
@@ -360,6 +366,36 @@ def _explicit_route_signal(text: str, kind: IntentKind) -> bool:
         IntentKind.SETTINGS_CONTROL_PLANE: ("control plane", "settings", "approval", "telemetry"),
     }
     return any(signal in lowered for signal in signals.get(kind, ()))
+
+
+def _tool_diagnostics_needed(lowered: str) -> bool:
+    return any(
+        part in lowered
+        for part in (
+            "list tools",
+            "show tools",
+            "available tools",
+            "what tools",
+            "capability diagnostics",
+            "capabilities",
+        )
+    )
+
+
+def _local_file_read_needed(lowered: str) -> bool:
+    if any(part in lowered for part in ("read file", "list files", "search files", "inspect file")):
+        return True
+    if any(location in lowered for location in ("desktop", "folder", "directory", "drive", "disk")) and any(
+        subject in lowered for subject in ("file", "files", "pdf", "pdfs", "filename", "filenames", "names")
+    ):
+        return True
+    return False
+
+
+def _local_file_write_needed(lowered: str) -> bool:
+    if not any(action in lowered for action in ("write", "create", "save", "make")):
+        return False
+    return any(subject in lowered for subject in ("file", ".txt", ".md", ".json", "desktop", "folder", "directory"))
 
 
 def _risk_for(kind: IntentKind, text: str) -> tuple[IntentRiskSignal, ToolRiskLevel]:

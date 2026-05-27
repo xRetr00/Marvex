@@ -152,6 +152,58 @@ def test_core_file_read_turn_executes_intent_plan_step_through_tool_worker(tmp_p
     assert result.metadata["agentic_loop"]["executed_count"] == 1
 
 
+def test_core_file_list_turn_for_desktop_pdfs_uses_tool_worker(tmp_path: Path) -> None:
+    root = tmp_path / "profile"
+    desktop = root / "Desktop"
+    desktop.mkdir(parents=True)
+    (desktop / "invoice.pdf").write_text("pdf placeholder", encoding="utf-8")
+    (desktop / "notes.txt").write_text("notes", encoding="utf-8")
+
+    result = run_core_turn(
+        "show me the PDF names on my desktop",
+        trace_id="trace-core-file-list-desktop",
+        turn_id="turn-core-file-list-desktop",
+        extra=["--file-capability-root", str(root)],
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "invoice.pdf" in result.assistant_final_response.text
+    assert "notes.txt" not in result.assistant_final_response.text
+    assert result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "file.list"
+    assert result.metadata["agentic_loop"]["executed_count"] == 1
+
+
+def test_core_list_tools_uses_capability_diagnostics_not_provider() -> None:
+    result = run_core_turn(
+        "list tools",
+        trace_id="trace-core-list-tools",
+        turn_id="turn-core-list-tools",
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "Capabilities available" in result.assistant_final_response.text
+    assert result.provider_turn_refs == []
+    assert result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "builtin.capability_diagnostics"
+    assert result.metadata["agentic_loop"]["executed_count"] == 1
+
+
+def test_core_file_write_turn_pauses_for_approval_instead_of_provider() -> None:
+    result = run_core_turn(
+        "write test.txt on my desktop",
+        trace_id="trace-core-write-approval",
+        turn_id="turn-core-write-approval",
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "Approval required" in result.assistant_final_response.text
+    assert result.provider_turn_refs == []
+    assert result.metadata["agentic_loop"]["stop_reason"] == "waiting_for_human_approval"
+    assert result.metadata["approval_request"]["approval_request_id"] == "approval-turn-core-write-approval"
+
+
 def test_core_routes_non_provider_intent_kinds_without_generic_provider_fallthrough() -> None:
     cases = [
         (
