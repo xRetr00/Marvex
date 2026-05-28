@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import shutil
+import subprocess
 from pathlib import Path
 from typing import Literal
 
@@ -28,6 +30,8 @@ class ReadOnlyFileExecutor(CapabilityRuntimeModel):
             safe_result = self._list(request.arguments)
         elif capability_id == "file.search":
             safe_result = self._search(request.arguments)
+        elif capability_id == "file.rg":
+            safe_result = self._rg(request.arguments)
         else:
             raise FileCapabilityError("file.unsupported_capability")
         return CapabilityResultEnvelope(
@@ -117,6 +121,24 @@ class ReadOnlyFileExecutor(CapabilityRuntimeModel):
             "truncated": len(matches) >= limit,
         }
 
+    def _rg(self, arguments: dict[str, object]) -> dict[str, object]:
+        root, target, _relative = _resolve(arguments, require_dir=True, default_path=".")
+        query = str(arguments.get("query") or "").strip()
+        if not query:
+            raise FileCapabilityError("file.query_required")
+        limit = _bounded_int(arguments.get("max_matches"), default=self.max_matches, lower=1, upper=100)
+        rg = shutil.which("rg")
+        matches = _rg_file_matches(root, target, query=query, limit=limit, rg=rg)
+        return {
+            "operation": "rg",
+            "path": _relative_to(root, target),
+            "query_present": True,
+            "match_count": len(matches),
+            "matches": matches,
+            "truncated": len(matches) >= limit,
+            "backend": "ripgrep" if rg else "python_fallback",
+        }
+
 
 def file_capability_ref(identifier: str) -> CapabilityRef:
     return CapabilityRef(kind=CapabilityKind.TOOL, identifier=identifier)
@@ -158,7 +180,50 @@ def _relative_to(root: Path, target: Path) -> str:
 def _bounded_int(value: object, *, default: int, lower: int, upper: int) -> int:
     if isinstance(value, int):
         return max(lower, min(upper, value))
-        return default
+    return default
+
+
+def _rg_file_matches(root: Path, target: Path, *, query: str, limit: int, rg: str | None) -> list[dict[str, object]]:
+    tokens = tuple(token for token in re_split_query(query) if token)
+    if rg:
+        try:
+            completed = subprocess.run(
+                [rg, "--files", "--hidden", "--glob", "!**/.git/**"],
+                cwd=target,
+                text=True,
+                capture_output=True,
+                timeout=8,
+            )
+            if completed.returncode in {0, 1}:
+                return _filter_path_lines(root, target, completed.stdout.splitlines(), tokens=tokens, limit=limit)
+        except Exception:
+            pass
+    lines = [path.relative_to(target).as_posix() for path in sorted(target.rglob("*")) if path.is_file()]
+    return _filter_path_lines(root, target, lines, tokens=tokens, limit=limit)
+
+
+def re_split_query(query: str) -> tuple[str, ...]:
+    return tuple(part.lower() for part in query.replace(".", " ").replace("_", " ").replace("-", " ").split())
+
+
+def _filter_path_lines(root: Path, target: Path, lines: list[str], *, tokens: tuple[str, ...], limit: int) -> list[dict[str, object]]:
+    matches: list[dict[str, object]] = []
+    for line in lines:
+        candidate = line.strip().replace("\\", "/")
+        if not candidate:
+            continue
+        searchable = candidate.lower().replace(".", " ").replace("_", " ").replace("-", " ")
+        if tokens and not all(token in searchable for token in tokens):
+            continue
+        resolved = (target / candidate).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            continue
+        matches.append({"path": _relative_to(root, resolved), "name": resolved.name})
+        if len(matches) >= limit:
+            break
+    return matches
 
 
 class SandboxedFileWriteExecutor(CapabilityRuntimeModel):

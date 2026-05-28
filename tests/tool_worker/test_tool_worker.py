@@ -369,6 +369,16 @@ def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_pa
             },
             {
                 "command": "execute",
+                "trace_id": "trace-file-rg",
+                "turn_id": "turn-file-rg",
+                "capability_id": "file.rg",
+                "action": "find files with ripgrep",
+                "capability": "search",
+                "resource_type": "file",
+                "arguments": {"root": str(root), "query": "match", "max_matches": 5},
+            },
+            {
+                "command": "execute",
                 "trace_id": "trace-file-traversal",
                 "turn_id": "turn-file-traversal",
                 "capability_id": "file.read",
@@ -383,7 +393,8 @@ def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_pa
     read_result = responses[0]["result"]["safe_result"]
     list_result = responses[1]["result"]["safe_result"]
     search_result = responses[2]["result"]["safe_result"]
-    traversal = responses[3]
+    rg_result = responses[3]["result"]["safe_result"]
+    traversal = responses[4]
     serialized = json.dumps(responses)
 
     assert responses[0]["ok"] is True
@@ -402,6 +413,12 @@ def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_pa
     assert search_result["match_count"] == 1
     assert search_result["matches"][0]["path"] == "nested/match.md"
     assert responses[2]["projection"]["executed_fake_capability_count"] == 0
+
+    assert responses[3]["ok"] is True
+    assert rg_result["operation"] == "rg"
+    assert rg_result["match_count"] == 1
+    assert rg_result["matches"][0]["path"] == "nested/match.md"
+    assert responses[3]["projection"]["executed_fake_capability_count"] == 0
 
     assert traversal["ok"] is False
     assert traversal["blocked"] is True

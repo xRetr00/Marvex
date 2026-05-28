@@ -265,7 +265,7 @@ class ToolWorkerController:
                 denied_count=0,
                 executed_fake_count=0,
             )
-        elif capability_id in {"file.read", "file.list", "file.search"}:
+        elif capability_id in {"file.read", "file.list", "file.search", "file.rg"}:
             try:
                 result = self._files.execute(request)
             except FileCapabilityError as exc:
@@ -547,7 +547,7 @@ def _autonomy_mode(value: str) -> AutonomyMode:
 def _granular_permission(capability: str, *, action: str, resource_type: str) -> GranularPermission:
     normalized = capability.lower().strip()
     action_text = action.lower()
-    if normalized in {"read", "list", "search", "file_read"}:
+    if normalized in {"read", "list", "search", "file_read", "rg", "ripgrep"}:
         return GranularPermission.PUBLIC_READ
     if normalized in {"memory_search", "semantic_memory_search"}:
         return GranularPermission.MEMORY_READ
