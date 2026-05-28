@@ -66,6 +66,40 @@ class LiteLLMProvider:
             message = str(exc)
             if self._config.api_key:
                 message = message.replace(self._config.api_key, "[REDACTED]")
+            details: dict[str, object] = {"exception_type": type(exc).__name__}
+            lowered = message.lower()
+            if (
+                self._config.api_key is None
+                and (
+                    "api_key" in lowered
+                    or "api key" in lowered
+                    or "authentication" in lowered
+                    or "401" in lowered
+                    or "unauthorized" in lowered
+                )
+            ):
+                # Most common first-run failure: no provider key configured.
+                # Make that obvious in the trace dump instead of forcing the
+                # operator to grep the raw exception message.
+                model_prefix = request.model.split("/", 1)[0] if request.model else ""
+                env_hint = {
+                    "openrouter": "OPENROUTER_API_KEY",
+                    "anthropic": "ANTHROPIC_API_KEY",
+                    "openai": "OPENAI_API_KEY",
+                    "groq": "GROQ_API_KEY",
+                    "mistral": "MISTRAL_API_KEY",
+                    "deepseek": "DEEPSEEK_API_KEY",
+                    "together_ai": "TOGETHER_API_KEY",
+                }.get(model_prefix)
+                details["missing_api_key_hint"] = (
+                    f"set {env_hint}" if env_hint else "configure a provider api key"
+                )
+                if env_hint:
+                    message = (
+                        f"Provider authentication failed. Set {env_hint} "
+                        f"or configure the {model_prefix} provider via the control "
+                        f"plane. Original: {message}"
+                    )
             return ProviderResponse(
                 schema_version=request.schema_version,
                 trace_id=request.trace_id,
@@ -84,7 +118,7 @@ class LiteLLMProvider:
                     message=message,
                     recoverable=True,
                     source="litellm_provider",
-                    details={"exception_type": type(exc).__name__},
+                    details=details,
                 ),
             )
 

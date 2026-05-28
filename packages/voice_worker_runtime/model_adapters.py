@@ -29,10 +29,17 @@ class MoonshineSttRunner:
         try:
             factory = self.transcriber_factory or import_module("moonshine_voice.transcriber").Transcriber
             model_arch = _moonshine_model_arch(path)
+            # On Windows, moonshine-c-api builds the tokenizer path with a
+            # ``\\?\`` extended-length prefix and a ``/`` separator, which the
+            # Win32 file APIs reject literally even when the file is on disk.
+            # Resolving + str-converting the path yields a pure-backslash
+            # absolute form that moonshine concatenates without the broken
+            # prefix interaction.
+            path_str = str(Path(path).resolve()) if path is not None else str(path)
             try:
-                transcriber = factory(str(path), model_arch=model_arch) if model_arch is not None else factory(str(path))
+                transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
             except TypeError:
-                transcriber = factory(str(path))
+                transcriber = factory(path_str)
             try:
                 transcript = transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
             finally:
@@ -41,8 +48,10 @@ class MoonshineSttRunner:
                     close()
             text, segments = _transcript_text_and_segments(transcript)
             return TranscriptionResult.succeeded(trace_id=request.trace_id, text=text, backend_id=asset.backend_id, duration_ms=_duration_ms(frames, request.duration_ms), language=request.language_hint or "en", segments=segments)
-        except Exception:
-            return _stt_failed(request, asset.backend_id, "moonshine_stt_runtime_error")
+        except Exception as exc:
+            detail = type(exc).__name__
+            reason = f"moonshine_stt_runtime_error:{detail}"
+            return _stt_failed(request, asset.backend_id, reason[:240])
 
 
 class SenseVoiceSttRunner:
@@ -283,17 +292,7 @@ class SherpaOnnxKwsRunner:
                     reason_code="sherpa_onnx_kws_not_ready",
                 )
             stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
-            ready = getattr(kws, "is_ready", None)
-            if callable(ready):
-                # Streaming KWS: drain all decodable frames in the buffer.
-                guard = 0
-                while ready(stream) and guard < 1024:
-                    kws.decode_stream(stream)
-                    guard += 1
-            else:
-                # Test fakes (and any non-streaming spotter) fall back to a
-                # single decode call.
-                kws.decode_stream(stream)
+            self._drive_decode(kws, stream)
             result = stream.result
             keyword = str(getattr(result, "keyword", "")).strip()
             detected = bool(keyword)
@@ -304,8 +303,11 @@ class SherpaOnnxKwsRunner:
                 # immediate re-trigger on the same audio window.
                 reset = getattr(kws, "reset_stream", None)
                 if callable(reset):
-                    reset(stream)
-                    self._cached_stream = stream
+                    try:
+                        reset(stream)
+                        self._cached_stream = stream
+                    except Exception:
+                        self._cached_stream = kws.create_stream()
                 else:
                     self._cached_stream = kws.create_stream()
                 return WakeWordDetectionResult.detected(phrase=phrase, confidence=confidence, backend_id=asset.backend_id)
@@ -316,17 +318,48 @@ class SherpaOnnxKwsRunner:
                 backend_id=asset.backend_id,
                 reason_code="wakeword.not_detected",
             )
-        except Exception:
+        except Exception as exc:
             # Drop the cached stream so the next tick can rebuild cleanly,
             # but keep the spotter so we don't pay the model-load cost again.
+            # Surface the exception class+short message into reason_code so
+            # the worker stderr is actually useful when triaging in the field.
             self._cached_stream = None
+            cls_name = type(exc).__name__[:48]
+            detail = str(exc)[:96].replace("\n", " ").replace("\r", " ").strip()
+            reason = f"sherpa_onnx_kws_runtime_error:{cls_name}"
+            if detail:
+                reason = f"{reason}:{detail}"
             return WakeWordDetectionResult(
                 detected=False,
                 phrase=phrase,
                 confidence=0.0,
                 backend_id=asset.backend_id,
-                reason_code="sherpa_onnx_kws_runtime_error",
+                reason_code=reason[:240],
             )
+
+    def _drive_decode(self, kws: Any, stream: Any) -> None:
+        """Decode whatever the spotter has buffered.
+
+        sherpa-onnx 1.13.2 KeywordSpotter on Windows can be inconsistent about
+        whether ``is_ready`` is exposed AND whether driving it in a loop is
+        the right pattern for a session that retains state across ticks. We
+        try ``is_ready``-gated decoding first (the recommended streaming
+        pattern); if that raises, we fall back to a single ``decode_stream``
+        call (which the spotter handles gracefully when its buffer is short).
+        """
+
+        ready = getattr(kws, "is_ready", None)
+        if callable(ready):
+            try:
+                guard = 0
+                while ready(stream) and guard < 1024:
+                    kws.decode_stream(stream)
+                    guard += 1
+                return
+            except Exception:
+                # Fall through to single-shot decode.
+                pass
+        kws.decode_stream(stream)
 
     def _ensure_session(
         self,
