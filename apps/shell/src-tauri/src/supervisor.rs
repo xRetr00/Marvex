@@ -31,8 +31,8 @@ const CONTROL_PORT: u16 = 8766;
 const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";
 const MARVEX_PACKAGE_NAME: &str = "marvex";
 const PYTHON_RUNTIME_VERSION: &str = "3.12";
-const PRODUCT_PROVIDER: &str = "lmstudio_responses";
-const PRODUCT_MODEL: &str = "qwen2.5-coder-7b";
+const DEFAULT_PRODUCT_PROVIDER: &str = "litellm";
+const DEFAULT_PRODUCT_MODEL: &str = "openrouter/auto";
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {
@@ -253,6 +253,8 @@ impl Supervisor {
 }
 
 fn service_specs(token: &str) -> Vec<ServiceSpec> {
+    let provider = default_product_provider();
+    let model = default_product_model();
     vec![
         ServiceSpec {
             name: "core",
@@ -267,9 +269,9 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
                 "--provider".into(),
                 "provider_worker".into(),
                 "--worker-provider".into(),
-                PRODUCT_PROVIDER.into(),
+                provider,
                 "--model".into(),
-                PRODUCT_MODEL.into(),
+                model,
                 "--web-search".into(),
                 "multi".into(),
             ],
@@ -461,6 +463,24 @@ fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(Str
         ));
     }
     env
+}
+
+fn default_product_provider() -> String {
+    std::env::var("MARVEX_WORKER_PROVIDER")
+        .or_else(|_| std::env::var("MARVEX_PROVIDER"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| matches!(value.as_str(), "lmstudio_responses" | "litellm" | "fake"))
+        .unwrap_or_else(|| DEFAULT_PRODUCT_PROVIDER.to_string())
+}
+
+fn default_product_model() -> String {
+    std::env::var("MARVEX_MODEL")
+        .or_else(|_| std::env::var("MARVEX_DEFAULT_MODEL"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| DEFAULT_PRODUCT_MODEL.to_string())
 }
 
 /// Ensure a runnable Python environment exists, creating it on first launch.
@@ -800,8 +820,8 @@ fn attach_log_pipe(
 #[cfg(test)]
 mod tests {
     use super::{
-        default_file_capability_root, find_uv, record_installed_runtime_wheel, resource_env_paths, runtime_uv_cache_dir,
-        runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_create_args,
+        default_file_capability_root, default_product_model, default_product_provider, find_uv, record_installed_runtime_wheel,
+        resource_env_paths, runtime_uv_cache_dir, runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_create_args,
         venv_root, venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
         ServiceKind, Supervisor, PYTHON_RUNTIME_VERSION,
     };
@@ -837,7 +857,11 @@ mod tests {
         assert!(core
             .args
             .windows(2)
-            .any(|pair| pair == ["--worker-provider", "lmstudio_responses"]));
+            .any(|pair| pair[0] == "--worker-provider" && pair[1] == default_product_provider()));
+        assert!(core
+            .args
+            .windows(2)
+            .any(|pair| pair[0] == "--model" && pair[1] == default_product_model()));
         assert!(!core.args.windows(2).any(|pair| pair == ["--model", "fake-model"]));
     }
 

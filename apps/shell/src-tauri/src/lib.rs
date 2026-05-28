@@ -197,9 +197,11 @@ async fn submit_chat_turn(
             "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
             "metadata": safe_shell_turn_metadata(metadata)
         },
-        "model": "qwen2.5-coder-7b",
+        "model": default_chat_model(),
         "instructions": null,
         "previous_response_id": previous_response_id,
+        "resume_approval_id": null,
+        "approval_decision": null,
         "provider_options": {}
     });
     let response = http::http_post_json_with_timeout(
@@ -224,6 +226,15 @@ fn session_id_from_metadata(metadata: &Option<Value>) -> String {
         }
     }
     "shell-session".to_string()
+}
+
+fn default_chat_model() -> String {
+    std::env::var("MARVEX_MODEL")
+        .or_else(|_| std::env::var("MARVEX_DEFAULT_MODEL"))
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+        .unwrap_or_else(|| "openrouter/auto".to_string())
 }
 
 fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
@@ -428,6 +439,69 @@ fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
     Ok(())
 }
 
+#[tauri::command]
+async fn resume_approval_turn(
+    text: String,
+    trace_id: String,
+    turn_id: String,
+    approval_id: String,
+    decision: String,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
+    let decision = decision.trim().to_ascii_lowercase();
+    if !matches!(decision.as_str(), "approve" | "deny" | "cancel") {
+        return Err("approval decision must be approve, deny, or cancel".to_string());
+    }
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err("approval resume text must be non-empty".to_string());
+    }
+    let approval_id = approval_id.trim().to_string();
+    let trace_id = trace_id.trim().to_string();
+    let turn_id = turn_id.trim().to_string();
+    if approval_id.is_empty() || trace_id.is_empty() || turn_id.is_empty() {
+        return Err("approval resume ids must be non-empty".to_string());
+    }
+    let token = {
+        let guard = state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?;
+        guard.token.clone()
+    };
+    let body = json!({
+        "schema_version": "0.1.1-draft",
+        "execution_mode": "assistant_runtime_lmstudio_responses",
+        "assistant_turn_input": {
+            "schema_version": "0.1.1-draft",
+            "trace_id": trace_id,
+            "turn_id": turn_id,
+            "input_event_id": format!("{turn_id}:approval-resume-input"),
+            "session_ref": {"ref_type": "session", "ref_id": "shell-session"},
+            "identity_ref": null,
+            "user_visible_input": text,
+            "assistant_mode": "default",
+            "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
+            "metadata": {"source": "marvex_shell", "approval_resume": true}
+        },
+        "model": default_chat_model(),
+        "instructions": null,
+        "previous_response_id": null,
+        "resume_approval_id": approval_id,
+        "approval_decision": decision,
+        "provider_options": {}
+    });
+    let response = http::http_post_json_with_timeout(
+        "127.0.0.1",
+        8765,
+        "/v1/turns",
+        Some(&token),
+        &body,
+        http::TURN_HTTP_TIMEOUT,
+    )
+    .await?;
+    serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
 #[cfg(windows)]
 fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height: u32) {
     use windows::Win32::Foundation::HWND;
@@ -562,6 +636,7 @@ pub fn run() {
             backend_health,
             gui_health,
             submit_chat_turn,
+            resume_approval_turn,
             create_chat_session,
             list_chat_sessions,
             control_request,
