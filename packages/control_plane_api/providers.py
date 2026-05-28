@@ -57,6 +57,7 @@ class InMemoryProviderControl:
         providers: tuple[ProviderControlState, ...] | None = None,
         on_change: Callable[[dict[str, Any]], None] | None = None,
         model_discovery: ProviderModelDiscovery | None = None,
+        persistence_path: str | None = None,
     ) -> None:
         rows = providers or (
             ProviderControlState(
@@ -85,6 +86,15 @@ class InMemoryProviderControl:
         self.active_provider_id = rows[0].provider_id
         self._on_change = on_change
         self._model_discovery = model_discovery or _default_model_discovery
+        # Persistence is opt-in. When ``persistence_path`` is provided we load
+        # the prior catalog on construct and write it back on every
+        # ``_changed()`` callback. Secrets are intentionally not written - the
+        # user re-enters the API key on each cold start, which keeps
+        # plaintext credentials off disk.
+        env_path = os.environ.get("MARVEX_PROVIDER_CONTROL_STATE", "").strip()
+        self._persistence_path = persistence_path or env_path or None
+        if self._persistence_path:
+            self._load_from_disk(self._persistence_path)
 
     def provider_catalog(self) -> dict[str, Any]:
         return {
@@ -161,9 +171,80 @@ class InMemoryProviderControl:
 
     def _changed(self) -> dict[str, Any]:
         catalog = self.provider_catalog()
+        if self._persistence_path:
+            self._save_to_disk(self._persistence_path)
         if self._on_change is not None:
             self._on_change(catalog)
         return catalog
+
+    def _load_from_disk(self, path: str) -> None:
+        """Best-effort restore from prior persisted catalog.
+
+        Secrets are never read from disk; only provider selection, configured
+        flag, and the discovered model lists are restored.
+        """
+
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return
+        if not isinstance(data, dict):
+            return
+        active = data.get("active_provider_id")
+        if isinstance(active, str) and active.strip() and active in self._providers:
+            self.active_provider_id = active.strip()
+        providers = data.get("providers")
+        if not isinstance(providers, list):
+            return
+        for row_data in providers:
+            if not isinstance(row_data, dict):
+                continue
+            provider_id = row_data.get("provider_id")
+            if not isinstance(provider_id, str):
+                continue
+            row = self._providers.get(provider_id)
+            if row is None:
+                continue
+            active_model = row_data.get("active_model")
+            if isinstance(active_model, str) and active_model.strip():
+                row.active_model = active_model.strip()
+            models = row_data.get("models")
+            if isinstance(models, list):
+                row.models = [str(m) for m in models if isinstance(m, str) and m.strip()]
+            multi = row_data.get("multi_models")
+            if isinstance(multi, list):
+                row.multi_models = [str(m) for m in multi if isinstance(m, str) and m.strip()]
+            if row_data.get("configured") is True:
+                row.configured = True
+
+    def _save_to_disk(self, path: str) -> None:
+        """Best-effort persist of the provider catalog (no secrets)."""
+
+        snapshot = {
+            "schema_version": SCHEMA_VERSION,
+            "active_provider_id": self.active_provider_id,
+            "providers": [
+                {
+                    "provider_id": row.provider_id,
+                    "active_model": row.active_model,
+                    "models": list(row.models),
+                    "multi_models": list(row.multi_models),
+                    "configured": row.configured,
+                }
+                for row in self._providers.values()
+            ],
+        }
+        try:
+            directory = os.path.dirname(path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(path, "w", encoding="utf-8") as handle:
+                json.dump(snapshot, handle, sort_keys=True)
+        except OSError:
+            # Persistence is best-effort; never crash the control plane on
+            # a write failure (filesystem full, perms, etc.).
+            return
 
     def _discover_models(self, provider_id: str) -> list[str]:
         secret = self.secret_value(provider_id)

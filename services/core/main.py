@@ -3124,6 +3124,28 @@ class _CompositeTraceReader:
         return tuple(ordered[-max_count:])
 
 
+def _provider_control_state_path() -> str | None:
+    """Resolve the on-disk path for persisted provider-selection state.
+
+    Honours MARVEX_PROVIDER_CONTROL_STATE if set, otherwise falls back to a
+    well-known location under the user data dir so the LM Studio / LiteLLM
+    choice survives a Core restart without the shell having to pass anything
+    explicit through Tauri.
+    """
+
+    explicit = os.environ.get("MARVEX_PROVIDER_CONTROL_STATE", "").strip()
+    if explicit:
+        return explicit
+    base = (
+        os.environ.get("MARVEX_DATA_DIR", "").strip()
+        or os.environ.get("LOCALAPPDATA", "").strip()
+        or os.environ.get("APPDATA", "").strip()
+        or os.environ.get("XDG_DATA_HOME", "").strip()
+        or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
+    )
+    return os.path.join(base, "com.marvex.shell", "provider_control.json")
+
+
 def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provider_control: Any | None = None) -> None:
     executor = getattr(service, "_turn_executor", None)
     configure = getattr(executor, "configure_provider", None)
@@ -3200,8 +3222,13 @@ def run_core_service(
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
     browser_session_manager = BrowserSessionManager()
-    provider_control = InMemoryProviderControl()
+    provider_control = InMemoryProviderControl(
+        persistence_path=_provider_control_state_path(),
+    )
     provider_control._on_change = lambda catalog: _apply_provider_control(service, catalog, provider_control)
+    # Apply any persisted catalog immediately on startup so the executor's
+    # provider/model align with the user's last choice before the first turn.
+    _apply_provider_control(service, provider_control.provider_catalog(), provider_control)
     control_runtime = create_control_plane_service_app(
         config=effective_config,
         trace_reader=effective_trace_reader,
