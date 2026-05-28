@@ -1108,22 +1108,55 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
 
         self._publish(AssistantStatusKind.THINKING, detail="provider_turn", trace_id=turn_input.trace_id)
-        loop.step("provider")
         provider_turn_input, provider_instructions = _turn_input_with_prompt(
             turn_input,
             cognition,
             desktop_context=desktop_context,
         )
-        result = run_assistant_provider_stage_turn(
-            provider_turn_input,
-            provider=self._provider,
-            model=self._model,
-            instructions=_with_ui_toolset(provider_instructions, self._provider_name),
-            telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
-            previous_response_id=previous_response_id,
-        )
+        max_steps = _resolve_agentic_max_steps(cognition.step_plan.max_steps)
+        chained_previous_response_id = previous_response_id
+        step_count = 0
+        result = None
+        stop_reason = "finalized"
+        for step_index in range(max_steps):
+            loop.step("provider")
+            step_count += 1
+            step_result = run_assistant_provider_stage_turn(
+                provider_turn_input,
+                provider=self._provider,
+                model=self._model,
+                instructions=_with_ui_toolset(provider_instructions, self._provider_name),
+                telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
+                previous_response_id=chained_previous_response_id,
+            )
+            result = step_result
+            response_id = _provider_response_id(step_result)
+            if response_id:
+                chained_previous_response_id = response_id
+            if not _should_continue_provider_loop(step_result, step_index, max_steps):
+                break
+            provider_turn_input = _continuation_turn_input(provider_turn_input, step_index)
+            self._publish(
+                AssistantStatusKind.THINKING,
+                detail=f"provider_continuation_step_{step_index + 2}",
+                trace_id=turn_input.trace_id,
+            )
+        if result is None:
+            # Defensive: should never fire because max_steps >= 1, but guard rather
+            # than dereference None.
+            result = run_assistant_provider_stage_turn(
+                provider_turn_input,
+                provider=self._provider,
+                model=self._model,
+                instructions=_with_ui_toolset(provider_instructions, self._provider_name),
+                telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
+                previous_response_id=chained_previous_response_id,
+            )
+            step_count = max(step_count, 1)
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
-        loop.step("finalize", stop_reason="finalized")
+        if step_count >= max_steps and _provider_truncated(result):
+            stop_reason = "max_steps_reached"
+        loop.step("finalize", stop_reason=stop_reason)
         learning_projection = _run_learning_hook(
             self._learning_pipeline,
             turn_input,
@@ -2575,6 +2608,18 @@ def _intent_plan_kinds(intent_plan: object) -> tuple[str, ...]:
         str(getattr(getattr(step, "intent_kind", ""), "value", getattr(step, "intent_kind", "")))
         for step in steps
     )
+
+
+# Agentic provider loop helpers live in ``packages.core.orchestration.agentic_loop``
+# so they can be unit-tested without booting the full Core service. Local
+# private aliases keep call sites short.
+from packages.core.orchestration.agentic_loop import (  # noqa: E402
+    continuation_turn_input as _continuation_turn_input,
+    provider_response_id as _provider_response_id,
+    provider_truncated as _provider_truncated,
+    resolve_agentic_max_steps as _resolve_agentic_max_steps,
+    should_continue_provider_loop as _should_continue_provider_loop,
+)
 
 
 def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
