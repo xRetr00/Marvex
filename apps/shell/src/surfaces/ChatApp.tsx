@@ -7,6 +7,7 @@ import { getShellRuntimeConfig, showOverlay, submitChatTurn, resumeApprovalTurn,
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
+import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { startVoiceWorker, stopVoiceWorker } from "@/lib/voiceControlClient";
@@ -300,18 +301,6 @@ export function ChatApp() {
   );
 }
 
-function providerResponseIdFromTurnResult(result: unknown): string | undefined {
-  if (!result || typeof result !== "object") return undefined;
-  const refs = (result as { provider_turn_refs?: unknown }).provider_turn_refs;
-  if (!Array.isArray(refs)) return undefined;
-  const first = refs.find((ref) => {
-    if (!ref || typeof ref !== "object") return false;
-    const refId = (ref as { ref_id?: unknown }).ref_id;
-    return typeof refId === "string" && refId.trim().length > 0;
-  });
-  const refId = (first as { ref_id?: unknown } | undefined)?.ref_id;
-  return typeof refId === "string" ? refId.trim() : undefined;
-}
 
 function approvalFromTurnResult(result: unknown, text: string): ChatApproval | undefined {
   if (!result || typeof result !== "object") return undefined;
