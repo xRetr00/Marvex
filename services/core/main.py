@@ -2148,6 +2148,9 @@ def _write_operational_event_log(
         model = data.get("model")
         if isinstance(model, str | int | float | bool):
             provider_bits.append(f"model={model}")
+        provider_name = data.get("provider_name")
+        if isinstance(provider_name, str | int | float | bool):
+            provider_bits.append(f"provider_name={provider_name}")
         previous_present = data.get("previous_response_id_present")
         if isinstance(previous_present, str | int | float | bool):
             provider_bits.append(f"previous_response_id_present={previous_present}")

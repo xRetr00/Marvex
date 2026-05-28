@@ -19,7 +19,7 @@ class ProviderWorkerModel(BaseModel):
 
 @dataclass(frozen=True)
 class ProviderWorkerConfig:
-    provider_candidates: tuple[str, ...] = ("fake", "lmstudio_responses", "litellm")
+    provider_candidates: tuple[str, ...] = ("lmstudio_responses", "litellm")
     fallback_enabled: bool = True
     max_retries: int = 0
     unavailable_provider_ids: tuple[str, ...] = ()

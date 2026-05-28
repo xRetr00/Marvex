@@ -40,6 +40,7 @@ from .models import (
 
 
 ProviderFactory = Callable[[ProviderRuntimeConfig], object]
+_CONCRETE_PROVIDER_IDS = frozenset({"fake", "lmstudio_responses", "litellm"})
 
 
 class ProviderWorkerState(str, Enum):
@@ -236,6 +237,8 @@ class ProviderWorkerController:
         )
 
     def _candidate_ids(self, requested_provider: str) -> tuple[str, ...]:
+        if requested_provider in _CONCRETE_PROVIDER_IDS:
+            return (requested_provider,)
         if requested_provider in self.config.provider_candidates:
             return tuple(
                 [requested_provider]

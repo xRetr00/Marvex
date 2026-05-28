@@ -140,7 +140,6 @@ class VoiceWorkerBackendRuntime:
         )
         self._wakeword_runner: Any = wakeword_runner or SherpaOnnxKwsRunner(
             asset_manager=self.asset_manager,
-            kws_factory=lambda model_dir: self._module_loader("sherpa_onnx").KeywordSpotter.from_pre_trained(model_dir),
         )
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:

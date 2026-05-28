@@ -179,6 +179,7 @@ def test_core_service_entrypoint_starts_local_api_and_shuts_down_cleanly():
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
             local_auth_token=EXPECTED_TOKEN,
+            provider="fake",
             port=9877,
         ),
         server_factory=server_factory,

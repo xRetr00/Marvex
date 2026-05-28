@@ -470,7 +470,7 @@ fn default_product_provider() -> String {
         .or_else(|_| std::env::var("MARVEX_PROVIDER"))
         .ok()
         .map(|value| value.trim().to_string())
-        .filter(|value| matches!(value.as_str(), "lmstudio_responses" | "litellm" | "fake"))
+        .filter(|value| matches!(value.as_str(), "lmstudio_responses" | "litellm"))
         .unwrap_or_else(|| DEFAULT_PRODUCT_PROVIDER.to_string())
 }
 

@@ -162,3 +162,72 @@ def test_in_memory_provider_model_refresh_uses_injected_loopback_discovery() -> 
     provider = next(row for row in payload["providers"] if row["provider_id"] == "lmstudio_responses")
     assert provider["healthy"] is True
     assert provider["active_model"] == "qwen2.5-coder-7b"
+
+
+def test_default_litellm_model_refresh_uses_configured_model_list(monkeypatch) -> None:
+    monkeypatch.setenv("MARVEX_LITELLM_MODELS", "openai/gpt-4.1-mini, openrouter/auto")
+    control = InMemoryProviderControl()
+
+    payload = control.refresh_models("litellm")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["healthy"] is True
+    assert provider["active_model"] == "openai/gpt-4.1-mini"
+    assert provider["models"][:2] == ["openai/gpt-4.1-mini", "openrouter/auto"]
+
+
+def test_litellm_model_refresh_uses_in_memory_secret_for_sdk_discovery(monkeypatch) -> None:
+    captured = {}
+
+    def fake_import_module(name: str):
+        assert name == "litellm"
+
+        class LiteLLM:
+            @staticmethod
+            def get_valid_models(*, api_key=None, api_base=None):
+                captured["api_key"] = api_key
+                captured["api_base"] = api_base
+                return ["openai/gpt-4.1-mini"]
+
+        return LiteLLM
+
+    monkeypatch.setattr("packages.control_plane_api.providers.import_module", fake_import_module)
+    control = InMemoryProviderControl()
+    control.set_secret("litellm", "sk-litellm-secret")
+
+    payload = control.refresh_models("litellm")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert captured == {"api_key": "sk-litellm-secret", "api_base": None}
+    assert provider["models"][0] == "openai/gpt-4.1-mini"
+    assert "sk-litellm-secret" not in json.dumps(payload)
+
+
+def test_default_lmstudio_model_refresh_reads_openai_compatible_models(monkeypatch) -> None:
+    class Response:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps({"data": [{"id": "local/qwen"}, {"id": "local/llama"}]}).encode("utf-8")
+
+    captured = {}
+
+    def fake_urlopen(request, timeout: float):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        return Response()
+
+    monkeypatch.setattr("packages.control_plane_api.providers.urlopen", fake_urlopen)
+    monkeypatch.setenv("MARVEX_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
+    control = InMemoryProviderControl()
+
+    payload = control.refresh_models("lmstudio_responses")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "lmstudio_responses")
+    assert captured == {"url": "http://127.0.0.1:1234/v1/models", "timeout": 2.0}
+    assert provider["healthy"] is True
+    assert provider["active_model"] == "local/qwen"

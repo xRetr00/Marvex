@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import hashlib
+import tempfile
 from array import array
 from collections.abc import Callable, Iterable
 from importlib import import_module
@@ -224,7 +226,6 @@ class SherpaOnnxTtsRunner:
 class SherpaOnnxKwsRunner:
     """Wakeword keyword spotting via sherpa-onnx KeywordSpotter.
 
-    Uses ``KeywordSpotter.from_pre_trained(model_dir)`` to load the KWS model.
     A custom ``kws_factory(model_dir: str) -> kws`` may be injected for tests.
     """
 
@@ -269,6 +270,15 @@ class SherpaOnnxKwsRunner:
                         reason_code="sherpa_onnx_kws_not_ready",
                     )
                 encoder, decoder, joiner, tokens, keywords = files
+                keywords = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
+                if keywords is None:
+                    return WakeWordDetectionResult(
+                        detected=False,
+                        phrase=phrase,
+                        confidence=0.0,
+                        backend_id=asset.backend_id,
+                        reason_code="sherpa_onnx_kws_keyword_tokens_invalid",
+                    )
                 kws = module.KeywordSpotter(
                     tokens=str(tokens),
                     encoder=str(encoder),
@@ -276,6 +286,7 @@ class SherpaOnnxKwsRunner:
                     joiner=str(joiner),
                     keywords_file=str(keywords),
                     num_threads=1,
+                    keywords_threshold=threshold,
                     provider="cpu",
                 )
             stream = kws.create_stream()
@@ -486,6 +497,56 @@ def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None
     if not all((encoder, decoder, joiner, tokens, keywords)):
         return None
     return encoder, decoder, joiner, tokens, keywords  # type: ignore[return-value]
+
+
+def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | None:
+    vocabulary = _load_token_vocabulary(tokens)
+    if not vocabulary:
+        return None
+    try:
+        original = keywords.read_text(encoding="utf-8")
+    except OSError:
+        return None
+    normalized_lines: list[str] = []
+    changed = False
+    for line in original.splitlines():
+        parts = line.strip().split()
+        if not parts:
+            normalized_lines.append("")
+            continue
+        alias_index = next((index for index, part in enumerate(parts) if part.startswith("@")), None)
+        if alias_index is not None and alias_index < len(parts) - 1:
+            alias = "_".join([parts[alias_index].lstrip("@"), *parts[alias_index + 1 :]])
+            parts = [*parts[:alias_index], f"@{alias}"]
+            changed = True
+        keyword_tokens = [part for part in parts if not part.startswith(("#", ":", "@"))]
+        if any(part not in vocabulary for part in keyword_tokens):
+            return None
+        normalized_lines.append(" ".join(parts))
+    normalized = "\n".join(normalized_lines).strip() + "\n"
+    if not changed:
+        return keywords
+    digest = hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:16]
+    target = Path(tempfile.gettempdir()) / f"marvex-kws-keywords-{digest}.txt"
+    try:
+        if not target.exists() or target.read_text(encoding="utf-8") != normalized:
+            target.write_text(normalized, encoding="utf-8")
+    except OSError:
+        return None
+    return target
+
+
+def _load_token_vocabulary(tokens: Path) -> set[str]:
+    try:
+        lines = tokens.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return set()
+    vocabulary: set[str] = set()
+    for line in lines:
+        parts = line.strip().split()
+        if parts:
+            vocabulary.add(parts[0])
+    return vocabulary
 
 
 def _chunk_bytes(chunk: Any) -> bytes:

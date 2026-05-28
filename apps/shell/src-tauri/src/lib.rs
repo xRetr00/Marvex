@@ -8,12 +8,13 @@ mod token_handoff;
 pub mod service;
 
 use std::{
+    net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
     sync::{
         atomic::{AtomicBool, Ordering},
         Mutex,
     },
-    time::{SystemTime, UNIX_EPOCH},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 /// Set while an explicit Marvex shutdown is in progress so the main window's
@@ -81,7 +82,8 @@ fn get_setup_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, Str
     let core_running = snapshot
         .get("core")
         .map(|s| s.starts_with("running"))
-        .unwrap_or(false);
+        .unwrap_or(false)
+        || loopback_port_open(8765);
     let manifest = std::fs::read_to_string(state.supervisor.runtime_manifest_path())
         .ok()
         .and_then(|text| serde_json::from_str::<Value>(&text).ok());
@@ -226,6 +228,11 @@ fn session_id_from_metadata(metadata: &Option<Value>) -> String {
         }
     }
     "shell-session".to_string()
+}
+
+fn loopback_port_open(port: u16) -> bool {
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    TcpStream::connect_timeout(&addr, Duration::from_millis(150)).is_ok()
 }
 
 fn default_chat_model() -> String {

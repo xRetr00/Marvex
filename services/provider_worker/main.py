@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from collections.abc import Sequence
 from typing import Any
@@ -105,7 +106,9 @@ def _trace_id(payload: dict[str, Any]) -> str:
 
 def _provider_name(payload: dict[str, Any]) -> str:
     value = payload.get("provider_name")
-    return value if isinstance(value, str) and value.strip() else "fake"
+    if isinstance(value, str) and value.strip():
+        return value
+    return _optional_string(os.environ.get("MARVEX_WORKER_PROVIDER")) or "lmstudio_responses"
 
 
 def _optional_string(value: object) -> str | None:

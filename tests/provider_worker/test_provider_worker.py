@@ -325,6 +325,42 @@ def test_provider_worker_passes_litellm_secret_only_to_runtime_config():
     assert "sk-test-litellm-secret" not in result.model_dump_json()
 
 
+def test_provider_worker_does_not_fallback_to_fake_for_concrete_litellm_request():
+    from services.provider_worker.controller import ProviderWorkerController
+
+    captured = {}
+
+    class Provider:
+        def send(self, request: ProviderRequest) -> ProviderResponse:
+            return ProviderResponse(
+                schema_version=request.schema_version,
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                provider_name="litellm",
+                response_id="litellm-response",
+                output_text="litellm response",
+                finish_reason=FinishReason.STOP,
+                usage={},
+                raw_metadata={},
+                error=None,
+            )
+
+    def provider_factory(config):
+        captured["provider_name"] = config.provider_name
+        return Provider()
+
+    result = ProviderWorkerController(provider_factory=provider_factory).send(
+        provider_name="litellm",
+        request=make_request(),
+    )
+
+    assert result.ok is True
+    assert captured["provider_name"] == "litellm"
+    assert result.selection is not None
+    assert result.selection.selected_provider_id == "litellm"
+    assert result.selection.fallback_provider_ids == ()
+
+
 def test_provider_worker_maps_fake_raw_output_to_structured_result_offline():
     payload = {
         "schema_version": "0.1.1-draft",

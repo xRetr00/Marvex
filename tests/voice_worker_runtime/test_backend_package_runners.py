@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 from packages.voice_runtime import AudioFrame
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerBackendRuntime
+from packages.voice_worker_runtime import backend_runtime
+from packages.voice_worker_runtime import model_adapters
 
 
 def _install_asset(manager: VoiceAssetManager, root: Path, *, model_id: str, backend_id: str, model_kind: str, relative_path: str) -> None:
@@ -157,6 +159,72 @@ def test_kokoro_backend_is_not_ready_until_model_and_voices_are_installed(tmp_pa
     ready = runtime.tts_status("kokoro-onnx", "af_heart")
     assert ready["status"] == "ready"
     assert ready["exact_blocker"] is None
+
+
+def test_sherpa_kws_runner_normalizes_multiword_keyword_aliases(tmp_path: Path, monkeypatch) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    model_dir = root / "wakeword" / "hey-marvex" / "nested"
+    model_dir.mkdir(parents=True)
+    for name in ("encoder.int8.onnx", "decoder.int8.onnx", "joiner.int8.onnx"):
+        (model_dir / name).write_bytes(b"onnx")
+    (model_dir / "tokens.txt").write_text("▁HE 1\nY 2\n▁MAR 3\nVE 4\nX 5\n", encoding="utf-8")
+    (model_dir / "keywords.txt").write_text("▁HE Y ▁MAR VE X :1.5 #0.2 @HEY MARVEX\n", encoding="utf-8")
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="hey-marvex",
+            backend_id="sherpa-onnx-kws",
+            model_kind="wakeword",
+            relative_path="wakeword/hey-marvex",
+            explicit_user_triggered=True,
+        )
+    )
+
+    class FakeResult:
+        keyword = "HEY_MARVEX"
+        confidence = 0.9
+
+    class FakeStream:
+        result = FakeResult()
+
+        def accept_waveform(self, sample_rate, samples):
+            assert sample_rate == 16_000
+            assert samples
+
+    class FakeKeywordSpotter:
+        def __init__(self, **kwargs):
+            keyword_text = Path(kwargs["keywords_file"]).read_text(encoding="utf-8")
+            assert "@HEY_MARVEX" in keyword_text
+            assert "@HEY MARVEX" not in keyword_text
+            assert kwargs["keywords_threshold"] == 0.72
+
+        def create_stream(self):
+            return FakeStream()
+
+        def decode_stream(self, stream):
+            assert isinstance(stream, FakeStream)
+
+    monkeypatch.setattr(
+        model_adapters,
+        "import_module",
+        lambda name: SimpleNamespace(KeywordSpotter=FakeKeywordSpotter) if name == "sherpa_onnx" else __import__(name),
+    )
+    monkeypatch.setattr(
+        backend_runtime,
+        "import_module",
+        lambda name: SimpleNamespace(KeywordSpotter=FakeKeywordSpotter) if name == "sherpa_onnx" else __import__(name),
+    )
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager)
+
+    result = runtime.test_wakeword(
+        trace_id="trace-kws",
+        backend_id="sherpa-onnx-kws",
+        frames=(AudioFrame(frame_id="f1", pcm=b"\x01\x00\x02\x00", sample_rate=16_000, channel_count=1, duration_ms=100),),
+        phrase="Hey Marvex",
+        threshold=0.72,
+    )
+
+    assert result.detected is True
 
 
 def test_default_piper_runner_synthesizes_chunks_to_generated_audio_ref(tmp_path: Path) -> None:

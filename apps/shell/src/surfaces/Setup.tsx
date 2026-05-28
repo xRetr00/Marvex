@@ -3,7 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import AnimatedProgressBar from "@/components/animated-progress-bar";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
-import { getSetupStatus, startSetup } from "@/lib/shellCommands";
+import { getBackendHealth, getSetupStatus, startSetup } from "@/lib/shellCommands";
 import { markSetupDone } from "@/lib/modeStore";
 import { ScrambleText } from "@/components/scramble-text";
 
@@ -49,6 +49,22 @@ async function waitForRuntimeReady(setText: (text: string) => void): Promise<str
   return "ready";
 }
 
+async function waitForBackendDeps(setText: (text: string) => void) {
+  for (let attempt = 0; attempt < 180; attempt++) {
+    try {
+      const health = await getBackendHealth();
+      if (health.reachable) {
+        return await fetchDeps();
+      }
+      setText("Waiting for Core to accept connections...");
+    } catch {
+      setText("Waiting for Control Plane...");
+    }
+    await new Promise((resolve) => setTimeout(resolve, 1000));
+  }
+  throw new Error("backend_not_reachable_after_runtime_ready");
+}
+
 interface SetupProps {
   onComplete: () => void;
 }
@@ -81,7 +97,7 @@ export function SetupPage({ onComplete }: SetupProps) {
           return;
         }
         setBootText(null);
-        const depsData = await fetchDeps();
+        const depsData = await waitForBackendDeps(setBootText);
         const missing = depsData.deps.filter((d) => !d.installed);
 
         if (missing.length === 0) {

@@ -298,6 +298,7 @@ def _emit_provider_response(
     data: dict[str, object] = {
         "stage": PROVIDER_STAGE_NAME,
         "status": status,
+        "provider_name": response.provider_name,
         "finish_reason": response.finish_reason.value,
         "provider_response_id_present": bool(response.response_id),
     }

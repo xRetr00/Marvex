@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass, field
 from collections.abc import Callable
+from importlib import import_module
 from typing import Any
+from urllib.error import URLError
+from urllib.request import Request, urlopen
 
 from .voice import _read_json
 
 
 SCHEMA_VERSION = "1"
 CONTROL_PROVIDERS_PREFIX = "/control/providers"
-ProviderModelDiscovery = Callable[[str], list[str]]
+ProviderModelDiscovery = Callable[..., list[str]]
 
 
 @dataclass
@@ -80,7 +84,7 @@ class InMemoryProviderControl:
         self._secrets: dict[str, str] = {}
         self.active_provider_id = rows[0].provider_id
         self._on_change = on_change
-        self._model_discovery = model_discovery or _empty_model_discovery
+        self._model_discovery = model_discovery or _default_model_discovery
 
     def provider_catalog(self) -> dict[str, Any]:
         return {
@@ -138,16 +142,15 @@ class InMemoryProviderControl:
 
     def refresh_models(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
-        if provider_id == "lmstudio_responses":
-            models = self._model_discovery(provider_id)
-            row.healthy = bool(models)
-            if models:
-                row.models = models
-                if row.active_model not in row.models:
-                    row.active_model = row.models[0]
-                row.configured = True
+        models = self._discover_models(provider_id)
         if provider_id == "litellm":
-            row.models = sorted(set(row.models + ["openrouter/auto"]))
+            models = _dedupe([*models, "openrouter/auto"])
+        row.healthy = bool(models)
+        if models:
+            row.models = _dedupe([*models, *row.models])
+            if row.active_model not in row.models:
+                row.active_model = row.models[0]
+            row.configured = True
         return self._changed()
 
     def _provider(self, provider_id: str) -> ProviderControlState:
@@ -161,6 +164,13 @@ class InMemoryProviderControl:
         if self._on_change is not None:
             self._on_change(catalog)
         return catalog
+
+    def _discover_models(self, provider_id: str) -> list[str]:
+        secret = self.secret_value(provider_id)
+        try:
+            return _dedupe(self._model_discovery(provider_id, secret))
+        except TypeError:
+            return _dedupe(self._model_discovery(provider_id))
 
 
 def handle_provider_control_request(
@@ -238,8 +248,93 @@ def _mask_secret(value: str) -> str:
     return f"{cleaned[:4]}****{cleaned[-4:]}"
 
 
-def _empty_model_discovery(_provider_id: str) -> list[str]:
+def _default_model_discovery(provider_id: str, secret: str | None = None) -> list[str]:
+    if provider_id == "lmstudio_responses":
+        base_url = _first_env("MARVEX_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL") or "http://127.0.0.1:1234/v1"
+        return _openai_compatible_models(base_url, api_key=secret)
+    if provider_id == "litellm":
+        configured = _split_models(
+            _first_env("MARVEX_LITELLM_MODELS", "LITELLM_MODELS", "LITELLM_MODEL")
+        )
+        base_url = _first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL")
+        if base_url:
+            configured.extend(_openai_compatible_models(base_url, api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY")))
+        configured.extend(_litellm_sdk_models(api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"), api_base=base_url))
+        return _dedupe(configured)
     return []
+
+
+def _openai_compatible_models(base_url: str, *, api_key: str | None = None) -> list[str]:
+    url = _models_url(base_url)
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        with urlopen(Request(url, headers=headers), timeout=2.0) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return []
+    data = payload.get("data") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        data = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(data, list):
+        return []
+    models: list[str] = []
+    for item in data:
+        if isinstance(item, str) and item.strip():
+            models.append(item.strip())
+        if isinstance(item, dict):
+            model_id = str(item.get("id") or item.get("model_name") or item.get("name") or "").strip()
+            if model_id:
+                models.append(model_id)
+    return _dedupe(models)
+
+
+def _litellm_sdk_models(*, api_key: str | None, api_base: str | None) -> list[str]:
+    if not api_key and not api_base:
+        return []
+    try:
+        litellm = import_module("litellm")
+        get_valid_models = getattr(litellm, "get_valid_models")
+        models = get_valid_models(api_key=api_key, api_base=api_base)
+    except Exception:
+        return []
+    if not isinstance(models, list):
+        return []
+    return _dedupe([str(model) for model in models])
+
+
+def _models_url(base_url: str) -> str:
+    cleaned = base_url.strip().rstrip("/")
+    if cleaned.endswith("/models"):
+        return cleaned
+    return f"{cleaned}/models"
+
+
+def _first_env(*names: str) -> str | None:
+    for name in names:
+        value = os.environ.get(name)
+        if value and value.strip():
+            return value.strip()
+    return None
+
+
+def _split_models(value: str | None) -> list[str]:
+    if not value:
+        return []
+    normalized = value.replace(";", ",").replace("\n", ",")
+    return [part.strip() for part in normalized.split(",") if part.strip()]
+
+
+def _dedupe(models: list[str]) -> list[str]:
+    seen: set[str] = set()
+    unique: list[str] = []
+    for model in models:
+        cleaned = str(model).strip()
+        if cleaned and cleaned not in seen:
+            unique.append(cleaned)
+            seen.add(cleaned)
+    return unique
 
 
 def _safe_nested(value: Any) -> Any:
