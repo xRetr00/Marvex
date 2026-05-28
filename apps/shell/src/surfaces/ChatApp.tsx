@@ -3,7 +3,7 @@ import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText,
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showOverlay, submitChatTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showOverlay, submitChatTurn, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
@@ -23,7 +23,8 @@ import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[] };
+type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
@@ -119,7 +120,7 @@ export function ChatApp() {
         });
       }
       const outcome = outcomeFromTurnResult(result);
-      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text) }]);
     } catch (error) {
       const outcome = outcomeFromError(error);
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
@@ -127,6 +128,38 @@ export function ChatApp() {
       setPending(false);
     }
   }, [pending]);
+
+  const decideChatApproval = useCallback(async (approval: ChatApproval, decision: "approve" | "deny" | "cancel") => {
+    setPending(true);
+    try {
+      const result = await resumeApprovalTurn({
+        text: approval.text,
+        traceId: approval.traceId,
+        turnId: approval.turnId,
+        approvalId: approval.approvalId,
+        decision,
+      });
+      const outcome = outcomeFromTurnResult(result);
+      setMessages((prev) => prev.map((message) => {
+        if (message.approval?.approvalId !== approval.approvalId) return message;
+        return {
+          ...message,
+          approval: {
+            ...message.approval,
+            status: decision === "approve" ? "approved" : decision === "cancel" ? "cancelled" : "denied",
+          },
+          text: `${message.text}\n\n${outcome.text}`,
+          stages: outcome.stages ?? message.stages,
+          directives: outcome.directives ?? message.directives,
+        };
+      }));
+    } catch (error) {
+      const outcome = outcomeFromError(error);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
+    } finally {
+      setPending(false);
+    }
+  }, []);
 
   const toggleVoiceCapture = useCallback(() => {
     const next = !micActive;
@@ -236,6 +269,7 @@ export function ChatApp() {
                 micActive={micActive}
                 onSubmit={send}
                 onToggleVoice={toggleVoiceCapture}
+                onApprovalDecision={decideChatApproval}
                 pending={pending}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
@@ -277,6 +311,22 @@ function providerResponseIdFromTurnResult(result: unknown): string | undefined {
   });
   const refId = (first as { ref_id?: unknown } | undefined)?.ref_id;
   return typeof refId === "string" ? refId.trim() : undefined;
+}
+
+function approvalFromTurnResult(result: unknown, text: string): ChatApproval | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const metadata = (result as { metadata?: unknown }).metadata;
+  const approval = metadata && typeof metadata === "object" ? (metadata as { approval_request?: unknown }).approval_request : undefined;
+  if (!approval || typeof approval !== "object") return undefined;
+  const request = approval as { approval_request_id?: unknown; trace_id?: unknown; turn_id?: unknown };
+  if (typeof request.approval_request_id !== "string" || typeof request.trace_id !== "string" || typeof request.turn_id !== "string") return undefined;
+  return {
+    approvalId: request.approval_request_id,
+    traceId: request.trace_id,
+    turnId: request.turn_id,
+    text,
+    status: "pending",
+  };
 }
 
 function AgentOrb({ agentState }: { agentState: AgentOrbState }) {

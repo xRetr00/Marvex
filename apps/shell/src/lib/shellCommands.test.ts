@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { controlPlaneEntryUrl, createChatSession, listChatSessions, submitChatTurn } from "./shellCommands";
+import { controlPlaneEntryUrl, createChatSession, listChatSessions, resumeApprovalTurn, submitChatTurn } from "./shellCommands";
 import { invoke } from "./tauriBridge";
 
 vi.mock("./tauriBridge", () => ({
@@ -43,6 +43,24 @@ describe("shell command bridge", () => {
 
     expect(mockedInvoke).toHaveBeenCalledWith("create_chat_session", { title: "Planning" });
     expect(mockedInvoke).toHaveBeenCalledWith("list_chat_sessions");
+  });
+
+  it("passes approval resume fields through the bridge", async () => {
+    await resumeApprovalTurn({
+      text: "delete this file",
+      traceId: "trace-1",
+      turnId: "turn-1",
+      approvalId: "approval-turn-1",
+      decision: "approve",
+    });
+
+    expect(mockedInvoke).toHaveBeenCalledWith("resume_approval_turn", {
+      text: "delete this file",
+      traceId: "trace-1",
+      turnId: "turn-1",
+      approvalId: "approval-turn-1",
+      decision: "approve",
+    });
   });
 
   it("requests a Control Plane entry URL instead of a browser token", async () => {

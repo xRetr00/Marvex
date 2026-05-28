@@ -82,6 +82,16 @@ export async function submitChatTurn(
   return invoke("submit_chat_turn", { text, metadata, previousResponseId });
 }
 
+export async function resumeApprovalTurn(args: {
+  text: string;
+  traceId: string;
+  turnId: string;
+  approvalId: string;
+  decision: "approve" | "deny" | "cancel";
+}): Promise<unknown> {
+  return invoke("resume_approval_turn", args);
+}
+
 export type BackendSessionRef = {
   ref_type: "session";
   ref_id: string;

@@ -8,7 +8,7 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
+import { resumeApprovalTurn, setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
 import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
 import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
@@ -318,10 +318,19 @@ function IslandCardView({ card, onDismiss }: { card: IslandCard; onDismiss: () =
 
 function ApprovalActions({ approval, onDone }: { approval: ApprovalSummary; onDone: () => void }) {
   const [pending, setPending] = useState(false);
+  const resumable = Boolean(approval.trace_id && approval.turn_id);
   async function decide(decision: "approve" | "deny" | "cancel") {
+    if (!approval.trace_id || !approval.turn_id) return;
     setPending(true);
     try {
       await decideApproval(approval.approval_request_id, decision, `dynamic island ${decision}`);
+      await resumeApprovalTurn({
+        text: approval.user_visible_summary,
+        traceId: approval.trace_id,
+        turnId: approval.turn_id,
+        approvalId: approval.approval_request_id,
+        decision,
+      });
       onDone();
     } finally {
       setPending(false);
@@ -329,9 +338,9 @@ function ApprovalActions({ approval, onDone }: { approval: ApprovalSummary; onDo
   }
   return (
     <div className="marvex-island-approval-actions">
-      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("approve"); }}>Approve</button>
-      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("deny"); }}>Deny</button>
-      <button disabled={pending} type="button" onClick={(event) => { event.stopPropagation(); void decide("cancel"); }}>Cancel</button>
+      <button disabled={pending || !resumable} type="button" onClick={(event) => { event.stopPropagation(); void decide("approve"); }}>Approve</button>
+      <button disabled={pending || !resumable} type="button" onClick={(event) => { event.stopPropagation(); void decide("deny"); }}>Deny</button>
+      <button disabled={pending || !resumable} type="button" onClick={(event) => { event.stopPropagation(); void decide("cancel"); }}>Cancel</button>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { TurnStage, UiDirective } from "@/lib/localTurn";
 import { RichMessage } from "@/components/marvex/RichMessage";
+import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationRequest, ConfirmationTitle } from "@/components/confirmation";
 import {
   ChatbotAssistantFrame,
   ChatbotCopyAction,
@@ -21,6 +22,7 @@ export type MarvexChatMessage = {
   text: string;
   stages?: TurnStage[];
   directives?: UiDirective[];
+  approval?: { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
 };
 
 export type MarvexChatShellProps = {
@@ -28,6 +30,7 @@ export type MarvexChatShellProps = {
   micActive?: boolean;
   pending: boolean;
   onSubmit: (text: string) => void | Promise<void>;
+  onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
   onToggleVoice?: () => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
   assistantOrbState?: "thinking" | "listening" | "talking" | null;
@@ -38,6 +41,7 @@ export function MarvexChatShell({
   micActive = false,
   pending,
   onSubmit,
+  onApprovalDecision,
   onToggleVoice,
   renderAssistantOrb,
   assistantOrbState = null,
@@ -65,6 +69,22 @@ export function MarvexChatShell({
                 <ChatbotAssistantFrame orb={renderAssistantOrb(assistantOrbState)}>
                   <ChatbotMessageContent from="assistant">
                     <RichMessage text={message.text} stages={message.stages} directives={message.directives} />
+                    {message.approval ? (
+                      <Confirmation
+                        approval={message.approval.status === "pending" ? { id: message.approval.approvalId } : { id: message.approval.approvalId, approved: message.approval.status === "approved" }}
+                        state={message.approval.status === "pending" ? "approval-requested" : "approval-responded"}
+                        className="mt-3"
+                      >
+                        <ConfirmationTitle>Approval required for this action.</ConfirmationTitle>
+                        <ConfirmationRequest>
+                          <ConfirmationActions>
+                            <ConfirmationAction disabled={!onApprovalDecision || pending} onClick={() => void onApprovalDecision?.(message.approval!, "approve")}>Approve</ConfirmationAction>
+                            <ConfirmationAction disabled={!onApprovalDecision || pending} variant="outline" onClick={() => void onApprovalDecision?.(message.approval!, "deny")}>Deny</ConfirmationAction>
+                            <ConfirmationAction disabled={!onApprovalDecision || pending} variant="ghost" onClick={() => void onApprovalDecision?.(message.approval!, "cancel")}>Cancel</ConfirmationAction>
+                          </ConfirmationActions>
+                        </ConfirmationRequest>
+                      </Confirmation>
+                    ) : null}
                   </ChatbotMessageContent>
                   <ChatbotMessageActions className="mt-2">
                     <ChatbotCopyAction text={message.text} />
