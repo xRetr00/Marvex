@@ -144,7 +144,7 @@ class InMemoryProviderControl:
         row = self._provider(provider_id)
         models = self._discover_models(provider_id)
         if provider_id == "litellm":
-            models = _dedupe([*models, "openrouter/auto"])
+            models = _dedupe([*models, "openrouter/anthropic/claude-3.5-sonnet"])
         row.healthy = bool(models)
         if models:
             row.models = _dedupe([*models, *row.models])

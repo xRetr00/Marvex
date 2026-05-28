@@ -32,7 +32,12 @@ const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";
 const MARVEX_PACKAGE_NAME: &str = "marvex";
 const PYTHON_RUNTIME_VERSION: &str = "3.12";
 const DEFAULT_PRODUCT_PROVIDER: &str = "litellm";
-const DEFAULT_PRODUCT_MODEL: &str = "openrouter/auto";
+// ``openrouter/auto`` is not a real chat-completions model id - it routes
+// requests through OpenRouter's auto-selector which previously returned
+// 404/PROVIDER_UNAVAILABLE from this adapter. Use a concrete OpenRouter
+// slug as the safe out-of-the-box default; can be overridden by setting
+// MARVEX_MODEL or MARVEX_DEFAULT_MODEL in the launcher environment.
+const DEFAULT_PRODUCT_MODEL: &str = "openrouter/anthropic/claude-3.5-sonnet";
 
 #[derive(Clone, Debug)]
 pub enum ServiceKind {

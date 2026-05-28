@@ -151,7 +151,7 @@ from packages.web_search_runtime import (
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_CONTROL_PORT = 8766
-DEFAULT_FOUNDATION_MODEL = "openrouter/auto"
+DEFAULT_FOUNDATION_MODEL = "openrouter/anthropic/claude-3.5-sonnet"
 DEFAULT_PROVIDER = "provider_worker"
 DEFAULT_WORKER_PROVIDER = "litellm"
 LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"

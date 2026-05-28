@@ -241,7 +241,7 @@ fn default_chat_model() -> String {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-        .unwrap_or_else(|| "openrouter/auto".to_string())
+        .unwrap_or_else(|| "openrouter/anthropic/claude-3.5-sonnet".to_string())
 }
 
 fn safe_shell_turn_metadata(metadata: Option<Value>) -> Value {
