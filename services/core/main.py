@@ -1221,10 +1221,22 @@ class _CoreServiceProviderWorkerTurnExecutor:
         combined_metadata["tool"] = tool_response
         if tool_response.get("ok") is not True:
             loop.step("finalize", stop_reason="waiting_for_human_approval")
+            # Surface the tool worker's actual reason in the user-visible
+            # message rather than a blanket "blocked by policy", so reading a
+            # PDF on a directory path doesn't look like a permission error.
+            reason_code = str(
+                tool_response.get("reason_code")
+                or dict(tool_response.get("result", {})).get("reason_code")
+                or "tool_execution_blocked"
+            )
+            requested_capability = capability_id or capability or resource_type
+            detail_message = (
+                f"Capability '{requested_capability}' was not executed: {reason_code}."
+            )
             return _entrypoint_error_result(
                 turn_input,
                 reason="tool_execution_blocked",
-                message="Capability execution blocked by policy.",
+                message=detail_message,
                 metadata=_with_loop_metadata(combined_metadata, loop, self._trace_reader, turn_input),
             )
         loop.step("finalize", stop_reason="finalized", executed=True)
@@ -2635,61 +2647,19 @@ def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
     }
 
 
+# File-capability intent helpers live in packages.core.orchestration.file_intent
+# so they can be unit-tested without booting the full Core service. Private
+# aliases preserve the existing call sites.
+from packages.core.orchestration.file_intent import (  # noqa: E402
+    file_path_from_input as _file_path_from_input,
+    file_request_from_input as _file_request_from_input_impl,
+    file_rg_query as _file_rg_query,
+    file_search_query as _file_search_query,
+)
+
+
 def _file_request_from_input(text: str | None) -> dict[str, object]:
-    lowered = (text or "").lower()
-    path = _file_path_from_input(text)
-    if any(marker in lowered for marker in ("report", "document", "docx", "pptx", "xlsx")) and any(
-        location in lowered for location in ("desktop", "folder", "directory", "drive", "disk")
-    ):
-        return {
-            "action": "find files with ripgrep",
-            "capability": "search",
-            "capability_id": "file.rg",
-            "arguments": {"path": path, "query": _file_rg_query(text), "max_matches": 50},
-            "extension": None,
-        }
-    if any(marker in lowered for marker in ("list", "names", "filenames", "show me")):
-        if "desktop" in lowered:
-            path = "Desktop"
-        extension = ".pdf" if "pdf" in lowered else None
-        return {
-            "action": "list files",
-            "capability": "list",
-            "capability_id": "file.list",
-            "arguments": {"path": path, "max_entries": 200},
-            "extension": extension,
-        }
-    if "search" in lowered:
-        return {
-            "action": "search files",
-            "capability": "search",
-            "capability_id": "file.search",
-            "arguments": {"path": path, "query": _file_search_query(text), "max_matches": 50},
-            "extension": None,
-        }
-    return {
-        "action": "read file",
-        "capability": "read",
-        "capability_id": "file.read",
-        "arguments": {"path": path, "max_preview_chars": 1200},
-        "extension": None,
-    }
-
-
-def _file_path_from_input(text: str | None) -> str:
-    value = (text or "").strip()
-    match = re.search(r"(?:read|inspect)\s+file\s+(.+)$", value, flags=re.IGNORECASE)
-    if match:
-        return match.group(1).strip().strip("\"'")
-    if re.search(r"\bdesktop\b", value, flags=re.IGNORECASE):
-        return "Desktop"
-    return value.strip().strip("\"'") or "."
-
-
-def _file_search_query(text: str | None) -> str:
-    value = (text or "").strip()
-    match = re.search(r"search\s+(?:files?\s+)?(?:for\s+)?(.+)$", value, flags=re.IGNORECASE)
-    return (match.group(1) if match else value).strip().strip("\"'") or value
+    return dict(_file_request_from_input_impl(text))
 
 
 def _file_final_text(safe_result: dict[str, object], *, requested_extension: object = None) -> str:
