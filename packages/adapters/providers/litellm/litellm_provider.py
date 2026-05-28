@@ -19,6 +19,7 @@ from packages.provider_structured_output import map_adapter_raw_output_to_struct
 @dataclass(frozen=True)
 class LiteLLMProviderConfig:
     provider_name: str = "litellm"
+    api_key: str | None = None
     base_url: str | None = None
     timeout_seconds: float | None = None
     error_id: str = "litellm-error-001"
@@ -38,6 +39,8 @@ class LiteLLMProvider:
         )
         if self._config.base_url is not None:
             call_args["api_base"] = self._config.base_url
+        if self._config.api_key is not None:
+            call_args["api_key"] = self._config.api_key
         if self._config.timeout_seconds is not None:
             call_args["timeout"] = self._config.timeout_seconds
         call_args.update(allowed_options)
@@ -49,6 +52,9 @@ class LiteLLMProvider:
         try:
             completion_response = litellm.completion(**call_args)
         except Exception as exc:
+            message = str(exc)
+            if self._config.api_key:
+                message = message.replace(self._config.api_key, "[REDACTED]")
             return ProviderResponse(
                 schema_version=request.schema_version,
                 trace_id=request.trace_id,
@@ -64,7 +70,7 @@ class LiteLLMProvider:
                     trace_id=request.trace_id,
                     error_id=self._config.error_id,
                     code=ErrorCode.PROVIDER_ERROR,
-                    message=str(exc),
+                    message=message,
                     recoverable=True,
                     source="litellm_provider",
                     details={"exception_type": type(exc).__name__},

@@ -109,6 +109,7 @@ def test_provider_worker_jsonl_start_status_send_and_stop_fake_provider():
 def test_provider_worker_ignores_network_timeout_for_fake_provider():
     from services.provider_worker.controller import ProviderWorkerController
     from services.provider_worker.models import ProviderWorkerConfig
+    from services.provider_worker.models import ProviderWorkerConfig
 
     result = ProviderWorkerController(
         config=ProviderWorkerConfig(
@@ -283,6 +284,45 @@ def test_provider_worker_safe_projection_redacts_secrets_and_raw_metadata():
     assert "must-not-leak" not in dumped
     assert "api_key" not in dumped
     assert "raw_provider_payload" not in dumped
+
+
+def test_provider_worker_passes_litellm_secret_only_to_runtime_config():
+    from services.provider_worker.controller import ProviderWorkerController
+    from services.provider_worker.models import ProviderWorkerConfig
+
+    captured = {}
+
+    class SecretAwareProvider:
+        def send(self, request: ProviderRequest) -> ProviderResponse:
+            return ProviderResponse(
+                schema_version=request.schema_version,
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                provider_name="litellm",
+                response_id="secret-aware-response",
+                output_text="safe text",
+                finish_reason=FinishReason.STOP,
+                usage={},
+                raw_metadata={},
+                error=None,
+            )
+
+    def provider_factory(config):
+        captured["config"] = config
+        return SecretAwareProvider()
+
+    result = ProviderWorkerController(
+        config=ProviderWorkerConfig(provider_candidates=("litellm",)),
+        provider_factory=provider_factory,
+    ).send(
+        provider_name="litellm",
+        request=make_request(),
+        litellm_api_key="sk-test-litellm-secret",
+    )
+
+    assert result.ok is True
+    assert captured["config"].litellm_api_key == "sk-test-litellm-secret"
+    assert "sk-test-litellm-secret" not in result.model_dump_json()
 
 
 def test_provider_worker_maps_fake_raw_output_to_structured_result_offline():

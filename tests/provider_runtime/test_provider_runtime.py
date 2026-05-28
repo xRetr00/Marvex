@@ -80,6 +80,7 @@ def test_provider_runtime_config_supports_additive_connection_fields():
     assert [field.name for field in fields(ProviderRuntimeConfig)] == [
         "provider_name",
         "lmstudio_responses_api_key",
+        "litellm_api_key",
         "base_url",
         "timeout_seconds",
     ]
@@ -110,21 +111,30 @@ def test_create_lmstudio_provider_receives_base_url_timeout_and_api_key():
     }
 
 
-def test_create_litellm_provider_receives_base_url_and_timeout():
+def test_create_litellm_provider_receives_base_url_timeout_and_api_key():
     from packages.adapters.providers.litellm import LiteLLMProvider
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
     provider = create_provider(
         ProviderRuntimeConfig(
             provider_name="litellm",
+            litellm_api_key="sk-test-litellm",
             base_url="http://127.0.0.1:4000",
             timeout_seconds=9,
         )
     )
 
     assert isinstance(provider, LiteLLMProvider)
+    assert provider._config.api_key == "sk-test-litellm"
     assert provider._config.base_url == "http://127.0.0.1:4000"
     assert provider._config.timeout_seconds == 9
+
+
+def test_non_litellm_provider_rejects_litellm_api_key():
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    with pytest.raises(ValueError, match="litellm_api_key is only supported for litellm"):
+        create_provider(ProviderRuntimeConfig(provider_name="fake", litellm_api_key="sk-test"))
 
 
 def test_fake_provider_rejects_connection_config_fields():

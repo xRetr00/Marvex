@@ -107,6 +107,7 @@ class ProviderWorkerController:
         base_url: str | None = None,
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
+        litellm_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         decision_projection: ProviderWorkerSelectionProjection | None = None
         try:
@@ -139,6 +140,7 @@ class ProviderWorkerController:
                             base_url=base_url,
                             timeout_seconds=timeout_seconds,
                             lmstudio_responses_api_key=lmstudio_responses_api_key,
+                            litellm_api_key=litellm_api_key,
                         )
                     )
                     response = provider.send(request)  # type: ignore[attr-defined]
@@ -380,6 +382,7 @@ class ProviderWorkerController:
         base_url: str | None = None,
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
+        litellm_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         if target_contract != "AssistantFinalResponse":
             return self._error_result(
@@ -412,6 +415,7 @@ class ProviderWorkerController:
                     config=ProviderRuntimeConfig(
                         provider_name=provider_name,
                         lmstudio_responses_api_key=lmstudio_responses_api_key,
+                        litellm_api_key=litellm_api_key,
                         base_url=base_url,
                         timeout_seconds=timeout_seconds,
                     ),
@@ -466,12 +470,14 @@ def _provider_runtime_config(
     base_url: str | None = None,
     timeout_seconds: float | None = None,
     lmstudio_responses_api_key: str | None = None,
+    litellm_api_key: str | None = None,
 ) -> ProviderRuntimeConfig:
     if provider_name == "fake":
         return ProviderRuntimeConfig(provider_name=provider_name)
     return ProviderRuntimeConfig(
         provider_name=provider_name,
         lmstudio_responses_api_key=lmstudio_responses_api_key,
+        litellm_api_key=litellm_api_key,
         base_url=base_url,
         timeout_seconds=timeout_seconds,
     )

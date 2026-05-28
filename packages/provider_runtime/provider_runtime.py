@@ -13,6 +13,7 @@ LMStudioResponsesProviderConfig = None
 class ProviderRuntimeConfig:
     provider_name: str
     lmstudio_responses_api_key: str | None = None
+    litellm_api_key: str | None = None
     base_url: str | None = None
     timeout_seconds: float | None = None
 
@@ -36,6 +37,7 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         provider_class = _litellm_provider_class()
         config_class = _litellm_provider_config_class()
         provider_config_kwargs = {
+            "api_key": _clean_optional_string(config.litellm_api_key),
             "base_url": _clean_optional_string(config.base_url),
             "timeout_seconds": config.timeout_seconds,
         }
@@ -110,6 +112,8 @@ def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
         raise ValueError(
             "lmstudio_responses_api_key is only supported for lmstudio_responses"
         )
+    if config.provider_name != "litellm" and _has_litellm_api_key(config):
+        raise ValueError("litellm_api_key is only supported for litellm")
     if config.provider_name == "fake" and _clean_optional_string(config.base_url) is not None:
         raise ValueError("base_url is only supported for network provider adapters")
     if config.provider_name == "fake" and config.timeout_seconds is not None:
@@ -120,6 +124,11 @@ def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
 
 def _has_lmstudio_responses_api_key(config: ProviderRuntimeConfig) -> bool:
     value = config.lmstudio_responses_api_key
+    return isinstance(value, str) and bool(value.strip())
+
+
+def _has_litellm_api_key(config: ProviderRuntimeConfig) -> bool:
+    value = config.litellm_api_key
     return isinstance(value, str) and bool(value.strip())
 
 

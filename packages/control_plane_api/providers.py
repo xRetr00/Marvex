@@ -77,6 +77,7 @@ class InMemoryProviderControl:
             ),
         )
         self._providers = {row.provider_id: row for row in rows}
+        self._secrets: dict[str, str] = {}
         self.active_provider_id = rows[0].provider_id
         self._on_change = on_change
         self._model_discovery = model_discovery or _empty_model_discovery
@@ -120,6 +121,7 @@ class InMemoryProviderControl:
             raise ValueError("secret_required")
         row.secret_present = True
         row.secret_display = _mask_secret(secret_value)
+        self._secrets[provider_id] = secret_value.strip()
         row.configured = True
         return self._changed()
 
@@ -127,7 +129,12 @@ class InMemoryProviderControl:
         row = self._provider(provider_id)
         row.secret_present = False
         row.secret_display = ""
+        self._secrets.pop(provider_id, None)
         return self._changed()
+
+    def secret_value(self, provider_id: str) -> str | None:
+        value = self._secrets.get(provider_id)
+        return value if isinstance(value, str) and value.strip() else None
 
     def refresh_models(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
