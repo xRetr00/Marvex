@@ -118,11 +118,18 @@ class VoiceWorkerController:
         tick = self.wakeword_supervisor.tick()
         if tick.detected:
             self._error = None
+            wake_trace = f"trace-wakeword-supervisor-{len(self._events) + 1}"
             self._record(
                 VoiceWorkerEventType.WAKEWORD_DETECTED,
-                trace_id=f"trace-wakeword-supervisor-{len(self._events) + 1}",
+                trace_id=wake_trace,
                 summary=tick.safe_projection(),
             )
+            # Bridge: a successful wakeword detection should not just be
+            # logged; it should hand off to STT so the rest of the
+            # voice pipeline can run. The previous controller left this
+            # link missing, so the supervisor would happily detect "Hey
+            # Marvex" forever while STT counters stayed at zero.
+            self._run_post_wake_capture(parent_trace_id=wake_trace)
         elif tick.exact_blocker and tick.exact_blocker not in {
             "wakeword_supervisor.backoff_active",
             "wakeword_supervisor.not_started",
@@ -135,6 +142,79 @@ class VoiceWorkerController:
             )
             self._record(VoiceWorkerEventType.ERROR, trace_id=self._error.trace_id, summary=tick.safe_projection())
         return tick
+
+    def _run_post_wake_capture(self, *, parent_trace_id: str) -> None:
+        """Capture a short user utterance after wake and run STT on it.
+
+        Emits ``VAD_SPEECH_STARTED``/``VAD_SPEECH_ENDED``/
+        ``TRANSCRIPTION_STARTED``/``TRANSCRIPTION_COMPLETED`` events with the
+        transcript text in the completed event's summary, so a downstream
+        consumer (shell or core service) can pick it up and submit a chat
+        turn. Failures are swallowed; the wake event has already been
+        recorded and the supervisor can keep listening.
+        """
+
+        try:
+            # ~3 seconds of room for the user's command. With 100 ms frames
+            # this is enough for short queries like "what's the weather"
+            # while not running away on misfires.
+            frames = tuple(
+                self.audio.capture_frames(
+                    device_id=self.config.audio.input_device_id,
+                    sample_rate=self.config.audio.sample_rate,
+                    channel_count=self.config.audio.channel_count,
+                    frame_count=30,
+                )
+            )
+            if not frames:
+                return
+            self._record(
+                VoiceWorkerEventType.VAD_SPEECH_STARTED,
+                trace_id=parent_trace_id,
+                summary={"trigger": "post_wake_capture"},
+            )
+            audio_ref_id = self.backend_runtime.remember_captured_frames(
+                trace_id=parent_trace_id,
+                frames=frames,
+            )
+            self._record(
+                VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                trace_id=parent_trace_id,
+                summary={
+                    "duration_ms": sum(frame.duration_ms for frame in frames),
+                    "audio_ref_present": True,
+                },
+            )
+            self._record(
+                VoiceWorkerEventType.TRANSCRIPTION_STARTED,
+                trace_id=parent_trace_id,
+                summary={"backend_id": self.config.active_stt_backend_id},
+            )
+            transcription = self.backend_runtime.test_stt(
+                trace_id=parent_trace_id,
+                backend_id=self.config.active_stt_backend_id,
+                audio_ref_id=audio_ref_id,
+            )
+            summary = {
+                **transcription_summary(transcription),
+                "audio_ref_present": True,
+                "post_wake_capture": True,
+            }
+            if transcription.status == "succeeded" and transcription.text:
+                summary["transcript_text"] = transcription.text
+            self._record(
+                VoiceWorkerEventType.TRANSCRIPTION_COMPLETED,
+                trace_id=parent_trace_id,
+                summary=summary,
+            )
+        except Exception:
+            # Defensive: any failure here is logged but must not crash
+            # the supervisor tick loop.
+            self._record(
+                VoiceWorkerEventType.ERROR,
+                trace_id=parent_trace_id,
+                summary={"post_wake_capture": True, "reason_code": "post_wake_capture_failed"},
+            )
 
     def wakeword_supervisor_health(self) -> WakewordSupervisorHealth:
         self.asset_manager.discover_installed()

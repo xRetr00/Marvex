@@ -326,7 +326,11 @@ def test_controller_wakeword_tick_records_detection_event_for_telemetry(tmp_path
     projection = controller.status().safe_projection()
 
     assert tick.detected is True
-    assert projection["recent_events"][-1]["event_type"] == "wakeword_detected"
+    # A wake detection now also triggers the post-wake STT capture so the
+    # most recent events include the downstream transcription. We just
+    # need to see the wake event somewhere in the recent buffer.
+    event_types = [event["event_type"] for event in projection["recent_events"]]
+    assert "wakeword_detected" in event_types
     assert projection["telemetry"]["wakeword_detections"] == 1
 
 
@@ -379,3 +383,73 @@ def test_controller_reload_config_updates_supervisor_view_of_wakeword(tmp_path: 
     )
     ready = controller.start_wakeword_supervisor(explicit_user_triggered=True)
     assert ready.lifecycle_state == WakewordSupervisorLifecycleState.RUNNING
+
+
+def test_wake_detection_triggers_post_wake_stt_capture(tmp_path: Path) -> None:
+    """A successful wake event should drive a follow-up STT capture so the
+    rest of the voice pipeline can pick up the transcript."""
+
+    from packages.voice_runtime import TranscriptionResult
+    from packages.voice_worker_runtime.models import VoiceWorkerEventType
+
+    manager = _install_hey_marvex_asset(tmp_path)
+    # The post-wake STT path needs the active STT model installed under the
+    # asset root, otherwise the backend runtime reports
+    # ``model_asset_missing_manual_install_required`` and short-circuits
+    # before reaching the injected runner.
+    (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
+    manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="moonshine-v2",
+            backend_id="moonshine-v2",
+            model_kind="stt",
+            relative_path="stt/moonshine-v2",
+            explicit_user_triggered=True,
+        )
+    )
+
+    stt_calls: list[str] = []
+
+    def stt_runner(request, asset):  # noqa: ANN001 - test stub
+        stt_calls.append(asset.backend_id)
+        return TranscriptionResult.succeeded(
+            trace_id=request.trace_id,
+            text="what is the weather",
+            backend_id=asset.backend_id,
+            duration_ms=request.duration_ms,
+            language="en",
+            segments=(),
+        )
+
+    def wakeword_runner(frames, asset, *, phrase: str, threshold: float):  # noqa: ANN001
+        return WakeWordDetectionResult.detected(
+            phrase=phrase, confidence=threshold, backend_id=asset.backend_id
+        )
+
+    controller = VoiceWorkerController(
+        config=_enabled_wakeword_config(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(
+            asset_manager=manager,
+            wakeword_runner=wakeword_runner,
+            stt_runner=stt_runner,
+        ),
+    )
+    controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
+
+    tick = controller.tick_wakeword_supervisor()
+
+    assert tick.detected is True
+    assert stt_calls, "post-wake STT capture should have invoked the STT runner"
+    projection = controller.status().safe_projection()
+    event_types = [event["event_type"] for event in projection["recent_events"]]
+    assert "wakeword_detected" in event_types
+    assert "transcription_started" in event_types
+    assert "transcription_completed" in event_types
+    completed = next(
+        event for event in reversed(projection["recent_events"])
+        if event["event_type"] == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED.value
+    )
+    assert completed["summary"].get("post_wake_capture") is True
+    assert completed["summary"].get("transcript_text") == "what is the weather"

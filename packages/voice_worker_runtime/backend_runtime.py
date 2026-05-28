@@ -124,6 +124,8 @@ class VoiceWorkerBackendRuntime:
         self.generated_audio = generated_audio or VoiceWorkerGeneratedAudioSink()
         self._module_loader = module_loader or import_module
         self._custom_wakeword_runner = wakeword_runner is not None
+        self._custom_stt_runner = stt_runner is not None
+        self._custom_tts_runner = tts_runner is not None
         self._stt_runner = stt_runner or VoiceWorkerSttModelRunner(
             asset_manager=self.asset_manager,
             audio_refs=self.audio_refs,
@@ -185,7 +187,14 @@ class VoiceWorkerBackendRuntime:
     def test_stt(self, *, trace_id: str, backend_id: str, audio_ref_id: str, duration_ms: int = 320) -> TranscriptionResult:
         model_id, package_name, module_name = _resolve(_STT_MODELS, backend_id, default_model=backend_id)
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="stt")
-        blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        # A caller-injected stt_runner is trusted to do its own readiness
+        # checks (tests and embedded harnesses use this path). Skip the
+        # package-import gate only when the model asset itself is installed.
+        blocker = (
+            None
+            if self._custom_stt_runner and asset.status == "installed"
+            else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        )
         if blocker is not None:
             return TranscriptionResult.failed(trace_id=trace_id, backend_id=backend_id, duration_ms=duration_ms, error=VoiceErrorEnvelope.backend_error(trace_id=trace_id, backend_id=backend_id, reason_code=blocker))
         request = TranscriptionRequest(trace_id=trace_id, audio_ref_id=audio_ref_id, duration_ms=duration_ms, backend_id=backend_id)
