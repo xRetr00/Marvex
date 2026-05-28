@@ -3,10 +3,17 @@ from dataclasses import dataclass
 from packages.ports.provider import ProviderPort
 
 FakeProvider = None
+LiteLLMConversationStore = None
 LiteLLMProvider = None
 LiteLLMProviderConfig = None
 LMStudioResponsesProvider = None
 LMStudioResponsesProviderConfig = None
+
+# Process-singleton conversation store so successive ``create_provider`` calls
+# in the same Python process share LiteLLM message history. Without this, each
+# new provider instance would forget every prior turn and ``previous_response_id``
+# would be effectively ignored for the OpenAI chat-completions surface.
+_LITELLM_CONVERSATION_STORE = None
 
 
 @dataclass(frozen=True)
@@ -36,6 +43,7 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
     if config.provider_name == "litellm":
         provider_class = _litellm_provider_class()
         config_class = _litellm_provider_config_class()
+        store = _litellm_conversation_store()
         provider_config_kwargs = {
             "api_key": _clean_optional_string(config.litellm_api_key),
             "base_url": _clean_optional_string(config.base_url),
@@ -46,11 +54,10 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         }
         if provider_config_kwargs:
             return provider_class(
-                config_class(
-                    **provider_config_kwargs,
-                )
+                config_class(**provider_config_kwargs),
+                conversation_store=store,
             )
-        return provider_class()
+        return provider_class(conversation_store=store)
     if config.provider_name == "lmstudio_responses":
         provider_class = _lmstudio_responses_provider_class()
         config_class = _lmstudio_responses_provider_config_class()
@@ -82,6 +89,26 @@ def _litellm_provider_class():
     if LiteLLMProvider is None:
         from packages.adapters.providers.litellm import LiteLLMProvider
     return LiteLLMProvider
+
+
+def _litellm_conversation_store_class():
+    global LiteLLMConversationStore
+    if LiteLLMConversationStore is None:
+        from packages.adapters.providers.litellm import LiteLLMConversationStore
+    return LiteLLMConversationStore
+
+
+def _litellm_conversation_store():
+    """Return the process-singleton LiteLLM conversation store.
+
+    Single instance so chat history survives across ``create_provider`` calls
+    within one core-service process.
+    """
+
+    global _LITELLM_CONVERSATION_STORE
+    if _LITELLM_CONVERSATION_STORE is None:
+        _LITELLM_CONVERSATION_STORE = _litellm_conversation_store_class()()
+    return _LITELLM_CONVERSATION_STORE
 
 
 def _litellm_provider_config_class():

@@ -15,6 +15,8 @@ from packages.contracts import (
 )
 from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
 
+from .conversation_store import LiteLLMConversationStore
+
 
 @dataclass(frozen=True)
 class LiteLLMProviderConfig:
@@ -26,13 +28,22 @@ class LiteLLMProviderConfig:
 
 
 class LiteLLMProvider:
-    def __init__(self, config: LiteLLMProviderConfig | None = None) -> None:
+    """LiteLLM chat-completions adapter with optional client-side multi-turn."""
+
+    def __init__(
+        self,
+        config: LiteLLMProviderConfig | None = None,
+        *,
+        conversation_store: LiteLLMConversationStore | None = None,
+    ) -> None:
         self._config = config or LiteLLMProviderConfig()
+        self._conversation_store = conversation_store
 
     def send(self, request: ProviderRequest) -> ProviderResponse:
+        messages = self._build_messages(request)
         call_args = {
             "model": request.model,
-            "messages": self._build_messages(request),
+            "messages": messages,
         }
         allowed_options, ignored_options = self._filter_provider_options(
             request.provider_options
@@ -77,13 +88,16 @@ class LiteLLMProvider:
                 ),
             )
 
+        response_id = self._read_attr(completion_response, "id")
+        output_text = self._read_output_text(completion_response)
+        self._record_turn(response_id, messages, output_text)
         return ProviderResponse(
             schema_version=request.schema_version,
             trace_id=request.trace_id,
             turn_id=request.turn_id,
             provider_name=self._config.provider_name,
-            response_id=self._read_attr(completion_response, "id"),
-            output_text=self._read_output_text(completion_response),
+            response_id=response_id,
+            output_text=output_text,
             finish_reason=self._map_finish_reason(
                 self._read_first_choice_attr(completion_response, "finish_reason")
             ),
@@ -113,10 +127,33 @@ class LiteLLMProvider:
 
     def _build_messages(self, request: ProviderRequest) -> list[dict[str, str]]:
         messages: list[dict[str, str]] = []
-        if request.instructions is not None:
+        prior: list[dict[str, str]] = []
+        if self._conversation_store is not None:
+            prior = self._conversation_store.recall(request.previous_response_id)
+        if prior:
+            if request.instructions is not None:
+                messages.append({"role": "system", "content": request.instructions})
+                prior = [m for m in prior if m.get("role") != "system"]
+            messages.extend(prior)
+        elif request.instructions is not None:
             messages.append({"role": "system", "content": request.instructions})
         messages.append({"role": "user", "content": request.input_text})
         return messages
+
+    def _record_turn(
+        self,
+        response_id: object,
+        messages: list[dict[str, str]],
+        output_text: str,
+    ) -> None:
+        if self._conversation_store is None:
+            return
+        if not isinstance(response_id, str) or not response_id.strip():
+            return
+        updated = list(messages)
+        if output_text:
+            updated.append({"role": "assistant", "content": output_text})
+        self._conversation_store.remember(response_id, updated)
 
     def _filter_provider_options(
         self, provider_options: dict[str, Any]
