@@ -386,7 +386,23 @@ def _local_file_read_needed(lowered: str) -> bool:
     if any(part in lowered for part in ("read file", "list files", "search files", "inspect file")):
         return True
     if any(location in lowered for location in ("desktop", "folder", "directory", "drive", "disk")) and any(
-        subject in lowered for subject in ("file", "files", "pdf", "pdfs", "filename", "filenames", "names")
+        subject in lowered
+        for subject in (
+            "file",
+            "files",
+            "pdf",
+            "pdfs",
+            "filename",
+            "filenames",
+            "names",
+            "report",
+            "document",
+            "doc",
+            "docx",
+            "ppt",
+            "pptx",
+            "xlsx",
+        )
     ):
         return True
     return False

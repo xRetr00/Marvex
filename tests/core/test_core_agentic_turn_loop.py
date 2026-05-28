@@ -174,6 +174,26 @@ def test_core_file_list_turn_for_desktop_pdfs_uses_tool_worker(tmp_path: Path) -
     assert result.metadata["agentic_loop"]["executed_count"] == 1
 
 
+def test_core_file_report_lookup_on_desktop_uses_rg_tool_without_approval(tmp_path: Path) -> None:
+    root = tmp_path / "profile"
+    desktop = root / "Desktop"
+    desktop.mkdir(parents=True)
+    (desktop / "UNI Report Final.pdf").write_text("pdf placeholder", encoding="utf-8")
+
+    result = run_core_turn(
+        "I need the UNI report on Desktop",
+        trace_id="trace-core-file-rg-desktop",
+        turn_id="turn-core-file-rg-desktop",
+        extra=["--file-capability-root", str(root)],
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "Desktop/UNI Report Final.pdf" in result.assistant_final_response.text
+    assert result.metadata["tool"]["result"]["capability_ref"]["identifier"] == "file.rg"
+    assert result.metadata["agentic_loop"]["executed_count"] == 1
+
+
 def test_core_list_tools_uses_capability_diagnostics_not_provider() -> None:
     result = run_core_turn(
         "list tools",
@@ -340,3 +360,35 @@ def test_core_approval_resume_requires_same_logical_turn_approval_id() -> None:
     assert result.metadata["approval"]["decision"] == "mismatched"
     assert result.metadata["agentic_loop"]["stop_reason"] == "blocked"
     assert result.metadata["agentic_loop"]["executed_count"] == 0
+
+
+def test_core_approval_resume_executes_approved_file_write(tmp_path: Path) -> None:
+    root = tmp_path / "profile"
+    (root / "Desktop").mkdir(parents=True)
+    turn_id = "turn-core-write-resume"
+    paused = run_core_turn(
+        "write test.txt on my desktop",
+        trace_id="trace-core-write-resume",
+        turn_id=turn_id,
+        extra=["--file-capability-root", str(root)],
+    )
+
+    approved = run_core_turn(
+        "write test.txt on my desktop",
+        trace_id="trace-core-write-resume",
+        turn_id=turn_id,
+        extra=[
+            "--file-capability-root",
+            str(root),
+            "--resume-approval",
+            paused.metadata["approval_request"]["approval_request_id"],
+            "--approval-decision",
+            "approve",
+        ],
+    )
+
+    assert approved.error is None
+    assert approved.assistant_final_response is not None
+    assert "File written: Desktop/test.txt." == approved.assistant_final_response.text
+    assert (root / "Desktop" / "test.txt").read_text(encoding="utf-8") == "test"
+    assert approved.metadata["tool"]["result"]["capability_ref"]["identifier"] == "file.write"

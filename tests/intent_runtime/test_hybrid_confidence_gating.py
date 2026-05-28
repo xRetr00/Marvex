@@ -37,6 +37,7 @@ def test_special_routes_require_clear_signal_and_surface_confidence_details() ->
         "list MCP tools": IntentKind.MCP_NEEDED,
         "list tools": IntentKind.CAPABILITY_TOOL,
         "show me the PDF names on my desktop": IntentKind.FILE_READ_LIST_SEARCH,
+        "I need the UNI report on Desktop": IntentKind.FILE_READ_LIST_SEARCH,
         "write test.txt on my desktop": IntentKind.RISKY_ACTION,
         "what changed in my memory tree about Marvex?": IntentKind.MEMORY_TREE_NEEDED,
         "Use the calculator tool for 2+2": IntentKind.CAPABILITY_TOOL,
