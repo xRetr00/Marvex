@@ -12,6 +12,7 @@ from packages.process_runtime import HealthVersionProvider
 from .auth_policy import validate_local_bearer_token
 from .contracts import (
     LOCAL_TRACES_PREFIX,
+    LOCAL_TURN_OPTIONAL_REQUEST_FIELDS,
     LOCAL_TURN_REQUEST_FIELDS,
     LOCAL_TURNS_EXECUTION_MODE,
     LOCAL_TURNS_PATH,
@@ -185,7 +186,10 @@ async def _parse_turn_request(
         return _validation_error("invalid_json")
     if not isinstance(payload, dict):
         return _validation_error("request_must_be_object")
-    if set(payload) != LOCAL_TURN_REQUEST_FIELDS:
+    payload_fields = set(payload)
+    if not LOCAL_TURN_REQUEST_FIELDS.issubset(payload_fields) or not payload_fields.issubset(
+        LOCAL_TURN_REQUEST_FIELDS | LOCAL_TURN_OPTIONAL_REQUEST_FIELDS
+    ):
         return _validation_error("invalid_request_fields")
     if payload["schema_version"] != SCHEMA_VERSION:
         return _validation_error("invalid_schema_version")
@@ -203,6 +207,12 @@ async def _parse_turn_request(
         )
     ):
         return _validation_error("invalid_previous_response_id")
+    resume_approval_id = payload.get("resume_approval_id")
+    if resume_approval_id is not None and (not isinstance(resume_approval_id, str) or not resume_approval_id.strip()):
+        return _validation_error("invalid_resume_approval_id")
+    approval_decision = payload.get("approval_decision")
+    if approval_decision is not None and approval_decision not in {"approve", "deny", "cancel"}:
+        return _validation_error("invalid_approval_decision")
     if not isinstance(payload["provider_options"], dict) or payload["provider_options"]:
         return _validation_error("invalid_provider_options")
     try:
@@ -216,6 +226,8 @@ async def _parse_turn_request(
         model=payload["model"],
         instructions=payload["instructions"],
         previous_response_id=payload["previous_response_id"],
+        resume_approval_id=resume_approval_id,
+        approval_decision=approval_decision,
         provider_options=payload["provider_options"],
     )
 

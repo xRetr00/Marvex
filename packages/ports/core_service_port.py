@@ -11,5 +11,7 @@ class CoreTurnExecutorPort(Protocol):
         self,
         turn_input: AssistantTurnInput,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
         ...

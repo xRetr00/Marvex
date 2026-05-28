@@ -293,7 +293,27 @@ def test_turns_invokes_handler_once_with_validated_envelope():
     assert request.model == "fake-model"
     assert request.instructions is None
     assert request.previous_response_id == "previous-response-001"
+    assert request.resume_approval_id is None
+    assert request.approval_decision is None
     assert request.provider_options == {}
+
+
+def test_turns_accepts_approval_resume_fields():
+    handler = RecordingHandler()
+
+    status, _headers, payload = call_app(
+        make_app(handler),
+        "/v1/turns",
+        method="POST",
+        body=make_request_payload(resume_approval_id="approval-turn-1", approval_decision="approve"),
+        auth="Bearer fake-local-token",
+    )
+
+    assert status == "200 OK"
+    AssistantTurnResult.model_validate(payload)
+    request = handler.requests[0]
+    assert request.resume_approval_id == "approval-turn-1"
+    assert request.approval_decision == "approve"
 
 
 def test_turns_can_accept_injected_lmstudio_execution_mode_without_changing_default():

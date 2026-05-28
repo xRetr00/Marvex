@@ -22,6 +22,10 @@ LOCAL_TURN_REQUEST_FIELDS = {
     "previous_response_id",
     "provider_options",
 }
+LOCAL_TURN_OPTIONAL_REQUEST_FIELDS = {
+    "resume_approval_id",
+    "approval_decision",
+}
 
 
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
@@ -54,6 +58,8 @@ class LocalTurnRequestEnvelope:
     model: str
     instructions: str | None
     previous_response_id: str | None
+    resume_approval_id: str | None
+    approval_decision: str | None
     provider_options: dict[str, Any]
 
 

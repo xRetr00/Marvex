@@ -85,7 +85,14 @@ class RecordingTurnExecutor:
         self.turns: list[AssistantTurnInput] = []
         self.previous_response_ids: list[str | None] = []
 
-    def submit_turn(self, turn_input: AssistantTurnInput, previous_response_id: str | None = None) -> AssistantTurnResult:
+    def submit_turn(
+        self,
+        turn_input: AssistantTurnInput,
+        previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
+    ) -> AssistantTurnResult:
+        del resume_approval_id, approval_decision
         self.turns.append(turn_input)
         self.previous_response_ids.append(previous_response_id)
         return make_success_result(turn_input)
@@ -96,8 +103,10 @@ class ExplodingTurnExecutor:
         self,
         _turn_input: AssistantTurnInput,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
-        del previous_response_id
+        del previous_response_id, resume_approval_id, approval_decision
         raise RuntimeError("raw executor failure with secret detail")
 
 
@@ -106,8 +115,10 @@ class MismatchedTurnExecutor:
         self,
         turn_input: AssistantTurnInput,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
-        del previous_response_id
+        del previous_response_id, resume_approval_id, approval_decision
         return make_success_result(turn_input).model_copy(
             update={"trace_id": "trace-from-wrong-turn"}
         )

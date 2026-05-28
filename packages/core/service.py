@@ -123,6 +123,8 @@ class CoreService:
         self,
         turn_input: AssistantTurnInput,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
         if self._state == CoreServiceState.INITIALIZED:
             return self._error_result(
@@ -144,6 +146,8 @@ class CoreService:
             raw_result = self._turn_executor.submit_turn(
                 turn_input,
                 previous_response_id=previous_response_id,
+                resume_approval_id=resume_approval_id,
+                approval_decision=approval_decision,
             )
             result = AssistantTurnResult.model_validate(raw_result)
         except Exception:

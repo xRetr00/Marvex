@@ -151,9 +151,9 @@ from packages.web_search_runtime import (
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8765
 DEFAULT_CONTROL_PORT = 8766
-DEFAULT_FOUNDATION_MODEL = "qwen2.5-coder-7b"
+DEFAULT_FOUNDATION_MODEL = "openrouter/auto"
 DEFAULT_PROVIDER = "provider_worker"
-DEFAULT_WORKER_PROVIDER = "lmstudio_responses"
+DEFAULT_WORKER_PROVIDER = "litellm"
 LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
 
@@ -363,7 +363,10 @@ class _CoreServiceFoundationTurnExecutor:
         self,
         turn_input,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ):
+        del resume_approval_id, approval_decision
         linkage = build_turn_linkage_from_assistant_turn_input(
             turn_input,
             previous_response_id=previous_response_id,
@@ -399,12 +402,14 @@ class _ProviderWorkerProcessProvider:
         provider_name: str,
         base_url: str | None = None,
         timeout_seconds: float | None = None,
+        provider_secret: str | None = None,
         python_executable: str = sys.executable,
         worker_client: _JsonlWorkerProcessClient | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
         self._timeout_seconds = timeout_seconds
+        self._provider_secret = provider_secret
         self._python_executable = python_executable
         self._worker_client = worker_client or _JsonlWorkerProcessClient(
             module="services.provider_worker.main",
@@ -425,6 +430,11 @@ class _ProviderWorkerProcessProvider:
             send_command["base_url"] = self._base_url
         if self._timeout_seconds is not None:
             send_command["timeout_seconds"] = self._timeout_seconds
+        if self._provider_secret:
+            if self._provider_name == "lmstudio_responses":
+                send_command["lmstudio_responses_api_key"] = self._provider_secret
+            elif self._provider_name == "litellm":
+                send_command["litellm_api_key"] = self._provider_secret
         payload = self._worker_client.request(
             send_command,
             timeout_seconds=self._timeout_seconds,
@@ -469,6 +479,11 @@ class _ProviderWorkerProcessProvider:
             command["base_url"] = self._base_url
         if self._timeout_seconds is not None:
             command["timeout_seconds"] = self._timeout_seconds
+        if self._provider_secret:
+            if self._provider_name == "lmstudio_responses":
+                command["lmstudio_responses_api_key"] = self._provider_secret
+            elif self._provider_name == "litellm":
+                command["litellm_api_key"] = self._provider_secret
         try:
             payload = self._worker_client.request(
                 command,
@@ -756,6 +771,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             base_url=base_url,
             timeout_seconds=timeout_seconds,
         )
+        self._provider_secret: str | None = None
         self._intent_classifier = _IntentWorkerProcessClassifier(
             timeout_seconds=timeout_seconds,
         )
@@ -793,19 +809,22 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 except Exception:
                     pass
 
-    def configure_provider(self, *, provider_name: str, model: str) -> None:
+    def configure_provider(self, *, provider_name: str, model: str, provider_secret: str | None = None) -> None:
         provider_name = provider_name.strip()
         model = model.strip()
         if not provider_name or not model:
             return
-        if provider_name != self._provider_name:
+        provider_secret = provider_secret.strip() if isinstance(provider_secret, str) and provider_secret.strip() else None
+        if provider_name != self._provider_name or provider_secret != self._provider_secret:
             self._provider.shutdown()
             self._provider = _ProviderWorkerProcessProvider(
                 provider_name=provider_name,
                 base_url=self._base_url,
                 timeout_seconds=self._timeout_seconds,
+                provider_secret=provider_secret,
             )
             self._provider_name = provider_name
+            self._provider_secret = provider_secret
         self._model = model
 
     def _publish(
@@ -830,7 +849,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self,
         turn_input: AssistantTurnInput,
         previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
+        effective_resume_approval = resume_approval_id or self._resume_approval
+        effective_approval_decision = approval_decision or self._approval_decision
         linkage = build_turn_linkage_from_assistant_turn_input(
             turn_input,
             previous_response_id=previous_response_id,
@@ -850,6 +873,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 provider_name=selected_provider_name,
                 base_url=self._base_url,
                 timeout_seconds=self._timeout_seconds,
+                provider_secret=self._provider_secret,
             )
             self._provider_name = selected_provider_name
         self._model = selected_model
@@ -909,6 +933,16 @@ class _CoreServiceProviderWorkerTurnExecutor:
         loop.step("plan")
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
         route_intents = tuple(dict.fromkeys((intent_kind, *plan_intents)))
+        if effective_resume_approval:
+            self._publish(AssistantStatusKind.USING_TOOLS, detail="approval_resume", trace_id=turn_input.trace_id)
+            return self._run_approval_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                resume_approval=effective_resume_approval,
+                approval_decision=effective_approval_decision,
+            )
         if intent_projection.get("clarification_needed") == "needed" or intent_kind == "clarification":
             self._publish(AssistantStatusKind.ASKING, detail="clarification_needed", trace_id=turn_input.trace_id)
             loop.step("clarify", stop_reason="finalized")
@@ -1011,7 +1045,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         if "browser_computer_use" in route_intents:
             self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="computer_use", trace_id=turn_input.trace_id)
-            if not self._resume_approval:
+            if not effective_resume_approval:
                 return self._run_approval_path(
                     turn_input,
                     metadata={
@@ -1026,8 +1060,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     cognition=cognition,
                     loop=loop,
                 )
-            if (self._approval_decision or "").strip().lower() != "approve":
-                return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
+            if (effective_approval_decision or "").strip().lower() != "approve":
+                return self._run_approval_path(
+                    turn_input,
+                    metadata=metadata,
+                    cognition=cognition,
+                    loop=loop,
+                    resume_approval=effective_resume_approval,
+                    approval_decision=effective_approval_decision,
+                )
             loop.step("tool")
             tool_response = self._tool_executor.execute(
                 turn_input,
@@ -1037,8 +1078,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 capability_id="browser_use.task",
                 arguments={
                     "task": turn_input.user_visible_input or "browser computer-use action",
-                    "approval_request_id": self._resume_approval,
-                    "approval_decision": self._approval_decision or "",
+                    "approval_request_id": effective_resume_approval,
+                    "approval_decision": effective_approval_decision or "",
                 },
             )
             loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
@@ -1586,11 +1627,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata: dict[str, object],
         cognition: CognitionTurnAssembly,
         loop: "_AgenticLoopProjection",
+        resume_approval: str | None = None,
+        approval_decision: str | None = None,
     ) -> AssistantTurnResult:
         approval_request = _approval_request(turn_input)
-        decision = (self._approval_decision or "").strip().lower()
-        if self._resume_approval:
-            if self._resume_approval != approval_request.approval_request_id:
+        effective_resume_approval = resume_approval or self._resume_approval
+        decision = (approval_decision or self._approval_decision or "").strip().lower()
+        if effective_resume_approval:
+            if effective_resume_approval != approval_request.approval_request_id:
                 loop.step("approval", stop_reason="blocked")
                 return _entrypoint_error_result(
                     turn_input,
@@ -1600,7 +1644,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         {
                             **metadata,
                             "approval": {
-                                "approval_request_id": self._resume_approval,
+                                "approval_request_id": effective_resume_approval,
                                 "expected_approval_request_id": approval_request.approval_request_id,
                                 "decision": "mismatched",
                             },
@@ -1612,25 +1656,52 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
             if decision == "approve":
                 loop.step("approval")
-                loop.step("tool")
-                tool_response = self._tool_executor.execute(
-                    turn_input,
-                    action="approved risky action confirmation",
-                    capability="read",
-                    resource_type="approval_resume",
-                    capability_id="fake.status",
-                    arguments={"approved": True},
-                )
+                file_write_request = _file_write_request_from_input(turn_input.user_visible_input)
+                if file_write_request is not None:
+                    if not self._file_capability_root:
+                        loop.step("tool", stop_reason="blocked")
+                        return _entrypoint_error_result(
+                            turn_input,
+                            reason="file_capability_root_required",
+                            message="Approved file write requires a configured local user root.",
+                            metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
+                        )
+                    loop.step("tool")
+                    tool_response = self._tool_executor.execute(
+                        turn_input,
+                        action="approved file write",
+                        capability="file_write",
+                        resource_type="file",
+                        capability_id="file.write",
+                        arguments={
+                            "root": self._file_capability_root,
+                            **file_write_request,
+                            "approval_request_id": effective_resume_approval,
+                            "approval_decision": "approve",
+                        },
+                    )
+                    final_text = _file_write_final_text(dict(dict(tool_response.get("result") or {}).get("safe_result") or {}))
+                else:
+                    loop.step("tool")
+                    tool_response = self._tool_executor.execute(
+                        turn_input,
+                        action="approved risky action confirmation",
+                        capability="read",
+                        resource_type="approval_resume",
+                        capability_id="fake.status",
+                        arguments={"approved": True},
+                    )
+                    final_text = "Action executed after approval through the policy-controlled worker boundary."
                 loop.step("finalize", stop_reason="finalized", executed=True)
                 metadata = {
                     **metadata,
-                    "approval": {"approval_request_id": self._resume_approval, "decision": "approved"},
+                    "approval": {"approval_request_id": effective_resume_approval, "decision": "approved"},
                     "tool_boundary": "tool_worker_process",
                     "tool": tool_response,
                 }
                 return _entrypoint_text_result(
                     turn_input,
-                    text="Action executed after approval through the policy-controlled worker boundary.",
+                    text=final_text,
                     metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
                     stage_name="approval_resume",
                     tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:approval-resume:result")],
@@ -1645,7 +1716,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     {
                         **metadata,
                         "approval": {
-                            "approval_request_id": self._resume_approval,
+                            "approval_request_id": effective_resume_approval,
                             "decision": "cancelled" if decision == "cancel" else "denied",
                         },
                     },
@@ -1670,8 +1741,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
 
 class _HealthOnlyTurnExecutor:
-    def submit_turn(self, turn_input, previous_response_id: str | None = None):
-        del previous_response_id
+    def submit_turn(
+        self,
+        turn_input,
+        previous_response_id: str | None = None,
+        resume_approval_id: str | None = None,
+        approval_decision: str | None = None,
+    ):
+        del previous_response_id, resume_approval_id, approval_decision
         return AssistantTurnResult(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
@@ -2513,6 +2590,16 @@ def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
 def _file_request_from_input(text: str | None) -> dict[str, object]:
     lowered = (text or "").lower()
     path = _file_path_from_input(text)
+    if any(marker in lowered for marker in ("report", "document", "docx", "pptx", "xlsx")) and any(
+        location in lowered for location in ("desktop", "folder", "directory", "drive", "disk")
+    ):
+        return {
+            "action": "find files with ripgrep",
+            "capability": "search",
+            "capability_id": "file.rg",
+            "arguments": {"path": path, "query": _file_rg_query(text), "max_matches": 50},
+            "extension": None,
+        }
     if any(marker in lowered for marker in ("list", "names", "filenames", "show me")):
         if "desktop" in lowered:
             path = "Desktop"
@@ -2574,9 +2661,50 @@ def _file_final_text(safe_result: dict[str, object], *, requested_extension: obj
             return "No file matches found."
         paths = [str(dict(match).get("path")) for match in matches if isinstance(match, dict)]
         return "File matches: " + ", ".join(path for path in paths if path)
+    if operation == "rg":
+        matches = safe_result.get("matches")
+        if not isinstance(matches, list) or not matches:
+            return "No matching file paths found."
+        paths = [str(dict(match).get("path")) for match in matches if isinstance(match, dict)]
+        return "Matching file paths: " + ", ".join(path for path in paths if path)
     preview = str(safe_result.get("preview", ""))
     path = str(safe_result.get("path") or ".")
     return f"File preview from {path}: {preview}"
+
+
+def _file_rg_query(text: str | None) -> str:
+    value = (text or "").strip()
+    cleaned = re.sub(r"\b(i\s+need|find|search|look\s+for|where\s+is|on|in|the|my|desktop|folder|directory|drive|disk)\b", " ", value, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or value
+
+
+def _file_write_request_from_input(text: str | None) -> dict[str, object] | None:
+    value = (text or "").strip()
+    lowered = value.lower()
+    if not any(action in lowered for action in ("write", "create", "save", "make")):
+        return None
+    filename = "output.txt"
+    match = re.search(r"(?:^|\s)([A-Za-z0-9_.-]+\.(?:txt|md|json|csv|log))", value)
+    if match:
+        filename = match.group(1).strip()
+    path = filename
+    if "desktop" in lowered:
+        path = f"Desktop/{filename}"
+    content = ""
+    content_match = re.search(r"(?:write|save)\s+(.+?)\s+(?:to|into|in)\s+", value, flags=re.IGNORECASE)
+    if content_match:
+        content = content_match.group(1).strip().strip("\"'")
+    elif filename.lower() == "test.txt" and re.search(r"\btest\b", lowered):
+        content = "test"
+    return {"path": path, "content": content, "overwrite": False}
+
+
+def _file_write_final_text(safe_result: dict[str, object]) -> str:
+    if str(safe_result.get("operation") or "") == "write":
+        return f"File written: {safe_result.get('path')}."
+    reason = str(safe_result.get("reason_code") or "unknown")
+    return f"File write did not complete: {reason}."
 
 
 def _fixed_intent_classifier(classification: object) -> Callable[[object], object]:
@@ -2875,6 +3003,8 @@ def create_core_service_app(
             service.submit_turn(
                 request.assistant_turn_input,
                 previous_response_id=request.previous_response_id,
+                resume_approval_id=request.resume_approval_id,
+                approval_decision=request.approval_decision,
             )
         ),
         trace_reader=effective_reader,
@@ -2976,7 +3106,7 @@ class _CompositeTraceReader:
         return tuple(ordered[-max_count:])
 
 
-def _apply_provider_control(service: CoreService, catalog: dict[str, Any]) -> None:
+def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provider_control: Any | None = None) -> None:
     executor = getattr(service, "_turn_executor", None)
     configure = getattr(executor, "configure_provider", None)
     if not callable(configure):
@@ -2996,7 +3126,13 @@ def _apply_provider_control(service: CoreService, catalog: dict[str, Any]) -> No
     if active is None:
         return
     model = str(active.get("active_model") or "").strip()
-    configure(provider_name=active_provider_id, model=model)
+    secret = None
+    if provider_control is not None and hasattr(provider_control, "secret_value"):
+        try:
+            secret = provider_control.secret_value(active_provider_id)
+        except Exception:
+            secret = None
+    configure(provider_name=active_provider_id, model=model, provider_secret=secret)
 
 
 def health_once_payload() -> dict[str, object]:
@@ -3046,7 +3182,8 @@ def run_core_service(
     state_bus = get_default_bus()
     state_bus.publish_status(AssistantStatusKind.IDLE, detail="service_start")
     browser_session_manager = BrowserSessionManager()
-    provider_control = InMemoryProviderControl(on_change=lambda catalog: _apply_provider_control(service, catalog))
+    provider_control = InMemoryProviderControl()
+    provider_control._on_change = lambda catalog: _apply_provider_control(service, catalog, provider_control)
     control_runtime = create_control_plane_service_app(
         config=effective_config,
         trace_reader=effective_trace_reader,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 import threading
 import time
 from collections.abc import Callable
@@ -55,7 +56,9 @@ def run_worker_contract_loop(
     def tick_loop() -> None:
         while not stop_event.wait(1.0):
             with lock:
-                _tick_wakeword_if_active(controller)
+                tick = _tick_wakeword_if_active(controller)
+            if tick is not None:
+                _write_tick_telemetry(tick)
 
     tick_thread = threading.Thread(target=tick_loop, name="marvex-voice-wakeword-supervisor", daemon=True)
     tick_thread.start()
@@ -100,10 +103,28 @@ def run_worker_contract_loop(
     return {"host": host, "port": port, "status": final_status}
 
 
-def _tick_wakeword_if_active(controller: VoiceWorkerController) -> None:
+def _tick_wakeword_if_active(controller: VoiceWorkerController) -> dict[str, object] | None:
     status = controller.status()
     if status.process_started and status.wakeword_supervisor_status.get("started") is True:
-        controller.tick_wakeword_supervisor()
+        return controller.tick_wakeword_supervisor().safe_projection()
+    return None
+
+
+def _write_tick_telemetry(tick: dict[str, object]) -> None:
+    safe = {
+        "event": "wakeword_supervisor_tick",
+        "tick_count": tick.get("tick_count"),
+        "lifecycle_state": tick.get("lifecycle_state"),
+        "detected": tick.get("detected"),
+        "exact_blocker": tick.get("exact_blocker"),
+        "raw_audio_persisted": False,
+        "raw_transcript_persisted": False,
+    }
+    try:
+        sys.stderr.write(json.dumps(safe, sort_keys=True) + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
 
 
 def _safe_payload_text(payload: dict[str, Any], key: str, *, fallback: str) -> str:
