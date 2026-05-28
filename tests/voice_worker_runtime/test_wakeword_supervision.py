@@ -122,7 +122,9 @@ def test_wakeword_supervisor_tick_runs_runner_on_success_path(tmp_path: Path) ->
     supervisor.start()
     tick = supervisor.tick()
 
-    assert detection_calls == [4]
+    # Supervisor now captures ~1.2 s (12 x 100ms) per tick so sherpa-onnx
+    # KWS has enough mel-frame context to avoid GetFrames buffer underrun.
+    assert detection_calls == [12]
     assert tick.detected is True
     assert tick.exact_blocker is None
     assert tick.lifecycle_state == WakewordSupervisorLifecycleState.RUNNING

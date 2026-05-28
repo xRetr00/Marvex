@@ -226,6 +226,15 @@ class SherpaOnnxTtsRunner:
 class SherpaOnnxKwsRunner:
     """Wakeword keyword spotting via sherpa-onnx KeywordSpotter.
 
+    The spotter and its detection stream are long-lived: sherpa-onnx KWS is a
+    streaming detector whose mel-feature extractor needs ~1 s of audio
+    history. Creating a fresh KeywordSpotter and stream per tick (the previous
+    behaviour) discarded that history every iteration and would crash with
+    ``GetFrames: 0 + 45 > N`` when the local buffer was shorter than the
+    feature window. We now hold one spotter + stream per (asset, phrase,
+    threshold) tuple, append each tick's PCM, decode incrementally, and reset
+    only the stream (not the spotter) after a positive detection.
+
     A custom ``kws_factory(model_dir: str) -> kws`` may be injected for tests.
     """
 
@@ -237,6 +246,9 @@ class SherpaOnnxKwsRunner:
     ) -> None:
         self.asset_manager = asset_manager
         self.kws_factory = kws_factory
+        self._cached_kws: Any | None = None
+        self._cached_kws_key: tuple[str, str, float] | None = None
+        self._cached_stream: Any | None = None
 
     def __call__(
         self,
@@ -256,47 +268,46 @@ class SherpaOnnxKwsRunner:
                 reason_code="sherpa_onnx_kws_not_ready",
             )
         try:
-            if self.kws_factory is not None:
-                kws = self.kws_factory(str(path))
-            else:
-                module = import_module("sherpa_onnx")
-                files = _resolve_kws_files(path)
-                if files is None:
-                    return WakeWordDetectionResult(
-                        detected=False,
-                        phrase=phrase,
-                        confidence=0.0,
-                        backend_id=asset.backend_id,
-                        reason_code="sherpa_onnx_kws_not_ready",
-                    )
-                encoder, decoder, joiner, tokens, keywords = files
-                keywords = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
-                if keywords is None:
-                    return WakeWordDetectionResult(
-                        detected=False,
-                        phrase=phrase,
-                        confidence=0.0,
-                        backend_id=asset.backend_id,
-                        reason_code="sherpa_onnx_kws_keyword_tokens_invalid",
-                    )
-                kws = module.KeywordSpotter(
-                    tokens=str(tokens),
-                    encoder=str(encoder),
-                    decoder=str(decoder),
-                    joiner=str(joiner),
-                    keywords_file=str(keywords),
-                    num_threads=1,
-                    keywords_threshold=threshold,
-                    provider="cpu",
+            kws, stream = self._ensure_session(
+                path=path,
+                asset=asset,
+                phrase=phrase,
+                threshold=threshold,
+            )
+            if kws is None or stream is None:
+                return WakeWordDetectionResult(
+                    detected=False,
+                    phrase=phrase,
+                    confidence=0.0,
+                    backend_id=asset.backend_id,
+                    reason_code="sherpa_onnx_kws_not_ready",
                 )
-            stream = kws.create_stream()
             stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
-            kws.decode_stream(stream)
+            ready = getattr(kws, "is_ready", None)
+            if callable(ready):
+                # Streaming KWS: drain all decodable frames in the buffer.
+                guard = 0
+                while ready(stream) and guard < 1024:
+                    kws.decode_stream(stream)
+                    guard += 1
+            else:
+                # Test fakes (and any non-streaming spotter) fall back to a
+                # single decode call.
+                kws.decode_stream(stream)
             result = stream.result
             keyword = str(getattr(result, "keyword", "")).strip()
             detected = bool(keyword)
             confidence = float(getattr(result, "confidence", threshold if detected else 0.0))
             if detected:
+                # Reset only the stream so the spotter (and its loaded model
+                # weights) survive across detections. A fresh stream avoids
+                # immediate re-trigger on the same audio window.
+                reset = getattr(kws, "reset_stream", None)
+                if callable(reset):
+                    reset(stream)
+                    self._cached_stream = stream
+                else:
+                    self._cached_stream = kws.create_stream()
                 return WakeWordDetectionResult.detected(phrase=phrase, confidence=confidence, backend_id=asset.backend_id)
             return WakeWordDetectionResult(
                 detected=False,
@@ -306,6 +317,9 @@ class SherpaOnnxKwsRunner:
                 reason_code="wakeword.not_detected",
             )
         except Exception:
+            # Drop the cached stream so the next tick can rebuild cleanly,
+            # but keep the spotter so we don't pay the model-load cost again.
+            self._cached_stream = None
             return WakeWordDetectionResult(
                 detected=False,
                 phrase=phrase,
@@ -313,6 +327,47 @@ class SherpaOnnxKwsRunner:
                 backend_id=asset.backend_id,
                 reason_code="sherpa_onnx_kws_runtime_error",
             )
+
+    def _ensure_session(
+        self,
+        *,
+        path: Path,
+        asset: VoiceModelInstallResult,
+        phrase: str,
+        threshold: float,
+    ) -> tuple[Any | None, Any | None]:
+        key = (str(path), phrase, float(threshold))
+        if self._cached_kws is None or self._cached_kws_key != key:
+            self._cached_stream = None
+            if self.kws_factory is not None:
+                self._cached_kws = self.kws_factory(str(path))
+            else:
+                module = import_module("sherpa_onnx")
+                files = _resolve_kws_files(path)
+                if files is None:
+                    self._cached_kws = None
+                    self._cached_kws_key = None
+                    return None, None
+                encoder, decoder, joiner, tokens, keywords = files
+                keywords = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
+                if keywords is None:
+                    self._cached_kws = None
+                    self._cached_kws_key = None
+                    return None, None
+                self._cached_kws = module.KeywordSpotter(
+                    tokens=str(tokens),
+                    encoder=str(encoder),
+                    decoder=str(decoder),
+                    joiner=str(joiner),
+                    keywords_file=str(keywords),
+                    num_threads=1,
+                    keywords_threshold=threshold,
+                    provider="cpu",
+                )
+            self._cached_kws_key = key
+        if self._cached_stream is None and self._cached_kws is not None:
+            self._cached_stream = self._cached_kws.create_stream()
+        return self._cached_kws, self._cached_stream
 
 
 class VoiceWorkerSttModelRunner:

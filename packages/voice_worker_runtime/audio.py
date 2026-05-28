@@ -133,12 +133,39 @@ class SoundDeviceAudioAdapter:
 
     def capture_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int) -> Iterable[AudioFrame]:
         sd = self._sounddevice()
+        frame_samples = max(1, int(sample_rate * 0.1))
+        total_samples = frame_samples * max(1, frame_count)
+        # One contiguous record per tick: opening + closing the input device
+        # per 100ms sub-chunk left audible gaps between frames and meant
+        # sherpa-onnx KWS never saw a continuous window. A single rec call
+        # gives us back-to-back samples with no device-cycling artefacts.
+        recording = sd.rec(
+            total_samples,
+            samplerate=sample_rate,
+            channels=channel_count,
+            dtype="int16",
+            device=_device_arg(device_id),
+        )
+        sd.wait()
+        sample_bytes = 2 * max(1, channel_count)
+        chunk_bytes = frame_samples * sample_bytes
+        pcm_bytes = recording.tobytes()
         frames: list[VoiceWorkerAudioFrame] = []
-        samples = max(1, int(sample_rate * 0.1))
         for index in range(frame_count):
-            recording = sd.rec(samples, samplerate=sample_rate, channels=channel_count, dtype="int16", device=_device_arg(device_id))
-            sd.wait()
-            frames.append(VoiceWorkerAudioFrame(frame_id=f"sounddevice-frame-{index}", pcm=recording.tobytes(), sample_rate=sample_rate, channel_count=channel_count, duration_ms=100))
+            start = index * chunk_bytes
+            end = start + chunk_bytes
+            slice_bytes = pcm_bytes[start:end] if start < len(pcm_bytes) else b""
+            if not slice_bytes:
+                break
+            frames.append(
+                VoiceWorkerAudioFrame(
+                    frame_id=f"sounddevice-frame-{index}",
+                    pcm=slice_bytes,
+                    sample_rate=sample_rate,
+                    channel_count=channel_count,
+                    duration_ms=100,
+                )
+            )
         return tuple(frames)
 
     def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:

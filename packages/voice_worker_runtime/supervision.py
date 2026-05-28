@@ -201,12 +201,18 @@ class WakewordWorkerSupervisor:
             return self._tick_result(detected=False, exact_blocker=self._exact_blocker)
         if self._next_tick_allowed_at is not None and moment < self._next_tick_allowed_at:
             return self._tick_result(detected=False, exact_blocker="wakeword_supervisor.backoff_active")
+        # Capture ~1.2 s per tick (12 x 100ms): sherpa-onnx KWS needs at
+        # least ~1 s of mel-frame context for its lookback window. The
+        # previous 400 ms window crashed the spotter with
+        # "GetFrames: 0 + 45 > 39". Streaming state inside the runner means
+        # the spotter retains context across ticks, but a single tick still
+        # needs enough audio on its own to make a useful decision.
         frames = tuple(
             self._audio.capture_frames(
                 device_id=self._config.audio.input_device_id,
                 sample_rate=self._config.audio.sample_rate,
                 channel_count=self._config.audio.channel_count,
-                frame_count=4,
+                frame_count=12,
             )
         )
         detection: WakeWordDetectionResult = self._backend_runtime.test_wakeword(
