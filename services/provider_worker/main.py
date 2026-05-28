@@ -76,6 +76,7 @@ def handle_jsonl_command(
                 lmstudio_responses_api_key=_optional_string(
                     payload.get("lmstudio_responses_api_key")
                 ),
+                litellm_api_key=_optional_string(payload.get("litellm_api_key")),
             )
         if command == "structured_output":
             return controller.map_structured_output(
@@ -90,6 +91,7 @@ def handle_jsonl_command(
                 lmstudio_responses_api_key=_optional_string(
                     payload.get("lmstudio_responses_api_key")
                 ),
+                litellm_api_key=_optional_string(payload.get("litellm_api_key")),
             )
         return _validation_result(trace_id=trace_id, reason="unsupported_command")
     except Exception:
