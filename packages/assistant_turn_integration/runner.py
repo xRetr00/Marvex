@@ -20,7 +20,11 @@ from packages.assistant_turn_integration.stages.tools import _handle_browser_tur
 from packages.assistant_turn_integration.state import EndToEndTurnStateStore
 
 
-def create_end_to_end_local_turn_handler(*, state_store: EndToEndTurnStateStore) -> Any:
+def create_end_to_end_local_turn_handler(
+    *,
+    state_store: EndToEndTurnStateStore,
+    provider: Any | None = None,
+) -> Any:
     def handle_turn(request: Any) -> AssistantTurnResult:
         integrated = run_end_to_end_assistant_turn(
             request.assistant_turn_input,
@@ -28,10 +32,26 @@ def create_end_to_end_local_turn_handler(*, state_store: EndToEndTurnStateStore)
             state_store=state_store,
             instructions=request.instructions,
             previous_response_id=request.previous_response_id,
+            provider=provider,
         )
         return integrated.assistant_result
 
     return handle_turn
+
+
+def _resolve_runtime_provider(provider: Any | None, *, fallback_text: str) -> Any:
+    """Resolve the provider for a turn stage.
+
+    Production callers inject a real ``ProviderPort`` instance. Test harnesses
+    that pass ``None`` get a clearly labelled ``FakeProvider`` so the
+    placeholder output is obvious in transcripts and trace dumps (no silent
+    "the assistant feels stuck in stub mode"). The fake output text is
+    prefixed with ``[STUB]`` so it's never mistaken for a real model reply.
+    """
+
+    if provider is not None:
+        return provider
+    return FakeProvider(FakeProviderConfig(output_text=f"[STUB] {fallback_text}"))
 
 
 def run_end_to_end_assistant_turn(
@@ -52,6 +72,7 @@ def run_end_to_end_assistant_turn(
     memory_tree_runtime: Any | None = None,
     web_search_provider: Any | None = None,
     provider_continuation_provider: Any | None = None,
+    provider: Any | None = None,
 ) -> EndToEndAssistantTurnResult:
     store = state_store or EndToEndTurnStateStore()
     telemetry_sink: TelemetrySink = store.trace_reader
@@ -86,9 +107,10 @@ def run_end_to_end_assistant_turn(
             instructions=instructions,
             previous_response_id=previous_response_id,
             telemetry_sink=telemetry_sink,
+            provider=provider,
         )
     else:
-        provider_result = run_provider_stage_turn(turn_input, provider=FakeProvider(FakeProviderConfig(output_text="I can continue with the selected safe context.")), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={}, telemetry_sink=telemetry_sink)
+        provider_result = run_provider_stage_turn(turn_input, provider=_resolve_runtime_provider(provider, fallback_text="I can continue with the selected safe context."), model=model, instructions=instructions, previous_response_id=previous_response_id, provider_options={}, telemetry_sink=telemetry_sink)
         assistant_result = provider_result.model_copy(update={"metadata": {"integration_summary": {"raw_payload_persisted": False, "prompt_section_count": prompt_result.safe_projection().section_count, "context_included_count": context_pack.safe_projection().included_count}}})
         tool_projection = {"pending_approval_count": 0, "provider_continuation_ready": True, "final_response_ready": True, "result_status": "not_executed", "raw_payload_persisted": False}
         lifecycle_projection = {"trace_id": turn_input.trace_id, "turn_id": turn_input.turn_id, "tool_result_delivery_ready": False, "raw_payload_persisted": False}
@@ -138,6 +160,7 @@ def _handle_grounded_answer_turn(
     instructions: str | None,
     previous_response_id: str | None,
     telemetry_sink: TelemetrySink,
+    provider: Any | None = None,
 ) -> tuple[AssistantTurnResult, dict[str, Any], dict[str, Any]]:
     web_ids = _web_evidence_ids(context_pack)
     memory_links = _memory_evidence_links(context_pack)
@@ -146,7 +169,7 @@ def _handle_grounded_answer_turn(
         reason_code = "citation.evidence_missing"
         assistant_result = run_provider_stage_turn(
             turn_input,
-            provider=FakeProvider(),
+            provider=_resolve_runtime_provider(provider, fallback_text="Evidence is missing for this grounded answer."),
             model=model,
             instructions=instructions,
             previous_response_id=previous_response_id,
@@ -157,7 +180,7 @@ def _handle_grounded_answer_turn(
     reason_code = _validate_citation_ids(citation_ids[:4], allowed_ids=citation_ids)
     assistant_result = run_provider_stage_turn(
         turn_input,
-        provider=FakeProvider(),
+        provider=_resolve_runtime_provider(provider, fallback_text="Grounded answer placeholder."),
         model=model,
         instructions=instructions,
         previous_response_id=previous_response_id,
