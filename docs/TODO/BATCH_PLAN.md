@@ -107,23 +107,28 @@ intents — tool-calling currently augments the default provider route.
 
 ---
 
-## Phase 3 — Parallel: intelligence layers on top of 02
+## Phase 3 — Parallel: intelligence layers on top of 02 ✅ DONE
 
-These three can proceed in parallel once 02 is stable; each is independent.
+- [x] [05 Grounded answer & web search](./05-grounded-answer-web-search-wiring.md)
+  — `web.search` tool (d208239); grounding now always injects web.search +
+  the current date + an anti-stale instruction, and web_search/grounded
+  intents route through the agentic loop (1157f0c). Knowledge questions
+  search-and-answer instead of hitting the grounded-path reject.
+- [x] [03 LLM intent & slot extraction](./03-llm-intent-and-slot-extraction.md)
+  — LlmIntentClassifier (ab33241): model emits structured intent, validated
+  against IntentKind, deterministic fallback on any failure. Default on
+  (MARVEX_LLM_INTENT=0 to disable).
+- [x] [01 Conversational memory & reference resolution](./01-conversational-memory-and-reference-resolution.md)
+  — ConversationEntityStore + resolve_file_reference (03a1764): "that file"/
+  "it" resolves to the most recent file produced this session.
 
-- [ ] [03 LLM intent & slot extraction](./03-llm-intent-and-slot-extraction.md)
-  — replace the keyword `_TOKEN_FEATURES` dict and regex slot parsers with
-  model structured-output extraction; deterministic fallback retained.
-- [ ] [05 Grounded answer & web search](./05-grounded-answer-web-search-wiring.md)
-  — real search provider default, evidence funnel, cite-or-say-no-sources;
-  best delivered as a model `web_search` tool (rides on 02).
-- [ ] [01 Conversational memory & reference resolution](./01-conversational-memory-and-reference-resolution.md)
-  — entity store + "that file"/"those results" resolver; resolves B3's
-  reference half.
+**Exit:** paraphrases route via the model not keywords; knowledge questions
+search + answer with the current date in context; "that file" resolves across
+turns. **Status:** complete.
 
-**Exit:** paraphrases route correctly without code edits; knowledge questions
-return sourced answers or an honest "no sources"; back-references resolve across
-turns.
+Follow-ups: per-route regex slot-fillers can be progressively retired now that
+03 exists; entity store is in-memory (persistence is a later nicety); resolve
+"those results" for web/list entities (only file refs wired so far).
 
 ---
 
