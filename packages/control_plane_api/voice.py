@@ -40,6 +40,7 @@ def handle_voice_control_request(*, method: str, path: str, environ: dict[str, A
             "/control/voice/worker/tts/switch": "switch_tts_backend",
             "/control/voice/worker/voice/switch": "switch_active_voice",
             "/control/voice/worker/speak": "speak",
+            "/control/voice/worker/listen": "listen",
         }
         if method == "POST" and path in worker_commands:
             return "200 OK", voice_worker_control.command(worker_commands[path], _read_json(environ))

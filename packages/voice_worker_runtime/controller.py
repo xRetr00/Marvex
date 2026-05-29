@@ -703,6 +703,27 @@ class VoiceWorkerController:
             self._playback_status = "completed"
             self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={"speak": True, "status": "completed", "barge_in": True})
 
+    def _handle_listen(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        """Capture one follow-up utterance on demand (no wake required).
+
+        Enables continuous multi-turn voice: after the assistant speaks, the
+        shell calls `listen` to capture the user's next utterance and emit its
+        transcript (TRANSCRIPTION_COMPLETED), which the shell turns into the
+        next chat turn. If the user says nothing, capture bails on silence and
+        no transcript is emitted, so the loop idles back to wake-word mode.
+        """
+
+        trace_id = self._trace_id_for(command)
+        before = len(self._events)
+        self._run_post_wake_capture(parent_trace_id=trace_id)
+        if len(self._events) > before:
+            return self._events[-1]
+        return self._record(
+            VoiceWorkerEventType.VAD_SPEECH_ENDED,
+            trace_id=trace_id,
+            summary={"reason_code": "no_speech", "listen": True},
+        )
+
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
         return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))

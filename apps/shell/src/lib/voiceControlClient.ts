@@ -91,8 +91,18 @@ export function switchVoiceWorkerVoice(voiceId: string): Promise<VoiceWorkerStat
 }
 
 /** Speak an assistant reply through the worker's active TTS (closes the voice loop). */
-export function speakVoiceWorker(text: string): Promise<VoiceWorkerStatus> {
-  return controlRequest("/voice/worker/speak", "POST", { text }) as Promise<VoiceWorkerStatus>;
+export function speakVoiceWorker(text: string, options?: { bargeIn?: boolean }): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/speak", "POST", { text, barge_in: options?.bargeIn ?? false }) as Promise<VoiceWorkerStatus>;
+}
+
+/**
+ * Capture one follow-up utterance on demand (no wake word required). Used after
+ * the assistant finishes speaking to keep a hands-free multi-turn conversation
+ * going; if the user stays silent the worker bails and the loop returns to
+ * wake-word listening.
+ */
+export function listenVoiceWorker(): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/listen", "POST", {}) as Promise<VoiceWorkerStatus>;
 }
 
 /**

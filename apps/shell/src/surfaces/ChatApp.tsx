@@ -10,7 +10,7 @@ import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { startVoiceWorker, stopVoiceWorker, fetchVoiceWorkerStatus, speakVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { startVoiceWorker, stopVoiceWorker, fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -192,7 +192,13 @@ export function ChatApp() {
           if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
           lastVoiceEventRef.current = transcript.eventId;
           const reply = await send(transcript.text);
-          if (reply.trim()) await speakVoiceWorker(reply).catch(() => undefined);
+          if (reply.trim()) {
+            await speakVoiceWorker(reply, { bargeIn: true }).catch(() => undefined);
+            // Hands-free multi-turn: after speaking, capture a follow-up without
+            // requiring another wake word. If the user stays silent the worker
+            // bails and we fall back to wake-word listening on the next poll.
+            await listenVoiceWorker().catch(() => undefined);
+          }
         })
         .catch(() => undefined)
         .finally(() => {
