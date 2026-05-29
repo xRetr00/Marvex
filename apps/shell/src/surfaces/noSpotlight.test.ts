@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const repoRoot = process.cwd();
+// Resolve paths relative to this test file so the suite works when Vitest is
+// run from the monorepo root rather than apps/shell directly.
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("single Dynamic Island overlay", () => {
   it("does not keep the old Spotlight route, commands, or Tauri window", () => {

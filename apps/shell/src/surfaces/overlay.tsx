@@ -8,8 +8,9 @@ import {
   type AssistantStateEvent,
   waveformLevel,
 } from "../lib/assistantState";
-import { resumeApprovalTurn, setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
+import { resumeApprovalTurn, setOverlayClickThrough, setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
+import { makeHoverEdgeTrigger } from "../lib/overlayHover";
 import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
 import { decideApproval, fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
 import DynamicIsland from "@/components/dynamic-island";
@@ -71,10 +72,19 @@ function TextShimmer({ text }: { text: string }) {
   );
 }
 
+// Edge-triggered hover updater: prevents redundant IPC calls when the browser
+// fires repeated mouseenter/mouseleave events on the same state.
+const hoverEdgeTrigger = makeHoverEdgeTrigger((over: boolean) => {
+  void setOverlayClickThrough(!over).catch(() => undefined);
+});
+
 export function OverlaySurface() {
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
   const [hovered, setHovered] = useState(false);
   const [cardState, setCardState] = useState<IslandQueueSnapshot>({ active: null, queued: [] });
+  // Animated phase counter for statuses that use Math.sin(phase) in waveformLevel.
+  const phaseRef = useRef<number>(0);
+  const [phase, setPhase] = useState(0);
   const islandRef = useRef<HTMLDivElement | null>(null);
   const queueRef = useRef<ReturnType<typeof createIslandQueue> | null>(null);
   if (!queueRef.current) {
@@ -83,16 +93,23 @@ export function OverlaySurface() {
   const queue = queueRef.current;
   const lastOverlaySizeRef = useRef<OverlayWindowSize | null>(null);
 
-  useLayoutEffect(() => {
-    document.documentElement.classList.add("marvex-overlay-document");
-    document.body.classList.add("marvex-overlay-document");
-    document.getElementById("root")?.classList.add("marvex-overlay-root");
-    return () => {
-      document.documentElement.classList.remove("marvex-overlay-document");
-      document.body.classList.remove("marvex-overlay-document");
-      document.getElementById("root")?.classList.remove("marvex-overlay-root");
+  // Drive the phase counter for pulse-animated statuses (needs_approval, asking,
+  // thinking, working, etc.) so waveformLevel(state, phase) produces a live
+  // animated value instead of a frozen Math.sin(0) result.
+  useEffect(() => {
+    let rafId: number;
+    const tick = () => {
+      phaseRef.current += 0.05;
+      setPhase(phaseRef.current);
+      rafId = requestAnimationFrame(tick);
     };
+    rafId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafId);
   }, []);
+
+  // OverlayDocumentScope in App.tsx already adds these classes before
+  // OverlaySurface mounts. This effect is intentionally omitted to avoid
+  // duplicate class management and premature removal on teardown.
 
   // Welcome card: lives inside the island overlay and collapses back into the
   // idle pill after its own lifecycle.
@@ -128,6 +145,7 @@ export function OverlaySurface() {
         void fetchPendingApprovals()
           .then((approvals) => {
             if (!approvals[0]) return;
+            // Pass autoDismiss: false explicitly so the card is not auto-removed.
             queue.show(approvalCard(approvals[0]), { force: true });
           })
           .catch(() => undefined);
@@ -157,12 +175,18 @@ export function OverlaySurface() {
     };
   }, [queue]);
 
-  // The island window is small and interactive, so hover is driven directly by
-  // the webview's own mouse enter/leave on the island element — no global
-  // mousemove listener and no cursor-ignore toggling (which would swallow the
-  // events entirely).
+  // Toggle OS-level click-through: idle pill is mostly transparent to clicks;
+  // interactive (hovered / active / card) state must receive them.
+  const handleMouseEnter = () => {
+    setHovered(true);
+    hoverEdgeTrigger(true);
+  };
+  const handleMouseLeave = () => {
+    setHovered(false);
+    hoverEdgeTrigger(false);
+  };
 
-  const audioLevel = waveformLevel(state);
+  const audioLevel = waveformLevel(state, phase);
   const isActive = shouldShowOverlay(state);
   const statusText = displayDetail(state);
   const activeCard = cardState.active;
@@ -214,8 +238,8 @@ export function OverlaySurface() {
         className="marvex-island"
         style={{ width: "fit-content", cursor: "pointer" }}
         onClick={openChat}
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         title="Open Marvex chat"
       >
         <DynamicIsland
@@ -228,7 +252,7 @@ export function OverlaySurface() {
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 7, height: 7, borderRadius: "50%", background: "#ffe0c2", display: "block", flex: "0 0 auto" }}
               />
-              <MarvexWaveform audioLevel={0.22} width={64} height={24} active={false} />
+              <MarvexWaveform audioLevel={audioLevel} width={64} height={24} active={false} />
             </div>
           }
           ringContent={
@@ -251,7 +275,7 @@ export function OverlaySurface() {
                     <span style={{ fontSize: 10, color: "rgba(255,255,255,0.45)" }}>{state.status}</span>
                   </div>
                   <MarvexWaveform
-                    audioLevel={isActive ? audioLevel : 0.22}
+                    audioLevel={audioLevel}
                     width={320}
                     height={80}
                     active={isActive || hovered}
@@ -278,8 +302,16 @@ function approvalCard(approval: ApprovalSummary): IslandCard {
 
 function IslandCardView({ card, onDismiss }: { card: IslandCard; onDismiss: () => void }) {
   const dragStartRef = useRef<number | null>(null);
+  const cardRef = useRef<HTMLDivElement | null>(null);
   const [dragY, setDragY] = useState(0);
   const approval = card.kind === "approval" ? card.payload as ApprovalSummary : null;
+
+  const handlePointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    dragStartRef.current = event.clientY;
+    // Capture the pointer so onPointerMove keeps firing even if the cursor
+    // leaves the element boundary mid-drag.
+    event.currentTarget.setPointerCapture(event.pointerId);
+  };
 
   const handlePointerUp = () => {
     if (dragY < -42) onDismiss();
@@ -289,11 +321,12 @@ function IslandCardView({ card, onDismiss }: { card: IslandCard; onDismiss: () =
 
   return (
     <motion.div
+      ref={cardRef}
       role="status"
       aria-live="polite"
       className="marvex-island-card"
-      style={{ transform: `translateY(${dragY}px)` }}
-      onPointerDown={(event) => { dragStartRef.current = event.clientY; }}
+      style={{ transform: `translateY(${dragY}px)`, touchAction: "none" }}
+      onPointerDown={handlePointerDown}
       onPointerMove={(event) => {
         if (dragStartRef.current === null) return;
         setDragY(Math.min(0, event.clientY - dragStartRef.current));
@@ -350,7 +383,7 @@ export function WaveformCanvas({ state }: { state: AssistantStateEvent }) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
-    let frame = 0;
+    let frameCount = 0;
     let animation = 0;
     const draw = () => {
       const canvas = canvasRef.current;
@@ -358,21 +391,24 @@ export function WaveformCanvas({ state }: { state: AssistantStateEvent }) {
       if (!canvas || !context) return;
       const width = canvas.width;
       const height = canvas.height;
-      const level = waveformLevel(state, frame / 10);
+      // Convert frame counter to radians so waveformLevel receives a proper
+      // phase value — at 60fps this produces ~6.28 rad/s (one full cycle/sec).
+      const phaseRad = (frameCount / 60) * (2 * Math.PI);
+      const level = waveformLevel(state, phaseRad);
       context.clearRect(0, 0, width, height);
       context.strokeStyle = state.status === "needs_approval" ? "#e54d2e" : "#ffe0c2";
       context.lineWidth = 2;
       context.beginPath();
       for (let x = 0; x < width; x += 4) {
         const t = x / width;
-        const carrier = Math.sin(t * Math.PI * 8 + frame / 7);
+        const carrier = Math.sin(t * Math.PI * 8 + phaseRad);
         const envelope = Math.sin(t * Math.PI);
         const y = height / 2 + carrier * envelope * Math.max(3, level * 22);
         if (x === 0) context.moveTo(x, y);
         else context.lineTo(x, y);
       }
       context.stroke();
-      frame += 1;
+      frameCount += 1;
       animation = requestAnimationFrame(draw);
     };
     draw();
