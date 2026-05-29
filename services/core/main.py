@@ -2392,7 +2392,9 @@ def _turn_input_with_prompt(
 
 def _with_ui_toolset(instructions: str | None, provider_name: str) -> str | None:
     del provider_name
-    return instructions
+    # Ground the model in the real tool catalog so it stops inventing
+    # capabilities (subagents/RAG/etc.). See tool_grounding + docs/TODO/02.
+    return with_tool_grounding(instructions)
 
 
 def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:
@@ -2699,6 +2701,7 @@ from packages.core.orchestration.agentic_loop import (  # noqa: E402
     resolve_agentic_max_steps as _resolve_agentic_max_steps,
     should_continue_provider_loop as _should_continue_provider_loop,
 )
+from packages.core.orchestration.tool_grounding import with_tool_grounding  # noqa: E402
 
 
 def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
