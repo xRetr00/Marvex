@@ -134,14 +134,29 @@ Follow-ups: per-route regex slot-fillers can be progressively retired now that
 
 ## Phase 4 — Parallel: delivery layers
 
-- [ ] [04 End-to-end voice turn loop](./04-end-to-end-voice-turn-loop.md) —
-  wake → VAD endpointing → STT → chat turn → TTS → playback → barge-in, wired
-  into the live worker. Resolves B4's loop half.
-- [ ] [06 Streaming responses](./06-streaming-responses.md) — token streaming
-  for chat and incremental TTS for voice.
+- [x] [04 End-to-end voice turn loop](./04-end-to-end-voice-turn-loop.md) —
+  **wired end-to-end.** Worker: wake → capture → STT → emits transcript_text;
+  new `speak` command synthesizes + plays a reply (4d75667). Shell bridge:
+  while mic active, polls worker status, picks up a new transcript, runs it as
+  a chat turn (agentic, with tools + grounding), and speaks the reply via the
+  control-plane `/voice/worker/speak` endpoint (186c133). Resolves B4's loop
+  half. Refinement still open: streaming VAD endpointing (capture is a fixed
+  ~3s window) and barge-in during capture.
+- [ ] [06 Streaming responses](./06-streaming-responses.md) — **deferred with a
+  plan.** Token streaming is a transport rework spanning the provider adapters,
+  the Core ASGI layer (SSE), the Tauri command, and incremental React render /
+  incremental TTS. Its core deliverable lives almost entirely in layers that
+  cannot be exercised in the current dev environment (no fastapi, no Tauri, no
+  audio), and shipping untested SSE/HTTP streaming risks regressing the
+  now-working request/response chat + voice paths. Recommendation: implement it
+  against the running stack. Plan unchanged in the item doc:
+  adapter `stream=True` → Core SSE turn endpoint emitting deltas + terminal
+  full result → shell consumes deltas → voice feeds deltas through
+  SentenceBoundaryDetector → TTSQueue. All behind a flag with the
+  request/response path as fallback.
 
-**Exit:** "Hey Marvex, what's 2+2?" answered out loud end-to-end; chat streams
-tokens; both degrade cleanly when unsupported.
+**Exit (04):** "Hey Marvex, what's 2+2?" → recognized → answered → spoken, end
+to end on a real build. **06** remains for the live-stack session.
 
 ---
 
