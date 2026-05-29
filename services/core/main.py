@@ -885,6 +885,56 @@ class _CoreServiceProviderWorkerTurnExecutor:
         text = getattr(final, "text", None)
         return text.strip() if isinstance(text, str) else ""
 
+    def _classify_intent_llm(self, turn_input: AssistantTurnInput) -> dict[str, object] | None:
+        """Classify intent via the provider; return the worker-shaped dict or None.
+
+        None on any failure so the caller falls back to the deterministic
+        intent worker. The classification call is deliberately cheap: no tools,
+        no big grounding prompt, stateless (no previous_response_id).
+        """
+
+        from packages.intent_runtime import IntentClassificationRequest
+        from packages.intent_runtime.llm_classifier import classify_intent_with_llm
+
+        user_text = (turn_input.user_visible_input or "").strip()
+        if not user_text:
+            return None
+
+        def complete(prompt: str) -> str:
+            request = ProviderRequest(
+                schema_version=turn_input.schema_version,
+                trace_id=turn_input.trace_id,
+                turn_id=turn_input.turn_id,
+                model=self._model,
+                input_text=prompt,
+                instructions="You are an intent classifier. Respond with ONLY a single JSON object.",
+                previous_response_id=None,
+                provider_options={},
+            )
+            response = self._provider.send(request)
+            if getattr(response, "error", None) is not None:
+                raise RuntimeError("intent provider error")
+            return response.output_text or ""
+
+        try:
+            classification_request = IntentClassificationRequest(
+                schema_version=turn_input.schema_version,
+                trace_id=turn_input.trace_id,
+                turn_id=turn_input.turn_id,
+                user_input_summary=user_text,
+            )
+            result = classify_intent_with_llm(classification_request, complete=complete)
+        except Exception:
+            return None
+        if getattr(result, "backend_name", "") != "llm_intent":
+            # The classifier fell back internally (bad output etc.) - let the
+            # caller use the dedicated deterministic worker instead.
+            return None
+        return {
+            "classification": result.safe_projection().model_dump(mode="json"),
+            "backend_name": result.backend_name,
+        }
+
     def _run_agentic_tool_loop(
         self,
         turn_input: AssistantTurnInput,
@@ -1178,14 +1228,23 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._publish(AssistantStatusKind.THINKING, detail="planning", trace_id=turn_input.trace_id)
         # Persist TURN_RECEIVED event to durable store (safe events only)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
-        try:
-            intent_response = self._intent_classifier.classify(turn_input)
-        except Exception:
-            return _entrypoint_error_result(
-                turn_input,
-                reason="intent_worker_unavailable",
-                message="Intent classification failed.",
-            )
+        intent_response = None
+        if _llm_intent_enabled():
+            # LLM-based intent classification (docs/TODO/03): the model reads
+            # the request and emits a structured intent, replacing the brittle
+            # keyword classifier for the common cases. Returns None on any
+            # failure (no/empty result, provider error) so we fall back to the
+            # deterministic intent worker - no regression.
+            intent_response = self._classify_intent_llm(turn_input)
+        if intent_response is None:
+            try:
+                intent_response = self._intent_classifier.classify(turn_input)
+            except Exception:
+                return _entrypoint_error_result(
+                    turn_input,
+                    reason="intent_worker_unavailable",
+                    message="Intent classification failed.",
+                )
         intent_projection = dict(intent_response["classification"])
         intent_kind = str(
             dict(intent_projection.get("selected_intent", {})).get("intent_kind", "")
@@ -2689,6 +2748,23 @@ def _agentic_tools_enabled() -> bool:
     """
 
     value = os.environ.get(_AGENTIC_TOOLS_ENV, "").strip().lower()
+    if value in {"0", "false", "off", "no"}:
+        return False
+    return True
+
+
+_LLM_INTENT_ENV = "MARVEX_LLM_INTENT"
+
+
+def _llm_intent_enabled() -> bool:
+    """Whether LLM-based intent classification is enabled (default ON).
+
+    Escape hatch: MARVEX_LLM_INTENT=0/false/off/no forces the deterministic
+    intent worker. Either way the LLM path falls back to deterministic on any
+    failure. See docs/TODO/03.
+    """
+
+    value = os.environ.get(_LLM_INTENT_ENV, "").strip().lower()
     if value in {"0", "false", "off", "no"}:
         return False
     return True
