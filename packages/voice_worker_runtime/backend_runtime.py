@@ -207,8 +207,14 @@ class VoiceWorkerBackendRuntime:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)
         model_id = voice_id if backend_id == "kokoro-onnx" and voice_id.startswith("kokoro-") else default_model
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice")
-        blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
-        if blocker is None and backend_id == "kokoro-onnx":
+        # A caller-injected tts_runner is trusted to do its own readiness checks
+        # (tests / embedded harnesses), mirroring the stt/wakeword pattern.
+        blocker = (
+            None
+            if self._custom_tts_runner and asset.status == "installed"
+            else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        )
+        if blocker is None and not self._custom_tts_runner and backend_id == "kokoro-onnx":
             voices = self.asset_manager.required_status(model_id="kokoro-voices", backend_id=backend_id, model_kind="tts_voice")
             if voices.status != "installed":
                 blocker = "kokoro_voice_asset_missing_manual_install_required"

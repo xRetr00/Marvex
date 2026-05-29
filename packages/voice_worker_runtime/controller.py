@@ -528,6 +528,43 @@ class VoiceWorkerController:
             self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary=playback.model_dump(mode="json"))
         return event
 
+    def _handle_speak(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        """Synthesize and play an assistant reply (docs/TODO/04).
+
+        Closes the voice loop: the shell submits the recognized transcript as a
+        chat turn, then sends the reply text here to be spoken. Synthesizes via
+        the active TTS backend and plays through the audio adapter. No raw
+        generated audio is persisted.
+        """
+
+        trace_id = self._trace_id_for(command)
+        text = str(command.payload.get("text") or "").strip()
+        if not text:
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="speak_text_required", message="Speak requires non-empty text.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"reason_code": "speak_text_required"})
+        result = self.backend_runtime.test_tts(
+            trace_id=trace_id,
+            backend_id=str(command.payload.get("backend_id") or self.config.active_tts_backend_id),
+            voice_id=str(command.payload.get("voice_id") or self.config.active_voice_id),
+            text=text,
+        )
+        if result.status == "failed" and result.safe_error is not None:
+            reason = result.safe_error.details.get("reason_code", "tts_backend_not_ready")
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=reason, message="Speak synthesis did not complete.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"reason_code": reason, "speak": True})
+        self._error = None
+        event = self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary={**synthesis_summary(result), "speak": True})
+        if result.status == "succeeded" and result.audio_ref:
+            self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True})
+            playback = self.audio.play_audio(
+                device_id=self.config.audio.output_device_id,
+                audio_ref=result.audio_ref,
+                sample_rate=result.sample_rate,
+            )
+            self._playback_status = playback.status
+            self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={**playback.model_dump(mode="json"), "speak": True})
+        return event
+
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
         return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))

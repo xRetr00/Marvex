@@ -176,6 +176,7 @@ class VoiceWorkerCommand(VoiceRuntimeModel):
         "switch_stt_backend",
         "switch_tts_backend",
         "switch_active_voice",
+        "speak",
     ]
     command_id: str = Field(..., min_length=1)
     trace_id: str | None = Field(default=None, min_length=1)
