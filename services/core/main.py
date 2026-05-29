@@ -826,6 +826,29 @@ class _CoreServiceProviderWorkerTurnExecutor:
             self._provider_name = provider_name
             self._provider_secret = provider_secret
         self._model = model
+        # CRITICAL: keep the provider-selection runtime in lockstep with the
+        # explicit user choice. The selection runtime was built once at
+        # startup with a single hardcoded candidate (litellm /
+        # openrouter/anthropic/claude-3.5-sonnet). On every turn
+        # _run_provider_selection calls selection_runtime.select(), which
+        # returned that stale candidate and silently reverted this method's
+        # work back to the default provider+model. Rebuilding the runtime
+        # here so its only candidate is the just-configured provider/model
+        # makes the user's LM Studio (or any) selection actually stick.
+        if self._provider_selection is not None:
+            self._provider_selection = ProviderSelectionRuntime(
+                candidates=(
+                    ProviderCandidate(
+                        provider_id=provider_name,
+                        model=model,
+                        supports_tools=False,
+                        context_length=4096,
+                        locality="local",
+                        healthy=True,
+                        cost_tier="free",
+                    ),
+                )
+            )
 
     def _publish(
         self,
