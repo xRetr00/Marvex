@@ -57,13 +57,15 @@ export default function DynamicIsland({
 
   return (
     <motion.div
-      className={`marvex-dynamic-island-pill mx-auto overflow-hidden bg-black ${className}`}
+      className={`marvex-dynamic-island-pill mx-auto overflow-hidden ${className}`}
       layout
       style={{
         width: typeof width === "number" ? `${width}px` : (width ?? "min(360px, calc(100vw - 20px))"),
         minWidth: width === undefined ? undefined : typeof width === "number" ? `${width}px` : width,
         boxSizing: "border-box",
-        background: "#000",
+        // Near-black rather than pure #000 so the pill reads as a distinct
+        // physical object floating above the desktop without a white halo.
+        background: "#060606",
         borderRadius: 30,
         padding: "14px 20px",
         display: "flex",
@@ -71,7 +73,16 @@ export default function DynamicIsland({
         gap: 10,
         color: "#fff",
         userSelect: "none",
-        boxShadow: "0 10px 30px rgba(0, 0, 0, 0.35)",
+        // Layered shadow: tight contact shadow, mid diffuse, and outer ambient
+        // so the pill has depth at every zoom level. Inner highlight creates the
+        // impression of a polished edge on a dark display cutout.
+        boxShadow: [
+          "0 1px 2px rgba(0,0,0,0.92)",
+          "0 4px 12px rgba(0,0,0,0.72)",
+          "0 16px 40px rgba(0,0,0,0.48)",
+          "inset 0 1px 0 rgba(255,255,255,0.06)",
+          "inset 0 -1px 0 rgba(255,255,255,0.02)",
+        ].join(", "),
       }}
       transition={
         shouldReduceMotion
@@ -79,7 +90,8 @@ export default function DynamicIsland({
           : {
               type: "spring" as const,
               bounce: BOUNCE_VARIANTS[variantKey as keyof typeof BOUNCE_VARIANTS] ?? DEFAULT_BOUNCE,
-              duration: 0.45,
+              // Slightly snappier than before so expand/collapse feels native.
+              duration: 0.38,
             }
       }
     >

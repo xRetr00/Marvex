@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { resolve, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
-const repoRoot = process.cwd();
+// Resolve paths relative to this test file, not process.cwd(), so the suite
+// works regardless of which directory Vitest is invoked from (e.g. monorepo root).
+const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 
 describe("overlay stylesheet isolation", () => {
   it("keeps Dynamic Island overlay styles out of the main app stylesheet", () => {
