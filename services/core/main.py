@@ -1387,6 +1387,31 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
             self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
+            # Prefer the agentic loop: the model has web.search + the current
+            # date in its grounding, so it searches and answers (and won't claim
+            # a stale "latest" from memory). This replaces the grounded path's
+            # hard-reject for keyword-routed knowledge questions. Falls back to
+            # the grounded path when agentic tools are off, no web provider is
+            # configured, or the loop errors.
+            if _agentic_tools_enabled() and self._web_search_provider is not None:
+                provider_turn_input, provider_instructions = _turn_input_with_prompt(
+                    turn_input, cognition, desktop_context=desktop_context
+                )
+                agentic_result = self._run_agentic_tool_loop(
+                    turn_input,
+                    provider_turn_input=provider_turn_input,
+                    provider_instructions=provider_instructions,
+                    cognition=cognition,
+                    loop=loop,
+                    previous_response_id=previous_response_id,
+                    intent_projection=intent_projection,
+                    intent_response=intent_response,
+                    session_projection=session_projection,
+                    selection_projection=selection_projection,
+                    desktop_context=desktop_context,
+                )
+                if agentic_result is not None:
+                    return agentic_result
             loop.step("web_search")
             loop.step("grounded_answer")
             return self._run_grounded_path(

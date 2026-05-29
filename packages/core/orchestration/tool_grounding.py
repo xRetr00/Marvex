@@ -1,32 +1,39 @@
-"""Authoritative tool-catalog grounding for the provider system prompt.
+"""Authoritative tool-catalog + temporal grounding for the system prompt.
 
-Generates a system-prompt block listing the *real* tools from the tool
-registries so the model stops inventing capabilities it does not have (the
-field showed it claiming to "route to the agent.deep_search subagent / your RAG
-tools"). Because the list is generated from the same registries that actually
-execute tools, it can never drift from reality.
+Generates the always-injected system-prompt block that:
 
-This is the interim fix for B2 (docs/TODO/BATCH_PLAN.md). The full fix is the
-agentic tool-calling loop (docs/TODO/02), which will feed these as real tool
-schemas the model can call.
+1. Tells the model the *real* tools it has (from the registries) so it stops
+   inventing capabilities ("agent.deep_search subagent", "RAG tools"). This is
+   the interim B2 fix.
+2. Tells the model it has ``web.search`` and the **current date**, and that its
+   built-in knowledge has a training cutoff in the past - so for anything
+   time-sensitive ("latest"/"newest"/"current", recent releases, prices, who
+   holds a role now, etc.) it must use ``web.search`` instead of answering from
+   stale memory. This replaces the brittle grounded-answer hard-reject: rather
+   than refusing, the model knows where "now" is and searches.
+
+The tool catalog is static (cached); the date is computed per turn.
 """
 
 from __future__ import annotations
 
-_GROUNDING_CACHE: str | None = None
+from datetime import UTC, datetime
+
+_TOOL_CATALOG_CACHE: str | None = None
+
+# web.search lives on the executor (it needs an injected provider), so it is not
+# in the static registries. Marvex ships with web search configured, so we
+# always advertise it here per product direction.
+_WEB_SEARCH_LINE = (
+    "- web.search: Search the web and return result titles, URLs, and snippets "
+    "to ground a current/factual answer."
+)
 
 
-def available_tools_grounding() -> str:
-    """Return the cached grounding block built from the tool registries."""
-
-    global _GROUNDING_CACHE
-    if _GROUNDING_CACHE is not None:
-        return _GROUNDING_CACHE
-    _GROUNDING_CACHE = _build_grounding()
-    return _GROUNDING_CACHE
-
-
-def _build_grounding() -> str:
+def _static_tool_catalog() -> str:
+    global _TOOL_CATALOG_CACHE
+    if _TOOL_CATALOG_CACHE is not None:
+        return _TOOL_CATALOG_CACHE
     try:
         from packages.adapters.capabilities.tools import (
             default_registry,
@@ -37,26 +44,43 @@ def _build_grounding() -> str:
         for registry in (default_registry(), file_tools_registry()):
             for tool in registry.tools():
                 lines.append(f"- {tool.identifier()}: {tool.description}")
-        tool_block = "\n".join(lines) if lines else "- (tool catalog unavailable)"
+        lines.append(_WEB_SEARCH_LINE)
+        _TOOL_CATALOG_CACHE = "\n".join(lines)
     except Exception:
-        tool_block = "- (tool catalog unavailable)"
+        _TOOL_CATALOG_CACHE = _WEB_SEARCH_LINE
+    return _TOOL_CATALOG_CACHE
+
+
+def available_tools_grounding(*, now: datetime | None = None) -> str:
+    """Return the grounding block, including the current date (per turn)."""
+
+    moment = (now or datetime.now(UTC)).astimezone(UTC)
+    date_line = f"The current date and time is {moment.strftime('%Y-%m-%d %H:%M')} UTC."
+    catalog = _static_tool_catalog()
     return (
-        "You are Marvex, a local-first assistant. These are the ONLY tools that "
-        "exist in this system; the runtime executes them for you under a policy "
-        "and approval boundary:\n"
-        f"{tool_block}\n"
-        "You do NOT have subagents, RAG pipelines, background workers, web "
-        "browsing, or any capability that is not in the list above. Never claim "
-        "to invoke, route to, hand off to, or use a tool, subagent, or service "
-        "that is not listed. If a request needs a capability you do not have, "
-        "say so plainly rather than pretending to perform it."
+        "You are Marvex, a local-first assistant. "
+        f"{date_line} Your built-in knowledge has a training cutoff in the past. "
+        "For anything time-sensitive - the latest/newest/current version of "
+        "something, recent releases, current events, prices, who holds a role "
+        "now, or any fact you are not certain is still current - use the "
+        "web.search tool instead of answering from memory. Never state a "
+        "'latest' or 'current' fact from memory without searching first; if you "
+        "cannot verify it, say so plainly.\n"
+        "These are the ONLY tools that exist in this system; the runtime "
+        "executes them for you under a policy and approval boundary:\n"
+        f"{catalog}\n"
+        "You do NOT have subagents, RAG pipelines, background workers, or any "
+        "capability that is not in the list above. Never claim to invoke, route "
+        "to, hand off to, or use a tool, subagent, or service that is not "
+        "listed. If a request needs a capability you do not have, say so plainly "
+        "rather than pretending to perform it."
     )
 
 
-def with_tool_grounding(instructions: str | None) -> str:
-    """Append the tool grounding to provider instructions (or use it alone)."""
+def with_tool_grounding(instructions: str | None, *, now: datetime | None = None) -> str:
+    """Append the tool + temporal grounding to provider instructions."""
 
-    grounding = available_tools_grounding()
+    grounding = available_tools_grounding(now=now)
     if instructions and instructions.strip():
         return f"{instructions.strip()}\n\n{grounding}"
     return grounding
