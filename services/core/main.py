@@ -2637,14 +2637,18 @@ _COMBINED_TOOL_REGISTRY = None
 
 
 def _agentic_tools_enabled() -> bool:
-    """Whether the model-driven tool-calling loop is enabled (default off).
+    """Whether the model-driven tool-calling loop is enabled (default ON).
 
-    Opt-in via MARVEX_AGENTIC_TOOLS=1/true/on/yes so the deterministic router
-    stays the default until the loop is verified in the field. See docs/TODO/02.
+    Marvex ships with agentic tool-calling on by default - users should not
+    have to set an env var in production. MARVEX_AGENTIC_TOOLS can still be set
+    to 0/false/off as an escape hatch (e.g. for debugging the deterministic
+    router). See docs/TODO/02.
     """
 
     value = os.environ.get(_AGENTIC_TOOLS_ENV, "").strip().lower()
-    return value in {"1", "true", "on", "yes"}
+    if value in {"0", "false", "off", "no"}:
+        return False
+    return True
 
 
 def _combined_tool_registry():

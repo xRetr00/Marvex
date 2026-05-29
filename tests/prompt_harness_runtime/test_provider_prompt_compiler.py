@@ -60,7 +60,7 @@ def _prompt_result():
     )
 
 
-def test_provider_prompt_compiler_injects_identity_role_context_safety_and_capabilities() -> None:
+def test_provider_prompt_compiler_is_single_marvex_identity_no_persona() -> None:
     from packages.agent_runtime import default_agent_catalog, default_persona_catalog
     from packages.prompt_harness_runtime.provider_compiler import compile_provider_prompt
 
@@ -72,12 +72,21 @@ def test_provider_prompt_compiler_injects_identity_role_context_safety_and_capab
     )
 
     assert payload.instructions is not None
+    # Marvex is Marvex: a single identity, with context-safety + policy.
     assert "You are Marvex" in payload.instructions
-    assert "agent.main.marvex" in payload.instructions
-    assert "female TTS voice profile" in payload.instructions
     assert "untrusted data" in payload.instructions
     assert "Marvex policy remains authoritative" in payload.instructions
-    assert "bounded subagents" in payload.instructions
+    # No persona / agent-role / subagent / skill complexity in the prompt.
+    assert "Active persona" not in payload.instructions
+    assert "agent.main.marvex" not in payload.instructions
+    assert "Selected agent" not in payload.instructions
+    # It must not ADVERTISE subagents/personas it can't run (saying "no
+    # subagents" is fine, claiming it "may propose bounded subagents" is not).
+    assert "bounded subagents" not in payload.instructions
+    assert "may propose" not in payload.instructions
+    assert "female TTS voice profile" not in payload.instructions
+    assert "skill.planning" not in payload.instructions
+    # User context still flows through unchanged.
     assert "tool=builtin.calculator" in payload.input_text
     assert "User prefers concise answers" in payload.input_text
     assert payload.raw_prompt_persisted is False
@@ -124,7 +133,7 @@ def test_provider_stage_can_send_precompiled_prompt_payload() -> None:
     assert provider.request.instructions == payload.instructions
 
 
-def test_provider_prompt_compiler_honors_turn_metadata_agent_selection() -> None:
+def test_provider_prompt_compiler_resolves_ids_for_telemetry_without_leaking_into_prompt() -> None:
     from packages.prompt_harness_runtime.provider_compiler import compile_provider_prompt
 
     selected_turn = _turn_input().model_copy(
@@ -133,7 +142,9 @@ def test_provider_prompt_compiler_honors_turn_metadata_agent_selection() -> None
 
     payload = compile_provider_prompt(turn_input=selected_turn, prompt_result=_prompt_result())
 
+    # The ids still resolve for telemetry / control plane back-compat ...
     assert payload.agent_id == "agent.deep_search"
     assert payload.persona_id == "persona.marvex.female"
-    assert "agent.deep_search" in (payload.instructions or "")
-    assert "Deep Search" in (payload.instructions or "")
+    # ... but they no longer shape the model prompt (Marvex is Marvex).
+    assert "agent.deep_search" not in (payload.instructions or "")
+    assert "Deep Search" not in (payload.instructions or "")
