@@ -54,7 +54,14 @@ def run_worker_contract_loop(
     stop_event = threading.Event()
 
     def tick_loop() -> None:
-        while not stop_event.wait(1.0):
+        # Short inter-tick wait so wake-word capture is near-continuous: each
+        # tick's capture blocks for its window (~1.2s) and the persistent
+        # streaming spotter accumulates across ticks, so the old 1.0s gap left
+        # the mic deaf ~half the time and split "Hey Marvex" across captures.
+        # The lock is released between ticks so status/speak/listen commands
+        # still get a window. (A callback-based continuous InputStream is the
+        # proper long-term design; this is the safe in-architecture fix.)
+        while not stop_event.wait(0.1):
             with lock:
                 tick = _tick_wakeword_if_active(controller)
             if tick is not None:

@@ -49,11 +49,24 @@ def _controller() -> VoiceWorkerController:
 
 
 def _audio_adapter():
+    # Diagnostic: log which audio adapter the worker uses. If sounddevice can't
+    # enumerate a real input device we fall back to None -> the controller uses
+    # FakeLocalAudioAdapter, which yields synthetic frames the wake word can
+    # NEVER match. Surfacing this in stderr makes "wake word never triggers"
+    # diagnosable (real mic vs silent fake fallback).
     try:
         adapter = SoundDeviceAudioAdapter()
-        adapter.list_input_devices()
+        devices = adapter.list_input_devices()
+        sys.stderr.write(
+            json.dumps({"event": "voice_audio_adapter", "adapter": "sounddevice", "input_device_count": len(devices)}) + "\n"
+        )
+        sys.stderr.flush()
         return adapter
-    except Exception:
+    except Exception as exc:
+        sys.stderr.write(
+            json.dumps({"event": "voice_audio_adapter", "adapter": "fake_fallback", "reason": type(exc).__name__}) + "\n"
+        )
+        sys.stderr.flush()
         return None
 
 

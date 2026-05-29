@@ -2706,7 +2706,20 @@ def _tool_final_text(tool_response: dict[str, object]) -> str:
 
 
 def _calculator_expression(text: str | None) -> str:
-    match = re.search(r"\d+(?:\s*[+\-*/]\s*\d+)+", text or "")
+    # Normalize common Unicode math operators (×, ÷, −, etc.) to ASCII so
+    # "what's 6×7" parses as 6*7 instead of failing and defaulting to 0+0.
+    normalized = (text or "").translate(
+        {
+            0x00D7: "*",  # ×
+            0x2715: "*",  # ✕
+            0x2217: "*",  # ∗
+            0x00F7: "/",  # ÷
+            0x2212: "-",  # − (minus sign)
+            0x2013: "-",  # – en dash
+            0x2014: "-",  # — em dash
+        }
+    )
+    match = re.search(r"\d+(?:\s*[+\-*/]\s*\d+)+", normalized)
     return match.group(0) if match else "0+0"
 
 

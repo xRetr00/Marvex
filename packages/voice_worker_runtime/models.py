@@ -53,7 +53,11 @@ class VoiceWorkerWakewordConfig(VoiceRuntimeModel):
     enabled: bool = True
     phrase: str = "Hey Marvex"
     backend_id: str = "sherpa-onnx-kws"
-    threshold: float = Field(default=0.72, ge=0, le=1)
+    # sherpa-onnx KeywordSpotter keywords_threshold is a probability-style
+    # score where ~0.2-0.3 is the usual default. The old 0.72 was far too
+    # strict, so "Hey Marvex" basically never fired ("almost triggers
+    # nothing"). 0.25 follows sherpa-onnx's own examples.
+    threshold: float = Field(default=0.25, ge=0, le=1)
     cooldown_ms: int = Field(default=1500, ge=0)
     explicit_visible_control_required: Literal[True] = True
 
