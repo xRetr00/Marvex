@@ -10,7 +10,7 @@ import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { startVoiceWorker, stopVoiceWorker } from "@/lib/voiceControlClient";
+import { startVoiceWorker, stopVoiceWorker, fetchVoiceWorkerStatus, speakVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -101,10 +101,11 @@ export function ChatApp() {
     }
   }, [messages]);
 
-  const send = useCallback(async (text: string) => {
-    if (!text.trim() || pending) return;
+  const send = useCallback(async (text: string): Promise<string> => {
+    if (!text.trim() || pending) return "";
     setPending(true);
     setMessages((prev) => [...prev, { role: "user", text }]);
+    let replyText = "";
     try {
       const sessionId = sessionIdRef.current;
       if (!sessionId) throw new Error("backend session unavailable");
@@ -121,13 +122,16 @@ export function ChatApp() {
         });
       }
       const outcome = outcomeFromTurnResult(result);
+      replyText = outcome.text;
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text) }]);
     } catch (error) {
       const outcome = outcomeFromError(error);
+      replyText = outcome.text;
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
     } finally {
       setPending(false);
     }
+    return replyText;
   }, [pending]);
 
   const decideChatApproval = useCallback(async (approval: ChatApproval, decision: "approve" | "deny" | "cancel") => {
@@ -167,6 +171,39 @@ export function ChatApp() {
     setMicActive(next);
     void (next ? startVoiceWorker() : stopVoiceWorker()).catch(() => setMicActive(!next));
   }, [micActive]);
+
+  // Voice loop bridge (docs/TODO/04): while the mic is active, poll the worker
+  // for a freshly recognized transcript, run it as a chat turn, and speak the
+  // reply back through the worker. The worker handles wake -> capture -> STT
+  // and emits transcript_text; the shell mediates turn + speak because the
+  // worker is loopback-isolated from Core.
+  const lastVoiceEventRef = useRef<string>("");
+  useEffect(() => {
+    if (!micActive) return;
+    let cancelled = false;
+    let busy = false;
+    const timer = setInterval(() => {
+      if (busy) return;
+      busy = true;
+      void fetchVoiceWorkerStatus()
+        .then(async (status) => {
+          if (cancelled) return;
+          const transcript = transcriptFromStatus(status);
+          if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
+          lastVoiceEventRef.current = transcript.eventId;
+          const reply = await send(transcript.text);
+          if (reply.trim()) await speakVoiceWorker(reply).catch(() => undefined);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          busy = false;
+        });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      clearInterval(timer);
+    };
+  }, [micActive, send]);
 
   const navItems = useMemo(() => [
     { id: "chat" as TabId, icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
@@ -268,7 +305,7 @@ export function ChatApp() {
                 assistantOrbState={orbState}
                 messages={messages}
                 micActive={micActive}
-                onSubmit={send}
+                onSubmit={(text) => { void send(text); }}
                 onToggleVoice={toggleVoiceCapture}
                 onApprovalDecision={decideChatApproval}
                 pending={pending}

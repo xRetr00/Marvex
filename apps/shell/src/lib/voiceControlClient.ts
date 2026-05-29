@@ -35,6 +35,7 @@ export type VoiceWorkerStatus = {
   stt_backend_status?: Record<string, unknown>;
   tts_backend_status?: Record<string, unknown>;
   wakeword_model_status?: Record<string, unknown>;
+  recent_events?: Array<Record<string, unknown>>;
 };
 
 export type VoiceModelCatalog = {
@@ -87,6 +88,32 @@ export function switchVoiceWorkerTts(backendId: string): Promise<VoiceWorkerStat
 
 export function switchVoiceWorkerVoice(voiceId: string): Promise<VoiceWorkerStatus> {
   return controlRequest("/voice/worker/voice/switch", "POST", { voice_id: voiceId }) as Promise<VoiceWorkerStatus>;
+}
+
+/** Speak an assistant reply through the worker's active TTS (closes the voice loop). */
+export function speakVoiceWorker(text: string): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/speak", "POST", { text }) as Promise<VoiceWorkerStatus>;
+}
+
+/**
+ * Extract the most recent recognized transcript from a worker status snapshot.
+ * The worker emits transcript_text on a TRANSCRIPTION_COMPLETED event after a
+ * wake-word capture; the shell polls status, picks it up, and drives the turn.
+ */
+export function transcriptFromStatus(status: VoiceWorkerStatus | null | undefined): { text: string; eventId: string } | null {
+  const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event || typeof event !== "object") continue;
+    if ((event as { event_type?: unknown }).event_type !== "transcription_completed") continue;
+    const summary = (event as { summary?: Record<string, unknown> }).summary;
+    const text = summary && typeof summary.transcript_text === "string" ? summary.transcript_text.trim() : "";
+    if (!text) return null;
+    const eventId = String((event as { event_id?: unknown }).event_id ?? "");
+    return { text, eventId };
+  }
+  return null;
 }
 
 export function downloadVoiceModel(asset: VoiceModelCatalogAsset): Promise<unknown> {
