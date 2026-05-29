@@ -885,6 +885,220 @@ class _CoreServiceProviderWorkerTurnExecutor:
         text = getattr(final, "text", None)
         return text.strip() if isinstance(text, str) else ""
 
+    def _run_agentic_tool_loop(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        provider_turn_input: AssistantTurnInput,
+        provider_instructions: str | None,
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+        previous_response_id: str | None,
+        intent_projection: dict[str, object],
+        intent_response: dict[str, object],
+        session_projection: dict[str, object],
+        selection_projection: dict[str, object],
+        desktop_context: dict[str, object] | None,
+    ) -> AssistantTurnResult | None:
+        """Drive the model-tool-call loop. Returns None to fall back.
+
+        Sends the registry tool schemas; when the model requests tools, runs
+        the SAFE ones through the registry and feeds results back, looping to
+        max_steps. Risky tools surface the existing approval request rather
+        than executing. Any provider error / unexpected shape returns None so
+        the caller falls back to the historical bounded continuation loop.
+        """
+
+        from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop
+
+        registry = _combined_tool_registry()
+        tool_schemas = list(registry.tool_schemas())
+        if not tool_schemas:
+            return None
+        request_builder = self._make_tool_request_builder(turn_input)
+        instructions = _with_ui_toolset(provider_instructions, self._provider_name)
+        fell_back = {"value": False}
+
+        def send(input_text: str, tool_messages: list[dict[str, object]] | None, prev: str | None) -> ProviderStep:
+            loop.step("provider")
+            request = ProviderRequest(
+                schema_version=turn_input.schema_version,
+                trace_id=turn_input.trace_id,
+                turn_id=turn_input.turn_id,
+                model=self._model,
+                input_text=input_text,
+                instructions=instructions,
+                previous_response_id=prev,
+                provider_options={},
+                tools=tool_schemas,
+                tool_messages=tool_messages,
+            )
+            try:
+                response = self._provider.send(request)
+            except Exception:
+                fell_back["value"] = True
+                return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
+            if getattr(response, "error", None) is not None:
+                fell_back["value"] = True
+                return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
+            if response.tool_calls:
+                loop.step("tool")
+                self._publish(AssistantStatusKind.USING_TOOLS, detail="agentic_tool", trace_id=turn_input.trace_id)
+            return ProviderStep(
+                output_text=response.output_text or "",
+                tool_calls=list(response.tool_calls or []),
+                response_id=response.response_id,
+                error=False,
+            )
+
+        loop_result = run_tool_loop(
+            send=send,
+            registry=registry,
+            request_builder=request_builder,
+            max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
+            initial_input=provider_turn_input.user_visible_input or "",
+            previous_response_id=previous_response_id,
+        )
+
+        if loop_result.status == "error":
+            # Provider failed on the very first/any step -> fall back to the
+            # historical non-agentic path so the turn still gets a chance.
+            return None
+        if loop_result.status == "needs_approval":
+            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="agentic_tool_approval", trace_id=turn_input.trace_id)
+            return self._run_approval_path(
+                turn_input,
+                metadata={
+                    "intent": intent_projection,
+                    "agentic_tool_loop": {
+                        "needs_approval_tool_ids": loop_result.needs_approval_tool_ids,
+                        "executed_tool_ids": loop_result.executed_tool_ids,
+                    },
+                },
+                cognition=cognition,
+                loop=loop,
+            )
+        stop_reason = "finalized" if loop_result.status == "final" else "max_steps_reached"
+        loop.step("finalize", stop_reason=stop_reason)
+        fallback_text = (
+            "I reached the tool-step limit before finishing."
+            if loop_result.status == "max_steps"
+            else "(no response)"
+        )
+        return self._finalize_agentic_turn(
+            turn_input,
+            text=loop_result.text or fallback_text,
+            loop=loop,
+            intent_projection=intent_projection,
+            intent_response=intent_response,
+            session_projection=session_projection,
+            selection_projection=selection_projection,
+            desktop_context=desktop_context,
+            cognition=cognition,
+            executed_tool_ids=loop_result.executed_tool_ids,
+        )
+
+    def _finalize_agentic_turn(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        text: str,
+        loop: "_AgenticLoopProjection",
+        intent_projection: dict[str, object],
+        intent_response: dict[str, object],
+        session_projection: dict[str, object],
+        selection_projection: dict[str, object],
+        desktop_context: dict[str, object] | None,
+        cognition: CognitionTurnAssembly,
+        executed_tool_ids: list[str],
+    ) -> AssistantTurnResult:
+        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        metadata: dict[str, object] = {
+            "intent_boundary": "intent_worker_process",
+            "intent": intent_projection,
+            "intent_backend": intent_response.get("backend_name"),
+            "assistant_turn_spine": "used",
+            "cognition": cognition.safe_projection().model_dump(mode="json"),
+            "memory_loop": _memory_write_projection(memory_write),
+            "session": session_projection,
+            "provider_selection": selection_projection,
+            "provider_boundary": "provider_worker_process",
+            "agentic_tool_loop": {
+                "enabled": True,
+                "executed_tool_ids": executed_tool_ids,
+                "executed_count": len(executed_tool_ids),
+            },
+        }
+        if desktop_context is not None:
+            metadata["desktop_agent"] = desktop_context
+        metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
+        _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
+        self._publish(AssistantStatusKind.IDLE, detail="turn_complete", trace_id=turn_input.trace_id)
+        return _entrypoint_text_result(
+            turn_input,
+            text=text,
+            metadata=metadata,
+            stage_name="agentic_tool_loop",
+        )
+
+    def _make_tool_request_builder(self, turn_input: AssistantTurnInput):
+        """Return a request_builder closure for the agentic tool engine.
+
+        Captures the turn ids/schema for the execution request, injects the
+        sandbox root for file tools, and marks SAFE tools auto-approved (the
+        engine only ever calls this for SAFE tools; risky ones are routed to
+        the human approval path before reaching here).
+        """
+
+        from packages.capability_runtime import (
+            CapabilityCallProposal,
+            CapabilityExecutionMode,
+            CapabilityExecutionRequest,
+            CapabilityPermissionDecision,
+            HumanApprovalRequirement,
+        )
+
+        file_root = self._file_capability_root
+
+        def build(tool_id: str, arguments: dict[str, object]):
+            merged = dict(arguments)
+            if tool_id.startswith("file."):
+                if not file_root:
+                    return None
+                merged.setdefault("root", file_root)
+            ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier=tool_id)
+            proposal = CapabilityCallProposal(
+                schema_version=turn_input.schema_version,
+                proposal_id=f"agentic.{turn_input.turn_id}.{tool_id}",
+                trace_id=turn_input.trace_id,
+                turn_id=turn_input.turn_id,
+                capability_ref=ref,
+                proposed_action=tool_id,
+                risk_level=ToolRiskLevel.SAFE,
+                side_effect_level=ToolSideEffectLevel.READ_ONLY,
+                execution_mode=CapabilityExecutionMode.PROPOSAL_ONLY,
+                arguments_schema={"type": "object"},
+            )
+            permission = CapabilityPermissionDecision(
+                schema_version=turn_input.schema_version,
+                decision_id=f"agentic.{turn_input.turn_id}.{tool_id}.permission",
+                capability_ref=ref,
+                decision="approved",
+                reason_code="policy_allowlisted_safe_tool",
+                human_approval=HumanApprovalRequirement(required=False, reason_code="not_required", prompt_user_visible=False),
+            )
+            return CapabilityExecutionRequest(
+                schema_version=turn_input.schema_version,
+                request_id=f"agentic.{turn_input.turn_id}.{tool_id}.request",
+                trace_id=turn_input.trace_id,
+                turn_id=turn_input.turn_id,
+                proposal=proposal,
+                permission_decision=permission,
+                arguments=merged,
+            )
+
+        return build
+
     def _publish(
         self,
         status: AssistantStatusKind,
@@ -1171,6 +1385,27 @@ class _CoreServiceProviderWorkerTurnExecutor:
             cognition,
             desktop_context=desktop_context,
         )
+        # Agentic tool-calling loop (docs/TODO/02), opt-in behind a flag. When
+        # enabled and a provider returns tool calls, run them through the
+        # capability/approval boundary and feed results back until the model
+        # answers. Any failure or the flag being off falls through to the
+        # historical bounded continuation loop below - no regression.
+        if _agentic_tools_enabled():
+            agentic_result = self._run_agentic_tool_loop(
+                turn_input,
+                provider_turn_input=provider_turn_input,
+                provider_instructions=provider_instructions,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=previous_response_id,
+                intent_projection=intent_projection,
+                intent_response=intent_response,
+                session_projection=session_projection,
+                selection_projection=selection_projection,
+                desktop_context=desktop_context,
+            )
+            if agentic_result is not None:
+                return agentic_result
         max_steps = _resolve_agentic_max_steps(cognition.step_plan.max_steps)
         chained_previous_response_id = previous_response_id
         step_count = 0
@@ -2395,6 +2630,38 @@ def _with_ui_toolset(instructions: str | None, provider_name: str) -> str | None
     # Ground the model in the real tool catalog so it stops inventing
     # capabilities (subagents/RAG/etc.). See tool_grounding + docs/TODO/02.
     return with_tool_grounding(instructions)
+
+
+_AGENTIC_TOOLS_ENV = "MARVEX_AGENTIC_TOOLS"
+_COMBINED_TOOL_REGISTRY = None
+
+
+def _agentic_tools_enabled() -> bool:
+    """Whether the model-driven tool-calling loop is enabled (default off).
+
+    Opt-in via MARVEX_AGENTIC_TOOLS=1/true/on/yes so the deterministic router
+    stays the default until the loop is verified in the field. See docs/TODO/02.
+    """
+
+    value = os.environ.get(_AGENTIC_TOOLS_ENV, "").strip().lower()
+    return value in {"1", "true", "on", "yes"}
+
+
+def _combined_tool_registry():
+    """A single registry over built-in + file tools for the agentic loop."""
+
+    global _COMBINED_TOOL_REGISTRY
+    if _COMBINED_TOOL_REGISTRY is None:
+        from packages.adapters.capabilities.tools import (
+            ToolRegistry,
+            default_registry,
+            file_tools_registry,
+        )
+
+        _COMBINED_TOOL_REGISTRY = ToolRegistry(
+            (*default_registry().tools(), *file_tools_registry().tools())
+        )
+    return _COMBINED_TOOL_REGISTRY
 
 
 def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalRequest:

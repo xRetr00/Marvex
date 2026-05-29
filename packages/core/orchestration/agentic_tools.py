@@ -155,10 +155,93 @@ def execute_tool_calls(
     )
 
 
+@dataclass
+class ProviderStep:
+    """The subset of a provider response the loop driver needs."""
+
+    output_text: str
+    tool_calls: list[dict[str, Any]]
+    response_id: str | None
+    error: bool
+
+
+@dataclass
+class LoopResult:
+    status: str  # "final" | "needs_approval" | "error" | "max_steps"
+    text: str
+    steps: int
+    executed_tool_ids: list[str] = field(default_factory=list)
+    needs_approval_tool_ids: list[str] = field(default_factory=list)
+
+
+# send(input_text, tool_messages, previous_response_id) -> ProviderStep
+SendFn = Callable[[str, list[dict[str, Any]] | None, str | None], ProviderStep]
+
+
+def run_tool_loop(
+    *,
+    send: SendFn,
+    registry: ToolRegistry,
+    request_builder: RequestBuilder,
+    max_steps: int,
+    initial_input: str,
+    previous_response_id: str | None = None,
+) -> LoopResult:
+    """Drive the model<->tools loop until a text answer, approval, or limit.
+
+    Pure and provider-agnostic: ``send`` is a caller-supplied callable that
+    performs one provider round trip and returns a ``ProviderStep``. This keeps
+    the loop unit-testable without the provider, fastapi, or Core service.
+
+    Termination:
+      * model returns no tool calls           -> status "final"
+      * a risky tool needs approval           -> status "needs_approval"
+      * provider error                        -> status "error"
+      * max_steps exhausted with tool calls   -> status "max_steps"
+    """
+
+    steps = max(1, int(max_steps))
+    prev = previous_response_id
+    tool_messages: list[dict[str, Any]] | None = None
+    input_text = initial_input
+    executed: list[str] = []
+    last_text = ""
+
+    for index in range(steps):
+        step = send(input_text, tool_messages, prev)
+        if step.error:
+            return LoopResult(status="error", text=last_text, steps=index + 1, executed_tool_ids=executed)
+        last_text = step.output_text or last_text
+        if step.response_id:
+            prev = step.response_id
+        if not step.tool_calls:
+            return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed)
+        outcome = execute_tool_calls(
+            step.tool_calls, registry=registry, request_builder=request_builder
+        )
+        executed.extend(outcome.executed_tool_ids)
+        if outcome.needs_approval:
+            return LoopResult(
+                status="needs_approval",
+                text=last_text,
+                steps=index + 1,
+                executed_tool_ids=executed,
+                needs_approval_tool_ids=[r.tool_id for r in outcome.needs_approval],
+            )
+        tool_messages = outcome.all_messages
+        input_text = ""  # continuation: provider uses tool_messages
+
+    return LoopResult(status="max_steps", text=last_text, steps=steps, executed_tool_ids=executed)
+
+
 __all__ = [
     "RequestBuilder",
     "ToolCallResult",
     "ToolStepOutcome",
+    "ProviderStep",
+    "LoopResult",
+    "SendFn",
     "execute_tool_calls",
     "parse_tool_arguments",
+    "run_tool_loop",
 ]
