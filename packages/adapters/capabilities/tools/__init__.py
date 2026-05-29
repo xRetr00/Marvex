@@ -31,6 +31,7 @@ from .repo_status import RepoStatusTool
 from .ripgrep import RipgrepTool
 from .search import SearchFilesTool
 from .time_date import TimeDateTool
+from .web_search import WebSearchTool
 from .write import WriteFileTool
 
 
@@ -134,4 +135,5 @@ __all__ = [
     "RipgrepTool",
     "WriteFileTool",
     "PatchFileTool",
+    "WebSearchTool",
 ]

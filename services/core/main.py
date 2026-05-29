@@ -911,7 +911,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
         from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop
 
-        registry = _combined_tool_registry()
+        registry = self._agentic_tool_registry()
         tool_schemas = list(registry.tool_schemas())
         if not tool_schemas:
             return None
@@ -1040,6 +1040,24 @@ class _CoreServiceProviderWorkerTurnExecutor:
             metadata=metadata,
             stage_name="agentic_tool_loop",
         )
+
+    def _agentic_tool_registry(self):
+        """Registry the agentic loop calls: built-in + file tools, plus the
+        web.search tool when a web search provider is configured. Built per
+        executor (not module-cached) because the web tool needs the injected
+        provider."""
+
+        from packages.adapters.capabilities.tools import (
+            ToolRegistry,
+            WebSearchTool,
+            default_registry,
+            file_tools_registry,
+        )
+
+        tools = [*default_registry().tools(), *file_tools_registry().tools()]
+        if self._web_search_provider is not None:
+            tools.append(WebSearchTool(provider=self._web_search_provider))
+        return ToolRegistry(tuple(tools))
 
     def _make_tool_request_builder(self, turn_input: AssistantTurnInput):
         """Return a request_builder closure for the agentic tool engine.
