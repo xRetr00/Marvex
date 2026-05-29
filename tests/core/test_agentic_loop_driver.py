@@ -118,6 +118,49 @@ def test_max_steps_exhausted_when_model_keeps_calling_tools():
     assert result.executed_tool_ids == ["builtin.time_date", "builtin.time_date", "builtin.time_date"]
 
 
+def test_web_search_through_loop_answers_latest_question():
+    """Item 05 end-to-end: a 'latest model by Anthropic' style question -> the
+    model calls web.search, gets fresh results, then answers with them, instead
+    of confidently stating a stale fact from memory."""
+    from packages.adapters.capabilities.tools import WebSearchTool
+    from packages.web_search_runtime import (
+        WebSearchEvidenceRef,
+        WebSearchGroundingBundle,
+        WebSearchResult,
+    )
+
+    class _FakeWeb:
+        provider_name = "fake"
+
+        def search(self, query):
+            result = WebSearchResult(
+                title="Anthropic launches Claude Opus 4.6",
+                url="https://www.anthropic.com/news/claude-opus-4-6",
+                domain="anthropic.com",
+                snippet="Anthropic's latest model is Claude Opus 4.6.",
+            )
+            evidence = WebSearchEvidenceRef(
+                evidence_id="web.evidence.1", source_url="https://www.anthropic.com/news/claude-opus-4-6",
+                domain="anthropic.com", title="Claude Opus 4.6", snippet="latest model",
+            )
+            return WebSearchGroundingBundle(query=query, provider="fake", results=(result,), evidence_refs=(evidence,))
+
+    registry = ToolRegistry((*default_registry().tools(), WebSearchTool(provider=_FakeWeb())))
+
+    steps = [
+        ProviderStep(output_text="", tool_calls=[_fc("web.search", '{"query": "latest model by Anthropic"}')], response_id="r1", error=False),
+        ProviderStep(output_text="Anthropic's latest model is Claude Opus 4.6 [web.evidence.1].", tool_calls=[], response_id="r2", error=False),
+    ]
+
+    def send(input_text, tool_messages, prev):
+        return steps.pop(0)
+
+    result = run_tool_loop(send=send, registry=registry, request_builder=_builder(), max_steps=5, initial_input="what is the latest model by anthropic")
+    assert result.status == "final"
+    assert result.executed_tool_ids == ["web.search"]
+    assert "4.6" in result.text
+
+
 def test_real_file_read_through_loop(tmp_path: Path):
     (tmp_path / "note.txt").write_text("project alpha status: green", encoding="utf-8")
     steps = [
