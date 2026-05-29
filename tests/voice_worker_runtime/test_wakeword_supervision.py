@@ -436,6 +436,15 @@ def test_wake_detection_triggers_post_wake_stt_capture(tmp_path: Path) -> None:
             stt_runner=stt_runner,
         ),
     )
+    # Inject a VAD decider that hears speech then silence so the endpointed
+    # capture finalizes (the default silero adapter is unavailable in tests).
+    _vad_state = {"n": 0}
+
+    def _vad(frame):  # noqa: ANN001
+        _vad_state["n"] += 1
+        return _vad_state["n"] <= 3  # 3 speech frames then silence -> endpoint
+
+    controller._vad_decider = _vad
     controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
 
     tick = controller.tick_wakeword_supervisor()

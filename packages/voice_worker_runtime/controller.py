@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from packages.voice_runtime import AudioRingBuffer, ChunkAggregator, EarlySpeechTrigger, PartialTranscriptBuffer, VADDecision, VoicePlaybackResult, VoiceRuntime, VoiceTurnRequest, select_early_speech
+from packages.voice_runtime.adapters import SileroVadAdapter, WebRtcVadAdapter
 
 from .assets import VoiceAssetManager, VoiceModelDownloadRequest, VoiceModelInstallRequest
 from .audio import FakeLocalAudioAdapter, LocalAudioAdapter, PlaybackAdapterResult, SoundDeviceAudioAdapter
@@ -143,35 +145,116 @@ class VoiceWorkerController:
             self._record(VoiceWorkerEventType.ERROR, trace_id=self._error.trace_id, summary=tick.safe_projection())
         return tick
 
-    def _run_post_wake_capture(self, *, parent_trace_id: str) -> None:
-        """Capture a short user utterance after wake and run STT on it.
+    def _resolve_vad_decider(self) -> "Callable[[Any], bool]":
+        """Return an is-speech decider for a single frame.
 
-        Emits ``VAD_SPEECH_STARTED``/``VAD_SPEECH_ENDED``/
-        ``TRANSCRIPTION_STARTED``/``TRANSCRIPTION_COMPLETED`` events with the
-        transcript text in the completed event's summary, so a downstream
-        consumer (shell or core service) can pick it up and submit a chat
-        turn. Failures are swallowed; the wake event has already been
-        recorded and the supervisor can keep listening.
+        Uses the configured VAD backend (silero primary, webrtc fallback). A
+        custom decider can be injected for tests via ``self._vad_decider``.
+        Moonshine STT has no internal padding/long-form chunking like Whisper -
+        it expects a trimmed utterance - so VAD endpointing here is what makes
+        moonshine-v2 transcribe correctly rather than choking on silence.
+        """
+
+        injected = getattr(self, "_vad_decider", None)
+        if callable(injected):
+            return injected
+        backend = (self.config.vad.main_backend_id or "").strip()
+        if backend == "webrtcvad-wheels":
+            adapter: Any = WebRtcVadAdapter(aggressiveness=self.config.vad.aggressiveness)
+        else:
+            adapter = SileroVadAdapter()
+
+        def decide(frame: Any) -> bool:
+            try:
+                return bool(adapter.decide((frame,)).is_speech)
+            except Exception:
+                return False
+
+        return decide
+
+    def _capture_utterance(self, *, vad_decider: "Callable[[Any], bool]") -> tuple[tuple[Any, ...], str]:
+        """VAD-endpointed incremental capture of a single user utterance.
+
+        Captures ~100ms frames one at a time, starts accumulating on first
+        speech (with a little pre-roll), and stops after ``silence_timeout_ms``
+        of trailing silence or at ``max_utterance_ms``. Returns the trimmed
+        utterance frames + a reason code. This replaces the old fixed ~3s grab
+        so short commands aren't padded with silence and long ones aren't cut.
+        """
+
+        cfg = self.config
+        frame_ms = max(1, cfg.audio.frame_duration_ms)
+        max_frames = max(1, cfg.vad.max_utterance_ms // frame_ms)
+        silence_to_end = max(1, cfg.vad.silence_timeout_ms // frame_ms)
+        pre_roll_keep = max(0, cfg.vad.tail_padding_ms // frame_ms)
+        # Cap how long we wait for ANY speech before giving up (avoid hanging on
+        # a wake-word false positive). ~2.5s of leading silence.
+        max_leading_silence = max(silence_to_end, 25)
+
+        pre_roll: deque = deque(maxlen=pre_roll_keep)
+        captured: list[Any] = []
+        speech_started = False
+        trailing_silence = 0
+        leading_silence = 0
+        for _ in range(max_frames):
+            batch = tuple(
+                self.audio.capture_frames(
+                    device_id=cfg.audio.input_device_id,
+                    sample_rate=cfg.audio.sample_rate,
+                    channel_count=cfg.audio.channel_count,
+                    frame_count=1,
+                )
+            )
+            if not batch:
+                break
+            frame = batch[0]
+            is_speech = vad_decider(frame)
+            if not speech_started:
+                if is_speech:
+                    speech_started = True
+                    captured.extend(pre_roll)
+                    captured.append(frame)
+                    trailing_silence = 0
+                else:
+                    pre_roll.append(frame)
+                    leading_silence += 1
+                    if leading_silence >= max_leading_silence:
+                        return tuple(captured), "no_speech"
+                continue
+            captured.append(frame)
+            if is_speech:
+                trailing_silence = 0
+            else:
+                trailing_silence += 1
+                if trailing_silence >= silence_to_end:
+                    return tuple(captured), "silence_endpoint"
+        if not speech_started:
+            return tuple(captured), "no_speech"
+        return tuple(captured), "max_utterance"
+
+    def _run_post_wake_capture(self, *, parent_trace_id: str) -> None:
+        """VAD-endpoint a user utterance after wake and run STT on it.
+
+        Emits VAD_SPEECH_STARTED / VAD_SPEECH_ENDED / TRANSCRIPTION_STARTED /
+        TRANSCRIPTION_COMPLETED with the transcript text in the completed
+        event's summary so a downstream consumer (shell) can submit a chat
+        turn. Failures are swallowed; the wake event was already recorded.
         """
 
         try:
-            # ~3 seconds of room for the user's command. With 100 ms frames
-            # this is enough for short queries like "what's the weather"
-            # while not running away on misfires.
-            frames = tuple(
-                self.audio.capture_frames(
-                    device_id=self.config.audio.input_device_id,
-                    sample_rate=self.config.audio.sample_rate,
-                    channel_count=self.config.audio.channel_count,
-                    frame_count=30,
+            vad_decider = self._resolve_vad_decider()
+            frames, reason = self._capture_utterance(vad_decider=vad_decider)
+            if not frames or reason == "no_speech":
+                self._record(
+                    VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                    trace_id=parent_trace_id,
+                    summary={"reason_code": "no_speech", "post_wake_capture": True},
                 )
-            )
-            if not frames:
                 return
             self._record(
                 VoiceWorkerEventType.VAD_SPEECH_STARTED,
                 trace_id=parent_trace_id,
-                summary={"trigger": "post_wake_capture"},
+                summary={"trigger": "post_wake_capture", "frame_count": len(frames)},
             )
             audio_ref_id = self.backend_runtime.remember_captured_frames(
                 trace_id=parent_trace_id,
@@ -181,6 +264,7 @@ class VoiceWorkerController:
                 VoiceWorkerEventType.VAD_SPEECH_ENDED,
                 trace_id=parent_trace_id,
                 summary={
+                    "reason_code": reason,
                     "duration_ms": sum(frame.duration_ms for frame in frames),
                     "audio_ref_present": True,
                 },
@@ -199,6 +283,7 @@ class VoiceWorkerController:
                 **transcription_summary(transcription),
                 "audio_ref_present": True,
                 "post_wake_capture": True,
+                "endpoint_reason": reason,
             }
             if transcription.status == "succeeded" and transcription.text:
                 summary["transcript_text"] = transcription.text
