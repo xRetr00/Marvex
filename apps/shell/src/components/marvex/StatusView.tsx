@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Activity, Bot, Cpu, Layers, Mic, Package, User } from "lucide-react";
 import { controlRequest } from "@/lib/shellCommands";
 import { serviceOk, type BackendStatus } from "@/lib/backendStatus";
 
@@ -46,21 +47,21 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
   const features = (deps as { features?: Record<string, boolean> } | null)?.features ?? {};
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 760 }}>
-      <Card title="Marvex">
+    <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 760 }}>
+      <Card icon={<Activity size={14} />} title="Marvex">
         <Row label="Runtime phase" value={backend?.phase ?? "…"} ok={backend?.ready} />
         <Row label="Ready" value={backend?.ready ? "yes" : "no"} ok={backend?.ready} />
         <Row label="Launched" value={backend?.launched ? "yes" : "no"} ok={backend?.launched} />
       </Card>
 
-      <Card title="Workers / Daemons">
+      <Card icon={<Cpu size={14} />} title="Workers / Daemons">
         {workerNames.length === 0 && <Muted>No services reported.</Muted>}
         {workerNames.map((name) => (
           <Row key={name} label={name.replace(/_/g, " ")} value={services[name]} ok={serviceOk(services[name])} />
         ))}
       </Card>
 
-      <Card title="Voice / Wake word">
+      <Card icon={<Mic size={14} />} title="Voice / Wake word">
         <Row label="Wake word" value={String((voice as { wakeword_status?: string } | null)?.wakeword_status ?? backend?.wakeword ?? "unknown")} ok={backend?.wakeword === "running" || backend?.wakeword === "enabled"} />
         <Row label="Lifecycle" value={voiceLifecycleLabel(voice, voiceWorkerProcessRunning)} ok={voiceWorkerProcessRunning || Boolean((voice as { process_started?: boolean } | null)?.process_started)} />
         <Row label="STT backend" value={String((voice as { active_stt_backend_id?: string } | null)?.active_stt_backend_id ?? "—")} />
@@ -68,7 +69,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
         <Row label="Active voice" value={String((voice as { active_voice_id?: string } | null)?.active_voice_id ?? "—")} />
       </Card>
 
-      <Card title="Provider / LLM">
+      <Card icon={<Layers size={14} />} title="Provider / LLM">
         {providers.length === 0 && <Muted>No providers reported.</Muted>}
         {providers.map((p, i) => (
           <Row key={i} label={String(p.provider_id ?? p.id ?? `provider ${i + 1}`)} value={String(p.active_model ?? p.model ?? p.status ?? "—")} ok={Boolean(p.healthy)} />
@@ -76,15 +77,15 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
         <Row label="Default model" value={String((settings as { default_model?: string }).default_model ?? "—")} />
       </Card>
 
-      <Card title="Persona / Agent">
+      <Card icon={<User size={14} />} title="Persona / Agent">
         <Row label="Active agent" value={activeAgent} />
         <Row label="Active persona" value={activePersona} />
       </Card>
 
-      <Card title="Dependencies">
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: depsList.length ? 8 : 0 }}>
+      <Card icon={<Package size={14} />} title="Dependencies">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: depsList.length ? 10 : 0 }}>
           {Object.entries(features).map(([k, v]) => (
-            <span key={k} style={{ fontSize: 11, padding: "3px 8px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--secondary)", color: v ? "var(--foreground)" : "var(--muted-foreground)" }}>
+            <span key={k} className={`marvex-status-value-chip ${v ? "ok" : "err"}`}>
               {k}: {v ? "ok" : "missing"}
             </span>
           ))}
@@ -95,7 +96,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
         ))}
       </Card>
 
-      <Card title="Telemetry (summary)">
+      <Card icon={<Bot size={14} />} title="Telemetry">
         {Object.keys(telemetry).length === 0 && <Muted>No telemetry summary.</Muted>}
         {Object.entries(telemetry).slice(0, 12).map(([k, v]) => (
           <Row key={k} label={k.replace(/_/g, " ")} value={typeof v === "object" ? JSON.stringify(v) : String(v)} />
@@ -111,21 +112,32 @@ function voiceLifecycleLabel(voice: Record<string, unknown> | null, processRunni
   return lifecycle;
 }
 
-function Card({ title, children }: { title: string; children: React.ReactNode }) {
+function Card({ icon, title, children }: { icon?: React.ReactNode; title: string; children: React.ReactNode }) {
   return (
-    <section style={{ background: "var(--card)", borderRadius: 14, padding: 16, border: "1px solid var(--border)" }}>
-      <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{title}</h2>
-      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
+    <section className="marvex-status-card">
+      <h2 className="marvex-status-card-title">
+        {icon && <span className="marvex-status-card-icon">{icon}</span>}
+        {title}
+      </h2>
+      <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>{children}</div>
     </section>
   );
 }
 
+function rowValueClass(ok?: boolean, value?: unknown): string {
+  const v = String(value ?? "").toLowerCase();
+  if (ok === true || v === "yes" || v === "ready" || v === "installed" || v === "ok" || v === "running" || v === "enabled") return "ok";
+  if (ok === false || v === "no" || v === "stopped" || v === "failed" || v === "missing") return "err";
+  return "neutral";
+}
+
 function Row({ label, value, ok }: { label: string; value: unknown; ok?: boolean }) {
+  const cls = rowValueClass(ok, value);
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, fontSize: 12 }}>
-      <span style={{ color: "var(--muted-foreground)", textTransform: "capitalize" }}>{label}</span>
-      <span style={{ display: "inline-flex", alignItems: "center", gap: 6, fontWeight: 500, maxWidth: "60%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-        {ok !== undefined && <span style={{ width: 7, height: 7, borderRadius: "50%", background: ok ? "#34d399" : "#e54d2e" }} />}
+      <span style={{ color: "var(--muted-foreground)", textTransform: "capitalize", flex: 1 }}>{label}</span>
+      <span className={`marvex-status-value-chip ${cls}`}>
+        {ok !== undefined && <span style={{ width: 6, height: 6, borderRadius: "50%", background: ok ? "#34d399" : "#e54d2e", flexShrink: 0 }} />}
         {String(value ?? "—")}
       </span>
     </div>

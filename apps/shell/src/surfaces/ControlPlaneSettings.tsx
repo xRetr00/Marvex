@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Database, ExternalLink, Eye, EyeOff, KeyRound, PlugZap, Plus, RefreshCw, Save, Server, Trash2, Wrench } from "lucide-react";
+import { Copy, Cpu, Database, ExternalLink, Eye, EyeOff, Globe, KeyRound, PlugZap, Plus, RefreshCw, Save, Server, Sparkles, Trash2, Wrench, Zap, Bot } from "lucide-react";
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ModernLogViewer } from "@/components/marvex/ModernLogViewer";
 import { controlRequest, openControlPlane, type LogTail } from "@/lib/shellCommands";
@@ -165,12 +166,22 @@ export function ControlPlaneSettings() {
           </div>
           <div style={modelList}>
             <strong style={subhead}>Multi models</strong>
-            {(activeProvider?.models ?? []).length === 0 ? <Muted>No models discovered yet.</Muted> : (activeProvider?.models ?? []).map((model) => (
-              <label key={model} style={checkRow}>
-                <input type="checkbox" checked={Boolean(activeProvider?.multi_models?.includes(model))} onChange={(event) => onToggleMultiModel(model, event.target.checked)} />
-                <span>{model}</span>
-              </label>
-            ))}
+            {(activeProvider?.models ?? []).length === 0 ? <Muted>No models discovered yet.</Muted> : (activeProvider?.models ?? []).map((model) => {
+              const checked = Boolean(activeProvider?.multi_models?.includes(model));
+              return (
+                <label key={model} className={`marvex-model-check-row${checked ? " is-checked" : ""}`}>
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={(event) => onToggleMultiModel(model, event.target.checked)}
+                    className="marvex-model-checkbox"
+                  />
+                  <span className="marvex-provider-icon-wrap" style={{ width: 18, height: 18 }}>{providerIcon(activeProvider?.provider_id ?? "")}</span>
+                  <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{model}</span>
+                  {checked && <span className="marvex-model-active-chip">on</span>}
+                </label>
+              );
+            })}
           </div>
           <div style={providerRows}>
             {(providers?.providers ?? []).map((provider) => <ProviderTile key={provider.provider_id} provider={provider} active={provider.provider_id === providers?.active_provider_id} />)}
@@ -233,11 +244,28 @@ export function ControlPlaneSettings() {
   );
 }
 
+function providerIcon(providerId: string): ReactNode {
+  const id = (providerId ?? "").toLowerCase();
+  if (id.includes("openai") || id.includes("gpt")) return <Sparkles size={14} />;
+  if (id.includes("anthropic") || id.includes("claude")) return <Zap size={14} />;
+  if (id.includes("google") || id.includes("gemini")) return <Globe size={14} />;
+  if (id.includes("lm") || id.includes("lmstudio") || id.includes("litellm") || id.includes("local")) return <Cpu size={14} />;
+  return <Bot size={14} />;
+}
+
 function ProviderTile({ provider, active }: { provider: ProviderRow; active: boolean }) {
   return (
-    <div style={{ ...tile, borderColor: active ? "var(--primary)" : "var(--border)" }}>
-      <strong>{provider.label ?? provider.provider_id}</strong>
-      <span>{provider.active_model || "no model"}</span>
+    <div className={`marvex-provider-tile${active ? " is-active" : ""}`}>
+      <div className="marvex-provider-tile-header">
+        <span className="marvex-provider-icon-wrap">{providerIcon(provider.provider_id)}</span>
+        <strong style={{ fontSize: 12, fontWeight: 650, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {provider.label ?? provider.provider_id}
+        </strong>
+        {active && <span className="marvex-provider-active-badge">active</span>}
+      </div>
+      <span style={{ fontSize: 11, color: "var(--muted-foreground)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+        {provider.active_model || "no model"}
+      </span>
       <Chip label={provider.healthy ? "healthy" : "check"} ok={Boolean(provider.healthy)} />
     </div>
   );

@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2, AlertTriangle } from "lucide-react";
+import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Volume2, AlertTriangle, Cpu, Sparkles, Bot, Zap, Globe, ChevronDown, MessageSquareDot } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
@@ -229,7 +229,13 @@ export function ChatApp() {
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           <div>
             <ScrambleText as="h1" text={TAB_TITLES[activeTab]} className="m-0 text-[17px] font-bold" style={{ color: "var(--foreground)" }} />
-            <p style={{ margin: "1px 0 0", color: "var(--muted-foreground)", fontSize: 11 }}>{config ? `${config.core_base_url}` : "Connecting..."}</p>
+            {/* Connection status dot — replaces the raw localhost URL */}
+            <div style={{ display: "flex", alignItems: "center", gap: 5, marginTop: 2 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: config ? "#34d399" : "#f59e0b", flexShrink: 0, display: "block" }} />
+              <span style={{ fontSize: 10, color: "var(--muted-foreground)", fontWeight: 500 }}>
+                {config ? "Connected" : "Connecting..."}
+              </span>
+            </div>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -255,24 +261,51 @@ export function ChatApp() {
       <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", position: "relative", background: "var(--sidebar)" }}>
         <AnimatePresence>
           {sidebarOpen && (
-            <motion.aside initial={{ x: -280, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -280, opacity: 0 }} transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
-              style={{ position: "absolute", inset: "0 auto 0 0", width: 280, zIndex: 5, background: "var(--sidebar)", borderRight: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column" }}>
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--sidebar-border)" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Sessions</span>
-                <button onClick={() => setSidebarOpen(false)} style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", display: "grid", placeItems: "center" }}><X size={16} /></button>
+            <motion.aside
+              initial={{ x: -288, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -288, opacity: 0 }}
+              transition={{ type: "spring", duration: 0.32, bounce: 0.08 }}
+              className="marvex-sidebar"
+            >
+              {/* Header */}
+              <div className="marvex-sidebar-header">
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <MessageSquareDot size={15} style={{ color: "var(--muted-foreground)" }} />
+                  <span style={{ fontSize: 13, fontWeight: 650, letterSpacing: "-0.01em" }}>Chats</span>
+                </div>
+                <button onClick={() => setSidebarOpen(false)} className="marvex-sidebar-close" aria-label="Close sidebar"><X size={15} /></button>
               </div>
-              <div style={{ padding: 10 }}>
-                <button onClick={startNewSession} style={{ ...iconBtn, width: "100%", height: 36, gap: 6 }}><Plus size={14} /> New chat</button>
+
+              {/* New chat button */}
+              <div style={{ padding: "10px 12px 6px" }}>
+                <button onClick={startNewSession} className="marvex-new-chat-btn">
+                  <Plus size={14} />
+                  New chat
+                </button>
               </div>
-              <div style={{ flex: 1, overflow: "auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-                {sessions.map((s: SessionMeta) => (
-                  <button key={s.id} onClick={() => openSession(s.id)}
-                    style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, background: s.id === sessionIdRef.current ? "var(--sidebar-accent)" : "transparent", border: "1px solid var(--sidebar-border)", cursor: "pointer", color: "var(--foreground)" }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "New chat"}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted-foreground)" }}>{new Date(s.updatedAt).toLocaleString()}</div>
-                  </button>
-                ))}
-                {sessions.length === 0 && <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>No saved sessions yet.</span>}
+
+              {/* Session list */}
+              <div style={{ flex: 1, overflow: "auto", padding: "4px 8px 12px", display: "flex", flexDirection: "column", gap: 2 }}>
+                {sessions.length === 0 && (
+                  <div className="marvex-sidebar-empty">
+                    <MessageSquare size={28} style={{ color: "var(--muted-foreground)", opacity: 0.4 }} />
+                    <span style={{ fontSize: 12, color: "var(--muted-foreground)", textAlign: "center", lineHeight: 1.5 }}>No saved chats yet.<br />Start a new one above.</span>
+                  </div>
+                )}
+                {sessions.map((s: SessionMeta) => {
+                  const isActive = s.id === sessionIdRef.current;
+                  const relTime = relativeTime(s.updatedAt);
+                  return (
+                    <button key={s.id} onClick={() => openSession(s.id)} className={`marvex-sidebar-item${isActive ? " is-active" : ""}`}>
+                      <div className="marvex-sidebar-item-accent" />
+                      <div style={{ minWidth: 0, flex: 1 }}>
+                        <div className="marvex-sidebar-item-title">{s.title || "New chat"}</div>
+                        <div className="marvex-sidebar-item-meta">
+                          <span>{relTime}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </motion.aside>
           )}
@@ -283,6 +316,11 @@ export function ChatApp() {
           <div className="marvex-chat-bg pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-tl-xl opacity-[0.15]"
             style={{ background: "radial-gradient(ellipse 80% 60% at 50% 0%, color-mix(in srgb, #fb3a5d 40%, transparent), transparent)" }} />
           <div className="marvex-chat-content">
+            {activeTab === "chat" && config && (
+              <div className="marvex-chat-model-bar">
+                <MiniModelPill config={config} />
+              </div>
+            )}
             {activeTab === "chat" && (
               <MarvexChatShell
                 assistantOrbState={orbState}
@@ -382,6 +420,39 @@ const iconBtn: React.CSSProperties = {
   color: "var(--foreground)",
   cursor: "pointer",
 };
+
+// ---- Provider icon map ----
+function providerIcon(providerId: string): ReactNode {
+  const id = (providerId ?? "").toLowerCase();
+  if (id.includes("openai") || id.includes("gpt")) return <Sparkles size={12} />;
+  if (id.includes("anthropic") || id.includes("claude")) return <Zap size={12} />;
+  if (id.includes("lm") || id.includes("lmstudio") || id.includes("litellm") || id.includes("local")) return <Cpu size={12} />;
+  if (id.includes("google") || id.includes("gemini")) return <Globe size={12} />;
+  return <Bot size={12} />;
+}
+
+// ---- Mini model pill shown in the chat tab header bar ----
+function MiniModelPill({ config }: { config: ShellRuntimeConfig }) {
+  const providerId = (config as unknown as Record<string, string>).active_provider_id ?? "";
+  const modelId = (config as unknown as Record<string, string>).active_model ?? "";
+  const label = modelId || providerId || "Model";
+  return (
+    <div className="marvex-model-pill" title={`${providerId} / ${modelId}`}>
+      <span className="marvex-provider-icon">{providerIcon(providerId)}</span>
+      <span className="marvex-model-pill-label">{label.length > 28 ? label.slice(0, 26) + "…" : label}</span>
+      <ChevronDown size={10} style={{ opacity: 0.5, flexShrink: 0 }} />
+    </div>
+  );
+}
+
+// ---- Relative time helper ----
+function relativeTime(ms: number): string {
+  const diff = Date.now() - ms;
+  if (diff < 60_000) return "just now";
+  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`;
+  return `${Math.floor(diff / 86_400_000)}d ago`;
+}
 
 function WakewordBadge({ state }: { state: WakewordState }) {
   const map: Record<WakewordState, { label: string; color: string }> = {

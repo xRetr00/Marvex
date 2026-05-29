@@ -137,37 +137,50 @@ export function VoiceMode() {
       </section>
 
       <section style={panelStyle}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0, color: "var(--muted-foreground)" }}>Model Assets</h3>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+          <h3 style={{ margin: 0, fontSize: 13, fontWeight: 700, color: "var(--foreground)" }}>Model Assets</h3>
           <div style={{ display: "flex", gap: 8 }}>
-            <TextButton disabled={Boolean(busy)} onClick={() => void run("Test STT", testVoiceWorkerStt)}><Play size={14} /> Test STT</TextButton>
-            <TextButton disabled={Boolean(busy)} onClick={() => void run("Test TTS", () => testVoiceWorkerTts())}><Volume2 size={14} /> Test TTS</TextButton>
+            <TextButton className="marvex-test-btn" disabled={Boolean(busy)} onClick={() => void run("Test STT", testVoiceWorkerStt)}>
+              <Play size={13} /> Test STT
+            </TextButton>
+            <TextButton className="marvex-test-btn marvex-test-btn-primary" disabled={Boolean(busy)} onClick={() => void run("Test TTS", () => testVoiceWorkerTts())}>
+              <Volume2 size={13} /> Test TTS
+            </TextButton>
           </div>
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {required.map((asset) => {
             const modelId = String(asset.model_id ?? "");
+            const modelKind = String(asset.model_kind ?? "");
             const downloadTargets = catalogTargetsFor(asset, catalogByModel, catalog);
             const downloadState = downloads[modelId];
             const statusLabel = downloadState?.state === "downloading"
-              ? `Downloading ${downloadState.completed}/${downloadState.total}`
+              ? `${downloadState.completed}/${downloadState.total} files`
               : downloadState?.state === "failed"
                 ? "failed"
-                : downloadState?.state === "complete"
+                : downloadState?.state === "complete" || String(asset.status ?? "") === "installed"
                   ? "installed"
                   : String(asset.status ?? "unknown");
             const detail = downloadState?.error ?? String(asset.exact_blocker ?? "ready");
-            const disabled = downloadTargets.length === 0 || Boolean(busy) || String(asset.status ?? "") === "installed";
+            const isInstalled = String(asset.status ?? "") === "installed" || downloadState?.state === "complete";
+            const disabled = downloadTargets.length === 0 || Boolean(busy) || isInstalled;
+            const kindLabel = modelKind.includes("stt") ? "STT" : modelKind.includes("tts_voice") ? "TTS" : modelKind.includes("wakeword") || modelKind.includes("kws") ? "WW" : modelKind.toUpperCase().slice(0, 3) || "ML";
             return (
-              <div key={`${modelId}-${String(asset.backend_id ?? "")}`} style={assetRowStyle}>
-                <div style={{ minWidth: 0 }}>
+              <div key={`${modelId}-${String(asset.backend_id ?? "")}`} className="marvex-asset-row">
+                <span className={`marvex-asset-kind-badge marvex-asset-kind-${kindLabel.toLowerCase()}`}>{kindLabel}</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
                   <div style={{ fontSize: 13, fontWeight: 650 }}>{modelId}</div>
                   <div style={{ color: "var(--muted-foreground)", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                    {String(asset.backend_id ?? "")} / {String(asset.model_kind ?? "")} / {detail} / {downloadTargets.length || 0} files
+                    {String(asset.backend_id ?? "")} &middot; {detail} &middot; {downloadTargets.length || 0} files
                   </div>
                 </div>
-                <TextButton aria-label={`Download ${modelId}`} disabled={disabled} onClick={() => void runModelDownload(modelId, downloadTargets)}>
-                  <Download size={14} /> {statusLabel}
+                <TextButton
+                  aria-label={`Download ${modelId}`}
+                  disabled={disabled}
+                  className={isInstalled ? "marvex-asset-installed" : undefined}
+                  onClick={() => void runModelDownload(modelId, downloadTargets)}
+                >
+                  {isInstalled ? null : <Download size={13} />} {statusLabel}
                 </TextButton>
               </div>
             );
@@ -213,12 +226,26 @@ function catalogTargetsFor(
   return catalog.filter((asset) => asset.backend_id === backendId && asset.model_kind === modelKind);
 }
 
+function statusDot(value: string) {
+  const v = value.toLowerCase();
+  if (v === "ready" || v === "enabled" || v === "running" || v === "installed") return "#34d399";
+  if (v === "stopped" || v === "failed" || v === "error") return "#e54d2e";
+  return "#f59e0b";
+}
+
 function StatusTile({ icon, label, value, detail }: { icon: ReactNode; label: string; value: string; detail: string }) {
+  const dot = statusDot(value);
   return (
-    <div style={panelStyle}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, color: "var(--muted-foreground)", fontSize: 12 }}>{icon}{label}</div>
-      <div style={{ marginTop: 8, fontWeight: 700, fontSize: 15 }}>{value}</div>
-      <div style={{ marginTop: 4, color: "var(--muted-foreground)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail}</div>
+    <div className="marvex-voice-tile">
+      <div style={{ display: "flex", alignItems: "center", gap: 7 }}>
+        <span className="marvex-voice-tile-icon">{icon}</span>
+        <span style={{ fontSize: 11, fontWeight: 600, color: "var(--muted-foreground)", letterSpacing: "0.02em", textTransform: "uppercase" }}>{label}</span>
+      </div>
+      <div style={{ display: "flex", alignItems: "center", gap: 7, marginTop: 10 }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: dot, flexShrink: 0, boxShadow: `0 0 6px ${dot}88` }} />
+        <span style={{ fontWeight: 700, fontSize: 15 }}>{value}</span>
+      </div>
+      <div style={{ marginTop: 5, color: "var(--muted-foreground)", fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{detail}</div>
     </div>
   );
 }
