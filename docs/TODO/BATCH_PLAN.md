@@ -37,11 +37,21 @@ Do them first so the tool is usable while the big phases land.
   explicit "overwrite/replace" → overwrite; otherwise append (patch) or
   auto-suffix. (`packages/adapters/capabilities/files.py:242`,
   `packages/core/orchestration/file_intent.py`.) Folds into item 07.
-- [ ] **B2 — model hallucinates capabilities.** With the provider now working,
-  the model invents tools it lacks ("agent.deep_search subagent", "RAG tools",
-  "your memory"). Root fix is items 07+02+03 (ground the model in the real tool
-  list). Interim: a system prompt that states the *actual* available tools and
-  forbids inventing others. (`services/core/main.py` prompt assembly.)
+- [x] **B2 — model hallucinates capabilities.** Interim fix landed: the system
+  prompt now lists the *real* tools from the registries and forbids inventing
+  others (`packages/core/orchestration/tool_grounding.py`). Verified in the raw
+  LM Studio log — the model now says "I do not have subagents / web browsing".
+- [ ] **B5 — persona block contradicts the grounding.** The raw LM log showed
+  the prompt-harness still injects *"This agent may propose bounded subagents
+  ['agent.deep_search', ...]"* and lists `skill.planning/brainstorming/
+  verification` — capabilities with no runtime. Source:
+  `packages/prompt_harness_runtime/provider_compiler.py:89` (`_agent_role_block`,
+  driven by `AgentProfile.can_spawn_subagents` + `spawnable_agent_ids`). This is
+  the residual root of B2: the persona claims subagents the system can't execute.
+  **Product decision needed:** are subagents/skills a real roadmap item (a future
+  multi-agent runtime) or should they be removed from the personas until real?
+  Until decided, the grounding block counteracts it but does not remove the
+  contradiction.
 - [ ] **B3 — PDF / report read returns "No matching file paths found."**
   "Read the contents of the My Uni Report on Desktop" routed to file search and
   found nothing — title-based fuzzy match + PDF text extraction are missing.
@@ -61,7 +71,7 @@ failure is pinned to a specific cause (build vs. loop) with fresh logs.
 
 ---
 
-## Phase 1 — [07 Tool registry per-file refactor](./07-tool-registry-per-file-refactor.md)
+## Phase 1 — [07 Tool registry per-file refactor](./07-tool-registry-per-file-refactor.md) ✅ DONE
 
 The structural prerequisite for real tool-use. One file per tool
 (`read.py`, `list.py`, `search.py`, `write.py`, `patch.py`, `calculator.py`,
@@ -71,19 +81,29 @@ Includes B1 (overwrite/patch semantics) and the new `patch` tool.
 
 **Exit:** all built-ins are per-file, registry-dispatched, old API shimmed,
 `registry.tool_schemas()` produces valid JSON schemas, existing tests green.
+**Status:** complete (commits 58bf8d8, e979bcb).
 
 ---
 
-## Phase 2 — [02 Agentic tool-calling loop](./02-agentic-tool-calling-loop.md) *(keystone)*
+## Phase 2 — [02 Agentic tool-calling loop](./02-agentic-tool-calling-loop.md) *(keystone)* ✅ DONE
 
 With clean tool schemas from Phase 1, give the model real tool-calling: send
 schemas, parse `tool_calls`, execute under the existing approval/policy
 boundary, feed results back, loop to `max_steps`. Keep the deterministic router
-as fallback for non-tool models. Resolves B2 properly.
+as fallback for non-tool models.
 
-**Exit:** "search X and write a summary to notes.txt" completes via model tool
-calls in one turn; risky calls still gated by approval; tools-off behaves like
-today.
+**Exit:** model tool calls execute in a loop; risky calls gated by approval;
+flag-off behaves like today.
+**Status:** complete, behind `MARVEX_AGENTIC_TOOLS` (default off). Increments:
+  * P2.1 (e9b9e1d) — contract + LiteLLM tool plumbing
+  * P2.3a (762f691) — LMStudio Responses tool support (the user's live provider)
+  * P2.2 (172bfa9) — tool-execution engine (safe exec / risky->approval / unknown)
+  * P2.3b (e0d2a04) — loop driver `run_tool_loop` + wiring in `submit_turn`
+
+Known follow-ups: (a) resume-INTO the loop after approval (today approval stops
+the loop and hands to the existing approval path); (b) B5 persona/subagent
+contradiction; (c) the deterministic router still runs first for non-default
+intents — tool-calling currently augments the default provider route.
 
 ---
 
