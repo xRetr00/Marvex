@@ -124,8 +124,11 @@ from packages.provider_selection_runtime import (
 from packages.provider_structured_output import validate_raw_structured_output
 from packages.session_runtime import (
     BackendSessionCoordinator,
+    ConversationEntityStore,
+    ENTITY_FILE,
     CurrentProcessSessionRegistry,
     build_turn_linkage_from_assistant_turn_input,
+    resolve_file_reference,
 )
 from packages.skills_runtime import (
     SkillInstructionLoader,
@@ -799,6 +802,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._desktop_agent_enabled = desktop_agent_enabled
         self._desktop_agent = _DesktopAgentProcessClient(timeout_seconds=timeout_seconds)
         self._state_bus: AssistantStateBus | None = None
+        # Conversation-scoped working memory (docs/TODO/01): remembers files the
+        # assistant produced so "that file"/"it" resolves across turns.
+        self._entity_store = ConversationEntityStore()
 
     def shutdown(self) -> None:
         for worker in (self._provider, self._intent_classifier, self._tool_executor):
@@ -884,6 +890,25 @@ class _CoreServiceProviderWorkerTurnExecutor:
         final = getattr(result, "assistant_final_response", None)
         text = getattr(final, "text", None)
         return text.strip() if isinstance(text, str) else ""
+
+    def _session_id_of(self, turn_input: AssistantTurnInput) -> str:
+        ref = getattr(turn_input, "session_ref", None)
+        ref_id = getattr(ref, "ref_id", None)
+        return ref_id if isinstance(ref_id, str) and ref_id else "default-session"
+
+    def _remember_file_entity(self, turn_input: AssistantTurnInput, path: object) -> None:
+        """Record a file the assistant just produced for later "that file" refs."""
+
+        if not isinstance(path, str) or not path.strip():
+            return
+        label = path.rsplit("/", 1)[-1]
+        self._entity_store.remember(
+            self._session_id_of(turn_input),
+            entity_type=ENTITY_FILE,
+            ref_id=path.strip(),
+            label=label,
+            turn_id=turn_input.turn_id,
+        )
 
     def _classify_intent_llm(self, turn_input: AssistantTurnInput) -> dict[str, object] | None:
         """Classify intent via the provider; return the worker-shaped dict or None.
@@ -1755,6 +1780,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if result.error is not None or result.assistant_final_response is None:
             return result
         safe_result = dict(dict(result.metadata.get("tool", {})).get("result", {})).get("safe_result", {})
+        # Remember a specific file the user just read so "that file"/"it"
+        # resolves on a later write (docs/TODO/01).
+        if str(safe_result.get("operation") or "") == "read":
+            self._remember_file_entity(turn_input, safe_result.get("path"))
         final_text = _file_final_text(dict(safe_result), requested_extension=file_request.get("extension"))
         return result.model_copy(
             update={
@@ -2106,6 +2135,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             message="Approved file write requires a configured local user root.",
                             metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
                         )
+                    # "that file"/"it" resolution (docs/TODO/01): if the user
+                    # back-references a prior file without naming one, target the
+                    # most recent file produced this session instead of the
+                    # default output.txt.
+                    resolved = resolve_file_reference(
+                        turn_input.user_visible_input, self._entity_store, self._session_id_of(turn_input)
+                    )
+                    if resolved:
+                        file_write_request["path"] = resolved
                     # When the user asked the assistant to *compose* the body
                     # (e.g. "write what the open source means"), generate it via
                     # the configured provider before writing, instead of
@@ -2129,7 +2167,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             "approval_decision": "approve",
                         },
                     )
-                    final_text = _file_write_final_text(dict(dict(tool_response.get("result") or {}).get("safe_result") or {}))
+                    write_safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
+                    if tool_response.get("ok") is True or write_safe_result.get("operation") == "write":
+                        self._remember_file_entity(turn_input, write_safe_result.get("path") or file_write_request.get("path"))
+                    final_text = _file_write_final_text(write_safe_result)
                 else:
                     loop.step("tool")
                     tool_response = self._tool_executor.execute(
