@@ -55,6 +55,11 @@ class LiteLLMProvider:
         if self._config.timeout_seconds is not None:
             call_args["timeout"] = self._config.timeout_seconds
         call_args.update(allowed_options)
+        # Agentic tool-calling (docs/TODO/02): only send tools when the caller
+        # supplied them. Absent tools, behavior is byte-for-byte the historical
+        # path (no tools/tool_choice keys), preserving the no-tools invariant.
+        if request.tools:
+            call_args["tools"] = request.tools
         raw_metadata: dict[str, object] = {
             "previous_response_id": request.previous_response_id,
             "ignored_provider_options": ignored_options,
@@ -124,6 +129,7 @@ class LiteLLMProvider:
 
         response_id = self._read_attr(completion_response, "id")
         output_text = self._read_output_text(completion_response)
+        tool_calls = self._read_tool_calls(completion_response)
         self._record_turn(response_id, messages, output_text)
         return ProviderResponse(
             schema_version=request.schema_version,
@@ -138,6 +144,7 @@ class LiteLLMProvider:
             usage=self._to_plain_mapping(self._read_attr(completion_response, "usage")),
             raw_metadata=raw_metadata,
             error=None,
+            tool_calls=tool_calls or None,
         )
 
     def map_raw_output_to_structured_result(
@@ -159,9 +166,9 @@ class LiteLLMProvider:
             include_raw_preview=include_raw_preview,
         )
 
-    def _build_messages(self, request: ProviderRequest) -> list[dict[str, str]]:
-        messages: list[dict[str, str]] = []
-        prior: list[dict[str, str]] = []
+    def _build_messages(self, request: ProviderRequest) -> list[dict[str, Any]]:
+        messages: list[dict[str, Any]] = []
+        prior: list[dict[str, Any]] = []
         if self._conversation_store is not None:
             prior = self._conversation_store.recall(request.previous_response_id)
         if prior:
@@ -172,7 +179,39 @@ class LiteLLMProvider:
         elif request.instructions is not None:
             messages.append({"role": "system", "content": request.instructions})
         messages.append({"role": "user", "content": request.input_text})
+        # Agentic continuation (docs/TODO/02): append prior assistant tool-call
+        # turns + their tool-result messages so the model can continue after a
+        # tool executed. These are already OpenAI-shaped by the caller.
+        if request.tool_messages:
+            messages.extend(request.tool_messages)
         return messages
+
+    def _read_tool_calls(self, response: object) -> list[dict[str, Any]]:
+        """Extract OpenAI-style tool calls from the first choice's message."""
+
+        message = self._read_first_choice_attr(response, "message")
+        raw_calls = self._read_attr(message, "tool_calls")
+        if not isinstance(raw_calls, list):
+            return []
+        calls: list[dict[str, Any]] = []
+        for raw in raw_calls:
+            function = self._read_attr(raw, "function")
+            name = self._read_attr(function, "name")
+            arguments = self._read_attr(function, "arguments")
+            call_id = self._read_attr(raw, "id")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            calls.append(
+                {
+                    "id": str(call_id) if isinstance(call_id, str) and call_id else f"call_{len(calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": arguments if isinstance(arguments, str) else "{}",
+                    },
+                }
+            )
+        return calls
 
     def _record_turn(
         self,

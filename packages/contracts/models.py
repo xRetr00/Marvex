@@ -102,6 +102,14 @@ class ProviderRequest(ContractModel):
     instructions: str | None
     previous_response_id: NonEmptyString | None
     provider_options: JsonObject
+    # Optional OpenAI-style tool schemas for agentic tool-calling (docs/TODO/02).
+    # None preserves the historical no-tools behavior exactly. Adapters only act
+    # on this when a tool-capable path is enabled.
+    tools: list[JsonObject] | None = None
+    # Prior assistant tool-call turns + their results, threaded back so the model
+    # can continue after a tool executed. Each item is an OpenAI-style message
+    # ({"role": "assistant"|"tool", ...}). None on the first step of a turn.
+    tool_messages: list[JsonObject] | None = None
 
 
 class ProviderResponse(ContractModel):
@@ -115,6 +123,10 @@ class ProviderResponse(ContractModel):
     usage: JsonObject
     raw_metadata: JsonObject
     error: ErrorEnvelope | None
+    # Tool calls the model requested this step, as raw OpenAI-style dicts
+    # ({"id", "function": {"name", "arguments"}}). None/empty when the model
+    # produced a plain text answer. Consumed by the agentic loop (docs/TODO/02).
+    tool_calls: list[JsonObject] | None = None
 
 
 class HealthCheck(ContractModel):
