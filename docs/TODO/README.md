@@ -11,6 +11,10 @@ items get it *right*.
 > self-contained: problem, evidence (with `file:line` refs), why it's large,
 > proposed approach, affected files, acceptance criteria, and risks.
 
+> **Executing all of this?** See **[BATCH_PLAN.md](./BATCH_PLAN.md)** — it groups
+> every item below into ordered phases (with the small field bugs in Phase 0)
+> so the batch lands without the pieces colliding.
+
 ## Index
 
 | # | Title | Theme | Rough size |
@@ -21,6 +25,7 @@ items get it *right*.
 | 04 | [End-to-end voice turn loop](./04-end-to-end-voice-turn-loop.md) | Voice | XL |
 | 05 | [Grounded answer & web-search wiring](./05-grounded-answer-web-search-wiring.md) | Knowledge | L |
 | 06 | [Streaming responses (text + voice)](./06-streaming-responses.md) | UX/Infra | L |
+| 07 | [Tool registry: per-file tool refactor](./07-tool-registry-per-file-refactor.md) | Reasoning/Infra | L |
 
 ## How these relate
 
@@ -42,10 +47,10 @@ items get it *right*.
    top of whatever 02 produces.
 ```
 
-Recommended order: **02 → 03** first (they unblock real agent behavior), then
-**01** (memory makes 02 useful across turns), then **05**, then **04** and
-**06** as delivery polish. They can be parallelized if more than one person is
-working, but 02 is the keystone.
+Recommended order: **07 → 02** first (07 gives 02 clean per-tool schemas; 02 is
+the keystone), then **03 / 05 / 01** in parallel on top of 02, then **04** and
+**06** as delivery layers. The full phased sequence (with Phase 0 small bugs)
+lives in [BATCH_PLAN.md](./BATCH_PLAN.md).
 
 ## Sizing legend
 - **L** — a focused feature: ~1–2 weeks, one subsystem, a handful of files.
