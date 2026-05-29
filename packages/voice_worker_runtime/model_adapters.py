@@ -293,10 +293,9 @@ class SherpaOnnxKwsRunner:
                 )
             stream.accept_waveform(frames[0].sample_rate, _frames_to_float_samples(frames))
             self._drive_decode(kws, stream)
-            result = stream.result
-            keyword = str(getattr(result, "keyword", "")).strip()
+            result = self._read_kws_result(kws, stream)
+            keyword, confidence = _kws_keyword_and_confidence(result, threshold)
             detected = bool(keyword)
-            confidence = float(getattr(result, "confidence", threshold if detected else 0.0))
             if detected:
                 # Reset only the stream so the spotter (and its loaded model
                 # weights) survive across detections. A fresh stream avoids
@@ -360,6 +359,23 @@ class SherpaOnnxKwsRunner:
                 # Fall through to single-shot decode.
                 pass
         kws.decode_stream(stream)
+
+    def _read_kws_result(self, kws: Any, stream: Any) -> Any:
+        """Read the keyword-spotting result for a stream.
+
+        sherpa-onnx 1.13.2's ``OnlineStream`` does NOT expose a ``.result``
+        attribute (that raises AttributeError, which is exactly what halted
+        the supervisor in the field). The real API is
+        ``KeywordSpotter.get_result(stream)`` which returns the detected
+        keyword string (empty when nothing matched). Test fakes use
+        ``stream.result`` with a ``.keyword`` attribute, so we prefer
+        ``get_result`` and fall back to the attribute for fakes.
+        """
+
+        get_result = getattr(kws, "get_result", None)
+        if callable(get_result):
+            return get_result(stream)
+        return getattr(stream, "result", None)
 
     def _ensure_session(
         self,
@@ -563,6 +579,27 @@ def _moonshine_model_arch(path: Path | None) -> Any | None:
     if (path / "encoder_model.ort").exists() and "tiny" in path.name.lower():
         return model_arch.TINY
     return None
+
+
+def _kws_keyword_and_confidence(result: Any, threshold: float) -> tuple[str, float]:
+    """Normalise a sherpa-onnx KWS result into (keyword, confidence).
+
+    Handles all three shapes we encounter:
+    * a plain ``str`` (sherpa-onnx 1.13.2 ``get_result`` returns the detected
+      keyword text, or "" when nothing matched),
+    * an object with ``.keyword`` / ``.confidence`` (test fakes and some
+      sherpa-onnx builds expose a result object),
+    * ``None`` (no result available).
+    """
+
+    if result is None:
+        return "", 0.0
+    if isinstance(result, str):
+        keyword = result.strip()
+        return keyword, (threshold if keyword else 0.0)
+    keyword = str(getattr(result, "keyword", "")).strip()
+    confidence = float(getattr(result, "confidence", threshold if keyword else 0.0))
+    return keyword, confidence
 
 
 def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None:

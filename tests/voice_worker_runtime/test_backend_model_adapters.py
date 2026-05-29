@@ -265,3 +265,77 @@ def test_sherpa_onnx_kws_runner_returns_not_detected_when_no_keyword(tmp_path: P
 
     assert result.detected is False
     assert result.reason_code == "wakeword.not_detected"
+
+
+def test_sherpa_onnx_kws_runner_uses_get_result_when_available(tmp_path: Path) -> None:
+    """Real sherpa-onnx 1.13.2 exposes KeywordSpotter.get_result(stream) which
+    returns the detected keyword string; OnlineStream has no .result attribute.
+    The runner must call get_result and not touch stream.result."""
+
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset = _install(manager, model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword", relative_path="kws/hey-marvex")
+    frames = (AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),)
+
+    class RealishStream:
+        # Deliberately raises if anyone touches .result, mirroring the
+        # AttributeError seen in the field on sherpa-onnx 1.13.2.
+        @property
+        def result(self):  # noqa: D401 - test guard
+            raise AttributeError("'OnlineStream' object has no attribute 'result'")
+
+        def accept_waveform(self, sample_rate: int, waveform: list[float]) -> None:
+            pass
+
+    class RealishKws:
+        def __init__(self, model_dir: str) -> None:
+            pass
+
+        def create_stream(self) -> RealishStream:
+            return RealishStream()
+
+        def is_ready(self, stream: RealishStream) -> bool:
+            return False
+
+        def decode_stream(self, stream: RealishStream) -> None:
+            pass
+
+        def get_result(self, stream: RealishStream) -> str:
+            return "hey marvex"
+
+        def reset_stream(self, stream: RealishStream) -> None:
+            pass
+
+    runner = SherpaOnnxKwsRunner(asset_manager=manager, kws_factory=RealishKws)
+    result = runner(frames, asset, phrase="Hey Marvex", threshold=0.72)
+
+    assert result.detected is True
+    assert result.confidence == 0.72
+    assert result.backend_id == "sherpa-onnx-kws"
+
+
+def test_sherpa_onnx_kws_runner_get_result_empty_string_is_not_detected(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    asset = _install(manager, model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword", relative_path="kws/hey-marvex")
+    frames = (AudioFrame(frame_id="f1", pcm=b"\x00\x00\x00@", sample_rate=16_000, channel_count=1, duration_ms=100),)
+
+    class RealishKws:
+        def __init__(self, model_dir: str) -> None:
+            pass
+
+        def create_stream(self):
+            return SimpleNamespace(accept_waveform=lambda *a, **k: None)
+
+        def is_ready(self, stream) -> bool:
+            return False
+
+        def decode_stream(self, stream) -> None:
+            pass
+
+        def get_result(self, stream) -> str:
+            return ""
+
+    runner = SherpaOnnxKwsRunner(asset_manager=manager, kws_factory=RealishKws)
+    result = runner(frames, asset, phrase="Hey Marvex", threshold=0.72)
+
+    assert result.detected is False
+    assert result.reason_code == "wakeword.not_detected"
