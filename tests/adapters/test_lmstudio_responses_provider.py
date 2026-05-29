@@ -260,7 +260,8 @@ def test_adapter_source_has_no_forbidden_boundary_or_raw_http_imports():
         "urllib",
         "socket",
         "subprocess",
-        "tool",
+        # "tool" removed in Phase 2 (docs/TODO/02): the adapter now opt-in
+        # supports Responses-API tool-calling. Other dangerous boundaries stay.
         "mcp",
         "memory",
         "intent",

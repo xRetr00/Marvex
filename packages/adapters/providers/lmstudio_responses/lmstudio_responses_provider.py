@@ -38,14 +38,26 @@ class LMStudioResponsesProvider:
         self._client_factory = client_factory or OpenAI
 
     def send(self, request: ProviderRequest) -> ProviderResponse:
-        call_args = {
+        call_args: dict[str, Any] = {
             "model": request.model,
-            "input": request.input_text,
         }
+        # Agentic continuation (docs/TODO/02): when tool results are threaded
+        # back, the Responses API takes `input` as a list of function_call_output
+        # items referencing the prior (stored) response via previous_response_id.
+        # Otherwise `input` is the plain user text, exactly as before.
+        tool_output_items = _responses_function_outputs(request.tool_messages)
+        if tool_output_items:
+            call_args["input"] = tool_output_items
+        else:
+            call_args["input"] = request.input_text
         if request.instructions is not None:
             call_args["instructions"] = request.instructions
         if request.previous_response_id is not None:
             call_args["previous_response_id"] = request.previous_response_id
+        # Tool schemas only when provided; absent tools => byte-for-byte the
+        # historical no-tools request (no tools/tool_choice keys).
+        if request.tools:
+            call_args["tools"] = _responses_tool_schemas(request.tools)
 
         allowed_options, ignored_options = self._filter_provider_options(
             request.provider_options
@@ -82,6 +94,7 @@ class LMStudioResponsesProvider:
                 ),
             )
 
+        tool_calls = self._read_tool_calls(provider_response)
         return ProviderResponse(
             schema_version=request.schema_version,
             trace_id=request.trace_id,
@@ -93,6 +106,7 @@ class LMStudioResponsesProvider:
             usage=self._to_plain_mapping(self._read_attr(provider_response, "usage")),
             raw_metadata=raw_metadata,
             error=None,
+            tool_calls=tool_calls or None,
         )
 
     def map_raw_output_to_structured_result(
@@ -162,6 +176,39 @@ class LMStudioResponsesProvider:
                     parts.append(text)
         return "".join(parts)
 
+    def _read_tool_calls(self, response: object) -> list[dict[str, Any]]:
+        """Extract Responses-API function_call items into engine-shaped calls.
+
+        The Responses API returns tool calls as ``output`` items of type
+        ``function_call`` with ``name`` / ``arguments`` / ``call_id``. We
+        normalise them into the same ``{"id", "function": {"name",
+        "arguments"}}`` shape the agentic engine consumes for both providers.
+        """
+
+        output = self._read_attr(response, "output")
+        if not isinstance(output, list):
+            return []
+        calls: list[dict[str, Any]] = []
+        for item in output:
+            if self._read_attr(item, "type") != "function_call":
+                continue
+            name = self._read_attr(item, "name")
+            if not isinstance(name, str) or not name.strip():
+                continue
+            arguments = self._read_attr(item, "arguments")
+            call_id = self._read_attr(item, "call_id") or self._read_attr(item, "id")
+            calls.append(
+                {
+                    "id": str(call_id) if isinstance(call_id, str) and call_id else f"call_{len(calls)}",
+                    "type": "function",
+                    "function": {
+                        "name": name,
+                        "arguments": arguments if isinstance(arguments, str) else "{}",
+                    },
+                }
+            )
+        return calls
+
     def _read_optional_string(self, value: object, name: str) -> str | None:
         candidate = self._read_attr(value, name)
         return candidate if isinstance(candidate, str) else None
@@ -199,3 +246,61 @@ class LMStudioResponsesProvider:
         if value in {"error", "failed"}:
             return FinishReason.ERROR
         return FinishReason.UNKNOWN
+
+
+def _responses_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convert chat-completions tool schemas to the flatter Responses-API shape.
+
+    Registry tool_schemas() emits ``{"type":"function","function":{name,
+    description,parameters}}``; the Responses API expects the function fields
+    at the top level: ``{"type":"function","name",...,"parameters":...}``.
+    Tools already in the flat shape pass through unchanged.
+    """
+
+    converted: list[dict[str, Any]] = []
+    for tool in tools:
+        if not isinstance(tool, dict):
+            continue
+        fn = tool.get("function")
+        if isinstance(fn, dict):
+            converted.append(
+                {
+                    "type": "function",
+                    "name": fn.get("name"),
+                    "description": fn.get("description", ""),
+                    "parameters": fn.get("parameters", {"type": "object"}),
+                }
+            )
+        else:
+            converted.append(tool)
+    return converted
+
+
+def _responses_function_outputs(tool_messages: list[dict[str, Any]] | None) -> list[dict[str, Any]]:
+    """Translate threaded tool-result messages into Responses input items.
+
+    The agentic engine emits OpenAI chat-style tool messages
+    ({"role":"tool","tool_call_id":X,"content":Y}). The Responses API takes
+    these as ``input`` items of type ``function_call_output`` referencing the
+    prior (stored) response via previous_response_id. The assistant tool_calls
+    echo message is not needed as input here (the model already emitted it).
+    """
+
+    if not tool_messages:
+        return []
+    items: list[dict[str, Any]] = []
+    for message in tool_messages:
+        if not isinstance(message, dict) or message.get("role") != "tool":
+            continue
+        call_id = message.get("tool_call_id")
+        content = message.get("content")
+        if not isinstance(call_id, str) or not call_id:
+            continue
+        items.append(
+            {
+                "type": "function_call_output",
+                "call_id": call_id,
+                "output": content if isinstance(content, str) else "",
+            }
+        )
+    return items
