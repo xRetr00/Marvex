@@ -183,40 +183,17 @@ class BuiltinToolCatalog(BuiltinToolModel):
         return tuple(tool.to_manifest() for tool in self.tools)
 
     def execute_request(self, request: CapabilityExecutionRequest) -> BuiltinToolResult:
-        if request.proposal.capability_ref.identifier == "builtin.calculator":
-            calculator_request = CalculatorRequest(**request.arguments)
-            value = _eval_numeric(ast.parse(calculator_request.expression, mode="eval").body)
-            return _result_for_request(request, {"result": str(value.normalize())})
-        if request.proposal.capability_ref.identifier == "builtin.time_date":
-            time_request = TimeDateRequest(**request.arguments)
-            now = dt.datetime.now(dt.timezone.utc)
-            return _result_for_request(
-                request,
-                {
-                    "timezone": time_request.timezone,
-                    "iso_datetime": now.isoformat(),
-                    "iso_date": now.date().isoformat(),
-                },
-            )
-        if request.proposal.capability_ref.identifier == "builtin.capability_diagnostics":
-            return _result_for_request(
-                request,
-                {
-                    "capability_count": len(self.tools),
-                    "eligible_count": len(self.tools),
-                },
-            )
-        if request.proposal.capability_ref.identifier == "builtin.repo_status":
-            snapshot = _repo_status_snapshot(request.arguments)
-            return _result_for_request(
-                request,
-                {
-                    "branch": snapshot.branch,
-                    "clean": snapshot.clean,
-                    "status_length": len(snapshot.short_status),
-                },
-            )
-        raise ValueError("unsupported builtin tool capability")
+        # Dispatch now delegates to the per-file tool registry
+        # (packages.adapters.capabilities.tools). This catalog remains as a
+        # thin backwards-compatible shim for existing callers; the if/elif
+        # ladder it used to carry is gone. See docs/TODO/07.
+        from packages.adapters.capabilities.tools import default_registry
+
+        registry = default_registry()
+        identifier = request.proposal.capability_ref.identifier
+        if registry.get(identifier) is None:
+            raise ValueError("unsupported builtin tool capability")
+        return BuiltinToolResult(result=registry.execute(request))
 
 
 def _result(capability_ref: CapabilityRef, safe_result: dict[str, object]) -> BuiltinToolResult:
