@@ -46,10 +46,15 @@ export function loadCachedMessages(id: string): StoredMessage[] {
 
 export function saveCachedMessages(id: string, messages: StoredMessage[]): void {
   writeJson(MSG_PREFIX + id, messages);
+  // Fix #4: only derive title from the first user message when the session
+  // does not already have an explicit title set by the backend / rememberSession.
+  const existing = listCachedSessions().find((item) => item.id === id);
   const firstUser = messages.find((m) => m.role === "user");
+  const derivedTitle = firstUser ? firstUser.text.slice(0, 48) : "New chat";
   rememberSession({
     id,
-    title: firstUser ? firstUser.text.slice(0, 48) : "New chat",
+    // Preserve an existing non-default title rather than overwriting it.
+    title: existing?.title && existing.title !== "New chat" ? existing.title : derivedTitle,
     updatedAt: Date.now(),
   });
 }

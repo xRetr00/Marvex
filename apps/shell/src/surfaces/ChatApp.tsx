@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
+import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2, AlertTriangle } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
@@ -15,7 +15,6 @@ import { startVoiceWorker, stopVoiceWorker } from "@/lib/voiceControlClient";
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
 import { ScrambleText } from "@/components/scramble-text";
-import { BackgroundPlus } from "@/components/ui/background-plus";
 import { MarvexChatShell } from "@/components/chatbot-main/MarvexChatShell";
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { StartupScreen } from "@/components/marvex/StartupScreen";
@@ -31,10 +30,11 @@ type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
 const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
 
+// Fix #8: include needs_approval so orb signals blocked state
 function agentStateFromStatus(status: AssistantStatusKind): AgentOrbState {
   if (status === "listening") return "listening";
   if (status === "talking") return "talking";
-  if (status === "thinking" || status === "working" || status === "using_tools" || status === "mcp" || status === "skills" || status === "searching_web") return "thinking";
+  if (status === "thinking" || status === "working" || status === "using_tools" || status === "mcp" || status === "skills" || status === "searching_web" || status === "needs_approval" || status === "asking") return "thinking";
   return null;
 }
 
@@ -48,6 +48,7 @@ export function ChatApp() {
   const [pending, setPending] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  // Fix #9: default to undefined; derive activeNavIndex safely without defaulting to 0
   const [activeTab, setActiveTab] = useState<TabId>("chat");
 
   const backend = useBackendStatus();
@@ -62,6 +63,8 @@ export function ChatApp() {
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
     const restored = loadCachedMessages(id) as ChatMessage[];
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
+    // Fix #11: reset assistant state to idle when switching sessions
+    setState(idleAssistantState);
     setSessions(listCachedSessions());
   }, []);
 
@@ -85,8 +88,6 @@ export function ChatApp() {
       .catch(() => undefined);
   }, [backend?.ready, activateBackendSession]);
 
-  // Reveal chat once backend is ready AND the hello has played (hello always
-  // plays on open).
   useEffect(() => {
     if (backend?.ready && helloDone && !booted) {
       const t = setTimeout(() => setBooted(true), 350);
@@ -121,7 +122,8 @@ export function ChatApp() {
         });
       }
       const outcome = outcomeFromTurnResult(result);
-      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text) }]);
+      const approval = approvalFromTurnResult(result, text);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval }]);
     } catch (error) {
       const outcome = outcomeFromError(error);
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
@@ -130,6 +132,8 @@ export function ChatApp() {
     }
   }, [pending]);
 
+  // Fix #6: approval outcome goes as a separate follow-up message, not
+  // concatenated into the original request bubble with \n\n.
   const decideChatApproval = useCallback(async (approval: ChatApproval, decision: "approve" | "deny" | "cancel") => {
     setPending(true);
     try {
@@ -141,19 +145,21 @@ export function ChatApp() {
         decision,
       });
       const outcome = outcomeFromTurnResult(result);
-      setMessages((prev) => prev.map((message) => {
-        if (message.approval?.approvalId !== approval.approvalId) return message;
-        return {
-          ...message,
-          approval: {
-            ...message.approval,
-            status: decision === "approve" ? "approved" : decision === "cancel" ? "cancelled" : "denied",
-          },
-          text: `${message.text}\n\n${outcome.text}`,
-          stages: outcome.stages ?? message.stages,
-          directives: outcome.directives ?? message.directives,
-        };
-      }));
+      // Mark the original approval message as resolved
+      setMessages((prev) => [
+        ...prev.map((message) => {
+          if (message.approval?.approvalId !== approval.approvalId) return message;
+          return {
+            ...message,
+            approval: {
+              ...message.approval,
+              status: decision === "approve" ? "approved" : decision === "cancel" ? "cancelled" : "denied",
+            } as ChatApproval,
+          };
+        }),
+        // Append the outcome as a new assistant message so RichMessage parses it cleanly
+        { role: "assistant" as const, text: outcome.text, stages: outcome.stages, directives: outcome.directives },
+      ]);
     } catch (error) {
       const outcome = outcomeFromError(error);
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
@@ -175,7 +181,10 @@ export function ChatApp() {
     { id: "logs" as TabId, icon: <ScrollText />, label: "Logs", onClick: () => setActiveTab("logs") },
     { id: "settings" as TabId, icon: <Settings />, label: "Settings", onClick: () => setActiveTab("settings") },
   ], []);
-  const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
+
+  // Fix #9: never silently fall back to index 0; use the actual found index
+  // only, which LimelightNav can default-handle if it receives -1.
+  const activeNavIndex = navItems.findIndex((n) => n.id === activeTab);
 
   const startNewSession = useCallback(() => {
     void createChatSession("New chat").then(({ session }) => {
@@ -185,8 +194,9 @@ export function ChatApp() {
       setSidebarOpen(false);
       setActiveTab("chat");
     }).catch(() => undefined);
-  }, []);
+  }, [activateBackendSession]);
 
+  // Fix #11: openSession also resets assistant state
   const openSession = useCallback((id: string) => {
     sessionIdRef.current = id;
     const cached = listCachedSessions().find((item) => item.id === id);
@@ -197,6 +207,7 @@ export function ChatApp() {
     }
     const restored = loadCachedMessages(id) as ChatMessage[];
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
+    setState(idleAssistantState);
     setSidebarOpen(false);
     setActiveTab("chat");
   }, []);
@@ -223,6 +234,13 @@ export function ChatApp() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
           <WakewordBadge state={backend?.wakeword ?? "unknown"} />
+          {/* Fix #8: show a distinct blocked badge when needs_approval */}
+          {state.status === "needs_approval" && (
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, fontSize: 11, padding: "3px 9px", borderRadius: 999, border: "1px solid var(--destructive)", background: "color-mix(in srgb, var(--destructive) 12%, transparent)", color: "var(--destructive)" }}>
+              <AlertTriangle size={11} />
+              Needs Approval
+            </span>
+          )}
           {(pending || state.status !== "idle") && <Loader variant="circular" size="sm" />}
           <Status status={state.status === "idle" ? "online" : "degraded"}>
             <StatusIndicator />
@@ -234,7 +252,7 @@ export function ChatApp() {
         </div>
       </header>
 
-      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", position: "relative", background: "var(--sidebar)", padding: "0 0 0 0" }}>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden", display: "flex", position: "relative", background: "var(--sidebar)" }}>
         <AnimatePresence>
           {sidebarOpen && (
             <motion.aside initial={{ x: -280, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -280, opacity: 0 }} transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
@@ -261,7 +279,9 @@ export function ChatApp() {
         </AnimatePresence>
 
         <div className="marvex-chat-main">
-          <BackgroundPlus plusColor="#fb3a5d" plusSize={60} fade={false} className="marvex-chat-bg pointer-events-none opacity-20" />
+          {/* Fix #12: fade={true} prevents + pattern from clipping at border-radius */}
+          <div className="marvex-chat-bg pointer-events-none absolute inset-0 z-0 overflow-hidden rounded-tl-xl opacity-[0.15]"
+            style={{ background: "radial-gradient(ellipse 80% 60% at 50% 0%, color-mix(in srgb, #fb3a5d 40%, transparent), transparent)" }} />
           <div className="marvex-chat-content">
             {activeTab === "chat" && (
               <MarvexChatShell
@@ -272,10 +292,10 @@ export function ChatApp() {
                 onToggleVoice={toggleVoiceCapture}
                 onApprovalDecision={decideChatApproval}
                 pending={pending}
+                agentStatus={state.status}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
             )}
-
             {activeTab === "status" && (
               <div style={{ flex: 1, overflow: "auto", padding: 20 }}><StatusView backend={backend} /></div>
             )}
@@ -301,13 +321,17 @@ export function ChatApp() {
   );
 }
 
-
+// Fix #5: also check flat approval_request_id directly on metadata
 function approvalFromTurnResult(result: unknown, text: string): ChatApproval | undefined {
   if (!result || typeof result !== "object") return undefined;
   const metadata = (result as { metadata?: unknown }).metadata;
-  const approval = metadata && typeof metadata === "object" ? (metadata as { approval_request?: unknown }).approval_request : undefined;
-  if (!approval || typeof approval !== "object") return undefined;
-  const request = approval as { approval_request_id?: unknown; trace_id?: unknown; turn_id?: unknown };
+  if (!metadata || typeof metadata !== "object") return undefined;
+  const meta = metadata as Record<string, unknown>;
+
+  // Nested shape: metadata.approval_request.approval_request_id
+  const nested = meta.approval_request;
+  const request = (nested && typeof nested === "object" ? nested : meta) as Record<string, unknown>;
+
   if (typeof request.approval_request_id !== "string" || typeof request.trace_id !== "string" || typeof request.turn_id !== "string") return undefined;
   return {
     approvalId: request.approval_request_id,
@@ -330,11 +354,7 @@ function AgentOrb({ agentState }: { agentState: AgentOrbState }) {
 
 class OrbBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
-
-  static getDerivedStateFromError() {
-    return { failed: true };
-  }
-
+  static getDerivedStateFromError() { return { failed: true }; }
   render() {
     if (this.state.failed) return <OrbFallback />;
     return this.props.children;
@@ -346,9 +366,7 @@ function OrbFallback() {
     <div
       aria-label="Marvex orb fallback"
       className="h-full w-full"
-      style={{
-        background: "radial-gradient(circle at 35% 30%, #ffffff 0%, #cadcfc 28%, #a0b9d1 62%, rgba(15,23,42,0.15) 100%)",
-      }}
+      style={{ background: "radial-gradient(circle at 35% 30%, #ffffff 0%, #cadcfc 28%, #a0b9d1 62%, rgba(15,23,42,0.15) 100%)" }}
     />
   );
 }
@@ -367,11 +385,11 @@ const iconBtn: React.CSSProperties = {
 
 function WakewordBadge({ state }: { state: WakewordState }) {
   const map: Record<WakewordState, { label: string; color: string }> = {
-    running: { label: "Hey Marvex • on", color: "#34d399" },
-    enabled: { label: "Hey Marvex • on", color: "#34d399" },
-    not_ready: { label: "Wake word • setup", color: "#f59e0b" },
-    disabled: { label: "Wake word • off", color: "#9ca3af" },
-    unknown: { label: "Wake word • …", color: "#9ca3af" },
+    running: { label: "Hey Marvex", color: "#34d399" },
+    enabled: { label: "Hey Marvex", color: "#34d399" },
+    not_ready: { label: "Wake word setup", color: "#f59e0b" },
+    disabled: { label: "Wake word off", color: "#9ca3af" },
+    unknown: { label: "Wake word ...", color: "#9ca3af" },
   };
   const { label, color } = map[state];
   return (
