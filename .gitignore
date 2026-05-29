@@ -67,3 +67,4 @@ node_modules/
 dist/
 build/
 .worktrees/
+scripts/make_report.py
