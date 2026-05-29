@@ -251,7 +251,9 @@ def test_worker_main_loop_ticks_wakeword_supervisor_between_stop_checks(tmp_path
 
     run_worker_loop(controller=controller, host="127.0.0.1", port=8767, should_stop=should_stop, sleep_seconds=0)
 
-    assert ticks == [4]
+    # Supervisor captures ~1.2 s (12 x 100ms) per tick so sherpa-onnx KWS has
+    # enough mel-frame context (see fix(voice): streaming wakeword session).
+    assert ticks == [12]
     assert controller.status().telemetry["wakeword_detections"] == 1
     assert controller.status().lifecycle_state == VoiceWorkerLifecycleState.STOPPED
 

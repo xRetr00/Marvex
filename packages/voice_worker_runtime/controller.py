@@ -640,15 +640,68 @@ class VoiceWorkerController:
         self._error = None
         event = self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary={**synthesis_summary(result), "speak": True})
         if result.status == "succeeded" and result.audio_ref:
-            self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True})
-            playback = self.audio.play_audio(
-                device_id=self.config.audio.output_device_id,
-                audio_ref=result.audio_ref,
-                sample_rate=result.sample_rate,
-            )
+            if bool(command.payload.get("barge_in")):
+                self._speak_with_barge_in(trace_id=trace_id, audio_ref=result.audio_ref, sample_rate=result.sample_rate)
+            else:
+                self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True})
+                playback = self.audio.play_audio(
+                    device_id=self.config.audio.output_device_id,
+                    audio_ref=result.audio_ref,
+                    sample_rate=result.sample_rate,
+                )
+                self._playback_status = playback.status
+                self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={**playback.model_dump(mode="json"), "speak": True})
+        return event
+
+    def _speak_with_barge_in(self, *, trace_id: str, audio_ref: str, sample_rate: int) -> None:
+        """Play a reply non-blocking while monitoring the mic; interrupt on speech.
+
+        Starts playback without blocking, then polls ~100ms mic frames through
+        the VAD decider. If the user starts talking, playback is interrupted
+        (BARGE_IN_DETECTED) so they can take over the conversation. If no
+        barge-in occurs, playback runs to completion. NOTE: real deployments
+        need acoustic echo cancellation so the assistant's own audio doesn't
+        self-trigger; that's a hardware/driver concern outside this loop.
+        """
+
+        begin = getattr(self.audio, "begin_playback", None)
+        active = getattr(self.audio, "playback_active", None)
+        if not callable(begin) or not callable(active):
+            # Adapter doesn't support non-blocking playback; fall back to blocking.
+            self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True, "barge_in": False})
+            playback = self.audio.play_audio(device_id=self.config.audio.output_device_id, audio_ref=audio_ref, sample_rate=sample_rate)
             self._playback_status = playback.status
             self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={**playback.model_dump(mode="json"), "speak": True})
-        return event
+            return
+
+        self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True, "barge_in": True})
+        begin(device_id=self.config.audio.output_device_id, audio_ref=audio_ref, sample_rate=sample_rate)
+        self._playback_status = "playing"
+        vad_decider = self._resolve_vad_decider()
+        frame_ms = max(1, self.config.audio.frame_duration_ms)
+        max_poll = max(1, self.config.vad.max_utterance_ms // frame_ms)
+        guard = 0
+        interrupted = False
+        while active() and guard < max_poll:
+            guard += 1
+            batch = tuple(
+                self.audio.capture_frames(
+                    device_id=self.config.audio.input_device_id,
+                    sample_rate=self.config.audio.sample_rate,
+                    channel_count=self.config.audio.channel_count,
+                    frame_count=1,
+                )
+            )
+            if batch and vad_decider(batch[0]):
+                self.audio.interrupt_playback(reason_code="barge_in.user_speech_detected")
+                self._playback_status = "interrupted"
+                self._queued_tts_count = 0
+                self._record(VoiceWorkerEventType.BARGE_IN_DETECTED, trace_id=trace_id, summary={"speak": True, "reason_code": "barge_in.user_speech_detected"})
+                interrupted = True
+                break
+        if not interrupted:
+            self._playback_status = "completed"
+            self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={"speak": True, "status": "completed", "barge_in": True})
 
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))

@@ -55,12 +55,20 @@ class LocalAudioAdapter(Protocol):
     def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult: ...
     def stop_playback(self) -> PlaybackAdapterResult: ...
     def interrupt_playback(self, *, reason_code: str) -> PlaybackAdapterResult: ...
+    # Non-blocking playback for barge-in: begin_playback returns immediately and
+    # playback_active reports whether audio is still playing so the worker can
+    # monitor the mic and interrupt mid-utterance.
+    def begin_playback(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult: ...
+    def playback_active(self) -> bool: ...
 
 
 class FakeLocalAudioAdapter:
     def __init__(self) -> None:
         self._playback_status = "stopped"
         self._last_output: str | None = None
+        # Number of playback_active() polls that report "still playing" before
+        # completion. Tests set this to simulate playback duration / barge-in.
+        self.active_ticks = 0
 
     def list_input_devices(self) -> tuple[VoiceAudioDevice, ...]:
         return (VoiceAudioDevice(device_id="input-default", label="Default microphone", max_input_channels=1, is_input=True),)
@@ -82,6 +90,20 @@ class FakeLocalAudioAdapter:
         self._playback_status = "playing"
         self._last_output = device_id or self.list_output_devices()[0].device_id
         return PlaybackAdapterResult(device_id=self._last_output, status="playing", audio_ref=audio_ref)
+
+    def begin_playback(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:
+        del sample_rate
+        self._playback_status = "playing"
+        self._last_output = device_id or self.list_output_devices()[0].device_id
+        return PlaybackAdapterResult(device_id=self._last_output, status="playing", audio_ref=audio_ref)
+
+    def playback_active(self) -> bool:
+        if self.active_ticks > 0:
+            self.active_ticks -= 1
+            return True
+        if self._playback_status == "playing":
+            self._playback_status = "completed"
+        return False
 
     def complete_playback(self) -> PlaybackAdapterResult:
         self._playback_status = "completed"
@@ -175,6 +197,22 @@ class SoundDeviceAudioAdapter:
         sd.play(samples, samplerate=sample_rate, device=_device_arg(device_id))
         sd.wait()
         return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="completed", reason_code="sounddevice.playback_completed")
+
+    def begin_playback(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:
+        # Non-blocking start (no sd.wait) so the worker can monitor the mic for
+        # barge-in while audio plays.
+        sd = self._sounddevice()
+        pcm = self._pcm_resolver(audio_ref) if self._pcm_resolver else b""
+        samples = _pcm_to_float_array(pcm) if pcm else [0.0] * max(1, int(sample_rate * 0.05))
+        sd.play(samples, samplerate=sample_rate, device=_device_arg(device_id))
+        return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="playing", reason_code="sounddevice.playback_started")
+
+    def playback_active(self) -> bool:
+        try:
+            stream = self._sounddevice().get_stream()
+            return bool(getattr(stream, "active", False))
+        except Exception:
+            return False
 
     def stop_playback(self) -> PlaybackAdapterResult:
         self._sounddevice().stop()
