@@ -149,3 +149,42 @@ def test_write_content_too_large_rejected(tmp_path: Path):
             _request("file.write", {"root": str(tmp_path), "path": "big.txt", "content": "x" * 20_000})
         )
     assert exc.value.code == "file.content_too_large"
+
+
+def test_rg_matches_named_report_from_natural_phrasing(tmp_path: Path):
+    """B3 (find half): 'read the contents of the my uni report on desktop'
+    must match a University_Report.pdf instead of returning nothing."""
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    (desktop / "Hospital_System_Supreme_University_Report.pdf").write_bytes(b"%PDF-1.4 stub")
+    (desktop / "Vaxil_System_Supreme_University_Report.pdf").write_bytes(b"%PDF-1.4 stub")
+    (desktop / "unrelated_notes.txt").write_text("nothing", encoding="utf-8")
+
+    result = file_tools_registry().execute(
+        _request(
+            "file.rg",
+            {
+                "root": str(tmp_path),
+                "path": "Desktop",
+                # Full-sentence query, as produced from a natural request.
+                "query": "read the contents of the my uni report on desktop tell me how good is it",
+            },
+        )
+    )
+    assert result.status == "succeeded"
+    names = [m["name"] for m in result.safe_result["matches"]]
+    # The two University_Report PDFs should match (university contains 'uni',
+    # plus 'report'); the unrelated note should not.
+    assert any("University_Report" in n for n in names)
+    assert "unrelated_notes.txt" not in names
+
+
+def test_rg_ranks_higher_overlap_first(tmp_path: Path):
+    (tmp_path / "uni_report_final.txt").write_text("x", encoding="utf-8")
+    (tmp_path / "report_only.txt").write_text("x", encoding="utf-8")
+    result = file_tools_registry().execute(
+        _request("file.rg", {"root": str(tmp_path), "path": ".", "query": "uni report"})
+    )
+    names = [m["name"] for m in result.safe_result["matches"]]
+    # The file matching both tokens ranks before the one matching a single token.
+    assert names[0] == "uni_report_final.txt"

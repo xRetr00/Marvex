@@ -198,28 +198,64 @@ def _rg_file_matches(root: Path, target: Path, *, query: str, limit: int, rg: st
     return _filter_path_lines(root, target, lines, tokens=tokens, limit=limit)
 
 
+# Common request/verb words that are never useful as filename-match tokens.
+# Filtering these lets a natural request like "read the contents of the my uni
+# report on desktop" match "...University_Report.pdf" instead of failing because
+# "read"/"contents"/"tell" aren't in the filename. This is a phrasing-robust
+# ranking change, not a per-phrase keyword list.
+_FILENAME_STOPWORDS = frozenset(
+    {
+        "the", "a", "an", "of", "on", "in", "at", "to", "into", "my", "me",
+        "your", "this", "that", "those", "these", "it", "is", "are", "and",
+        "or", "for", "from", "with", "please", "read", "open", "show", "tell",
+        "give", "get", "find", "search", "look", "contents", "content", "file",
+        "files", "how", "good", "bad", "what", "which", "where", "see", "view",
+        "desktop", "documents", "downloads", "folder", "directory", "drive",
+        "disk", "named", "called", "about",
+    }
+)
+
+
 def re_split_query(query: str) -> tuple[str, ...]:
     return tuple(part.lower() for part in query.replace(".", " ").replace("_", " ").replace("-", " ").split())
 
 
+def _content_tokens(tokens: tuple[str, ...]) -> tuple[str, ...]:
+    """Drop stopwords; keep meaningful filename tokens (length >= 2)."""
+
+    return tuple(t for t in tokens if len(t) >= 2 and t not in _FILENAME_STOPWORDS)
+
+
 def _filter_path_lines(root: Path, target: Path, lines: list[str], *, tokens: tuple[str, ...], limit: int) -> list[dict[str, object]]:
-    matches: list[dict[str, object]] = []
+    content_tokens = _content_tokens(tokens)
+    # Fall back to raw tokens only if every token was a stopword, so an
+    # all-stopword query still requires >=1 match instead of returning the
+    # whole directory. An empty query (no tokens at all) keeps list-all.
+    match_tokens = content_tokens or tokens
+    scored: list[tuple[int, dict[str, object]]] = []
     for line in lines:
         candidate = line.strip().replace("\\", "/")
         if not candidate:
             continue
         searchable = candidate.lower().replace(".", " ").replace("_", " ").replace("-", " ")
-        if tokens and not all(token in searchable for token in tokens):
-            continue
+        if match_tokens:
+            # Rank by how many meaningful tokens appear in the path; require at
+            # least one. (Old behaviour required ALL raw tokens to match, so a
+            # full-sentence query never matched a real filename.)
+            score = sum(1 for token in match_tokens if token in searchable)
+            if score == 0:
+                continue
+        else:
+            score = 0
         resolved = (target / candidate).resolve()
         try:
             resolved.relative_to(root)
         except ValueError:
             continue
-        matches.append({"path": _relative_to(root, resolved), "name": resolved.name})
-        if len(matches) >= limit:
-            break
-    return matches
+        scored.append((score, {"path": _relative_to(root, resolved), "name": resolved.name}))
+    # Highest token overlap first; stable order preserved for ties.
+    scored.sort(key=lambda item: item[0], reverse=True)
+    return [match for _score, match in scored[:limit]]
 
 
 class SandboxedFileWriteExecutor(CapabilityRuntimeModel):
