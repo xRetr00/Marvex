@@ -23,28 +23,24 @@ class ReadOnlyFileExecutor(CapabilityRuntimeModel):
     max_matches: int = Field(default=20, ge=1, le=100)
 
     def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
+        # Delegates to the per-file read tools (docs/TODO/07). Scoped to the
+        # read-only set so this executor can NEVER perform a write, regardless
+        # of the requested capability id.
         capability_id = request.proposal.capability_ref.identifier
-        if capability_id == "file.read":
-            safe_result = self._read(request.arguments)
-        elif capability_id == "file.list":
-            safe_result = self._list(request.arguments)
-        elif capability_id == "file.search":
-            safe_result = self._search(request.arguments)
-        elif capability_id == "file.rg":
-            safe_result = self._rg(request.arguments)
-        else:
+        if capability_id not in {"file.read", "file.list", "file.search", "file.rg"}:
             raise FileCapabilityError("file.unsupported_capability")
-        return CapabilityResultEnvelope(
-            schema_version=request.schema_version,
-            result_id=f"{request.request_id}:result",
-            trace_id=request.trace_id,
-            turn_id=request.turn_id,
-            capability_ref=request.proposal.capability_ref,
-            status="succeeded",
-            safe_result=safe_result,
-            raw_input_persisted=False,
-            raw_output_persisted=False,
+        from packages.adapters.capabilities.tools import (
+            ListDirectoryTool,
+            ReadFileTool,
+            RipgrepTool,
+            SearchFilesTool,
+            ToolRegistry,
         )
+
+        registry = ToolRegistry(
+            (ReadFileTool(), ListDirectoryTool(), SearchFilesTool(), RipgrepTool())
+        )
+        return registry.execute(request)
 
     def denial_result(
         self,
@@ -230,35 +226,32 @@ class SandboxedFileWriteExecutor(CapabilityRuntimeModel):
     max_content_bytes: int = Field(default=16_384, ge=1, le=65_536)
 
     def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
-        root, target, relative = _resolve(request.arguments)
-        content = request.arguments.get("content")
-        if not isinstance(content, str):
-            raise FileCapabilityError("file.content_required")
-        encoded = content.encode("utf-8")
-        if len(encoded) > self.max_content_bytes:
-            raise FileCapabilityError("file.content_too_large")
-        overwrite = bool(request.arguments.get("overwrite", False))
-        existed = target.exists()
-        if existed and not overwrite:
-            raise FileCapabilityError("file.exists")
-        if target.parent != root and not target.parent.exists():
-            raise FileCapabilityError("file.parent_missing")
-        target.write_text(content, encoding="utf-8")
-        return CapabilityResultEnvelope(
-            schema_version=request.schema_version,
-            result_id=f"{request.request_id}:result",
-            trace_id=request.trace_id,
-            turn_id=request.turn_id,
-            capability_ref=request.proposal.capability_ref,
-            status="succeeded",
-            safe_result={
-                "operation": "write",
-                "path": relative,
-                "bytes_written": len(encoded),
-                "created": not existed,
-                "overwritten": existed,
-                "raw_content_persisted": False,
-            },
-            raw_input_persisted=False,
-            raw_output_persisted=False,
+        # Delegates to the per-file write/patch tools (docs/TODO/07). The old
+        # hard `file.exists` failure is replaced by append-via-patch when a
+        # write targets an existing file without explicit overwrite intent
+        # (see WriteFileTool); explicit overwrite still replaces.
+        from packages.adapters.capabilities.tools import (
+            PatchFileTool,
+            ToolRegistry,
+            WriteFileTool,
         )
+
+        registry = ToolRegistry((WriteFileTool(), PatchFileTool()))
+        capability_id = request.proposal.capability_ref.identifier
+        if registry.get(capability_id) is None:
+            # Backwards compatibility: this executor historically only handled
+            # file.write; treat any other id as a write request.
+            from packages.capability_runtime import CapabilityKind, CapabilityRef
+
+            request = request.model_copy(
+                update={
+                    "proposal": request.proposal.model_copy(
+                        update={
+                            "capability_ref": CapabilityRef(
+                                kind=CapabilityKind.TOOL, identifier="file.write"
+                            )
+                        }
+                    )
+                }
+            )
+        return registry.execute(request)

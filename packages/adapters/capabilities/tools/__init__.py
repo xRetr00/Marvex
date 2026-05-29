@@ -24,8 +24,14 @@ from packages.capability_runtime import (
 from .base import Tool, denied_result, succeeded_result
 from .calculator import CalculatorTool
 from .diagnostics import CapabilityDiagnosticsTool
+from .list import ListDirectoryTool
+from .patch import PatchFileTool
+from .read import ReadFileTool
 from .repo_status import RepoStatusTool
+from .ripgrep import RipgrepTool
+from .search import SearchFilesTool
 from .time_date import TimeDateTool
+from .write import WriteFileTool
 
 
 class ToolRegistry:
@@ -74,7 +80,7 @@ class ToolRegistry:
 
 
 def default_registry() -> ToolRegistry:
-    """Construct the default built-in tool registry.
+    """Construct the default built-in (non-filesystem) tool registry.
 
     Capability diagnostics is wired with a live counter so its reported count
     reflects the actual registered tool set rather than a hardcoded number.
@@ -92,9 +98,29 @@ def default_registry() -> ToolRegistry:
     return registry
 
 
+def file_tools_registry() -> ToolRegistry:
+    """Construct the sandboxed filesystem tool registry.
+
+    Dispatch target for the files.py executors. Read tools are read-only/safe;
+    write + patch are write_local/medium and stay behind the approval boundary.
+    """
+
+    return ToolRegistry(
+        (
+            ReadFileTool(),
+            ListDirectoryTool(),
+            SearchFilesTool(),
+            RipgrepTool(),
+            WriteFileTool(),
+            PatchFileTool(),
+        )
+    )
+
+
 __all__ = [
     "ToolRegistry",
     "default_registry",
+    "file_tools_registry",
     "Tool",
     "succeeded_result",
     "denied_result",
@@ -102,4 +128,10 @@ __all__ = [
     "TimeDateTool",
     "CapabilityDiagnosticsTool",
     "RepoStatusTool",
+    "ReadFileTool",
+    "ListDirectoryTool",
+    "SearchFilesTool",
+    "RipgrepTool",
+    "WriteFileTool",
+    "PatchFileTool",
 ]
