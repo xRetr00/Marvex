@@ -850,6 +850,41 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
             )
 
+    def _generate_file_body(self, turn_input: AssistantTurnInput, content_prompt: str) -> str:
+        """Ask the configured provider to compose file content for a write.
+
+        Used by the approved file-write path when the user wants the assistant
+        to author the body ("write what the open source means") rather than
+        supplying literal text. Returns the generated text, or "" if the
+        provider is unavailable/errors (the caller then writes whatever literal
+        content it had, or an empty file, rather than crashing the turn).
+        """
+
+        instruction = (
+            "You are writing the contents of a file the user asked you to create. "
+            "Respond with ONLY the file body text - no preamble, no markdown fences, "
+            "no 'here is' framing. Compose the content for: "
+            f"{content_prompt}"
+        )
+        try:
+            compose_turn = turn_input.model_copy(
+                update={"user_visible_input": content_prompt}
+            )
+            result = run_assistant_provider_stage_turn(
+                compose_turn,
+                provider=self._provider,
+                model=self._model,
+                instructions=instruction,
+                telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
+            )
+        except Exception:
+            return ""
+        if getattr(result, "error", None) is not None:
+            return ""
+        final = getattr(result, "assistant_final_response", None)
+        text = getattr(final, "text", None)
+        return text.strip() if isinstance(text, str) else ""
+
     def _publish(
         self,
         status: AssistantStatusKind,
@@ -1734,6 +1769,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             message="Approved file write requires a configured local user root.",
                             metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
                         )
+                    # When the user asked the assistant to *compose* the body
+                    # (e.g. "write what the open source means"), generate it via
+                    # the configured provider before writing, instead of
+                    # silently writing an empty file.
+                    content_prompt = file_write_request.pop("content_prompt", None)
+                    if not str(file_write_request.get("content") or "").strip() and content_prompt:
+                        generated = self._generate_file_body(turn_input, str(content_prompt))
+                        if generated:
+                            file_write_request["content"] = generated
                     loop.step("tool")
                     tool_response = self._tool_executor.execute(
                         turn_input,
@@ -2720,25 +2764,10 @@ def _file_rg_query(text: str | None) -> str:
     return cleaned or value
 
 
-def _file_write_request_from_input(text: str | None) -> dict[str, object] | None:
-    value = (text or "").strip()
-    lowered = value.lower()
-    if not any(action in lowered for action in ("write", "create", "save", "make")):
-        return None
-    filename = "output.txt"
-    match = re.search(r"(?:^|\s)([A-Za-z0-9_.-]+\.(?:txt|md|json|csv|log))", value)
-    if match:
-        filename = match.group(1).strip()
-    path = filename
-    if "desktop" in lowered:
-        path = f"Desktop/{filename}"
-    content = ""
-    content_match = re.search(r"(?:write|save)\s+(.+?)\s+(?:to|into|in)\s+", value, flags=re.IGNORECASE)
-    if content_match:
-        content = content_match.group(1).strip().strip("\"'")
-    elif filename.lower() == "test.txt" and re.search(r"\btest\b", lowered):
-        content = "test"
-    return {"path": path, "content": content, "overwrite": False}
+from packages.core.orchestration.file_intent import (  # noqa: E402
+    file_write_request_from_input as _file_write_request_from_input,
+    file_write_topic as _file_write_topic,
+)
 
 
 def _file_write_final_text(safe_result: dict[str, object]) -> str:

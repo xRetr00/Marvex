@@ -22,7 +22,80 @@ __all__ = [
     "file_request_from_input",
     "file_rg_query",
     "file_search_query",
+    "file_write_request_from_input",
+    "file_write_topic",
 ]
+
+
+_FILE_WRITE_GENERATIVE_MARKERS: tuple[str, ...] = (
+    "what is",
+    "what are",
+    "what the",
+    "what does",
+    "explain",
+    "definition of",
+    "meaning of",
+    "means",
+    "write about",
+    "summary of",
+    "describe",
+)
+
+
+def file_write_topic(text: str | None) -> str:
+    """Strip write/destination scaffolding to leave the topic to compose."""
+
+    value = (text or "").strip()
+    cleaned = re.sub(
+        r"\b(write|save|create|make|in|into|to|that|the|this|a|an|file|on|my|please|for\s+me|desktop|documents|downloads)\b",
+        " ",
+        value,
+        flags=re.IGNORECASE,
+    )
+    cleaned = re.sub(r"[A-Za-z0-9_.-]+\.(?:txt|md|json|csv|log)", " ", cleaned)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned or value.strip()
+
+
+def file_write_request_from_input(text: str | None) -> dict[str, object] | None:
+    value = (text or "").strip()
+    lowered = value.lower()
+    if not any(action in lowered for action in ("write", "create", "save", "make")):
+        return None
+    filename = "output.txt"
+    match = re.search(r"(?:^|\s)([A-Za-z0-9_.-]+\.(?:txt|md|json|csv|log))", value)
+    if match:
+        filename = match.group(1).strip()
+    path = filename
+    if "desktop" in lowered:
+        path = f"Desktop/{filename}"
+
+    content = ""
+    content_prompt: str | None = None
+
+    # 1. Quoted literal content is unambiguous and always wins.
+    quoted = re.search(r"[\"'“‘](.+?)[\"'”’]", value)
+    if quoted and quoted.group(1).strip():
+        content = quoted.group(1).strip()
+    else:
+        # 2. "write <literal content> to/into/in <destination>".
+        content_match = re.search(
+            r"(?:write|save)\s+(.+?)\s+(?:to|into|in)\s+", value, flags=re.IGNORECASE
+        )
+        literal = content_match.group(1).strip().strip("\"'") if content_match else ""
+        if literal and not any(marker in literal.lower() for marker in _FILE_WRITE_GENERATIVE_MARKERS):
+            content = literal
+        elif filename.lower() == "test.txt" and re.search(r"\btest\b", lowered):
+            content = "test"
+        # 3. Generative intent - capture the topic so the caller can ask the
+        #    provider to compose the body instead of writing an empty file.
+        if not content and any(marker in lowered for marker in _FILE_WRITE_GENERATIVE_MARKERS):
+            content_prompt = file_write_topic(value)
+
+    request: dict[str, object] = {"path": path, "content": content, "overwrite": False}
+    if content_prompt:
+        request["content_prompt"] = content_prompt
+    return request
 
 
 _DIRECTORY_MARKERS: tuple[str, ...] = (
