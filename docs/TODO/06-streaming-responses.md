@@ -1,6 +1,34 @@
 # 06 — Streaming responses (text + voice)
 
-**Theme:** UX / Infra · **Size:** L · **Status:** not started
+**Theme:** UX / Infra · **Size:** L · **Status:** in progress — foundation landed
+
+## Progress
+
+- **[done] Core streaming driver** (`packages/core/orchestration/streaming.py`,
+  tested in `tests/core/test_streaming_driver.py`): a provider-agnostic
+  `run_streaming_turn(events, on_delta=...)` that forwards text deltas to a sink,
+  reconciles them with the terminal event's authoritative `output_text`, handles
+  stream errors (caller falls back to non-streaming), and returns a `StreamedTurn`
+  the caller converts to the usual `AssistantTurnResult`. Pure + unit-tested.
+
+- **[remaining]** the integration layers (all additive, behind a flag; the
+  default non-streaming path stays byte-for-byte unchanged):
+  1. **Provider `stream_send`** on LMStudio Responses (`responses.create(stream=True)`)
+     and LiteLLM (`completion(stream=True)`), yielding `StreamTextDelta` /
+     `StreamCompleted` / `StreamError`. Share the event types via `packages/contracts`
+     so adapters don't import core. Relax the forbidden-`stream` boundary test on
+     the streaming path only.
+  2. **Core SSE endpoint** in `packages/local_api` that drives `run_streaming_turn`
+     and emits deltas + a terminal event carrying the full `AssistantTurnResult`.
+  3. **Rust/Tauri** streaming command that consumes the SSE and re-emits Tauri
+     events to the shell (keep `submit_chat_turn` as the non-streaming fallback).
+  4. **Shell** incremental render: append deltas to the in-progress bubble; on the
+     terminal event reconcile stages/refs/approval.
+  5. **Voice** path: feed deltas through `SentenceBoundaryDetector` → `TTSQueue`
+     (pairs with item 04) so the first sentence speaks before generation finishes.
+
+These need the live app (fastapi/SSE/Tauri/vite) to wire and verify, so they were
+not landed blind.
 
 ## Problem
 
