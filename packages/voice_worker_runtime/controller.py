@@ -459,6 +459,14 @@ class VoiceWorkerController:
                     decode_count += 1
                     last_confidence = float(getattr(detection, "confidence", 0.0) or 0.0)
                     last_reason_code = getattr(detection, "reason_code", None)
+                    if decode_count == 1:
+                        # Surface what keyword tokens the spotter actually loaded
+                        # (audio is proven good via RMS, so a never-firing wake
+                        # word points at the keyword config).
+                        runner = getattr(self.backend_runtime, "_wakeword_runner", None)
+                        diag = getattr(runner, "keyword_diagnostic", None)
+                        if isinstance(diag, dict):
+                            _emit({"event": "wake_listen_keyword_config", **diag})
                     # Surface a real backend runtime error the moment it
                     # happens (it would otherwise be invisible: non-detections
                     # are not recorded as events).

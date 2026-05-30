@@ -258,6 +258,11 @@ class SherpaOnnxKwsRunner:
         self._cached_kws: Any | None = None
         self._cached_kws_key: tuple[str, str, float] | None = None
         self._cached_stream: Any | None = None
+        # One-time diagnostic about the loaded keyword config (what tokens the
+        # spotter is actually looking for). The wake word can fail silently when
+        # the installed keywords file does not encode "Hey Marvex" in the
+        # model's tokens; this surfaces that without persisting raw audio.
+        self.keyword_diagnostic: dict[str, Any] | None = None
 
     def __call__(
         self,
@@ -398,11 +403,25 @@ class SherpaOnnxKwsRunner:
                     self._cached_kws_key = None
                     return None, None
                 encoder, decoder, joiner, tokens, keywords = files
+                raw_keywords_preview = _safe_keywords_preview(keywords)
                 keywords = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
                 if keywords is None:
+                    self.keyword_diagnostic = {
+                        "phrase": phrase,
+                        "threshold": float(threshold),
+                        "keywords_file_loaded": False,
+                        "reason": "keyword_tokens_not_in_model_vocabulary",
+                        "raw_keywords_preview": raw_keywords_preview,
+                    }
                     self._cached_kws = None
                     self._cached_kws_key = None
                     return None, None
+                self.keyword_diagnostic = {
+                    "phrase": phrase,
+                    "threshold": float(threshold),
+                    "keywords_file_loaded": True,
+                    "keywords_preview": _safe_keywords_preview(keywords),
+                }
                 self._cached_kws = module.KeywordSpotter(
                     tokens=str(tokens),
                     encoder=str(encoder),
@@ -659,6 +678,19 @@ def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | Non
     except OSError:
         return None
     return target
+
+
+def _safe_keywords_preview(keywords: Path) -> str:
+    """First few keyword lines, bounded - so we can see the actual tokens the
+    spotter is configured with (e.g. whether "Hey Marvex" is encoded as model
+    tokens). Not raw audio; safe to log."""
+
+    try:
+        text = keywords.read_text(encoding="utf-8")
+    except OSError:
+        return ""
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return " | ".join(lines[:4])[:240]
 
 
 def _load_token_vocabulary(tokens: Path) -> set[str]:
