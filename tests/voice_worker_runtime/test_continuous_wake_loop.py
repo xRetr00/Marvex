@@ -91,6 +91,31 @@ def test_wake_detect_then_command_transcript_over_continuous_stream(tmp_path: Pa
     assert completed.summary.get("transcript_text") == "what time is it"
 
 
+def test_loop_emits_diagnostics_for_field_observability(tmp_path: Path):
+    controller, _ = _controller(tmp_path)
+    script = (
+        [_frame("w", i) for i in range(3)]
+        + [_frame("s", i) for i in range(4)]
+        + [_frame("q", i) for i in range(4)]
+    )
+    capture = FakeContinuousCapture(script)
+    events: list[dict] = []
+    controller.run_wake_listen_loop(
+        capture=capture,
+        should_stop=lambda: capture.remaining() == 0,
+        frames_per_decode=3,
+        idle_timeout=0.0,
+        on_diagnostic=events.append,
+    )
+    kinds = [e.get("event") for e in events]
+    assert "wake_listen_started" in kinds, kinds
+    assert "wake_listen_detected" in kinds, kinds
+    assert "wake_listen_stopped" in kinds, kinds
+    stopped = next(e for e in events if e.get("event") == "wake_listen_stopped")
+    assert stopped["frames_read"] >= 3
+    assert stopped["detections"] >= 1
+
+
 def test_no_detection_when_no_wake_frames(tmp_path: Path):
     controller, stt_calls = _controller(tmp_path)
     script = [_frame("q", i) for i in range(12)]  # all silence, no wake

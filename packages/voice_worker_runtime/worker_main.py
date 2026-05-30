@@ -75,6 +75,7 @@ def run_worker_contract_loop(
                 capture=capture,
                 should_stop=stop_event.is_set,
                 lock=lock,
+                on_diagnostic=_write_loop_diagnostic,
             )
         except Exception as exc:  # never let the wake loop kill the worker
             _write_tick_telemetry({"event": "wake_listen_error", "detected": False, "reason_code": type(exc).__name__})
@@ -162,15 +163,48 @@ def _build_continuous_capture(controller: VoiceWorkerController):
 
 
 def _write_tick_telemetry(tick: dict[str, object]) -> None:
+    # Preserve the caller's event name and reason_code: forcing every line to
+    # "wakeword_supervisor_tick" and dropping reason_code made the field logs
+    # useless for triaging "wake word never triggers". Only raw audio/transcript
+    # content is withheld (privacy); diagnostic metadata is kept.
     safe = {
-        "event": "wakeword_supervisor_tick",
+        "event": tick.get("event", "wakeword_supervisor_tick"),
         "tick_count": tick.get("tick_count"),
         "lifecycle_state": tick.get("lifecycle_state"),
         "detected": tick.get("detected"),
         "exact_blocker": tick.get("exact_blocker"),
+        "reason_code": tick.get("reason_code"),
         "raw_audio_persisted": False,
         "raw_transcript_persisted": False,
     }
+    try:
+        sys.stderr.write(json.dumps(safe, sort_keys=True) + "\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+
+
+def _write_loop_diagnostic(payload: dict[str, object]) -> None:
+    # Diagnostic sink for the continuous wake/listen loop. The loop is in the
+    # runtime package (which must not touch stderr directly); the worker owns
+    # process I/O, so it injects this callback. We never emit raw audio or
+    # transcript text - only counts, confidences and reason codes.
+    safe: dict[str, object] = {"raw_audio_persisted": False, "raw_transcript_persisted": False}
+    for key in (
+        "event",
+        "reason_code",
+        "phrase",
+        "threshold",
+        "frames_per_decode",
+        "frames_read",
+        "decodes",
+        "detections",
+        "confidence",
+        "last_confidence",
+        "last_reason_code",
+    ):
+        if key in payload:
+            safe[key] = payload[key]
     try:
         sys.stderr.write(json.dumps(safe, sort_keys=True) + "\n")
         sys.stderr.flush()

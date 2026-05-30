@@ -333,6 +333,8 @@ class VoiceWorkerController:
         frames_per_decode: int = 3,
         idle_timeout: float = 0.5,
         lock: Any | None = None,
+        on_diagnostic: "Callable[[dict[str, object]], None] | None" = None,
+        diagnostic_interval_decodes: int = 50,
     ) -> dict[str, object]:
         """Continuous wake-word + command loop over a gap-free mic stream.
 
@@ -343,13 +345,32 @@ class VoiceWorkerController:
         command utterance from the SAME stream (VAD-endpointed) and emit its
         transcript, then resume listening. Runs until ``should_stop`` returns
         True. Does not hold any command lock while reading audio.
+
+        ``on_diagnostic`` (injected by the worker, which owns stderr) makes the
+        loop observable in the field: without it, non-detections are silent and
+        "wake word never triggers" is undiagnosable. We emit a start event, a
+        periodic heartbeat (frames read, decode count, last KWS confidence and
+        reason_code, detection count) and surface swallowed KWS runtime errors
+        immediately. The KWS confidence in the heartbeat is the single most
+        useful signal: if speaking "Hey Marvex" shows confidence climbing but
+        below threshold, lower the threshold; if it stays ~0 or audio never
+        flows, the problem is the mic/stream, not the threshold.
         """
+
+        def _emit(payload: dict[str, object]) -> None:
+            if on_diagnostic is not None:
+                try:
+                    on_diagnostic(payload)
+                except Exception:
+                    pass
 
         self.asset_manager.discover_installed()
         self.wakeword_supervisor.update_config(self.config)
         if not self.config.wakeword.enabled:
+            _emit({"event": "wake_listen_refused", "reason_code": "wakeword_not_enabled"})
             return {"started": False, "reason_code": "wakeword_not_enabled"}
         if not self.wakeword_supervisor._asset_ready():  # noqa: SLF001 - readiness gate
+            _emit({"event": "wake_listen_refused", "reason_code": "wakeword_model_not_installed"})
             return {"started": False, "reason_code": "wakeword_model_not_installed"}
 
         from contextlib import nullcontext
@@ -358,8 +379,20 @@ class VoiceWorkerController:
             return lock if lock is not None else nullcontext()
 
         detections = 0
+        frames_read = 0
+        decode_count = 0
+        last_confidence = 0.0
+        last_reason_code: str | None = None
         self._continuous_active = True
         capture.start()
+        _emit(
+            {
+                "event": "wake_listen_started",
+                "phrase": self.config.wakeword.phrase,
+                "threshold": self.config.wakeword.threshold,
+                "frames_per_decode": frames_per_decode,
+            }
+        )
         reader = lambda: capture.read(timeout=idle_timeout)  # noqa: E731
         try:
             batch: list[Any] = []
@@ -369,6 +402,7 @@ class VoiceWorkerController:
                 frame = capture.read(timeout=idle_timeout)
                 if frame is None:
                     continue
+                frames_read += 1
                 batch.append(frame)
                 if len(batch) < max(1, frames_per_decode):
                     continue
@@ -384,9 +418,24 @@ class VoiceWorkerController:
                         phrase=self.config.wakeword.phrase,
                         threshold=self.config.wakeword.threshold,
                     )
+                    decode_count += 1
+                    last_confidence = float(getattr(detection, "confidence", 0.0) or 0.0)
+                    last_reason_code = getattr(detection, "reason_code", None)
+                    # Surface a real backend runtime error the moment it
+                    # happens (it would otherwise be invisible: non-detections
+                    # are not recorded as events).
+                    if last_reason_code and "runtime_error" in last_reason_code:
+                        _emit({"event": "wake_listen_kws_error", "reason_code": last_reason_code})
                     if detection.detected:
                         self._error = None
                         detections += 1
+                        _emit(
+                            {
+                                "event": "wake_listen_detected",
+                                "confidence": last_confidence,
+                                "detections": detections,
+                            }
+                        )
                         wake_trace = f"trace-wake-listen-{len(self._events) + 1}"
                         self._record(
                             VoiceWorkerEventType.WAKEWORD_DETECTED,
@@ -396,9 +445,30 @@ class VoiceWorkerController:
                         # Capture the command from the SAME continuous stream.
                         self._run_post_wake_capture(parent_trace_id=wake_trace, read_frame=reader)
                         batch = []
+                    elif decode_count % max(1, diagnostic_interval_decodes) == 0:
+                        _emit(
+                            {
+                                "event": "wake_listen_heartbeat",
+                                "frames_read": frames_read,
+                                "decodes": decode_count,
+                                "detections": detections,
+                                "last_confidence": last_confidence,
+                                "last_reason_code": last_reason_code,
+                            }
+                        )
         finally:
             self._continuous_active = False
             capture.stop()
+            _emit(
+                {
+                    "event": "wake_listen_stopped",
+                    "frames_read": frames_read,
+                    "decodes": decode_count,
+                    "detections": detections,
+                    "last_confidence": last_confidence,
+                    "last_reason_code": last_reason_code,
+                }
+            )
         return {"started": True, "detections": detections, "stopped": True}
 
     def _tick_counter_advance(self) -> int:
