@@ -339,3 +339,32 @@ def test_sherpa_onnx_kws_runner_get_result_empty_string_is_not_detected(tmp_path
 
     assert result.detected is False
     assert result.reason_code == "wakeword.not_detected"
+
+
+def test_normalized_keywords_use_boost_colon_threshold_hash_order(tmp_path: Path) -> None:
+    # Regression: the sherpa-onnx keyword format is ":BOOST #THRESHOLD". An
+    # earlier fix inverted it (":0.2 #2.0" => threshold 2.0) and the wake word
+    # could never fire. Verify we emit a high boost + low threshold.
+    from packages.voice_worker_runtime.model_adapters import _normalized_kws_keywords_file
+
+    tokens = tmp_path / "tokens.txt"
+    vocab = ["<blk>", "▁HE", "Y", "▁MAR", "VE", "X"]
+    tokens.write_text("\n".join(f"{tok} {i}" for i, tok in enumerate(vocab)), encoding="utf-8")
+    keywords = tmp_path / "keywords.txt"
+    keywords.write_text("▁HE Y ▁MAR VE X :1.5 #0.2 @HEY_MARVEX\n", encoding="utf-8")
+
+    out = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
+    assert out is not None
+    text = out.read_text(encoding="utf-8")
+    assert ":2.0" in text  # boost
+    assert "#0.2" in text  # threshold
+    assert "#2.0" not in text  # never a 2.0 threshold (the bug)
+    assert "@HEY_MARVEX" in text
+
+
+def test_generate_keywords_from_phrase_returns_none_without_bpe_model(tmp_path: Path) -> None:
+    from packages.voice_worker_runtime.model_adapters import _generate_kws_keywords_file
+
+    tokens = tmp_path / "tokens.txt"
+    tokens.write_text("<blk> 0\n", encoding="utf-8")
+    assert _generate_kws_keywords_file(tokens=tokens, bpe_model=None, phrase="Hey Marvex") is None

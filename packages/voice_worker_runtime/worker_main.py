@@ -205,6 +205,7 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "audio_rms",
         "audio_rms_peak",
         "keywords_file_loaded",
+        "keywords_source",
         "keywords_preview",
         "raw_keywords_preview",
         "reason",

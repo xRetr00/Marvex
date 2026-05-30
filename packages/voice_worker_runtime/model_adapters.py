@@ -404,7 +404,22 @@ class SherpaOnnxKwsRunner:
                     return None, None
                 encoder, decoder, joiner, tokens, keywords = files
                 raw_keywords_preview = _safe_keywords_preview(keywords)
-                keywords = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
+                # Prefer generating the keywords file from the configured phrase
+                # using the model's own bpe.model, so the tokens always match what
+                # the model expects (independent of whatever keywords.txt shipped).
+                # Fall back to normalising the shipped file when bpe.model or
+                # sentencepiece is unavailable.
+                bpe_model = next(iter(sorted(path.rglob("bpe.model"))), None)
+                source = "generated_from_phrase"
+                generated = (
+                    _generate_kws_keywords_file(tokens=tokens, bpe_model=bpe_model, phrase=phrase)
+                    if bpe_model is not None
+                    else None
+                )
+                if generated is None:
+                    source = "normalized_shipped"
+                    generated = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
+                keywords = generated
                 if keywords is None:
                     self.keyword_diagnostic = {
                         "phrase": phrase,
@@ -420,6 +435,7 @@ class SherpaOnnxKwsRunner:
                     "phrase": phrase,
                     "threshold": float(threshold),
                     "keywords_file_loaded": True,
+                    "keywords_source": source,
                     "keywords_preview": _safe_keywords_preview(keywords),
                 }
                 self._cached_kws = module.KeywordSpotter(
@@ -643,12 +659,73 @@ def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None
     return encoder, decoder, joiner, tokens, keywords  # type: ignore[return-value]
 
 
-# Sane sherpa-onnx KWS per-keyword tuning. The shipped keywords.txt used
-# ":1.5 #0.2" - a trigger threshold of 1.5 (absurdly high; sane is ~0.2-0.35)
-# with a tiny 0.2 boost, so "Hey Marvex" could essentially never fire even with
-# clean audio. We rewrite every keyword's threshold/boost to working values.
-_KWS_KEYWORD_THRESHOLD = 0.2
+# sherpa-onnx KWS per-keyword tuning. The keywords.txt line format is
+# "<tokens> :BOOST #THRESHOLD @ALIAS" - ":" is the boosting score and "#" is the
+# trigger threshold (NOT the other way round). Verified empirically against the
+# gigaspeech KWS model on real "Hey Marvex" audio: ":2.0 #0.2" detects reliably;
+# a high "#threshold" (e.g. the shipped ":1.5 #0.2" parsed wrong, or ":0.2 #2.0")
+# never fires. Boost 2.0 + threshold 0.2 is the working pair.
 _KWS_KEYWORD_BOOST = 2.0
+_KWS_KEYWORD_THRESHOLD = 0.2
+
+
+def _generate_kws_keywords_file(*, tokens: Path, bpe_model: Path | None, phrase: str) -> Path | None:
+    """Generate a keywords file from the wake phrase using the model's bpe.model.
+
+    Encodes the phrase (and a few natural prefixes) with the SAME sentencepiece
+    model the KWS was built on, so the keyword tokens always match what the model
+    emits acoustically - regardless of what (possibly miscustomised) keywords.txt
+    shipped. Returns None when sentencepiece/bpe.model is unavailable or a piece
+    is out-of-vocabulary, so the caller falls back to the shipped file.
+    """
+
+    if bpe_model is None:
+        return None
+    try:
+        import sentencepiece as spm  # type: ignore[import-not-found]
+    except Exception:
+        return None
+    vocabulary = _load_token_vocabulary(tokens)
+    if not vocabulary:
+        return None
+    try:
+        sp = spm.SentencePieceProcessor()
+        sp.load(str(bpe_model))
+    except Exception:
+        return None
+    base = " ".join(phrase.strip().upper().split())
+    if not base:
+        return None
+    words = base.split()
+    last_word = words[-1]
+    candidates = [base]
+    # Natural variants so "hi/ok/hello <wakeword>" also trigger (mirrors the
+    # multi-line keyword files these KWS models ship with).
+    for prefix in ("HI", "OK", "HELLO"):
+        variant = f"{prefix} {last_word}"
+        if variant not in candidates:
+            candidates.append(variant)
+    lines: list[str] = []
+    for text in candidates:
+        try:
+            pieces = [str(piece) for piece in sp.encode(text, out_type=str)]
+        except Exception:
+            continue
+        if not pieces or any(piece not in vocabulary for piece in pieces):
+            continue
+        alias = "_".join(text.split())
+        lines.append(" ".join(pieces) + f" :{_KWS_KEYWORD_BOOST} #{_KWS_KEYWORD_THRESHOLD} @{alias}")
+    if not lines:
+        return None
+    content = "\n".join(lines) + "\n"
+    digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+    target = Path(tempfile.gettempdir()) / f"marvex-kws-generated-{digest}.txt"
+    try:
+        if not target.exists() or target.read_text(encoding="utf-8") != content:
+            target.write_text(content, encoding="utf-8")
+    except OSError:
+        return None
+    return target
 
 
 def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | None:
@@ -674,14 +751,15 @@ def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | Non
         keyword_tokens = [part for part in parts if not part.startswith(("#", ":", "@"))]
         if any(part not in vocabulary for part in keyword_tokens):
             return None
-        # Force a usable trigger threshold + boost regardless of what shipped.
-        existing_threshold = next((part for part in parts if part.startswith(":")), None)
-        existing_boost = next((part for part in parts if part.startswith("#")), None)
+        # Force a usable boost + trigger threshold regardless of what shipped.
+        # Format is ":BOOST #THRESHOLD".
+        existing_boost = next((part for part in parts if part.startswith(":")), None)
+        existing_threshold = next((part for part in parts if part.startswith("#")), None)
         alias_token = next((part for part in parts if part.startswith("@")), None)
-        rebuilt = [*keyword_tokens, f":{_KWS_KEYWORD_THRESHOLD}", f"#{_KWS_KEYWORD_BOOST}"]
+        rebuilt = [*keyword_tokens, f":{_KWS_KEYWORD_BOOST}", f"#{_KWS_KEYWORD_THRESHOLD}"]
         if alias_token is not None:
             rebuilt.append(alias_token)
-        if existing_threshold != f":{_KWS_KEYWORD_THRESHOLD}" or existing_boost != f"#{_KWS_KEYWORD_BOOST}":
+        if existing_boost != f":{_KWS_KEYWORD_BOOST}" or existing_threshold != f"#{_KWS_KEYWORD_THRESHOLD}":
             changed = True
         parts = rebuilt
         normalized_lines.append(" ".join(parts))
