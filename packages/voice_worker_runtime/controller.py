@@ -61,6 +61,10 @@ class VoiceWorkerController:
         self._playback_status = "stopped"
         self._queued_tts_count = 0
         self._error: VoiceWorkerErrorEnvelope | None = None
+        # True while the continuous wake loop owns the mic input stream. Command
+        # handlers that read the mic (listen, speak barge-in) stand down then to
+        # avoid a device-busy conflict on the single input device.
+        self._continuous_active = False
         self.wakeword_supervisor: WakewordWorkerSupervisor = wakeword_supervisor or WakewordWorkerSupervisor(
             config=self.config,
             asset_manager=self.asset_manager,
@@ -354,6 +358,7 @@ class VoiceWorkerController:
             return lock if lock is not None else nullcontext()
 
         detections = 0
+        self._continuous_active = True
         capture.start()
         reader = lambda: capture.read(timeout=idle_timeout)  # noqa: E731
         try:
@@ -392,6 +397,7 @@ class VoiceWorkerController:
                         self._run_post_wake_capture(parent_trace_id=wake_trace, read_frame=reader)
                         batch = []
         finally:
+            self._continuous_active = False
             capture.stop()
         return {"started": True, "detections": detections, "stopped": True}
 
@@ -739,7 +745,10 @@ class VoiceWorkerController:
         self._error = None
         event = self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary={**synthesis_summary(result), "speak": True})
         if result.status == "succeeded" and result.audio_ref:
-            if bool(command.payload.get("barge_in")):
+            # Barge-in monitors the mic; skip it while the continuous wake loop
+            # owns the input device (the loop's own listening covers barge-in
+            # at the architecture level once unified). Play to completion then.
+            if bool(command.payload.get("barge_in")) and not self._continuous_active:
                 self._speak_with_barge_in(trace_id=trace_id, audio_ref=result.audio_ref, sample_rate=result.sample_rate)
             else:
                 self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True})
@@ -813,6 +822,15 @@ class VoiceWorkerController:
         """
 
         trace_id = self._trace_id_for(command)
+        if self._continuous_active:
+            # The continuous wake loop owns the mic; a chunked capture here would
+            # conflict on the single input device. The wake loop already
+            # captures wake-triggered commands, so re-wake drives the next turn.
+            return self._record(
+                VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                trace_id=trace_id,
+                summary={"reason_code": "continuous_capture_active", "listen": True},
+            )
         before = len(self._events)
         self._run_post_wake_capture(parent_trace_id=trace_id)
         if len(self._events) > before:

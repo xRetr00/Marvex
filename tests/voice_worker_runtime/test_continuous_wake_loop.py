@@ -112,6 +112,15 @@ def test_loop_refuses_when_wakeword_disabled(tmp_path: Path):
     assert result["reason_code"] == "wakeword_not_enabled"
 
 
+def test_listen_command_stands_down_while_continuous_active(tmp_path: Path):
+    controller, stt_calls = _controller(tmp_path)
+    controller._continuous_active = True  # simulate the wake loop owning the mic
+    result = controller.handle(VoiceWorkerCommand(command="listen", command_id="c-listen"))
+    # No chunked capture / STT runs (would conflict on the input device).
+    assert not stt_calls
+    assert result.event.summary.get("reason_code") == "continuous_capture_active"
+
+
 def test_fake_capture_delivers_frames_in_order():
     cap = FakeContinuousCapture([_frame("a", 0), _frame("b", 1)])
     cap.start()
