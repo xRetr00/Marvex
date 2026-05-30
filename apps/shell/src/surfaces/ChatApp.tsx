@@ -16,7 +16,7 @@ import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
 import { ScrambleText } from "@/components/scramble-text";
 import { BackgroundPlus } from "@/components/ui/background-plus";
-import { MarvexChatShell } from "@/components/chatbot-main/MarvexChatShell";
+import { MarvexChatShell, type MarvexChatClarification } from "@/components/chatbot-main/MarvexChatShell";
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { StartupScreen } from "@/components/marvex/StartupScreen";
 import { StatusView } from "@/components/marvex/StatusView";
@@ -25,7 +25,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
@@ -123,7 +123,7 @@ export function ChatApp() {
       }
       const outcome = outcomeFromTurnResult(result);
       replyText = outcome.text;
-      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text) }]);
+      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) }]);
     } catch (error) {
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
@@ -133,6 +133,17 @@ export function ChatApp() {
     }
     return replyText;
   }, [pending]);
+
+  const answerClarification = useCallback((clarification: MarvexChatClarification, answerText: string) => {
+    const reply = answerText.trim();
+    if (!reply) return;
+    // Re-ask the original question with the disambiguation so the backend
+    // resolves it (and the spaced "open ai" trigger no longer fires).
+    const composed = clarification.originalText.trim()
+      ? `${clarification.originalText.trim()} (I mean: ${reply})`
+      : reply;
+    void send(composed);
+  }, [send]);
 
   const decideChatApproval = useCallback(async (approval: ChatApproval, decision: "approve" | "deny" | "cancel") => {
     setPending(true);
@@ -314,6 +325,7 @@ export function ChatApp() {
                 onSubmit={(text) => { void send(text); }}
                 onToggleVoice={toggleVoiceCapture}
                 onApprovalDecision={decideChatApproval}
+                onClarificationAnswer={answerClarification}
                 pending={pending}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
@@ -359,6 +371,26 @@ function approvalFromTurnResult(result: unknown, text: string): ChatApproval | u
     text,
     status: "pending",
   };
+}
+
+function clarificationFromTurnResult(result: unknown, originalText: string): MarvexChatClarification | undefined {
+  if (!result || typeof result !== "object") return undefined;
+  const metadata = (result as { metadata?: unknown }).metadata;
+  const raw = metadata && typeof metadata === "object" ? (metadata as { clarification?: unknown }).clarification : undefined;
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as { kind?: unknown; title?: unknown; options?: unknown };
+  if (typeof obj.title !== "string") return undefined;
+  const kind: MarvexChatClarification["kind"] = obj.kind === "multi" || obj.kind === "text" ? obj.kind : "single";
+  const options = Array.isArray(obj.options)
+    ? obj.options.flatMap((entry): MarvexChatClarification["options"] => {
+        if (!entry || typeof entry !== "object") return [];
+        const option = entry as { id?: unknown; label?: unknown; description?: unknown };
+        if (typeof option.id !== "string" || typeof option.label !== "string") return [];
+        return [{ id: option.id, label: option.label, description: typeof option.description === "string" ? option.description : undefined }];
+      })
+    : [];
+  // Always allow a custom answer, regardless of the backend hint.
+  return { kind, title: obj.title, allowCustom: true, options, originalText };
 }
 
 function AgentOrb({ agentState }: { agentState: AgentOrbState }) {

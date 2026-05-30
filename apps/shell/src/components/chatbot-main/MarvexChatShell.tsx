@@ -2,6 +2,7 @@ import { useEffect, useRef, type ReactNode } from "react";
 import type { TurnStage, UiDirective } from "@/lib/localTurn";
 import { RichMessage } from "@/components/marvex/RichMessage";
 import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationRequest, ConfirmationTitle } from "@/components/confirmation";
+import { QuestionTool } from "@/components/question-tool";
 import {
   ChatbotAssistantFrame,
   ChatbotCopyAction,
@@ -17,12 +18,22 @@ import {
 } from "./conversation";
 import { ChatbotPromptInput } from "./prompt-input";
 
+export type MarvexChatClarificationOption = { id: string; label: string; description?: string };
+export type MarvexChatClarification = {
+  kind: "single" | "multi" | "text";
+  title: string;
+  allowCustom: boolean;
+  options: MarvexChatClarificationOption[];
+  originalText: string;
+};
+
 export type MarvexChatMessage = {
   role: "user" | "assistant" | "system";
   text: string;
   stages?: TurnStage[];
   directives?: UiDirective[];
   approval?: { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
+  clarification?: MarvexChatClarification;
 };
 
 export type MarvexChatShellProps = {
@@ -31,6 +42,7 @@ export type MarvexChatShellProps = {
   pending: boolean;
   onSubmit: (text: string) => void | Promise<void>;
   onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
+  onClarificationAnswer?: (clarification: MarvexChatClarification, answerText: string) => void | Promise<void>;
   onToggleVoice?: () => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
   assistantOrbState?: "thinking" | "listening" | "talking" | null;
@@ -42,6 +54,7 @@ export function MarvexChatShell({
   pending,
   onSubmit,
   onApprovalDecision,
+  onClarificationAnswer,
   onToggleVoice,
   renderAssistantOrb,
   assistantOrbState = null,
@@ -84,6 +97,36 @@ export function MarvexChatShell({
                           </ConfirmationActions>
                         </ConfirmationRequest>
                       </Confirmation>
+                    ) : null}
+                    {message.clarification ? (
+                      <QuestionTool
+                        className="mt-3"
+                        toolCallId={`clarify-${index}`}
+                        questions={[
+                          {
+                            kind: message.clarification.kind,
+                            title: message.clarification.title,
+                            options: message.clarification.options,
+                            // Always offer a free-text option so the user can
+                            // answer with something not in the list.
+                            allowCustom: true,
+                            customLabel: "Other",
+                            customPlaceholder: "Type what you mean…",
+                          },
+                        ]}
+                        allowSkip={false}
+                        onSubmitAnswer={(answer) => {
+                          const clarification = message.clarification!;
+                          const fromCustom = answer.text?.trim();
+                          const fromOption = answer.selectedIds?.length
+                            ? clarification.options.find((option) => option.id === answer.selectedIds![0])?.label
+                            : undefined;
+                          const answerText = fromCustom || fromOption;
+                          if (answerText && !pending) {
+                            void onClarificationAnswer?.(clarification, answerText);
+                          }
+                        }}
+                      />
                     ) : null}
                   </ChatbotMessageContent>
                   <ChatbotMessageActions className="mt-2">
