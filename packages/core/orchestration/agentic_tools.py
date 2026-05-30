@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from packages.adapters.capabilities.tools import ToolRegistry
+from packages.adapters.capabilities.tools.clarify import CLARIFY_TOOL_ID, clarification_payload_from_arguments
 from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel
 
 # Builds an execution request for a resolved tool id + parsed arguments. The
@@ -37,8 +38,9 @@ RequestBuilder = Callable[[str, dict[str, Any]], CapabilityExecutionRequest | No
 class ToolCallResult:
     call_id: str
     tool_id: str
-    status: str  # "succeeded" | "unknown" | "needs_approval" | "error"
+    status: str  # "succeeded" | "unknown" | "needs_approval" | "needs_clarification" | "error"
     message: dict[str, Any]  # OpenAI-style {"role": "tool", ...}
+    clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
 
 
 @dataclass
@@ -54,6 +56,10 @@ class ToolStepOutcome:
     @property
     def needs_approval(self) -> list[ToolCallResult]:
         return [r for r in self.results if r.status == "needs_approval"]
+
+    @property
+    def needs_clarification(self) -> list[ToolCallResult]:
+        return [r for r in self.results if r.status == "needs_clarification"]
 
     @property
     def all_messages(self) -> list[dict[str, Any]]:
@@ -106,6 +112,17 @@ def execute_tool_calls(
         function = function if isinstance(function, dict) else {}
         name = str(function.get("name") or "").strip()
         arguments = parse_tool_arguments(function.get("arguments"))
+
+        if name == CLARIFY_TOOL_ID:
+            # Model-driven clarification: do not execute anything; pause the turn
+            # and surface the question to the user via the UI.
+            payload = clarification_payload_from_arguments(arguments)
+            content = "Awaiting the user's answer to the clarifying question."
+            results.append(
+                ToolCallResult(call_id, name, "needs_clarification", _tool_message(call_id, content), clarification=payload)
+            )
+            tool_messages.append(results[-1].message)
+            continue
 
         tool = registry.get(name)
         if tool is None:
@@ -167,11 +184,13 @@ class ProviderStep:
 
 @dataclass
 class LoopResult:
-    status: str  # "final" | "needs_approval" | "error" | "max_steps"
+    status: str  # "final" | "needs_approval" | "needs_clarification" | "error" | "max_steps"
     text: str
     steps: int
     executed_tool_ids: list[str] = field(default_factory=list)
     needs_approval_tool_ids: list[str] = field(default_factory=list)
+    clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
+    response_id: str | None = None  # provider response id at pause (for resume)
 
 
 # send(input_text, tool_messages, previous_response_id) -> ProviderStep
@@ -220,6 +239,15 @@ def run_tool_loop(
             step.tool_calls, registry=registry, request_builder=request_builder
         )
         executed.extend(outcome.executed_tool_ids)
+        if outcome.needs_clarification:
+            return LoopResult(
+                status="needs_clarification",
+                text=last_text,
+                steps=index + 1,
+                executed_tool_ids=executed,
+                clarification=outcome.needs_clarification[0].clarification,
+                response_id=prev,
+            )
         if outcome.needs_approval:
             return LoopResult(
                 status="needs_approval",

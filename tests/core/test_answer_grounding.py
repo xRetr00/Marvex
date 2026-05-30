@@ -1,34 +1,13 @@
-"""Tests for grounded-answer clarification + self-correction (docs/TODO/05)."""
+"""Tests for grounded-answer self-correction (docs/TODO/05).
+
+Clarification is now model-driven via the clarify tool (see
+tests/core/test_clarify_tool_loop.py), not a backend keyword match.
+"""
 
 from packages.core.orchestration.answer_grounding import (
     assess_grounded_answer,
     build_correction_prompt,
-    detect_ambiguous_subject,
 )
-
-
-def test_open_ai_spaced_is_ambiguous_and_asks_company_vs_open_weight():
-    question = detect_ambiguous_subject("what is the latest model by open ai")
-    assert question is not None
-    assert "OpenAI" in question.title
-    ids = {option.id for option in question.options}
-    assert {"openai_company", "open_weight"} <= ids
-    # The prompt text the assistant would speak/show lists the options.
-    text = question.prompt_text()
-    assert "A)" in text and "B)" in text
-
-
-def test_openai_no_space_is_not_ambiguous():
-    assert detect_ambiguous_subject("what is the latest model by openai") is None
-
-
-def test_collapses_extra_spaces_in_trigger():
-    assert detect_ambiguous_subject("the open   ai company") is not None
-
-
-def test_unrelated_text_is_not_ambiguous():
-    assert detect_ambiguous_subject("what time is it") is None
-    assert detect_ambiguous_subject("read my report.pdf") is None
 
 
 def test_currency_claim_without_evidence_needs_correction():

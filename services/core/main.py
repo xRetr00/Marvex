@@ -1053,6 +1053,25 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 cognition=cognition,
                 loop=loop,
             )
+        if loop_result.status == "needs_clarification":
+            # The model itself asked the user a clarifying question (clarify
+            # tool). Pause the turn and surface it via the UI QuestionTool. The
+            # user's reply comes back as the next chat turn (chained via the
+            # provider response id), so the model continues with the answer.
+            self._publish(AssistantStatusKind.ASKING, detail="clarification_needed", trace_id=turn_input.trace_id)
+            loop.step("clarify", stop_reason="finalized")
+            clarification = loop_result.clarification or {"kind": "text", "title": "Could you clarify your request?", "allow_custom": True, "options": []}
+            return _entrypoint_text_result(
+                turn_input,
+                text=str(clarification.get("title") or "Could you clarify your request?"),
+                metadata=_with_loop_metadata(
+                    {"intent": intent_projection, "clarification": clarification},
+                    loop,
+                    self._trace_reader,
+                    turn_input,
+                ),
+                stage_name="clarification",
+            )
         stop_reason = "finalized" if loop_result.status == "final" else "max_steps_reached"
         loop.step("finalize", stop_reason=stop_reason)
         fallback_text = (
@@ -1128,8 +1147,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
             default_registry,
             file_tools_registry,
         )
+        from packages.adapters.capabilities.tools.clarify import ClarifyTool
 
-        tools = [*default_registry().tools(), *file_tools_registry().tools()]
+        # ClarifyTool lets the MODEL ask the user when a request is ambiguous
+        # (model-driven clarification), instead of a brittle backend keyword
+        # match. The agentic loop intercepts a clarify call and pauses the turn.
+        tools = [*default_registry().tools(), *file_tools_registry().tools(), ClarifyTool()]
         if self._web_search_provider is not None:
             tools.append(WebSearchTool(provider=self._web_search_provider))
         return ToolRegistry(tuple(tools))
@@ -1487,25 +1510,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:computer-use:result")],
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
-            # Force a clarification when the subject is ambiguous ("open ai" =
-            # OpenAI the company vs open-weight models) instead of confidently
-            # answering the wrong reading. The assistant asks the question and
-            # surfaces a structured clarification payload for the UI QuestionTool.
-            clarification = detect_ambiguous_subject(turn_input.user_visible_input)
-            if clarification is not None:
-                self._publish(AssistantStatusKind.ASKING, detail="clarification_needed", trace_id=turn_input.trace_id)
-                loop.step("clarify", stop_reason="finalized")
-                return _entrypoint_text_result(
-                    turn_input,
-                    text=clarification.prompt_text(),
-                    metadata=_with_loop_metadata(
-                        {**metadata, "clarification": clarification.safe_projection()},
-                        loop,
-                        self._trace_reader,
-                        turn_input,
-                    ),
-                    stage_name="clarification",
-                )
+            # Clarification is model-driven now: the model calls the `clarify`
+            # tool in the agentic loop when a request is ambiguous (handled in
+            # _run_agentic_tool_loop). No brittle backend keyword match here -
+            # that re-fired every turn and looped.
             self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
             # Prefer the agentic loop: the model has web.search + the current
             # date in its grounding, so it searches and answers (and won't claim
@@ -3344,7 +3352,6 @@ from packages.core.orchestration.tool_grounding import with_tool_grounding  # no
 from packages.core.orchestration.answer_grounding import (  # noqa: E402
     assess_grounded_answer,
     build_correction_prompt,
-    detect_ambiguous_subject,
 )
 
 

@@ -1,20 +1,15 @@
-"""Grounded-answer clarification + self-correction (docs/TODO/05).
+"""Grounded-answer self-correction (docs/TODO/05).
 
-Two jobs the grounded-answer path was missing, both visible in the field logs:
+Clarification is model-driven (the clarify tool in the agentic loop), not a
+backend keyword match. This module keeps the second grounded-answer job:
 
-1. **Clarify ambiguous subjects.** A user who types "open ai" (with a space)
-   may mean OpenAI (the company) or open-source / open-weight AI models. The
-   assistant answered confidently for the wrong reading instead of asking. This
-   module detects a small, data-driven set of ambiguous subjects and returns a
-   structured clarification question (consumable by the UI QuestionTool).
-
-2. **Verify before answering "latest/current".** A local model happily said
-   "GPT-4o is OpenAI's latest model (released 2026)" - a stale training-data
-   fact stated as current. When an answer asserts a current/latest claim that
-   the gathered evidence does not support, we don't block and we don't answer
-   for the model: we mark the answer unsupported and re-prompt the SAME model to
-   correct itself in the same turn (once), then fall back to an honest "could not
-   verify" instead of fabricating.
+**Verify before answering "latest/current".** A local model happily said
+"GPT-4o is OpenAI's latest model (released 2026)" - a stale training-data fact
+stated as current. When an answer asserts a current/latest claim that the
+gathered evidence does not support, we don't block and we don't answer for the
+model: we mark the answer unsupported and re-prompt the SAME model to correct
+itself in the same turn (once), then fall back to an honest "could not verify"
+instead of fabricating.
 
 Pure functions only - no fastapi / provider imports - so this is unit-testable
 without booting the Core service.
@@ -24,77 +19,7 @@ from __future__ import annotations
 
 import datetime as dt
 
-from pydantic import BaseModel, ConfigDict, Field
-
-
-class ClarificationOption(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    id: str = Field(..., min_length=1)
-    label: str = Field(..., min_length=1)
-    description: str = ""
-
-
-class ClarificationQuestion(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    kind: str = "single"
-    title: str = Field(..., min_length=1)
-    options: tuple[ClarificationOption, ...] = ()
-    allow_custom: bool = True
-
-    def prompt_text(self) -> str:
-        lines = [self.title]
-        for index, option in enumerate(self.options):
-            letter = chr(ord("A") + index)
-            suffix = f" - {option.description}" if option.description else ""
-            lines.append(f"{letter}) {option.label}{suffix}")
-        return "\n".join(lines)
-
-    def safe_projection(self) -> dict[str, object]:
-        return {
-            "kind": self.kind,
-            "title": self.title,
-            "allow_custom": self.allow_custom,
-            "options": [
-                {"id": option.id, "label": option.label, "description": option.description}
-                for option in self.options
-            ],
-        }
-
-
-# Data-driven ambiguous-subject table. Each entry: the lowercased trigger phrase
-# that must appear as a standalone token sequence, plus the disambiguation
-# question. Extend this rather than adding bespoke if-branches.
-_AMBIGUOUS_SUBJECTS: tuple[tuple[str, ClarificationQuestion], ...] = (
-    (
-        "open ai",
-        ClarificationQuestion(
-            title="Did you mean OpenAI (the company) or open / open-weight AI models?",
-            options=(
-                ClarificationOption(id="openai_company", label="OpenAI (the company)", description="e.g. ChatGPT, GPT models"),
-                ClarificationOption(id="open_weight", label="Open / open-weight AI models", description="open-source models you can download"),
-            ),
-        ),
-    ),
-)
-
-
-def detect_ambiguous_subject(text: str | None) -> ClarificationQuestion | None:
-    """Return a clarification question if the input has an ambiguous subject.
-
-    The trigger must appear with word boundaries so "openai" (no space) does
-    NOT match the "open ai" trigger - the whole point is that the spaced form is
-    the ambiguous one.
-    """
-
-    lowered = f" {(text or '').lower().strip()} "
-    # Collapse internal whitespace so "open   ai" still triggers.
-    lowered = " ".join(lowered.split())
-    lowered = f" {lowered} "
-    for trigger, question in _AMBIGUOUS_SUBJECTS:
-        needle = f" {trigger} "
-        if needle in lowered:
-            return question
-    return None
+from pydantic import BaseModel, ConfigDict
 
 
 class AnswerAssessment(BaseModel):
@@ -181,9 +106,6 @@ def build_correction_prompt(*, original_user_input: str, previous_answer: str, r
 
 
 __all__ = [
-    "ClarificationOption",
-    "ClarificationQuestion",
-    "detect_ambiguous_subject",
     "AnswerAssessment",
     "assess_grounded_answer",
     "build_correction_prompt",
