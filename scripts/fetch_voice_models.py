@@ -63,11 +63,35 @@ def _target(asset_root: Path, asset: VoiceAsset) -> Path:
     return (asset_root / asset.relative_path).resolve()
 
 
+_MARKER_NAME = ".marvex-source-sha256"
+
+
+def _marker_path(asset_root: Path, asset: VoiceAsset) -> Path:
+    target = _target(asset_root, asset)
+    base = target if asset.extract else target.parent
+    return base / f"{_MARKER_NAME}-{asset.model_id}"
+
+
 def asset_present(asset_root: Path, asset: VoiceAsset) -> bool:
     target = _target(asset_root, asset)
     if asset.extract:
-        return target.is_dir() and any(target.iterdir())
-    return target.is_file() and target.stat().st_size > 0
+        if not (target.is_dir() and any(target.iterdir())):
+            return False
+    elif not (target.is_file() and target.stat().st_size > 0):
+        return False
+    # Self-heal a stale/partial/wrong cache: when the manifest pins a checksum,
+    # a cached asset is only "present" if a marker written by a prior successful
+    # fetch matches that checksum. An old cache (no marker), or one extracted
+    # from a different/older archive (wrong marker), is re-fetched - this is the
+    # fix for "the wake model was cached before" silently shipping a mismatched
+    # encoder that never detects.
+    if asset.checksum_sha256:
+        marker = _marker_path(asset_root, asset)
+        try:
+            return marker.read_text(encoding="utf-8").strip().lower() == asset.checksum_sha256.strip().lower()
+        except OSError:
+            return False
+    return True
 
 
 def _is_archive(name: str) -> bool:
@@ -112,6 +136,15 @@ def fetch_asset(asset_root: Path, asset: VoiceAsset, *, fetcher: Fetcher | None 
     else:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(data)
+    # Record the source checksum so a later build can tell this cache apart from
+    # a stale/wrong one (see asset_present).
+    if asset.checksum_sha256:
+        marker = _marker_path(asset_root, asset)
+        try:
+            marker.parent.mkdir(parents=True, exist_ok=True)
+            marker.write_text(hashlib.sha256(data).hexdigest(), encoding="utf-8")
+        except OSError:
+            pass
 
 
 def missing_required(asset_root: Path, manifest: list[VoiceAsset]) -> list[str]:

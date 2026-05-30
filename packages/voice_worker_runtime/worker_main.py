@@ -209,6 +209,9 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "keywords_preview",
         "raw_keywords_preview",
         "reason",
+        "encoder_file",
+        "decoder_file",
+        "joiner_file",
     ):
         if key in payload:
             safe[key] = payload[key]

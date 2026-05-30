@@ -437,6 +437,12 @@ class SherpaOnnxKwsRunner:
                     "keywords_file_loaded": True,
                     "keywords_source": source,
                     "keywords_preview": _safe_keywords_preview(keywords),
+                    # Identify the actual model files loaded, so a stale/wrong
+                    # cached encoder (the "cached voice assets" failure mode) is
+                    # visible in the build logs.
+                    "encoder_file": f"{encoder.name}:{_safe_file_size(encoder)}",
+                    "decoder_file": f"{decoder.name}:{_safe_file_size(decoder)}",
+                    "joiner_file": f"{joiner.name}:{_safe_file_size(joiner)}",
                 }
                 self._cached_kws = module.KeywordSpotter(
                     tokens=str(tokens),
@@ -774,6 +780,13 @@ def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | Non
     except OSError:
         return None
     return target
+
+
+def _safe_file_size(path: Path) -> int:
+    try:
+        return path.stat().st_size
+    except OSError:
+        return -1
 
 
 def _safe_keywords_preview(keywords: Path) -> str:
