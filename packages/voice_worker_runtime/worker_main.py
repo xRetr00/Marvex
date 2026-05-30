@@ -53,21 +53,33 @@ def run_worker_contract_loop(
     lock = threading.RLock()
     stop_event = threading.Event()
 
-    def tick_loop() -> None:
-        # Short inter-tick wait so wake-word capture is near-continuous: each
-        # tick's capture blocks for its window (~1.2s) and the persistent
-        # streaming spotter accumulates across ticks, so the old 1.0s gap left
-        # the mic deaf ~half the time and split "Hey Marvex" across captures.
-        # The lock is released between ticks so status/speak/listen commands
-        # still get a window. (A callback-based continuous InputStream is the
-        # proper long-term design; this is the safe in-architecture fix.)
-        while not stop_event.wait(0.1):
-            with lock:
-                tick = _tick_wakeword_if_active(controller)
-            if tick is not None:
-                _write_tick_telemetry(tick)
+    def wake_loop() -> None:
+        # Continuous wake-word listening over ONE persistent mic stream. The
+        # streaming zipformer needs gap-free audio; the old per-tick sd.rec
+        # windows (with gaps + device reopening) corrupted its chunked state so
+        # "Hey Marvex" never matched. We wait until the worker is started, then
+        # run a single continuous capture+detect+command loop. Audio reads are
+        # lock-free; the lock is taken only briefly around detection/capture.
+        while not stop_event.wait(0.2):
+            if _supervisor_started(controller):
+                break
+        if stop_event.is_set():
+            return
+        capture = _build_continuous_capture(controller)
+        if capture is None:
+            _write_tick_telemetry({"event": "wake_listen", "detected": False, "reason_code": "no_real_microphone"})
+            return
+        _write_tick_telemetry({"event": "wake_listen", "detected": False, "reason_code": "continuous_capture_started"})
+        try:
+            controller.run_wake_listen_loop(
+                capture=capture,
+                should_stop=stop_event.is_set,
+                lock=lock,
+            )
+        except Exception as exc:  # never let the wake loop kill the worker
+            _write_tick_telemetry({"event": "wake_listen_error", "detected": False, "reason_code": type(exc).__name__})
 
-    tick_thread = threading.Thread(target=tick_loop, name="marvex-voice-wakeword-supervisor", daemon=True)
+    tick_thread = threading.Thread(target=wake_loop, name="marvex-voice-wake-listen", daemon=True)
     tick_thread.start()
     try:
         with lock:
@@ -115,6 +127,38 @@ def _tick_wakeword_if_active(controller: VoiceWorkerController) -> dict[str, obj
     if status.process_started and status.wakeword_supervisor_status.get("started") is True:
         return controller.tick_wakeword_supervisor().safe_projection()
     return None
+
+
+def _supervisor_started(controller: VoiceWorkerController) -> bool:
+    try:
+        status = controller.status()
+        return bool(status.process_started) and status.wakeword_supervisor_status.get("started") is True
+    except Exception:
+        return False
+
+
+def _build_continuous_capture(controller: VoiceWorkerController):
+    """Build a continuous mic capture from the controller's real audio device.
+
+    Returns None when the worker is on the FakeLocalAudioAdapter (no real mic),
+    in which case wake word can't work and we say so via telemetry instead of
+    silently never detecting.
+    """
+
+    from packages.voice_worker_runtime.audio import SoundDeviceAudioAdapter
+    from packages.voice_worker_runtime.continuous_capture import SoundDeviceContinuousCapture
+
+    if not isinstance(getattr(controller, "audio", None), SoundDeviceAudioAdapter):
+        return None
+    cfg = controller.config
+    device = cfg.audio.input_device_id
+    resolved_device = int(device) if isinstance(device, str) and device.isdigit() else device
+    return SoundDeviceContinuousCapture(
+        sample_rate=cfg.audio.sample_rate,
+        channels=cfg.audio.channel_count,
+        frame_ms=cfg.audio.frame_duration_ms,
+        device=resolved_device,
+    )
 
 
 def _write_tick_telemetry(tick: dict[str, object]) -> None:

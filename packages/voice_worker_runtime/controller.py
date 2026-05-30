@@ -172,14 +172,39 @@ class VoiceWorkerController:
 
         return decide
 
-    def _capture_utterance(self, *, vad_decider: "Callable[[Any], bool]") -> tuple[tuple[Any, ...], str]:
+    def _default_frame_reader(self) -> "Callable[[], Any]":
+        """Frame reader backed by the (chunked) audio adapter. Used by the
+        legacy tick path and tests; the continuous wake loop passes its own
+        gap-free reader instead."""
+
+        cfg = self.config
+
+        def read() -> Any:
+            batch = tuple(
+                self.audio.capture_frames(
+                    device_id=cfg.audio.input_device_id,
+                    sample_rate=cfg.audio.sample_rate,
+                    channel_count=cfg.audio.channel_count,
+                    frame_count=1,
+                )
+            )
+            return batch[0] if batch else None
+
+        return read
+
+    def _capture_utterance(
+        self,
+        *,
+        vad_decider: "Callable[[Any], bool]",
+        read_frame: "Callable[[], Any] | None" = None,
+    ) -> tuple[tuple[Any, ...], str]:
         """VAD-endpointed incremental capture of a single user utterance.
 
-        Captures ~100ms frames one at a time, starts accumulating on first
-        speech (with a little pre-roll), and stops after ``silence_timeout_ms``
-        of trailing silence or at ``max_utterance_ms``. Returns the trimmed
-        utterance frames + a reason code. This replaces the old fixed ~3s grab
-        so short commands aren't padded with silence and long ones aren't cut.
+        Reads ~100ms frames one at a time from ``read_frame`` (the continuous
+        mic stream when listening live, or the chunked adapter for the legacy
+        path), starts accumulating on first speech (with a little pre-roll), and
+        stops after ``silence_timeout_ms`` of trailing silence or at
+        ``max_utterance_ms``. Returns the trimmed utterance frames + a reason.
         """
 
         cfg = self.config
@@ -190,6 +215,7 @@ class VoiceWorkerController:
         # Cap how long we wait for ANY speech before giving up (avoid hanging on
         # a wake-word false positive). ~2.5s of leading silence.
         max_leading_silence = max(silence_to_end, 25)
+        reader = read_frame or self._default_frame_reader()
 
         pre_roll: deque = deque(maxlen=pre_roll_keep)
         captured: list[Any] = []
@@ -197,17 +223,9 @@ class VoiceWorkerController:
         trailing_silence = 0
         leading_silence = 0
         for _ in range(max_frames):
-            batch = tuple(
-                self.audio.capture_frames(
-                    device_id=cfg.audio.input_device_id,
-                    sample_rate=cfg.audio.sample_rate,
-                    channel_count=cfg.audio.channel_count,
-                    frame_count=1,
-                )
-            )
-            if not batch:
+            frame = reader()
+            if frame is None:
                 break
-            frame = batch[0]
             is_speech = vad_decider(frame)
             if not speech_started:
                 if is_speech:
@@ -232,18 +250,20 @@ class VoiceWorkerController:
             return tuple(captured), "no_speech"
         return tuple(captured), "max_utterance"
 
-    def _run_post_wake_capture(self, *, parent_trace_id: str) -> None:
+    def _run_post_wake_capture(self, *, parent_trace_id: str, read_frame: "Callable[[], Any] | None" = None) -> None:
         """VAD-endpoint a user utterance after wake and run STT on it.
 
         Emits VAD_SPEECH_STARTED / VAD_SPEECH_ENDED / TRANSCRIPTION_STARTED /
         TRANSCRIPTION_COMPLETED with the transcript text in the completed
         event's summary so a downstream consumer (shell) can submit a chat
-        turn. Failures are swallowed; the wake event was already recorded.
+        turn. ``read_frame`` lets the continuous wake loop reuse the same
+        gap-free mic stream; the legacy path uses the chunked adapter.
+        Failures are swallowed; the wake event was already recorded.
         """
 
         try:
             vad_decider = self._resolve_vad_decider()
-            frames, reason = self._capture_utterance(vad_decider=vad_decider)
+            frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame)
             if not frames or reason == "no_speech":
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
@@ -300,6 +320,85 @@ class VoiceWorkerController:
                 trace_id=parent_trace_id,
                 summary={"post_wake_capture": True, "reason_code": "post_wake_capture_failed"},
             )
+
+    def run_wake_listen_loop(
+        self,
+        *,
+        capture: Any,
+        should_stop: "Callable[[], bool]",
+        frames_per_decode: int = 3,
+        idle_timeout: float = 0.5,
+        lock: Any | None = None,
+    ) -> dict[str, object]:
+        """Continuous wake-word + command loop over a gap-free mic stream.
+
+        This is the root fix for "Hey Marvex never triggers": the streaming
+        zipformer needs CONTIGUOUS audio. Instead of reopening the device every
+        tick and feeding disjoint windows, we open one persistent stream and
+        feed its back-to-back frames to the KWS. On detection we capture the
+        command utterance from the SAME stream (VAD-endpointed) and emit its
+        transcript, then resume listening. Runs until ``should_stop`` returns
+        True. Does not hold any command lock while reading audio.
+        """
+
+        self.asset_manager.discover_installed()
+        self.wakeword_supervisor.update_config(self.config)
+        if not self.config.wakeword.enabled:
+            return {"started": False, "reason_code": "wakeword_not_enabled"}
+        if not self.wakeword_supervisor._asset_ready():  # noqa: SLF001 - readiness gate
+            return {"started": False, "reason_code": "wakeword_model_not_installed"}
+
+        from contextlib import nullcontext
+
+        def _locked():
+            return lock if lock is not None else nullcontext()
+
+        detections = 0
+        capture.start()
+        reader = lambda: capture.read(timeout=idle_timeout)  # noqa: E731
+        try:
+            batch: list[Any] = []
+            while not should_stop():
+                # Audio read is lock-free so JSONL commands (status/speak/
+                # listen) are never starved while we listen.
+                frame = capture.read(timeout=idle_timeout)
+                if frame is None:
+                    continue
+                batch.append(frame)
+                if len(batch) < max(1, frames_per_decode):
+                    continue
+                frames = tuple(batch)
+                batch = []
+                # Detection + command capture mutate worker state + the KWS
+                # session, so take the lock only around that brief work.
+                with _locked():
+                    detection = self.backend_runtime.test_wakeword(
+                        trace_id=f"wake-listen-{self._tick_counter_advance()}",
+                        backend_id=self.config.wakeword.backend_id,
+                        frames=frames,
+                        phrase=self.config.wakeword.phrase,
+                        threshold=self.config.wakeword.threshold,
+                    )
+                    if detection.detected:
+                        self._error = None
+                        detections += 1
+                        wake_trace = f"trace-wake-listen-{len(self._events) + 1}"
+                        self._record(
+                            VoiceWorkerEventType.WAKEWORD_DETECTED,
+                            trace_id=wake_trace,
+                            summary=detection.safe_projection(),
+                        )
+                        # Capture the command from the SAME continuous stream.
+                        self._run_post_wake_capture(parent_trace_id=wake_trace, read_frame=reader)
+                        batch = []
+        finally:
+            capture.stop()
+        return {"started": True, "detections": detections, "stopped": True}
+
+    def _tick_counter_advance(self) -> int:
+        # Reuse the supervisor's counter for unique trace ids in the loop.
+        self.wakeword_supervisor._tick_counter += 1  # noqa: SLF001
+        return self.wakeword_supervisor._tick_counter  # noqa: SLF001
 
     def wakeword_supervisor_health(self) -> WakewordSupervisorHealth:
         self.asset_manager.discover_installed()
