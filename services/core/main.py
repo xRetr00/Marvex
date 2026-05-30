@@ -1487,6 +1487,25 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:computer-use:result")],
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
+            # Force a clarification when the subject is ambiguous ("open ai" =
+            # OpenAI the company vs open-weight models) instead of confidently
+            # answering the wrong reading. The assistant asks the question and
+            # surfaces a structured clarification payload for the UI QuestionTool.
+            clarification = detect_ambiguous_subject(turn_input.user_visible_input)
+            if clarification is not None:
+                self._publish(AssistantStatusKind.ASKING, detail="clarification_needed", trace_id=turn_input.trace_id)
+                loop.step("clarify", stop_reason="finalized")
+                return _entrypoint_text_result(
+                    turn_input,
+                    text=clarification.prompt_text(),
+                    metadata=_with_loop_metadata(
+                        {**metadata, "clarification": clarification.safe_projection()},
+                        loop,
+                        self._trace_reader,
+                        turn_input,
+                    ),
+                    stage_name="clarification",
+                )
             self._publish(AssistantStatusKind.SEARCHING_WEB, detail="web_search", trace_id=turn_input.trace_id)
             # Prefer the agentic loop: the model has web.search + the current
             # date in its grounding, so it searches and answers (and won't claim
@@ -1732,6 +1751,63 @@ class _CoreServiceProviderWorkerTurnExecutor:
             previous_response_id=previous_response_id,
         )
         response_text = provider_result.assistant_final_response.text if provider_result.assistant_final_response is not None else ""
+        # Second job of the grounded answer: verify it. If the model asserted a
+        # current/latest fact without evidence support (how "GPT-4o is the latest,
+        # released 2026" slipped through), do not block and do not answer for it -
+        # re-prompt the SAME model once to correct itself in-turn.
+        evidence_count = len(web_refs) + len(tuple(cognition.memory_evidence_refs))
+        assessment = assess_grounded_answer(response_text, evidence_count=evidence_count)
+        correction_applied = False
+        if assessment.needs_correction:
+            correction = build_correction_prompt(
+                original_user_input=turn_input.user_visible_input or "",
+                previous_answer=response_text,
+                reason_code=assessment.reason_code,
+            )
+            corrected = self._run_provider_answer_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                stage_name="grounded_answer_correction",
+                provider_options={
+                    "grounded_answer_required": True,
+                    "grounded_citation_ids": list(citation_ids[:4]),
+                    "raw_evidence_persisted": False,
+                },
+                previous_response_id=_provider_response_id(provider_result),
+                extra_user_instruction=correction,
+            )
+            corrected_text = corrected.assistant_final_response.text if corrected.assistant_final_response is not None else ""
+            recheck = assess_grounded_answer(corrected_text, evidence_count=evidence_count)
+            if corrected.error is None and corrected_text.strip() and not recheck.needs_correction:
+                provider_result = corrected
+                response_text = corrected_text
+                correction_applied = True
+            else:
+                # The model still could not produce a verifiable answer. Be
+                # honest rather than fabricating or hard-blocking with a generic
+                # "evidence missing" message.
+                loop.step("finalize", stop_reason="finalized")
+                honest_metadata = {
+                    **(corrected.metadata if corrected.error is None else provider_result.metadata),
+                    "grounding": {
+                        "web_search_executed": cognition.web_search_required,
+                        "citation_validation": assessment.reason_code,
+                        "self_correction_attempted": True,
+                        "self_correction_succeeded": False,
+                        "fabricated": False,
+                    },
+                }
+                return _entrypoint_text_result(
+                    turn_input,
+                    text=(
+                        "I can't verify a current answer for that from the evidence I have, so I won't "
+                        "guess. Try rephrasing, or ask me to search the web for it."
+                    ),
+                    metadata=_with_loop_metadata(honest_metadata, loop, self._trace_reader, turn_input),
+                    stage_name="grounded_answer",
+                )
         draft = GroundedAnswerDraft(text=response_text or "Evidence is missing for this grounded answer.", citation_ids=_citation_ids_from_text(response_text, allowed=citation_ids))
         validation = validate_grounded_citations(
             draft,
@@ -1761,6 +1837,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "web_search_executed": cognition.web_search_required,
                 "citation_validation": validation.reason_code,
                 "fabricated": False,
+                "self_correction_applied": correction_applied,
                 "evidence_ref_count": len(cognition.evidence_refs),
             },
         }
@@ -1878,8 +1955,17 @@ class _CoreServiceProviderWorkerTurnExecutor:
         stage_name: str,
         provider_options: dict[str, object] | None = None,
         previous_response_id: str | None = None,
+        extra_user_instruction: str | None = None,
     ) -> AssistantTurnResult:
         provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
+        if extra_user_instruction and extra_user_instruction.strip():
+            # Used by the grounded-answer self-correction retry: append the
+            # correction directive to the model input so it revises in-turn.
+            provider_turn_input = provider_turn_input.model_copy(
+                update={
+                    "user_visible_input": f"{provider_turn_input.user_visible_input or ''}\n\n{extra_user_instruction.strip()}"
+                }
+            )
         structured_requested = self._structured_output_required or bool(
             dict(provider_options or {}).get("structured_output_required")
         )
@@ -3255,6 +3341,11 @@ from packages.core.orchestration.agentic_loop import (  # noqa: E402
     should_continue_provider_loop as _should_continue_provider_loop,
 )
 from packages.core.orchestration.tool_grounding import with_tool_grounding  # noqa: E402
+from packages.core.orchestration.answer_grounding import (  # noqa: E402
+    assess_grounded_answer,
+    build_correction_prompt,
+    detect_ambiguous_subject,
+)
 
 
 def _intent_plan_projection(intent_plan: object) -> dict[str, object]:
