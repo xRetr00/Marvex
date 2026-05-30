@@ -1352,6 +1352,23 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     capability_id="builtin.capability_diagnostics",
                     arguments={},
                 )
+            # The deterministic capability route used to send EVERY
+            # capability_tool turn to the calculator, so "what is the time"
+            # answered "The calculator result is 0." Route clock/calendar
+            # questions to the builtin.time_date tool first; arithmetic still
+            # falls through to the calculator below.
+            if _time_date_requested(turn_input.user_visible_input):
+                return self._run_tool_path(
+                    turn_input,
+                    metadata=metadata,
+                    cognition=cognition,
+                    loop=loop,
+                    action="read current date and time",
+                    capability="read",
+                    resource_type="local_status",
+                    capability_id="builtin.time_date",
+                    arguments={},
+                )
             return self._run_tool_path(
                 turn_input,
                 metadata=metadata,
@@ -1459,7 +1476,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
             return _entrypoint_text_result(
                 turn_input,
-                text="Computer-use request completed through the approval-gated ToolWorker boundary.",
+                text=_browser_or_computer_use_final_text(tool_response),
                 metadata=_with_loop_metadata(
                     {**metadata, "tool_boundary": "tool_worker_process", "computer_use": tool_response},
                     loop,
@@ -2171,6 +2188,29 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     if tool_response.get("ok") is True or write_safe_result.get("operation") == "write":
                         self._remember_file_entity(turn_input, write_safe_result.get("path") or file_write_request.get("path"))
                     final_text = _file_write_final_text(write_safe_result)
+                elif _browser_use_requested(turn_input.user_visible_input) or _computer_use_requested(turn_input.user_visible_input):
+                    # Route an approved browser/desktop request to its REAL
+                    # capability (not the fake.status stub) and report the
+                    # outcome honestly. The prior stub claimed "Action executed"
+                    # for a request that never touched a browser or the desktop.
+                    is_computer = _computer_use_requested(turn_input.user_visible_input) and not _browser_use_requested(
+                        turn_input.user_visible_input
+                    )
+                    capability_id = "computer_use.action" if is_computer else "browser_use.task"
+                    loop.step("tool")
+                    tool_response = self._tool_executor.execute(
+                        turn_input,
+                        action=turn_input.user_visible_input or "approved automation action",
+                        capability="browser_click_type",
+                        resource_type="browser" if not is_computer else "desktop",
+                        capability_id=capability_id,
+                        arguments={
+                            "task": turn_input.user_visible_input or "approved automation action",
+                            "approval_request_id": effective_resume_approval,
+                            "approval_decision": "approve",
+                        },
+                    )
+                    final_text = _browser_or_computer_use_final_text(tool_response)
                 else:
                     loop.step("tool")
                     tool_response = self._tool_executor.execute(
@@ -2694,6 +2734,10 @@ def _write_operational_event_log(
 def _tool_final_text(tool_response: dict[str, object]) -> str:
     result = dict(tool_response.get("result") or {})
     safe_result = dict(result.get("safe_result") or {})
+    if "iso_datetime" in safe_result:
+        iso_datetime = str(safe_result.get("iso_datetime") or "")
+        timezone = str(safe_result.get("timezone") or "UTC")
+        return f"The current date and time is {iso_datetime} ({timezone})."
     if "result" in safe_result:
         return f"The calculator result is {safe_result['result']}."
     if "capability_count" in safe_result:
@@ -2726,6 +2770,68 @@ def _calculator_expression(text: str | None) -> str:
 def _tool_diagnostics_requested(text: str | None) -> bool:
     lowered = (text or "").lower()
     return any(part in lowered for part in ("list tools", "show tools", "available tools", "what tools", "capabilities"))
+
+
+def _time_date_requested(text: str | None) -> bool:
+    # The deterministic capability route used to send every capability_tool
+    # turn to the calculator, so "what is the time" answered "result is 0".
+    # Detect clock/calendar questions so the fallback path uses the
+    # builtin.time_date tool instead of the calculator.
+    lowered = (text or "").lower()
+    # Use phrases (not bare "time"/"date") so arithmetic like "3 times 4" or
+    # words like "update" do not get mis-routed away from the calculator.
+    keywords = (
+        "the time",
+        "what time",
+        "current time",
+        "time now",
+        "time is it",
+        "clock",
+        "the date",
+        "what date",
+        "current date",
+        "today",
+        "what day",
+        "day is it",
+        "what year",
+        "what month",
+    )
+    return any(part in lowered for part in keywords)
+
+
+def _computer_use_requested(text: str | None) -> bool:
+    # Detect desktop/computer-control phrasing so the approval-resume path runs
+    # the computer_use.action capability instead of routing it to the generic
+    # "Action executed" stub.
+    lowered = (text or "").lower()
+    return any(part in lowered for part in ("computer use", "desktop", "click on", "type into", "control my", "screen"))
+
+
+def _browser_use_requested(text: str | None) -> bool:
+    # Detect web-browser phrasing (mirrors the intent keyword features) so the
+    # approval-resume path runs the real browser_use.task capability instead of
+    # the generic "Action executed" stub.
+    lowered = (text or "").lower()
+    return any(part in lowered for part in ("browser", "youtube", "navigate", "webpage", "web page", "open yt", "go to ", "open http"))
+
+
+def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str:
+    # Honest reporting: the browser_use.task / computer_use.action capabilities
+    # are approval-gated readiness projections in this build — they confirm the
+    # backend is importable but do NOT yet drive a live browser/desktop. Say so
+    # instead of falsely claiming "Action executed".
+    safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
+    adapter = str(safe_result.get("adapter") or "automation")
+    importable = bool(safe_result.get("package_importable", safe_result.get("uia_projection_available", False)))
+    if tool_response.get("ok") is True and importable:
+        return (
+            f"Approved. The {adapter} backend is available, but live browser/desktop control is not "
+            "wired in this build yet, so no on-screen action was performed. This is tracked as upcoming work."
+        )
+    return (
+        "Approved, but browser/desktop automation is not available in this build, so no on-screen "
+        "action was performed."
+    )
 
 
 def _run_desktop_agent_context(
