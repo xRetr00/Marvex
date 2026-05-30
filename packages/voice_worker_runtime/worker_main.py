@@ -71,11 +71,15 @@ def run_worker_contract_loop(
             return
         _write_tick_telemetry({"event": "wake_listen", "detected": False, "reason_code": "continuous_capture_started"})
         try:
+            import os as _os
+
+            debug_dump = _os.environ.get("MARVEX_VOICE_DEBUG_DUMP") or None
             controller.run_wake_listen_loop(
                 capture=capture,
                 should_stop=stop_event.is_set,
                 lock=lock,
                 on_diagnostic=_write_loop_diagnostic,
+                debug_dump_path=debug_dump,
             )
         except Exception as exc:  # never let the wake loop kill the worker
             _write_tick_telemetry({"event": "wake_listen_error", "detected": False, "reason_code": type(exc).__name__})
@@ -212,6 +216,10 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "encoder_file",
         "decoder_file",
         "joiner_file",
+        "path",
+        "bytes",
+        "sample_rate",
+        "ok",
     ):
         if key in payload:
             safe[key] = payload[key]

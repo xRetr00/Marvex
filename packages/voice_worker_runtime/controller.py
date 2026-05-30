@@ -35,6 +35,27 @@ from .supervision import (
 )
 
 
+def _write_debug_wav(path: str, pcm_chunks: list[bytes], *, sample_rate: int) -> dict[str, object]:
+    """Write captured int16 PCM to a WAV for offline KWS replay (opt-in debug).
+
+    Returns a small projection (path + size) for the diagnostic sink. Only the
+    user-requested debug dump path is written; never a default location.
+    """
+
+    import wave
+
+    data = b"".join(pcm_chunks)
+    try:
+        with wave.open(path, "wb") as handle:
+            handle.setnchannels(1)
+            handle.setsampwidth(2)
+            handle.setframerate(int(sample_rate))
+            handle.writeframes(data)
+        return {"path": path, "bytes": len(data), "sample_rate": int(sample_rate), "ok": True}
+    except Exception as exc:  # never let a debug dump disrupt listening
+        return {"path": path, "ok": False, "reason_code": type(exc).__name__}
+
+
 def _frames_rms(frames: tuple[Any, ...]) -> float:
     """Root-mean-square amplitude of int16 PCM frames (0..~32767).
 
@@ -364,6 +385,8 @@ class VoiceWorkerController:
         lock: Any | None = None,
         on_diagnostic: "Callable[[dict[str, object]], None] | None" = None,
         diagnostic_interval_decodes: int = 50,
+        debug_dump_path: str | None = None,
+        debug_dump_seconds: float = 6.0,
     ) -> dict[str, object]:
         """Continuous wake-word + command loop over a gap-free mic stream.
 
@@ -414,6 +437,13 @@ class VoiceWorkerController:
         last_reason_code: str | None = None
         last_rms = 0.0
         max_rms_window = 0.0
+        # Opt-in raw-audio capture for triage (MARVEX_VOICE_DEBUG_DUMP). Writes a
+        # bounded WAV of exactly what the KWS is being fed, so we can replay it
+        # offline and tell "real audio doesn't decode" from "live feed problem".
+        dump_buffer: list[bytes] = []
+        dump_samples_target = int(self.config.audio.sample_rate * max(0.0, debug_dump_seconds))
+        dump_samples_have = 0
+        dumped = debug_dump_path is None
         self._continuous_active = True
         capture.start()
         _emit(
@@ -434,6 +464,19 @@ class VoiceWorkerController:
                 if frame is None:
                     continue
                 frames_read += 1
+                if not dumped:
+                    pcm = getattr(frame, "pcm", b"") or b""
+                    dump_buffer.append(pcm)
+                    dump_samples_have += len(pcm) // 2
+                    if dump_samples_have >= dump_samples_target:
+                        info = _write_debug_wav(
+                            debug_dump_path,
+                            dump_buffer,
+                            sample_rate=self.config.audio.sample_rate,
+                        )
+                        _emit({"event": "wake_listen_debug_dump", **info})
+                        dumped = True
+                        dump_buffer = []
                 batch.append(frame)
                 if len(batch) < max(1, frames_per_decode):
                     continue
