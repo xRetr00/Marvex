@@ -409,13 +409,8 @@ class SherpaOnnxKwsRunner:
                 # the model expects (independent of whatever keywords.txt shipped).
                 # Fall back to normalising the shipped file when bpe.model or
                 # sentencepiece is unavailable.
-                bpe_model = next(iter(sorted(path.rglob("bpe.model"))), None)
                 source = "generated_from_phrase"
-                generated = (
-                    _generate_kws_keywords_file(tokens=tokens, bpe_model=bpe_model, phrase=phrase)
-                    if bpe_model is not None
-                    else None
-                )
+                generated = _generate_kws_keywords_file(tokens=tokens, model_root=path, phrase=phrase)
                 if generated is None:
                     source = "normalized_shipped"
                     generated = _normalized_kws_keywords_file(tokens=tokens, keywords=keywords)
@@ -675,54 +670,105 @@ _KWS_KEYWORD_BOOST = 2.0
 _KWS_KEYWORD_THRESHOLD = 0.2
 
 
-def _generate_kws_keywords_file(*, tokens: Path, bpe_model: Path | None, phrase: str) -> Path | None:
-    """Generate a keywords file from the wake phrase using the model's bpe.model.
+# ARPAbet phonemes for coined wake words NOT in the model's en.phone lexicon
+# (the zh-en KWS model is phoneme-based). "Marvex" => MAR-veks. Verified to
+# detect on real "Hey Marvex" audio.
+_COINED_PHONEMES: dict[str, str] = {
+    "MARVEX": "M AA1 R V EH1 K S",
+    "MARVECKS": "M AA1 R V EH1 K S",
+    "MARVIX": "M AA1 R V IH1 K S",
+}
 
-    Encodes the phrase (and a few natural prefixes) with the SAME sentencepiece
-    model the KWS was built on, so the keyword tokens always match what the model
-    emits acoustically - regardless of what (possibly miscustomised) keywords.txt
-    shipped. Returns None when sentencepiece/bpe.model is unavailable or a piece
-    is out-of-vocabulary, so the caller falls back to the shipped file.
-    """
 
-    if bpe_model is None:
-        return None
-    try:
-        import sentencepiece as spm  # type: ignore[import-not-found]
-    except Exception:
-        return None
-    vocabulary = _load_token_vocabulary(tokens)
-    if not vocabulary:
-        return None
-    try:
-        sp = spm.SentencePieceProcessor()
-        sp.load(str(bpe_model))
-    except Exception:
-        return None
+def _wake_candidates(phrase: str) -> list[str]:
     base = " ".join(phrase.strip().upper().split())
     if not base:
-        return None
-    words = base.split()
-    last_word = words[-1]
+        return []
+    last_word = base.split()[-1]
     candidates = [base]
-    # Natural variants so "hi/ok/hello <wakeword>" also trigger (mirrors the
-    # multi-line keyword files these KWS models ship with).
     for prefix in ("HI", "OK", "HELLO"):
         variant = f"{prefix} {last_word}"
         if variant not in candidates:
             candidates.append(variant)
-    lines: list[str] = []
+    return candidates
+
+
+def _bpe_keyword_pieces(model_root: Path, candidates: list[str], vocabulary: set[str]) -> list[tuple[str, list[str]]]:
+    bpe = next(iter(sorted(model_root.rglob("bpe.model"))), None)
+    if bpe is None:
+        return []
+    try:
+        import sentencepiece as spm  # type: ignore[import-not-found]
+
+        sp = spm.SentencePieceProcessor()
+        sp.load(str(bpe))
+    except Exception:
+        return []
+    out: list[tuple[str, list[str]]] = []
     for text in candidates:
         try:
             pieces = [str(piece) for piece in sp.encode(text, out_type=str)]
         except Exception:
             continue
-        if not pieces or any(piece not in vocabulary for piece in pieces):
-            continue
-        alias = "_".join(text.split())
-        lines.append(" ".join(pieces) + f" :{_KWS_KEYWORD_BOOST} #{_KWS_KEYWORD_THRESHOLD} @{alias}")
-    if not lines:
+        if pieces and all(piece in vocabulary for piece in pieces):
+            out.append((text, pieces))
+    return out
+
+
+def _phoneme_keyword_pieces(model_root: Path, candidates: list[str], vocabulary: set[str]) -> list[tuple[str, list[str]]]:
+    en_phone = next(iter(sorted(model_root.rglob("en.phone"))), None)
+    if en_phone is None:
+        return []
+    lexicon: dict[str, str] = {}
+    try:
+        for line in en_phone.read_text(encoding="utf-8").splitlines():
+            parts = line.split()
+            if len(parts) >= 2:
+                lexicon[parts[0].upper()] = " ".join(parts[1:])
+    except OSError:
+        return []
+    out: list[tuple[str, list[str]]] = []
+    for text in candidates:
+        phones: list[str] = []
+        ok = True
+        for word in text.split():
+            spelled = _COINED_PHONEMES.get(word) or lexicon.get(word)
+            if not spelled:
+                ok = False
+                break
+            phones.extend(spelled.split())
+        if ok and phones and all(p in vocabulary for p in phones):
+            out.append((text, phones))
+    return out
+
+
+def _generate_kws_keywords_file(*, tokens: Path, model_root: Path, phrase: str) -> Path | None:
+    """Generate a keywords file from the wake phrase using the model's own
+    tokenizer, so the keyword tokens always match what the model emits.
+
+    Handles both KWS model families:
+      * BPE (open-vocab, e.g. gigaspeech): sentencepiece-encode via bpe.model.
+      * Phoneme (e.g. zh-en zipformer): map words to ARPAbet phones via the
+        model's en.phone lexicon (plus _COINED_PHONEMES for "Marvex").
+    Returns None when neither tokenizer is usable, so the caller falls back to
+    normalising the shipped keywords file.
+    """
+
+    vocabulary = _load_token_vocabulary(tokens)
+    if not vocabulary:
         return None
+    candidates = _wake_candidates(phrase)
+    if not candidates:
+        return None
+    pieces = _bpe_keyword_pieces(model_root, candidates, vocabulary) or _phoneme_keyword_pieces(
+        model_root, candidates, vocabulary
+    )
+    if not pieces:
+        return None
+    lines = [
+        " ".join(toks) + f" :{_KWS_KEYWORD_BOOST} #{_KWS_KEYWORD_THRESHOLD} @{'_'.join(text.split())}"
+        for text, toks in pieces
+    ]
     content = "\n".join(lines) + "\n"
     digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
     target = Path(tempfile.gettempdir()) / f"marvex-kws-generated-{digest}.txt"

@@ -35,32 +35,71 @@ def format_keyword_line(pieces: list[str], *, boost: float, threshold: float, te
     return f"{tokens} :{boost:g} #{threshold:g} @{text}"
 
 
+# ARPAbet phonemes for the coined wake word (not in the en.phone lexicon used by
+# the phoneme-based zh-en KWS model). "Marvex" => MAR-veks. Verified to detect.
+COINED_PHONEMES: dict[str, str] = {
+    "MARVEX": "M AA1 R V EH1 K S",
+    "MARVECKS": "M AA1 R V EH1 K S",
+    "MARVIX": "M AA1 R V IH1 K S",
+}
+
+
 def find_kws_model_dir(root: Path) -> Path | None:
-    """Locate the directory containing the KWS model (has bpe.model + tokens.txt),
-    searching recursively so the sherpa archive's nested layout is tolerated."""
+    """Locate the KWS model dir. Supports both families: BPE (has bpe.model) and
+    phoneme (has en.phone). Searches recursively for the sherpa nested layout."""
     root = Path(root)
-    if (root / "bpe.model").is_file():
-        return root
-    for bpe in root.rglob("bpe.model"):
-        return bpe.parent
+    for marker in ("bpe.model", "en.phone"):
+        if (root / marker).is_file():
+            return root
+        for found in root.rglob(marker):
+            return found.parent
     return None
 
 
-def generate(model_dir: Path, *, phrases: tuple[str, ...] = DEFAULT_PHRASES, boost: float = DEFAULT_BOOST, threshold: float = DEFAULT_THRESHOLD) -> Path:
-    import sentencepiece as spm
-
+def _bpe_pieces(model_dir: Path, phrases: tuple[str, ...]) -> list[tuple[str, list[str]]]:
     bpe = model_dir / "bpe.model"
     if not bpe.is_file():
-        raise FileNotFoundError(f"bpe.model not found in {model_dir}")
+        return []
+    import sentencepiece as spm
+
     sp = spm.SentencePieceProcessor()
     sp.load(str(bpe))
+    return [(phrase, [str(p) for p in sp.encode(phrase, out_type=str)]) for phrase in phrases]
 
-    keyword_lines: list[str] = []
-    raw_lines: list[str] = []
+
+def _phoneme_pieces(model_dir: Path, phrases: tuple[str, ...]) -> list[tuple[str, list[str]]]:
+    en_phone = model_dir / "en.phone"
+    if not en_phone.is_file():
+        return []
+    lexicon: dict[str, str] = {}
+    for line in en_phone.read_text(encoding="utf-8").splitlines():
+        parts = line.split()
+        if len(parts) >= 2:
+            lexicon[parts[0].upper()] = " ".join(parts[1:])
+    out: list[tuple[str, list[str]]] = []
     for phrase in phrases:
-        pieces = sp.encode(phrase, out_type=str)
-        keyword_lines.append(format_keyword_line(pieces, boost=boost, threshold=threshold, text=phrase))
-        raw_lines.append(phrase)
+        phones: list[str] = []
+        ok = True
+        for word in phrase.upper().split():
+            spelled = COINED_PHONEMES.get(word) or lexicon.get(word)
+            if not spelled:
+                ok = False
+                break
+            phones.extend(spelled.split())
+        if ok and phones:
+            out.append((phrase, phones))
+    return out
+
+
+def generate(model_dir: Path, *, phrases: tuple[str, ...] = DEFAULT_PHRASES, boost: float = DEFAULT_BOOST, threshold: float = DEFAULT_THRESHOLD) -> Path:
+    # BPE model (gigaspeech) or phoneme model (zh-en) - encode with whichever the
+    # model provides so the keyword tokens match what the model emits.
+    pieces = _bpe_pieces(model_dir, phrases) or _phoneme_pieces(model_dir, phrases)
+    if not pieces:
+        raise FileNotFoundError(f"No usable tokenizer (bpe.model or en.phone) in {model_dir}")
+
+    keyword_lines = [format_keyword_line(toks, boost=boost, threshold=threshold, text=text) for text, toks in pieces]
+    raw_lines = [text for text, _ in pieces]
 
     keywords_path = model_dir / "keywords.txt"
     keywords_path.write_text("\n".join(keyword_lines) + "\n", encoding="utf-8")

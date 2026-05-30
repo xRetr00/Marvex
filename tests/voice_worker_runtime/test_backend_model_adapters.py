@@ -362,9 +362,27 @@ def test_normalized_keywords_use_boost_colon_threshold_hash_order(tmp_path: Path
     assert "@HEY_MARVEX" in text
 
 
-def test_generate_keywords_from_phrase_returns_none_without_bpe_model(tmp_path: Path) -> None:
+def test_generate_keywords_from_phrase_returns_none_without_tokenizer(tmp_path: Path) -> None:
     from packages.voice_worker_runtime.model_adapters import _generate_kws_keywords_file
 
     tokens = tmp_path / "tokens.txt"
     tokens.write_text("<blk> 0\n", encoding="utf-8")
-    assert _generate_kws_keywords_file(tokens=tokens, bpe_model=None, phrase="Hey Marvex") is None
+    # No bpe.model and no en.phone under model_root -> no usable tokenizer.
+    assert _generate_kws_keywords_file(tokens=tokens, model_root=tmp_path, phrase="Hey Marvex") is None
+
+
+def test_generate_keywords_phoneme_model_uses_en_phone_lexicon(tmp_path: Path) -> None:
+    from packages.voice_worker_runtime.model_adapters import _generate_kws_keywords_file
+
+    phones = ["HH", "EY1", "M", "AA1", "R", "V", "EH1", "K", "S"]
+    (tmp_path / "tokens.txt").write_text(
+        "\n".join(f"{p} {i}" for i, p in enumerate(["<blk>", *phones])), encoding="utf-8"
+    )
+    # en.phone provides HEY; MARVEX comes from the coined-phoneme table.
+    (tmp_path / "en.phone").write_text("HEY HH EY1\n", encoding="utf-8")
+    out = _generate_kws_keywords_file(tokens=tmp_path / "tokens.txt", model_root=tmp_path, phrase="Hey Marvex")
+    assert out is not None
+    text = out.read_text(encoding="utf-8")
+    assert "HH EY1 M AA1 R V EH1 K S" in text
+    assert ":2.0 #0.2" in text
+    assert "@HEY_MARVEX" in text
