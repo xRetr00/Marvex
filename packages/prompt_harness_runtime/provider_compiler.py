@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any, Literal
 
 from pydantic import Field
@@ -58,10 +59,16 @@ def compile_provider_prompt(
     # resolved for telemetry and the control plane, but they no longer shape the
     # system prompt (which previously advertised subagents/skills with no
     # runtime and contradicted the authoritative tool grounding). See docs/TODO.
+    # The temporal block is injected into EVERY compiled provider prompt (this
+    # function is the single chokepoint for turn instructions across all routes:
+    # simple chat, grounded answer, memory, tool/agentic, file-body generation).
+    # Giving the model the authoritative current date/time on every turn stops it
+    # from answering with a stale "today" or presenting outdated facts as current.
     instructions = "\n".join(
         part
         for part in (
             _marvex_identity_block(),
+            _temporal_block(),
             _context_safety_block(),
             "\n".join(system_sections),
         )
@@ -84,6 +91,20 @@ def _marvex_identity_block() -> str:
         "You are Marvex, a local-first assistant OS companion (not a provider wrapper). "
         "Answer as a single assistant - there are no separate personas, roles, or subagents. "
         "Keep answers concise, direct, and compatible with spoken output."
+    )
+
+
+def _temporal_block(now: dt.datetime | None = None) -> str:
+    # UTC, to match the builtin.time_date tool and the tool-catalog grounding so
+    # there is one consistent clock across the whole system.
+    current = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
+    stamp = current.strftime("%Y-%m-%d %H:%M UTC")
+    human = current.strftime("%A, %B %d, %Y")
+    return (
+        f"Current date and time: {stamp} ({human}). "
+        "This is the authoritative present moment. Your training data ends earlier, so never state a "
+        "past date as 'today' and never present stale information as current. Use this for any "
+        "question about the date, time, day, year, or anything 'current', 'latest', or 'now'."
     )
 
 

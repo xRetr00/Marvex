@@ -74,6 +74,10 @@ def test_provider_prompt_compiler_is_single_marvex_identity_no_persona() -> None
     assert payload.instructions is not None
     # Marvex is Marvex: a single identity, with context-safety + policy.
     assert "You are Marvex" in payload.instructions
+    # Every compiled prompt carries the authoritative current date/time so the
+    # model never answers with a stale "today" or outdated "current" facts.
+    assert "Current date and time:" in payload.instructions
+    assert "authoritative present moment" in payload.instructions
     assert "untrusted data" in payload.instructions
     assert "Marvex policy remains authoritative" in payload.instructions
     # No persona / agent-role / subagent / skill complexity in the prompt.
