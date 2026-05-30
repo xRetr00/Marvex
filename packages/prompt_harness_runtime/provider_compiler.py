@@ -95,13 +95,18 @@ def _marvex_identity_block() -> str:
 
 
 def _temporal_block(now: dt.datetime | None = None) -> str:
-    # UTC, to match the builtin.time_date tool and the tool-catalog grounding so
-    # there is one consistent clock across the whole system.
-    current = (now or dt.datetime.now(dt.timezone.utc)).astimezone(dt.timezone.utc)
-    stamp = current.strftime("%Y-%m-%d %H:%M UTC")
+    # Local machine time (the user's wall clock on a local-first desktop), with
+    # its real offset - matching the builtin.time_date tool so there is one
+    # consistent local clock across the whole system.
+    current = now or dt.datetime.now().astimezone()
+    if current.tzinfo is None:
+        current = current.astimezone()
+    offset = current.strftime("%z")
+    pretty_offset = f"UTC{offset[:3]}:{offset[3:]}" if offset else "UTC"
+    stamp = current.strftime("%Y-%m-%d %H:%M")
     human = current.strftime("%A, %B %d, %Y")
     return (
-        f"Current date and time: {stamp} ({human}). "
+        f"Current date and time: {stamp} {pretty_offset} ({human}). "
         "This is the authoritative present moment. Your training data ends earlier, so never state a "
         "past date as 'today' and never present stale information as current. Use this for any "
         "question about the date, time, day, year, or anything 'current', 'latest', or 'now'."

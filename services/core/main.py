@@ -2735,8 +2735,11 @@ def _tool_final_text(tool_response: dict[str, object]) -> str:
     result = dict(tool_response.get("result") or {})
     safe_result = dict(result.get("safe_result") or {})
     if "iso_datetime" in safe_result:
+        display = str(safe_result.get("display") or "").strip()
+        if display:
+            return f"The current date and time is {display}."
         iso_datetime = str(safe_result.get("iso_datetime") or "")
-        timezone = str(safe_result.get("timezone") or "UTC")
+        timezone = str(safe_result.get("timezone") or "local time")
         return f"The current date and time is {iso_datetime} ({timezone})."
     if "result" in safe_result:
         return f"The calculator result is {safe_result['result']}."

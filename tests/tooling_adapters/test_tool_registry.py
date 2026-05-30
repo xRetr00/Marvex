@@ -60,10 +60,22 @@ def test_default_registry_dispatches_calculator():
 
 def test_default_registry_dispatches_time_date():
     registry = default_registry()
-    result = registry.execute(_request("builtin.time_date", {}))
+    # Default is local time (machine-dependent), so request UTC for a
+    # deterministic, machine-independent assertion.
+    result = registry.execute(_request("builtin.time_date", {"timezone": "UTC"}))
     assert result.status == "succeeded"
     assert "iso_datetime" in result.safe_result
+    assert "display" in result.safe_result
     assert result.safe_result["timezone"] == "UTC"
+
+
+def test_default_registry_time_date_defaults_to_local():
+    registry = default_registry()
+    result = registry.execute(_request("builtin.time_date", {}))
+    assert result.status == "succeeded"
+    # iso_datetime carries an explicit offset (local-aware), never a naive stamp.
+    iso = str(result.safe_result["iso_datetime"])
+    assert ("+" in iso[10:]) or ("-" in iso[10:]) or iso.endswith("+00:00")
 
 
 def test_diagnostics_reports_live_tool_count():

@@ -17,7 +17,7 @@ The tool catalog is static (cached); the date is computed per turn.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 _TOOL_CATALOG_CACHE: str | None = None
 
@@ -54,8 +54,12 @@ def _static_tool_catalog() -> str:
 def available_tools_grounding(*, now: datetime | None = None) -> str:
     """Return the grounding block, including the current date (per turn)."""
 
-    moment = (now or datetime.now(UTC)).astimezone(UTC)
-    date_line = f"The current date and time is {moment.strftime('%Y-%m-%d %H:%M')} UTC."
+    moment = now or datetime.now().astimezone()
+    if moment.tzinfo is None:
+        moment = moment.astimezone()
+    offset = moment.strftime("%z")
+    pretty_offset = f"UTC{offset[:3]}:{offset[3:]}" if offset else "UTC"
+    date_line = f"The current date and time is {moment.strftime('%Y-%m-%d %H:%M')} {pretty_offset}."
     catalog = _static_tool_catalog()
     return (
         "You are Marvex, a local-first assistant. "
