@@ -13,6 +13,12 @@ from packages.contracts import (
     ProviderRequest,
     ProviderResponse,
 )
+from packages.contracts.streaming_models import (
+    StreamCompleted,
+    StreamError,
+    StreamEvent,
+    StreamTextDelta,
+)
 from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
 
 
@@ -108,6 +114,63 @@ class LMStudioResponsesProvider:
             error=None,
             tool_calls=tool_calls or None,
         )
+
+    def stream_send(self, request: ProviderRequest):
+        """Yield streaming events for a turn (docs/TODO/06).
+
+        Additive and opt-in: ``send`` is byte-for-byte unchanged. This issues a
+        Responses-API streaming call (``stream=True``) and yields
+        StreamTextDelta for each text chunk, then a terminal StreamCompleted (or
+        StreamError on failure, so the caller falls back to non-streaming).
+        """
+
+        call_args: dict[str, Any] = {"model": request.model, "stream": True}
+        tool_output_items = _responses_function_outputs(request.tool_messages)
+        call_args["input"] = tool_output_items if tool_output_items else request.input_text
+        if request.instructions is not None:
+            call_args["instructions"] = request.instructions
+        if request.previous_response_id is not None:
+            call_args["previous_response_id"] = request.previous_response_id
+        if request.tools:
+            call_args["tools"] = _responses_tool_schemas(request.tools)
+        allowed_options, _ignored = self._filter_provider_options(request.provider_options)
+        call_args.update(allowed_options)
+
+        try:
+            client = self._client_factory(**self._client_kwargs())
+            stream = self._read_attr(client, "responses").create(**call_args)
+        except Exception as exc:
+            yield StreamError(self._safe_exception_message(exc))
+            return
+
+        response_id: str | None = None
+        final_text_parts: list[str] = []
+        try:
+            for event in stream:
+                event_type = str(getattr(event, "type", "") or "")
+                if event_type.endswith("output_text.delta"):
+                    delta = getattr(event, "delta", "")
+                    if isinstance(delta, str) and delta:
+                        final_text_parts.append(delta)
+                        yield StreamTextDelta(delta)
+                elif event_type.endswith("response.completed") or event_type == "response.completed":
+                    response_obj = getattr(event, "response", None)
+                    response_id = self._read_optional_string(response_obj, "id") if response_obj is not None else response_id
+                    authoritative = self._read_output_text(response_obj) if response_obj is not None else ""
+                    yield StreamCompleted(
+                        response_id=response_id,
+                        finish_reason="stop",
+                        output_text=authoritative or "".join(final_text_parts),
+                    )
+                    return
+                elif event_type.endswith("failed") or event_type.endswith("error"):
+                    yield StreamError("provider stream reported a failure")
+                    return
+        except Exception as exc:
+            yield StreamError(self._safe_exception_message(exc))
+            return
+        # Stream ended without an explicit completed event.
+        yield StreamCompleted(response_id=response_id, finish_reason="stop", output_text="".join(final_text_parts))
 
     def map_raw_output_to_structured_result(
         self,

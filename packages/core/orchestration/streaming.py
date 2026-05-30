@@ -23,25 +23,14 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Iterable, Protocol
 
-
-@dataclass(frozen=True)
-class StreamTextDelta:
-    text: str
-
-
-@dataclass(frozen=True)
-class StreamCompleted:
-    response_id: str | None
-    finish_reason: str
-    output_text: str
-
-
-@dataclass(frozen=True)
-class StreamError:
-    message: str
-
-
-StreamEvent = StreamTextDelta | StreamCompleted | StreamError
+# Event types live in packages.contracts so provider adapters and this driver
+# share them without crossing the adapter<->core boundary.
+from packages.contracts.streaming_models import (
+    StreamCompleted,
+    StreamError,
+    StreamEvent,
+    StreamTextDelta,
+)
 
 
 class StreamingProvider(Protocol):
