@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import array
+import math
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -31,6 +33,33 @@ from .supervision import (
     WakewordSupervisorTickResult,
     WakewordWorkerSupervisor,
 )
+
+
+def _frames_rms(frames: tuple[Any, ...]) -> float:
+    """Root-mean-square amplitude of int16 PCM frames (0..~32767).
+
+    A cheap "is sound reaching the model" probe for the wake-loop heartbeat.
+    ~0 while the user speaks means the captured audio is silent (wrong/muted
+    input device); a few hundred+ means real audio is flowing.
+    """
+
+    total_sq = 0.0
+    count = 0
+    for frame in frames:
+        pcm = getattr(frame, "pcm", b"") or b""
+        if not pcm:
+            continue
+        try:
+            samples = array.array("h")
+            samples.frombytes(pcm[: len(pcm) - (len(pcm) % 2)])
+        except (ValueError, OverflowError):
+            continue
+        for sample in samples:
+            total_sq += float(sample) * float(sample)
+        count += len(samples)
+    if count == 0:
+        return 0.0
+    return math.sqrt(total_sq / count)
 
 
 class VoiceWorkerController:
@@ -383,6 +412,8 @@ class VoiceWorkerController:
         decode_count = 0
         last_confidence = 0.0
         last_reason_code: str | None = None
+        last_rms = 0.0
+        max_rms_window = 0.0
         self._continuous_active = True
         capture.start()
         _emit(
@@ -408,6 +439,13 @@ class VoiceWorkerController:
                     continue
                 frames = tuple(batch)
                 batch = []
+                # Audio level (int16 RMS) over this decode window. This is the
+                # signal that distinguishes "mic delivers silence" (wrong/muted
+                # default device -> RMS stays ~0 even while speaking, so the KWS
+                # can never fire) from "audio is fine but the keyword model is
+                # not matching" (RMS healthy, confidence still 0).
+                last_rms = _frames_rms(frames)
+                max_rms_window = max(max_rms_window, last_rms)
                 # Detection + command capture mutate worker state + the KWS
                 # session, so take the lock only around that brief work.
                 with _locked():
@@ -454,8 +492,11 @@ class VoiceWorkerController:
                                 "detections": detections,
                                 "last_confidence": last_confidence,
                                 "last_reason_code": last_reason_code,
+                                "audio_rms": round(last_rms, 1),
+                                "audio_rms_peak": round(max_rms_window, 1),
                             }
                         )
+                        max_rms_window = 0.0
         finally:
             self._continuous_active = False
             capture.stop()
@@ -467,6 +508,7 @@ class VoiceWorkerController:
                     "detections": detections,
                     "last_confidence": last_confidence,
                     "last_reason_code": last_reason_code,
+                    "audio_rms": round(last_rms, 1),
                 }
             )
         return {"started": True, "detections": detections, "stopped": True}

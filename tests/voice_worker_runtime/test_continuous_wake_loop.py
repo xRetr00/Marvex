@@ -114,6 +114,9 @@ def test_loop_emits_diagnostics_for_field_observability(tmp_path: Path):
     stopped = next(e for e in events if e.get("event") == "wake_listen_stopped")
     assert stopped["frames_read"] >= 3
     assert stopped["detections"] >= 1
+    # Audio level is reported so silent-capture vs keyword-mismatch is diagnosable.
+    assert "audio_rms" in stopped
+    assert stopped["audio_rms"] >= 0.0
 
 
 def test_no_detection_when_no_wake_frames(tmp_path: Path):
