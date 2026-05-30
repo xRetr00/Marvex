@@ -643,6 +643,14 @@ def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None
     return encoder, decoder, joiner, tokens, keywords  # type: ignore[return-value]
 
 
+# Sane sherpa-onnx KWS per-keyword tuning. The shipped keywords.txt used
+# ":1.5 #0.2" - a trigger threshold of 1.5 (absurdly high; sane is ~0.2-0.35)
+# with a tiny 0.2 boost, so "Hey Marvex" could essentially never fire even with
+# clean audio. We rewrite every keyword's threshold/boost to working values.
+_KWS_KEYWORD_THRESHOLD = 0.2
+_KWS_KEYWORD_BOOST = 2.0
+
+
 def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | None:
     vocabulary = _load_token_vocabulary(tokens)
     if not vocabulary:
@@ -666,6 +674,16 @@ def _normalized_kws_keywords_file(*, tokens: Path, keywords: Path) -> Path | Non
         keyword_tokens = [part for part in parts if not part.startswith(("#", ":", "@"))]
         if any(part not in vocabulary for part in keyword_tokens):
             return None
+        # Force a usable trigger threshold + boost regardless of what shipped.
+        existing_threshold = next((part for part in parts if part.startswith(":")), None)
+        existing_boost = next((part for part in parts if part.startswith("#")), None)
+        alias_token = next((part for part in parts if part.startswith("@")), None)
+        rebuilt = [*keyword_tokens, f":{_KWS_KEYWORD_THRESHOLD}", f"#{_KWS_KEYWORD_BOOST}"]
+        if alias_token is not None:
+            rebuilt.append(alias_token)
+        if existing_threshold != f":{_KWS_KEYWORD_THRESHOLD}" or existing_boost != f"#{_KWS_KEYWORD_BOOST}":
+            changed = True
+        parts = rebuilt
         normalized_lines.append(" ".join(parts))
     normalized = "\n".join(normalized_lines).strip() + "\n"
     if not changed:
