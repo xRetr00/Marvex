@@ -731,12 +731,21 @@ _KWS_KEYWORD_THRESHOLD = 0.1
 
 
 # ARPAbet phonemes for coined wake words NOT in the model's en.phone lexicon
-# (the zh-en KWS model is phoneme-based). "Marvex" => MAR-veks. Verified to
-# detect on real "Hey Marvex" audio.
-_COINED_PHONEMES: dict[str, str] = {
-    "MARVEX": "M AA1 R V EH1 K S",
-    "MARVECKS": "M AA1 R V EH1 K S",
-    "MARVIX": "M AA1 R V IH1 K S",
+# (the zh-en KWS model is phoneme-based). "Marvex" is pronounced differently
+# session to session (field logs: fires 4x one run, 0x the next), so we register
+# SEVERAL plausible pronunciations as separate keyword lines to widen recall:
+# stress on MAR vs MARV, EH vs IH vowel, AA vs AE.
+_COINED_PHONEMES: dict[str, list[str]] = {
+    "MARVEX": [
+        "M AA1 R V EH1 K S",
+        "M AA1 R V EH0 K S",
+        "M AA1 R V IH0 K S",
+        "M AA0 R V EH1 K S",
+        "M AE1 R V EH1 K S",
+        "M AA1 R V AH0 K S",
+    ],
+    "MARVECKS": ["M AA1 R V EH1 K S"],
+    "MARVIX": ["M AA1 R V IH1 K S"],
 }
 
 
@@ -787,18 +796,42 @@ def _phoneme_keyword_pieces(model_root: Path, candidates: list[str], vocabulary:
                 lexicon[parts[0].upper()] = " ".join(parts[1:])
     except OSError:
         return []
+    import itertools
+
     out: list[tuple[str, list[str]]] = []
+    seen: set[str] = set()
     for text in candidates:
-        phones: list[str] = []
+        # Per-word phone options: a coined word contributes several
+        # pronunciations; lexicon words contribute one. The cross product yields
+        # one keyword line per pronunciation (bounded), each with a unique alias.
+        word_options: list[list[str]] = []
         ok = True
         for word in text.split():
-            spelled = _COINED_PHONEMES.get(word) or lexicon.get(word)
-            if not spelled:
+            options = _COINED_PHONEMES.get(word)
+            if options is None:
+                lex = lexicon.get(word)
+                options = [lex] if lex else []
+            if not options:
                 ok = False
                 break
-            phones.extend(spelled.split())
-        if ok and phones and all(p in vocabulary for p in phones):
-            out.append((text, phones))
+            word_options.append(list(options))
+        if not ok:
+            continue
+        alias_base = "_".join(text.split())
+        variant = 0
+        for combo in list(itertools.product(*word_options))[:8]:
+            phones: list[str] = []
+            for spelled in combo:
+                phones.extend(spelled.split())
+            if not phones or any(p not in vocabulary for p in phones):
+                continue
+            key = " ".join(phones)
+            if key in seen:
+                continue
+            seen.add(key)
+            alias = alias_base if variant == 0 else f"{alias_base}_{variant}"
+            out.append((alias, phones))
+            variant += 1
     return out
 
 
