@@ -48,12 +48,14 @@ Wire genuine actuation behind the existing approval boundary:
   (1.60.x, both already installed). The Agent needs an LLM — reuse the user's
   configured provider (LM Studio / LiteLLM via an OpenAI-compatible base URL).
   Run inside the tool-worker process with its own asyncio loop; stream
-  step/screenshot telemetry through the safe projection (no raw DOM/screenshot
-  persistence). Return a real per-step result, not a readiness flag.
-- **Desktop computer-use:** integrate the UFO/OmniParser external processes (or a
-  Windows UIA action driver) so `computer_use.action` performs gated clicks/typing
-  with the same approval + redaction guarantees. Keep
-  `arbitrary_desktop_control_allowed=false` and `credential_entry_allowed=false`.
+  step/screenshot telemetry through ToolWorker result envelopes and approved
+  owner-mode raw automation artifacts. Return a real per-step result, not a
+  readiness flag.
+- **Desktop computer-use:** integrate Windows-MCP and local UIA fallback so
+  `computer_use.action` performs gated clicks/typing. In personal owner mode,
+  arbitrary desktop control and credential entry are allowed after approval; delete,
+  shutdown, restart, registry, PowerShell, and comparable destructive actions still
+  require explicit per-action approval.
 - **Safety:** keep both HIGH-risk + approval-required; add per-action approval for
   destructive steps; cap step count; allowlist domains/apps via control plane.
 - **Tests:** fake Playwright/Agent doubles to assert the resume path executes the
@@ -63,4 +65,5 @@ Wire genuine actuation behind the existing approval boundary:
 
 - Approving "open youtube in the browser" actually opens the page and reports the
   steps taken (or a precise, honest failure) — never a generic success stub.
-- No raw DOM, screenshot, screen, or keystroke payloads are persisted.
+- Raw DOM, screenshot, screen, action, and keystroke payloads may be persisted only
+  under the approved owner-mode `RawAutomationCapture` contract.

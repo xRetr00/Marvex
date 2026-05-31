@@ -10,24 +10,24 @@ why use it: Browser-use is a maintained agentic browser automation project and i
 
 why not custom code: A custom agentic browser layer would duplicate a large maintained surface. Marvex still must not let Browser-use own the agent loop, model calls, browser task autonomy, policy, approval, memory, or prompt routing.
 
-fallback if abandoned: Keep `packages.adapters.capabilities.browser_use` as a disabled adapter seam with safe probes, proposals, and result envelopes. Marvex can continue using Playwright directly behind CapabilityRuntime policy or move Browser-use to an isolated worker/MCP boundary later.
+fallback if abandoned: Keep `packages.adapters.capabilities.browser_use` as an owner-mode adapter seam with safe probes, proposals, result envelopes, and precise failure reasons. Marvex can continue using Playwright directly behind CapabilityRuntime policy or route browser work through Playwright MCP later.
 
 pyproject dependency: browser-use
 
 declared dependency: browser-use==0.11.13
 
-verified date: 2026-05-18
+verified date: 2026-05-31
 
 verified by: Codex
 
-scope: Main-environment dependency import proof plus controlled adapter proof. `BrowserUseBackendProbe` verifies `browser_use` and `browser_use_sdk` importability. `BrowserUseControlledBackend` exposes safe allowed action categories and an exact blocker for direct SDK execution. `BrowserUseTaskProposal`, `BrowserUseExecutionRequest`, and safe result envelopes keep backend execution disabled unless a future worker/MCP boundary is explicitly approved.
+scope: Main-environment dependency import proof plus ToolWorker-owned personal owner-mode execution. `BrowserUseBackendProbe` verifies `browser_use` and `browser_use_sdk` importability. `BrowserUseTaskProposal`, `BrowserUseExecutionRequest`, and safe result envelopes require CapabilityRuntime approval resume before live execution. Raw DOM/screenshot/history/keystroke artifacts are allowed only through the approved `RawAutomationCapture` contract.
 
-architecture fit: Conditional. The dependency is supported behind the adapter with a controlled proof backend, but direct SDK execution remains blocked until a future task approves a policy-controlled worker or MCP boundary. Playwright remains the low-level browser SDK path.
+architecture fit: Approved for personal owner mode. The dependency is supported behind the adapter and ToolWorker boundary; Core remains orchestration-only and Playwright remains the deterministic low-level browser SDK path.
 
-adopt / defer / reject decision: Adopt `browser-use==0.11.13` as a declared dependency for compatibility/import proof and controlled adapter proof. Defer direct Browser-use SDK execution. Latest `browser-use==0.12.6` is blocked by an exact `openai==2.16.0` pin and must not downgrade Marvex's OpenAI stack.
+adopt / defer / reject decision: Adopt `browser-use==0.11.13` as a declared dependency for compatibility/import proof and owner-mode execution. Latest `browser-use==0.12.6` is blocked by an exact `openai==2.16.0` pin and must not downgrade Marvex's OpenAI stack.
 
-risks: Browser-use can combine model planning with browser actions, which risks hidden tool loops, prompt injection through page content, credential entry, form submission, raw page persistence, and execution outside Marvex approval policy. Current mitigation is a disabled direct backend with explicit approval-required proposals, denial envelopes, and `browser_use_direct_execution_blocked_until_policy_worker_boundary` as the tested blocker.
+risks: Browser-use can combine model planning with browser actions, which risks hidden tool loops, prompt injection through page content, credential entry, form submission, raw page persistence, and execution outside Marvex approval policy. Current mitigation is owner-mode approval resume through ToolWorker, explicit provider configuration for live runs, and raw artifact persistence through contract-owned artifact records instead of uncontrolled metadata.
 
-comparison to custom routing: Browser-use is not Marvex's planner, assistant loop, browser policy owner, or provider router. If execution is adopted later, it must stay behind CapabilityRuntime-approved requests and safe result envelopes.
+comparison to custom routing: Browser-use is not Marvex's planner, assistant loop, browser policy owner, or provider router. Execution stays behind CapabilityRuntime-approved requests and result envelopes.
 
-Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.
+Browser-use backend runs in personal owner mode after CapabilityRuntime approval resume.

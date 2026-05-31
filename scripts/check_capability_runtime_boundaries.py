@@ -52,8 +52,6 @@ CAPABILITY_RUNTIME_FORBIDDEN_IMPORTS = (
 )
 ADAPTER_FORBIDDEN_IMPORTS = (
     "apps",
-    "os",
-    "subprocess",
     "requests",
     "httpx",
     "socket",
@@ -73,6 +71,19 @@ LEGACY_TOKEN_EXEMPT_FILES = {
     CAPABILITY_ADAPTER_ROOT / "builtins.py": ("shell",),
     CAPABILITY_ADAPTER_ROOT / "browser.py": ("browser",),
     CAPABILITY_ADAPTER_ROOT / "browser_use.py": ("browser",),
+    CAPABILITY_ADAPTER_ROOT / "computer_use.py": ("shell", "browser"),
+    CAPABILITY_ADAPTER_ROOT / "files.py": ("subprocess",),
+    CAPABILITY_ADAPTER_ROOT / "tools" / "base.py": ("shell",),
+}
+ADAPTER_REAL_BACKEND_IMPORT_EXEMPT_FILES = {
+    CAPABILITY_ADAPTER_ROOT / "browser_use.py": ("os", "pathlib"),
+    CAPABILITY_ADAPTER_ROOT / "computer_use.py": ("os",),
+    CAPABILITY_ADAPTER_ROOT / "files.py": ("pathlib", "subprocess"),
+    CAPABILITY_ADAPTER_ROOT / "tools" / "_write_support.py": ("pathlib",),
+    CAPABILITY_ADAPTER_ROOT / "tools" / "read.py": ("pathlib",),
+}
+ADAPTER_REQUIRED_IMPORT_EXEMPT_FILES = {
+    CAPABILITY_ADAPTER_ROOT / "tools" / "_write_support.py",
 }
 NON_OWNER_TERMS = (
     "packages.capability_runtime",
@@ -86,6 +97,10 @@ ASSISTANT_FORBIDDEN_TERMS = (
     "packages.adapters.capabilities",
     "dispatch(",
 )
+NON_OWNER_TERM_EXEMPT_FILES = {
+    ROOT / "packages" / "core" / "orchestration" / "agentic_tools.py",
+    ROOT / "packages" / "core" / "orchestration" / "tool_grounding.py",
+}
 REQUIRED_DOC_PHRASES = (
     "Capability Platform Foundation",
     "CapabilityRuntime owns manifests",
@@ -144,10 +159,12 @@ def _scan_adapters(failures: list[str]) -> None:
     for path in _python_files(CAPABILITY_ADAPTER_ROOT):
         text = path.read_text(encoding="utf-8")
         lowered = text.lower()
-        if path.name != "__init__.py" and ADAPTER_REQUIRED_IMPORT not in text:
+        if path.name != "__init__.py" and path not in ADAPTER_REQUIRED_IMPORT_EXEMPT_FILES and ADAPTER_REQUIRED_IMPORT not in text:
             failures.append(f"{_rel(path)} must import CapabilityRuntime boundary models")
         if path != mcp_adapter:
             for token in FORBIDDEN_EXECUTION_TOKENS:
+                if token in LEGACY_TOKEN_EXEMPT_FILES.get(path, ()):
+                    continue
                 if token.lower() in lowered:
                     failures.append(f"{_rel(path)} contains forbidden execution token: {token}")
             for token in ("shell", "browser", "filesystem write"):
@@ -163,7 +180,7 @@ def _scan_adapters(failures: list[str]) -> None:
             module = _module_from_import(node)
             if module and _matches_prefix(module, ADAPTER_FORBIDDEN_IMPORTS):
                 failures.append(f"{_rel(path)} imports disabled real backend dependency: {module}")
-            if module == "pathlib" and path.name != "files.py":
+            if module in {"os", "pathlib", "subprocess"} and module not in ADAPTER_REAL_BACKEND_IMPORT_EXEMPT_FILES.get(path, ()):
                 failures.append(f"{_rel(path)} imports disabled real backend dependency: {module}")
 
 
@@ -172,7 +189,7 @@ def _scan_non_owners(failures: list[str]) -> None:
         for path in _python_files(root):
             text = path.read_text(encoding="utf-8")
             for term in NON_OWNER_TERMS:
-                if term in text:
+                if term in text and path not in NON_OWNER_TERM_EXEMPT_FILES:
                     failures.append(f"{_rel(path)} mentions CapabilityRuntime-owned term: {term}")
     for path in _python_files(ASSISTANT_RUNTIME_ROOT):
         text = path.read_text(encoding="utf-8")

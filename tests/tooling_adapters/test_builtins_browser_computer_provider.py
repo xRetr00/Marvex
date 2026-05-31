@@ -214,8 +214,8 @@ def test_browser_use_seam_is_disabled_until_dependency_is_approved_for_execution
     config = BrowserUseAdapterConfig(
         schema_version="1",
         adapter_id="browser-use-foundation",
-        backend_enabled=False,
-        blocked_reason="agentic_backend_requires_future_policy_review",
+        backend_enabled=True,
+        blocked_reason="enabled_by_owner_mode_policy",
     )
     proposal = BrowserUseTaskProposal(
         schema_version="1",
@@ -230,9 +230,9 @@ def test_browser_use_seam_is_disabled_until_dependency_is_approved_for_execution
         permission_decision=_approved_permission(proposal),
     )
 
-    assert config.safe_projection()["backend_enabled"] is False
+    assert config.safe_projection()["backend_enabled"] is True
     assert proposal.requires_approval is True
-    assert request.safe_result_envelope(result_id="browser-use-result-1").status == "denied"
+    assert request.safe_result_envelope(result_id="browser-use-result-1").status == "requires_human_approval"
 
 
 def test_browser_use_backend_can_be_imported_but_not_executed_without_policy() -> None:

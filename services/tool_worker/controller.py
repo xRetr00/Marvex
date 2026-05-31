@@ -51,6 +51,13 @@ from packages.adapters.capabilities.mcp import (
     McpServerRef,
     McpTransport,
 )
+from packages.adapters.capabilities.browser_use import browser_use_safe_result, execute_browser_use_task
+from packages.adapters.capabilities.computer_use import (
+    computer_use_safe_result,
+    destructive_action_approved,
+    destructive_action_requested,
+    execute_windows_computer_action,
+)
 from packages.desktop_agent_runtime.windows_uia import collect_projection as collect_desktop_uia_projection
 
 from .models import (
@@ -167,6 +174,44 @@ class ToolWorkerController:
         approval_resume = _approved_resume(arguments, turn_id=turn_id)
         if blocking_decision == PolicyDecision.APPROVAL_REQUIRED and approval_resume:
             blocking_decision = PolicyDecision.ALLOW
+        if capability_id == "computer_use.action" and approval_resume and destructive_action_requested(arguments, action=action) and not destructive_action_approved(arguments):
+            result = CapabilityResultEnvelope(
+                schema_version=SCHEMA_VERSION,
+                result_id=f"{turn_id}:capability:result",
+                trace_id=trace_id,
+                turn_id=turn_id,
+                capability_ref=capability_ref,
+                status="requires_human_approval",
+                safe_result={
+                    "policy_decision": "destructive_action_approval_required",
+                    "approval_required": True,
+                    "destructive_action_approval_required": True,
+                },
+                raw_input_persisted=False,
+                raw_output_persisted=False,
+            )
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=0,
+                denied_count=1,
+                executed_fake_count=0,
+            )
+            return self._result(
+                command="execute",
+                ok=False,
+                trace_id=trace_id,
+                blocked=True,
+                result=result,
+                projection=SafeCapabilityProjection.from_summary(summary),
+                policy_audit=_policy_projection(governance, audit),
+                error=ToolWorkerError(
+                    trace_id=trace_id,
+                    turn_id=turn_id,
+                    code="destructive_action_approval_required",
+                    safe_message="Destructive desktop action requires explicit per-action approval.",
+                ),
+            )
         if blocking_decision != PolicyDecision.ALLOW:
             status = "requires_human_approval" if blocking_decision == PolicyDecision.APPROVAL_REQUIRED else "denied"
             result = CapabilityResultEnvelope(
@@ -663,52 +708,35 @@ def _mcp_metadata(server_ref: McpServerRef, policy: McpAllowlistPolicy) -> dict[
 
 
 def _browser_use_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
-    package_present = importlib.util.find_spec("browser_use") is not None
-    task_present = bool(str(request.arguments.get("task") or request.arguments.get("task_summary") or "").strip())
+    report = execute_browser_use_task(request)
+    safe_result, raw_persisted = browser_use_safe_result(request=request, report=report)
     return CapabilityResultEnvelope(
         schema_version=request.schema_version,
         result_id=f"{request.request_id}:result",
         trace_id=request.trace_id,
         turn_id=request.turn_id,
         capability_ref=request.proposal.capability_ref,
-        status="succeeded" if package_present and task_present else "denied",
-        safe_result={
-            "adapter": "browser-use",
-            "package_importable": package_present,
-            "task_present": task_present,
-            "approval_required": True,
-            "approved_execution": request.approval_decision is not None,
-            "direct_sdk_execution_without_approval": False,
-            "raw_browser_payload_persisted": False,
-            "raw_dom_persisted": False,
-            "raw_screenshot_persisted": False,
-        },
+        status=report.status,
+        safe_result=safe_result,
         raw_input_persisted=False,
-        raw_output_persisted=False,
+        raw_output_persisted=raw_persisted,
     )
 
 
 def _computer_use_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
-    projection = collect_desktop_uia_projection(max_text_chars=160, max_control_depth=4)
+    report = execute_windows_computer_action(request)
+    safe_result, raw_persisted = computer_use_safe_result(request=request, report=report)
+    if report.status != "succeeded" and not safe_result.get("artifact_ids"):
+        projection = collect_desktop_uia_projection(max_text_chars=160, max_control_depth=4)
+        safe_result = {**safe_result, "uia_projection_available": bool(projection.get("available"))}
     return CapabilityResultEnvelope(
         schema_version=request.schema_version,
         result_id=f"{request.request_id}:result",
         trace_id=request.trace_id,
         turn_id=request.turn_id,
         capability_ref=request.proposal.capability_ref,
-        status="succeeded",
-        safe_result={
-            "adapter": "windows-desktop-computer-use",
-            "uia_projection_available": bool(projection.get("available")),
-            "ufo_external_process": "operator_configured",
-            "omniparser_external_process": "operator_configured",
-            "approval_required": True,
-            "approved_execution": request.approval_decision is not None,
-            "credential_entry_allowed": False,
-            "arbitrary_desktop_control_allowed": False,
-            "raw_screen_persisted": False,
-            "raw_action_payload_persisted": False,
-        },
+        status=report.status,
+        safe_result=safe_result,
         raw_input_persisted=False,
-        raw_output_persisted=False,
+        raw_output_persisted=raw_persisted,
     )

@@ -17,6 +17,8 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "dataclasses",
     "datetime",
     "json",
+    "os",
+    "importlib",
     "pathlib",
     "queue",
     "secrets",
@@ -36,6 +38,8 @@ CONTROL_API_ALLOWED_IMPORTS = (
     "pydantic",
     "typing",
     "urllib.parse",
+    "urllib.error",
+    "urllib.request",
 )
 CONTROL_API_ASGI_ADAPTER_ALLOWED_IMPORTS = (
     "asyncio",
@@ -44,7 +48,6 @@ CONTROL_API_ASGI_ADAPTER_ALLOWED_IMPORTS = (
 )
 CONTROL_API_FORBIDDEN_IMPORTS = (
     "apps",
-    "os",
     "subprocess",
     "requests",
     "httpx",

@@ -2,9 +2,9 @@
 
 ## Status
 
-Full Tooling and Computer Use Foundation is implemented as a policy-gated adapter foundation. It adds real SDK-backed browser adapter mechanics through Playwright and safe proposal seams for Browser-use, OpenAI Computer Use, OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, MCP SDK tools, and built-in tools.
+Full Tooling and Computer Use Foundation is implemented as a policy-gated adapter foundation. It adds real SDK-backed browser adapter mechanics through Playwright, owner-mode Browser-use execution, Windows-MCP computer-use execution, OpenAI Computer Use harness shapes, OpenAI Agents SDK tool compatibility, OpenAI function tools, LM Studio tool calls, LiteLLM gateway tools, MCP SDK tools, and built-in tools.
 
-This is not a product tool loop, desktop agent, browser UI, credential manager, shell runtime, file editor, or autonomous computer-control system.
+In personal owner mode this is a live Windows browser/computer-control surface. It is still not a provider-owned tool loop or Core-owned automation brain; ToolWorker owns execution, adapters own SDK mechanics, and CapabilityRuntime remains the policy boundary.
 
 ## Ownership
 
@@ -13,8 +13,9 @@ CapabilityRuntime remains authoritative for manifests, risk, side-effect classif
 Adapters own SDK/package/protocol shape only:
 
 - `packages.adapters.capabilities.browser` owns the Playwright browser adapter foundation.
-- `packages.adapters.capabilities.browser_use` owns a disabled Browser-use seam.
+- `packages.adapters.capabilities.browser_use` owns Browser-use owner-mode execution and Chrome profile selection.
 - `packages.adapters.capabilities.computer_use` and `openai_computer_use` own computer-use proposal and harness shapes.
+- `packages.automation_runtime` owns raw automation evidence artifact persistence.
 - `packages.adapters.capabilities.builtins` owns safe read-only built-in tools.
 - `openai_tools`, `openai_agents`, `lmstudio`, `litellm_gateway`, and `mcp` represent provider or protocol tool calls as proposals, not execution permission.
 
@@ -22,11 +23,14 @@ Adapters own SDK/package/protocol shape only:
 
 - All tool/browser/computer/provider tool calls are proposals or approved execution requests.
 - Playwright is isolated behind the browser adapter only.
-- Browser-use backend remains disabled until a future explicit policy review.
+- Browser-use backend runs in personal owner mode after CapabilityRuntime approval resume.
+- Windows-MCP is a built-in local automation backend for desktop computer-use.
 - OpenAI Computer Use is one adapter backend, not Marvex's only computer-use path.
 - Browser and computer actions require human approval for high-impact action classes.
-- No shell execution, file write/edit/delete, arbitrary network fetch, credential entry/extraction, payment/checkout, CAPTCHA/anti-bot bypass, stealth/proxy scraping, or arbitrary desktop OS control is implemented.
-- Raw screenshots, DOM, page text, tool input/output, provider payloads, prompts, transcripts, tokens, and credentials are not persisted by default.
+- Owner mode permits broad browser/desktop actuation, credential entry, default Chrome profile attempts, raw DOM/screenshot/screen/keystroke/action artifact persistence, and Windows-MCP desktop tools for the local owner.
+- Delete, shutdown, restart, registry, PowerShell, and comparable destructive OS actions require explicit per-action approval even in owner mode.
+- Payment/checkout, CAPTCHA/anti-bot bypass, and stealth/proxy scraping are not specially enabled by this contract.
+- Raw automation artifacts may be persisted under `RawAutomationCapture`; provider payloads, prompts, transcripts, tokens, and credentials remain outside this automation artifact contract unless separately approved.
 - Context delivery includes only eligible tool schemas; all tools are never injected into every prompt.
 
 ## Implemented Foundation
@@ -43,11 +47,11 @@ The live ToolWorker dispatch now executes real safe capabilities beyond the calc
 - `governance_audit.classify_governance_action` is integrated into live dispatch alongside configurable `AutonomyPolicy` mode selection;
 - non-allowlisted MCP tools, file traversal, unsafe requests, and side-effect actions return structured blocked or approval-required results instead of fake success.
 
-Browser, shell, connectors, skill install/launch, remote MCP launch/install, file write/delete, and arbitrary network execution remain gated or disabled-by-default surfaces. Browser/computer-use paths return safe policy projections in CI; real live browser execution remains runtime-only behind a future explicit flag and approval UX.
+Browser, shell, connectors, skill install/launch, remote MCP launch/install, file write/delete, and arbitrary network execution remain policy-controlled surfaces. Browser/computer-use paths now support live owner-mode execution through ToolWorker while default CI uses fake backend doubles.
 
 ## Blocked
 
-- Browser-use execution backend is blocked because current adoption would import agentic browser task autonomy before Marvex has UI-backed approval and mature tool-loop governance.
+- Browser-use execution requires an approved ToolWorker execution request and an explicit provider configuration for live runs.
 - OpenAI Agents SDK package adoption is blocked because current `openai-agents==0.17.2` requires `openai>=2.26.0`, while Marvex currently pins `openai==2.24.0`; the compatibility seam exists without importing the package.
 - Real OpenAI Computer Use execution is deferred to a future provider/runtime integration task.
 

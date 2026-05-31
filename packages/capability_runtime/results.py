@@ -16,8 +16,8 @@ class CapabilityResultEnvelope(CapabilityRuntimeModel):
     capability_ref: CapabilityRef
     status: Literal["succeeded", "failed", "denied", "requires_human_approval"]
     safe_result: dict[str, Any]
-    raw_input_persisted: Literal[False] = False
-    raw_output_persisted: Literal[False] = False
+    raw_input_persisted: bool = False
+    raw_output_persisted: bool = False
 
     def safe_projection(self) -> dict[str, object]:
         return {
@@ -28,8 +28,8 @@ class CapabilityResultEnvelope(CapabilityRuntimeModel):
             "capability_ref": self.capability_ref.safe_projection(),
             "status": self.status,
             "safe_result_keys": sorted(self.safe_result),
-            "raw_input_persisted": False,
-            "raw_output_persisted": False,
+            "raw_input_persisted": self.raw_input_persisted,
+            "raw_output_persisted": self.raw_output_persisted,
         }
 
 
@@ -58,7 +58,7 @@ class CapabilityExecutionSummary(CapabilityRuntimeModel):
     browser_action_count: int = Field(default=0, ge=0)
     computer_action_count: int = Field(default=0, ge=0)
     safe_result_status: str
-    raw_payload_persisted: Literal[False] = False
+    raw_payload_persisted: bool = False
 
     @classmethod
     def from_result(
@@ -80,6 +80,7 @@ class CapabilityExecutionSummary(CapabilityRuntimeModel):
             denied_capability_count=denied_count,
             executed_fake_capability_count=executed_fake_count,
             safe_result_status=result.status,
+            raw_payload_persisted=bool(result.raw_input_persisted or result.raw_output_persisted),
         )
 
     def safe_projection(self) -> dict[str, object]:
@@ -95,7 +96,7 @@ class SafeCapabilityProjection(CapabilityRuntimeModel):
     denied_capability_count: int
     executed_fake_capability_count: int
     safe_result_status: str
-    raw_payload_persisted: Literal[False] = False
+    raw_payload_persisted: bool = False
 
     @classmethod
     def from_summary(cls, summary: CapabilityExecutionSummary) -> SafeCapabilityProjection:
@@ -108,6 +109,7 @@ class SafeCapabilityProjection(CapabilityRuntimeModel):
             denied_capability_count=summary.denied_capability_count,
             executed_fake_capability_count=summary.executed_fake_capability_count,
             safe_result_status=summary.safe_result_status,
+            raw_payload_persisted=summary.raw_payload_persisted,
         )
 
 

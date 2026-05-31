@@ -47,6 +47,12 @@ desktop, proactive behavior, HTTP, IPC, or service runtime.
 | DesktopAgent | 0.1.1-draft | approved | user | 2026-05-22 | yes |
 | Proactive | 0.1.1-draft | approved | user | 2026-05-22 | yes |
 | Shell | 0.1.1-draft | approved | user | 2026-05-22 | yes |
+| BrowserAutomationSession | 0.1.1-draft | approved | user | 2026-05-31 | yes |
+| DesktopComputerUseSession | 0.1.1-draft | approved | user | 2026-05-31 | yes |
+| AutomationEvidenceArtifact | 0.1.1-draft | approved | user | 2026-05-31 | yes |
+| RawAutomationCapture | 0.1.1-draft | approved | user | 2026-05-31 | yes |
+| MCPAutomationServerAdmission | 0.1.1-draft | approved | user | 2026-05-31 | yes |
+| OwnerModeAutomationPolicy | 0.1.1-draft | approved | user | 2026-05-31 | yes |
 | MemoryService | 0.1.1-draft | draft | none | none | no |
 | TelemetryEventService | 0.1.1-draft | draft | none | none | no |
 | PolicyPermissionService | 0.1.1-draft | draft | none | none | no |
@@ -85,7 +91,7 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - capability runtime: bounded foundation; policy/approval/dispatch/result envelopes only.
 - tool execution foundations: bounded foundation; approved safe requests only.
 - mcp adapter/seam: bounded foundation; official SDK and allowlist only.
-- browser/computer-use adapter/seam: experimental seam; product automation blocked.
+- browser/computer-use adapter/seam: approved personal owner-mode Windows automation surface for Browser-use, Playwright/Playwright MCP, Windows-MCP, and local UIA fallback behind ToolWorker and CapabilityRuntime.
 - memory runtime: bounded foundation; safe refs/backend only.
 - memory service: future service contract; README-only.
 - marketplace runtime: bounded foundation; read-only metadata/proposals only.
@@ -99,6 +105,6 @@ Existing bounded foundations may be maintained, tested, and safely refactored in
 - voice runtime foundation: bounded implementation foundation for in-process voice I/O orchestration only; no separate service process, visual shell, hidden recording, or raw audio/transcript persistence by default.
 - voice worker runtime: approved implementation surface for local-only VoiceWorker process, lifecycle, safe worker commands/events, microphone/playback adapters, model asset readiness, and protected Control Plane projections; no hidden recording, remote exposure, raw audio/transcript persistence, Orb/shell UI, desktop agent, vision, or proactive behavior. The "Hey Marvex" wake word is now enabled by default and intended to run 24/7 under the backend service (overriding the prior disabled-by-default posture). Wake detection still requires the installed sherpa-onnx KWS asset; the no-hidden-recording and no-raw-audio/transcript/generated-audio persistence guarantees and safe-projection rules remain unchanged.
 - shell: approved product surface for the local Windows tray supervisor, chat UI host, top-right presence island (live state + hover waveform), event-driven Spotlight cards spawned from the island, a dedicated window hosting the original Control Plane web app (token-authed, served same-origin by the Control Plane server), durable local chat/session persistence, autostart, single-instance, and installer. It is a loopback client only and must not implement provider, intent, tool, voice, cognition, memory, policy, desktop-agent, vision, or proactive logic. When installed alongside the backend service, the shell is a thin client that connects to the already-running service instead of supervising its own backend.
-- desktop agent: approved local-only perception worker surface for focused-window content via Windows UI Automation adapters and screenpipe recall through the existing MCP adapter path. It returns safe bounded projections only and must not persist raw screen frames, audio, keystrokes, transcripts, payloads, or secrets.
+- desktop agent: approved local-only perception worker surface for focused-window content via Windows UI Automation adapters and screenpipe recall through the existing MCP adapter path. The separate owner-mode automation contracts approve raw browser/desktop automation artifacts for live ToolWorker actions; passive DesktopAgent perception remains safe bounded projection by default.
 - proactive behavior: approved bounded initiative-proposal runtime surface. It watches safe DesktopAgent projections and Assistant STATE, applies user-mutable learning preferences, remains explicit/visible/local-only, and must not execute hidden background actions.
 - future vision: future service contract or forbidden product behavior for now unless a later goal explicitly approves it.

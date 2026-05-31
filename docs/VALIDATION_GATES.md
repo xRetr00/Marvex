@@ -639,7 +639,9 @@ Protected boundaries:
 - Telemetry cannot persist raw tool/browser/computer payloads by default.
 - Adapters cannot bypass CapabilityRuntime permission, approval, execution-mode, context-delivery, loop-guard, or result-envelope policy.
 
-Blocked: shell execution, file write/edit/delete tools, credential access or entry, purchase/payment/checkout, sensitive form submission without future explicit approval flow, CAPTCHA or anti-bot bypass, stealth/proxy scraping, arbitrary desktop OS control, and raw screenshot/DOM/page/tool/provider payload persistence by default.
+Owner-mode update: Browser-use backend runs in personal owner mode after CapabilityRuntime approval resume. Playwright/Playwright MCP, Windows-MCP, default Chrome profile attempts, credential entry, broad local desktop actuation, and raw browser/desktop automation artifacts are allowed under the approved owner-mode automation contracts.
+
+Still approval-gated or blocked: delete, shutdown, restart, registry, PowerShell, and comparable destructive OS actions require explicit per-action approval. Payment/checkout, CAPTCHA or anti-bot bypass, stealth/proxy scraping, and raw provider/prompt/token persistence are not enabled by the owner-mode automation contracts.
 
 <!-- file size justification: VALIDATION_GATES.md intentionally stays over 500 lines while active governance gates are centralized for run_all_checks discoverability. -->
 

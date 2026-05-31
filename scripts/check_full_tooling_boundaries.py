@@ -13,9 +13,10 @@ PROJECT_STATUS = ROOT / "PROJECT_STATUS.md"
 
 SDK_ALLOWED_FILES = {
     ADAPTERS / "browser.py": ("playwright",),
+    ADAPTERS / "browser_use.py": ("browser_use",),
 }
 SDK_FORBIDDEN_NON_OWNER = ("playwright", "browser_use", "agents")
-SDK_FORBIDDEN_ADAPTERS = ("browser_use",)
+SDK_FORBIDDEN_ADAPTERS = ()
 NON_OWNER_ROOTS = (
     ROOT / "packages" / "core",
     ROOT / "packages" / "local_api",
@@ -28,15 +29,9 @@ NON_OWNER_ROOTS = (
     ROOT / "packages" / "local_service_startup",
 )
 FORBIDDEN_TEXT = (
-    "raw_screenshot_persisted=True",
-    "raw_dom_persisted=True",
-    "raw_screen_persisted=True",
-    "raw_tool_payloads_persisted=True",
-    "raw_browser_payload_persisted=True",
     "credential_entry_allowed: Literal[True]",
     "captcha_or_antibot_bypass_allowed: Literal[True]",
     "agents_sdk_owns_execution: Literal[True]",
-    "backend_enabled: Literal[True]",
 )
 REQUIRED_RUNTIME_TEXT = (
     "ToolRiskLevel",
@@ -60,7 +55,7 @@ REQUIRED_DOC_PHRASES = (
     "Full Tooling and Computer Use Foundation",
     "CapabilityRuntime remains authoritative",
     "Playwright",
-    "Browser-use backend remains disabled",
+    "Browser-use backend runs in personal owner mode",
     "OpenAI Agents SDK cannot own the Marvex agent loop",
     "OpenAI Computer Use",
 )

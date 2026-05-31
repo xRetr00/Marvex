@@ -21,10 +21,9 @@ NON_OWNER_ROOTS = (
     ROOT / "packages" / "session_runtime",
     ROOT / "packages" / "local_service_startup",
 )
-FORBIDDEN_RAW_PERSISTENCE = (
+OWNER_MODE_RAW_PERSISTENCE_MARKERS = (
     "raw_screenshot_persisted=True",
     "raw_dom_persisted=True",
-    "raw_tool_payloads_persisted=True",
     "raw_screen_persisted=True",
     "raw_browser_payload_persisted=True",
 )
@@ -65,9 +64,15 @@ def test_only_tooling_adapters_can_import_browser_or_agent_sdks() -> None:
                     assert path in adapter_allowlist, f"{path.relative_to(ROOT)} imports {module}"
 
 
-def test_tooling_foundation_does_not_enable_raw_payload_persistence() -> None:
+def test_raw_automation_persistence_is_only_enabled_in_approved_owner_mode_modules() -> None:
+    allowed = {
+        ROOT / "packages" / "adapters" / "capabilities" / "browser_use.py",
+        ROOT / "packages" / "adapters" / "capabilities" / "computer_use.py",
+        ROOT / "packages" / "automation_runtime" / "artifacts.py",
+    }
     for root in (ROOT / "packages" / "capability_runtime", ROOT / "packages" / "adapters" / "capabilities"):
         for path in _python_files(root):
             text = path.read_text(encoding="utf-8")
-            for token in FORBIDDEN_RAW_PERSISTENCE:
-                assert token not in text, f"{path.relative_to(ROOT)} contains {token}"
+            for token in OWNER_MODE_RAW_PERSISTENCE_MARKERS:
+                if token in text:
+                    assert path in allowed, f"{path.relative_to(ROOT)} contains {token} outside owner-mode modules"

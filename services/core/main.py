@@ -1494,6 +1494,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "task": turn_input.user_visible_input or "browser computer-use action",
                     "approval_request_id": effective_resume_approval,
                     "approval_decision": effective_approval_decision or "",
+                    "live_execution_enabled": True,
+                    "raw_persistence_enabled": True,
+                    "provider_model": self._model,
+                    "provider_base_url": self._base_url or "",
+                    "provider_api_key": self._provider_secret or "",
                 },
             )
             loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
@@ -2302,6 +2307,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             "task": turn_input.user_visible_input or "approved automation action",
                             "approval_request_id": effective_resume_approval,
                             "approval_decision": "approve",
+                            "live_execution_enabled": True,
+                            "raw_persistence_enabled": True,
+                            "provider_model": self._model,
+                            "provider_base_url": self._base_url or "",
+                            "provider_api_key": self._provider_secret or "",
                         },
                     )
                     final_text = _browser_or_computer_use_final_text(tool_response)
@@ -2913,21 +2923,20 @@ def _browser_use_requested(text: str | None) -> bool:
 
 
 def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str:
-    # Honest reporting: the browser_use.task / computer_use.action capabilities
-    # are approval-gated readiness projections in this build — they confirm the
-    # backend is importable but do NOT yet drive a live browser/desktop. Say so
-    # instead of falsely claiming "Action executed".
     safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
     adapter = str(safe_result.get("adapter") or "automation")
-    importable = bool(safe_result.get("package_importable", safe_result.get("uia_projection_available", False)))
-    if tool_response.get("ok") is True and importable:
+    if tool_response.get("ok") is True and safe_result.get("live_execution") is True:
+        action_count = int(safe_result.get("action_count") or safe_result.get("step_count") or 0)
+        host = str(safe_result.get("final_url_host") or "").strip()
+        suffix = f" Final host: {host}." if host else ""
         return (
-            f"Approved. The {adapter} backend is available, but live browser/desktop control is not "
-            "wired in this build yet, so no on-screen action was performed. This is tracked as upcoming work."
+            f"Approved. {adapter} completed live owner-mode automation"
+            f" with {action_count} recorded action(s).{suffix}"
         )
+    reason = str(safe_result.get("reason_code") or "automation_unavailable")
     return (
-        "Approved, but browser/desktop automation is not available in this build, so no on-screen "
-        "action was performed."
+        "Approved, but live browser/desktop automation did not complete. "
+        f"Reason: {reason}."
     )
 
 

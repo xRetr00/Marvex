@@ -317,7 +317,7 @@ Blocked without explicit future approval: new product features, new dependencies
 
 Recommended next goal: Voice Worker Process Boundary and Local Microphone Runtime. Keep the in-process VoiceRuntime contracts stable, add an explicit worker/service contract, and prove local capture/playback process boundaries without Orb/Face UI, desktop overlay, vision, proactive behavior, or raw audio/transcript persistence by default.
 
-Browser-use backend remains disabled for direct SDK execution; the controlled adapter proof exposes only safe status, allowed categories, and blocker metadata.
+Browser-use backend runs in personal owner mode after CapabilityRuntime approval resume. ToolWorker now owns the live Browser-use execution path, Windows-MCP computer-use path, and raw automation artifact linkage while Core remains orchestration-only.
 
 ## Cognition Runtime and Agentic Turn Loop Checkpoint
 

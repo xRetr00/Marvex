@@ -19,6 +19,8 @@ ALLOWED_IMPORT_PREFIXES = (
     "mcp.types",
     "json",
     "packages.adapters.capabilities.builtins",
+    "packages.adapters.capabilities.browser_use",
+    "packages.adapters.capabilities.computer_use",
     "packages.adapters.capabilities.files",
     "packages.adapters.capabilities.mcp",
     "packages.capability_runtime",
@@ -33,7 +35,6 @@ ALLOWED_IMPORT_PREFIXES = (
 FORBIDDEN_IMPORT_PREFIXES = (
     "apps",
     "packages.adapters.capabilities.browser",
-    "packages.adapters.capabilities.computer_use",
     "packages.adapters.capabilities.integrations",
     "packages.adapters.capabilities.litellm_gateway",
     "packages.adapters.capabilities.lmstudio",
