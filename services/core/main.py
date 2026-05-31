@@ -786,6 +786,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._automation_model = model
         self._automation_model_supports_vision = False
         self._automation_vision_required = False
+        # Pending model-initiated automation tool calls, keyed by approval id, so
+        # the approval-resume executes the exact capability + args the model
+        # requested (browser_use / computer_use / playwright_mcp).
+        self._pending_automation: dict[str, dict[str, object]] = {}
         self._intent_classifier = _IntentWorkerProcessClassifier(
             timeout_seconds=timeout_seconds,
         )
@@ -1076,6 +1080,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
             return None
         if loop_result.status == "needs_approval":
             self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="agentic_tool_approval", trace_id=turn_input.trace_id)
+            if loop_result.automation is not None:
+                # The model called an automation tool (browser/desktop). Stash the
+                # exact capability + args keyed by the approval id this turn will
+                # create, so the approval-resume executes precisely what the model
+                # asked (not a text-heuristic). _approval_request uses turn_id.
+                self._pending_automation[f"approval-{turn_input.turn_id}"] = dict(loop_result.automation)
             return self._run_approval_path(
                 turn_input,
                 metadata={
@@ -1183,11 +1193,24 @@ class _CoreServiceProviderWorkerTurnExecutor:
             file_tools_registry,
         )
         from packages.adapters.capabilities.tools.clarify import ClarifyTool
+        from packages.adapters.capabilities.tools.automation import (
+            BrowserUseTool,
+            ComputerUseTool,
+            PlaywrightBrowserTool,
+        )
 
-        # ClarifyTool lets the MODEL ask the user when a request is ambiguous
-        # (model-driven clarification), instead of a brittle backend keyword
-        # match. The agentic loop intercepts a clarify call and pauses the turn.
-        tools = [*default_registry().tools(), *file_tools_registry().tools(), ClarifyTool()]
+        # ClarifyTool lets the MODEL ask the user when a request is ambiguous.
+        # The automation tools let the model CALL browser/desktop control like
+        # any other tool; the agentic loop pauses them for human approval and
+        # Core executes the real capability on approve.
+        tools = [
+            *default_registry().tools(),
+            *file_tools_registry().tools(),
+            ClarifyTool(),
+            BrowserUseTool(),
+            ComputerUseTool(),
+            PlaywrightBrowserTool(),
+        ]
         if self._web_search_provider is not None:
             tools.append(WebSearchTool(provider=self._web_search_provider))
         return ToolRegistry(tuple(tools))
@@ -2278,6 +2301,56 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
             if decision == "approve":
                 loop.step("approval")
+                # Model-initiated automation tool call (browser/desktop): execute
+                # the EXACT capability + args the model requested, with the user's
+                # provider creds. Stored when the agentic loop paused for approval.
+                pending_automation = self._pending_automation.pop(effective_resume_approval, None)
+                if pending_automation is not None:
+                    loop.step("tool")
+                    self._publish(
+                        AssistantStatusKind.USING_TOOLS,
+                        detail=str(pending_automation.get("capability_id") or "automation"),
+                        trace_id=turn_input.trace_id,
+                    )
+                    arguments = dict(pending_automation.get("arguments") or {})
+                    arguments.update(
+                        {
+                            "approval_request_id": effective_resume_approval,
+                            "approval_decision": "approve",
+                            "live_execution_enabled": True,
+                            "raw_persistence_enabled": True,
+                            "provider_model": self._automation_model,
+                            "provider_base_url": self._base_url or "",
+                            "provider_api_key": self._provider_secret or "",
+                            "provider_model_supports_vision": self._automation_model_supports_vision,
+                            "automation_vision_required": self._automation_vision_required,
+                        }
+                    )
+                    tool_response = self._tool_executor.execute(
+                        turn_input,
+                        action=turn_input.user_visible_input or "approved automation action",
+                        capability=str(pending_automation.get("capability") or "browser_click_type"),
+                        resource_type=str(pending_automation.get("resource_type") or "browser"),
+                        capability_id=str(pending_automation.get("capability_id") or "browser_use.task"),
+                        arguments=arguments,
+                    )
+                    loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
+                    return _entrypoint_text_result(
+                        turn_input,
+                        text=_browser_or_computer_use_final_text(tool_response),
+                        metadata=_with_loop_metadata(
+                            {
+                                **metadata,
+                                "approval": {"approval_request_id": effective_resume_approval, "decision": "approved"},
+                                "tool_boundary": "tool_worker_process",
+                                "automation": tool_response,
+                            },
+                            loop,
+                            self._trace_reader,
+                            turn_input,
+                        ),
+                        stage_name="automation",
+                    )
                 file_write_request = _file_write_request_from_input(turn_input.user_visible_input)
                 if file_write_request is not None:
                     if not self._file_capability_root:

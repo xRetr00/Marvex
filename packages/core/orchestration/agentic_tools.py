@@ -26,6 +26,7 @@ from typing import Any, Callable
 
 from packages.adapters.capabilities.tools import ToolRegistry
 from packages.adapters.capabilities.tools.clarify import CLARIFY_TOOL_ID, clarification_payload_from_arguments
+from packages.adapters.capabilities.tools.automation import AUTOMATION_TOOL_CAPABILITIES
 from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel
 
 # Builds an execution request for a resolved tool id + parsed arguments. The
@@ -41,6 +42,7 @@ class ToolCallResult:
     status: str  # "succeeded" | "unknown" | "needs_approval" | "needs_clarification" | "error"
     message: dict[str, Any]  # OpenAI-style {"role": "tool", ...}
     clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
+    automation: dict[str, Any] | None = None  # set when an automation tool needs approval
 
 
 @dataclass
@@ -60,6 +62,10 @@ class ToolStepOutcome:
     @property
     def needs_clarification(self) -> list[ToolCallResult]:
         return [r for r in self.results if r.status == "needs_clarification"]
+
+    @property
+    def automation_calls(self) -> list[ToolCallResult]:
+        return [r for r in self.results if r.automation is not None]
 
     @property
     def all_messages(self) -> list[dict[str, Any]]:
@@ -112,14 +118,42 @@ def execute_tool_calls(
         function = function if isinstance(function, dict) else {}
         name = str(function.get("name") or "").strip()
         arguments = parse_tool_arguments(function.get("arguments"))
+        # Tool schemas advertise control tools as "builtin.<id>" (e.g.
+        # builtin.clarify, builtin.browser_use), so the model calls that form.
+        # Compare interception ids against the bare id, not the namespaced name.
+        bare_name = name[len("builtin.") :] if name.startswith("builtin.") else name
 
-        if name == CLARIFY_TOOL_ID:
+        if bare_name == CLARIFY_TOOL_ID:
             # Model-driven clarification: do not execute anything; pause the turn
             # and surface the question to the user via the UI.
             payload = clarification_payload_from_arguments(arguments)
             content = "Awaiting the user's answer to the clarifying question."
             results.append(
                 ToolCallResult(call_id, name, "needs_clarification", _tool_message(call_id, content), clarification=payload)
+            )
+            tool_messages.append(results[-1].message)
+            continue
+
+        if bare_name in AUTOMATION_TOOL_CAPABILITIES:
+            # Model called a browser/desktop automation tool. Do not execute it in
+            # the loop: pause for human approval and carry the capability id + the
+            # model's arguments so Core executes the real capability on approve.
+            capability_id, resource_type, capability_label = AUTOMATION_TOOL_CAPABILITIES[bare_name]
+            content = f"Tool '{name}' requires human approval before it can run. Awaiting approval."
+            results.append(
+                ToolCallResult(
+                    call_id,
+                    name,
+                    "needs_approval",
+                    _tool_message(call_id, content),
+                    automation={
+                        "tool_id": name,
+                        "capability_id": capability_id,
+                        "resource_type": resource_type,
+                        "capability": capability_label,
+                        "arguments": arguments,
+                    },
+                )
             )
             tool_messages.append(results[-1].message)
             continue
@@ -190,6 +224,7 @@ class LoopResult:
     executed_tool_ids: list[str] = field(default_factory=list)
     needs_approval_tool_ids: list[str] = field(default_factory=list)
     clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
+    automation: dict[str, Any] | None = None  # capability+args when an automation tool needs approval
     response_id: str | None = None  # provider response id at pause (for resume)
 
 
@@ -249,12 +284,15 @@ def run_tool_loop(
                 response_id=prev,
             )
         if outcome.needs_approval:
+            automation_calls = outcome.automation_calls
             return LoopResult(
                 status="needs_approval",
                 text=last_text,
                 steps=index + 1,
                 executed_tool_ids=executed,
                 needs_approval_tool_ids=[r.tool_id for r in outcome.needs_approval],
+                automation=automation_calls[0].automation if automation_calls else None,
+                response_id=prev,
             )
         tool_messages = outcome.all_messages
         input_text = ""  # continuation: provider uses tool_messages
