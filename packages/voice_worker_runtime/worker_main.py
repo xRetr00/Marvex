@@ -220,6 +220,9 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "bytes",
         "sample_rate",
         "ok",
+        "detected",
+        "keyword",
+        "buffered_frames",
     ):
         if key in payload:
             safe[key] = payload[key]

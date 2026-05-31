@@ -341,6 +341,34 @@ class SherpaOnnxKwsRunner:
                 reason_code=reason[:240],
             )
 
+    def batch_probe(self, frames: tuple[AudioFrame, ...], asset: VoiceModelInstallResult, *, phrase: str, threshold: float) -> tuple[bool, str]:
+        """Run detection over ``frames`` on a FRESH stream, independent of the
+        live persistent one. Diagnostic only: if this detects audio that the
+        live loop missed, the persistent-stream feed is the problem (not the
+        model/keyword/audio). Fed in 0.3s sub-chunks, mirroring the working
+        offline path."""
+
+        path = self.asset_manager.resolve_installed_path(asset.model_id)
+        if not frames or path is None:
+            return False, ""
+        try:
+            kws, _live_stream = self._ensure_session(path=path, asset=asset, phrase=phrase, threshold=threshold)
+            if kws is None:
+                return False, ""
+            stream = kws.create_stream()
+            sample_rate = frames[0].sample_rate
+            samples = _frames_to_float_samples(frames)
+            chunk = max(1, int(sample_rate * 0.3))
+            for start in range(0, len(samples), chunk):
+                stream.accept_waveform(sample_rate, samples[start:start + chunk])
+                self._drive_decode(kws, stream)
+                keyword, _confidence = _kws_keyword_and_confidence(self._read_kws_result(kws, stream), threshold)
+                if keyword:
+                    return True, keyword
+            return False, ""
+        except Exception:
+            return False, ""
+
     def _drive_decode(self, kws: Any, stream: Any) -> None:
         """Decode whatever the spotter has buffered.
 

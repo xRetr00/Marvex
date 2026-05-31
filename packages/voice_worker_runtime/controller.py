@@ -437,6 +437,9 @@ class VoiceWorkerController:
         last_reason_code: str | None = None
         last_rms = 0.0
         max_rms_window = 0.0
+        # Rolling buffer of recent frames (~6s) for the batch self-probe below.
+        recent_frames: deque[Any] = deque(maxlen=max(2 * max(1, frames_per_decode), 60))
+        probes_done = 0
         # Opt-in raw-audio capture for triage (MARVEX_VOICE_DEBUG_DUMP). Writes a
         # bounded WAV of exactly what the KWS is being fed, so we can replay it
         # offline and tell "real audio doesn't decode" from "live feed problem".
@@ -489,6 +492,7 @@ class VoiceWorkerController:
                 # not matching" (RMS healthy, confidence still 0).
                 last_rms = _frames_rms(frames)
                 max_rms_window = max(max_rms_window, last_rms)
+                recent_frames.extend(frames)
                 # Detection + command capture mutate worker state + the KWS
                 # session, so take the lock only around that brief work.
                 with _locked():
@@ -547,6 +551,38 @@ class VoiceWorkerController:
                                 "audio_rms_peak": round(max_rms_window, 1),
                             }
                         )
+                        # Decisive self-diagnostic: when speech is clearly present
+                        # (loud window) but the LIVE persistent stream has detected
+                        # nothing, replay the buffered audio through a FRESH stream.
+                        # detected-here-but-not-live => the persistent-stream feed
+                        # is the bug; not-detected-either => audio content/format.
+                        probe = getattr(self.backend_runtime, "probe_wakeword", None)
+                        if (
+                            callable(probe)
+                            and detections == 0
+                            and max_rms_window >= 800.0
+                            and probes_done < 5
+                            and len(recent_frames) >= max(1, frames_per_decode)
+                        ):
+                            probes_done += 1
+                            try:
+                                hit, keyword = probe(
+                                    backend_id=self.config.wakeword.backend_id,
+                                    frames=tuple(recent_frames),
+                                    phrase=self.config.wakeword.phrase,
+                                    threshold=self.config.wakeword.threshold,
+                                )
+                            except Exception:
+                                hit, keyword = False, ""
+                            _emit(
+                                {
+                                    "event": "wake_listen_batch_probe",
+                                    "detected": bool(hit),
+                                    "keyword": keyword,
+                                    "buffered_frames": len(recent_frames),
+                                    "audio_rms_peak": round(max_rms_window, 1),
+                                }
+                            )
                         max_rms_window = 0.0
         finally:
             self._continuous_active = False

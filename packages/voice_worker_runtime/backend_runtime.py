@@ -235,6 +235,24 @@ class VoiceWorkerBackendRuntime:
             return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=backend_id, reason_code=blocker)
         return self._wakeword_runner(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
 
+    def probe_wakeword(self, *, backend_id: str, frames: tuple[AudioFrame, ...], phrase: str, threshold: float) -> tuple[bool, str]:
+        """Batch-probe ``frames`` on a FRESH stream (diagnostic only). Returns
+        (detected, keyword). No-op (False, "") when the runner has no batch
+        probe (e.g. test fakes) or the model is not ready."""
+
+        probe = getattr(self._wakeword_runner, "batch_probe", None)
+        if not callable(probe):
+            return False, ""
+        model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
+        asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
+        blocker = None if self._custom_wakeword_runner and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        if blocker is not None:
+            return False, ""
+        try:
+            return probe(frames, asset, phrase=phrase, threshold=threshold)
+        except Exception:
+            return False, ""
+
     def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str) -> dict[str, object]:
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind=model_kind)
         package = _package_status(package_name=package_name, module_name=module_name)
