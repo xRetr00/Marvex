@@ -8,9 +8,11 @@ import {
   fetchProviders,
   refreshProviderModels,
   removeProviderSecret,
+  selectProviderAutomationModel,
   selectProvider,
   selectProviderModel,
   selectProviderMultiModels,
+  setProviderConnection,
   setProviderSecret,
   type ProviderCatalog,
   type ProviderRow,
@@ -39,6 +41,11 @@ export function ControlPlaneSettings() {
   const [skills, setSkills] = useState<Record<string, unknown>[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState("");
+  const [connectionUrlDraft, setConnectionUrlDraft] = useState("");
+  const [providerModeDraft, setProviderModeDraft] = useState("native");
+  const [automationModelDraft, setAutomationModelDraft] = useState("");
+  const [automationSupportsVision, setAutomationSupportsVision] = useState(false);
+  const [automationVisionRequired, setAutomationVisionRequired] = useState(false);
   const [showKeyDraft, setShowKeyDraft] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -74,6 +81,15 @@ export function ControlPlaneSettings() {
     void load();
   }, [load]);
 
+  useEffect(() => {
+    if (!activeProvider) return;
+    setConnectionUrlDraft(activeProvider.base_url ?? "");
+    setProviderModeDraft(activeProvider.provider_mode ?? "native");
+    setAutomationModelDraft(activeProvider.automation_model || activeProvider.active_model || "");
+    setAutomationSupportsVision(Boolean(activeProvider.automation_model_capabilities?.vision));
+    setAutomationVisionRequired(Boolean(activeProvider.automation_policy?.vision_required));
+  }, [activeProvider?.provider_id]);
+
   const run = async (label: string, action: () => Promise<unknown>) => {
     setBusy(label);
     setError(null);
@@ -102,6 +118,17 @@ export function ControlPlaneSettings() {
   const onRefreshModels = () => {
     if (!activeProvider) return;
     void run("model discovery", () => refreshProviderModels(activeProvider.provider_id));
+  };
+  const onSaveConnection = () => {
+    if (!activeProvider) return;
+    void run("connection", () => setProviderConnection(activeProvider.provider_id, connectionUrlDraft.trim(), providerModeDraft));
+  };
+  const onSaveAutomationModel = () => {
+    if (!activeProvider || !automationModelDraft.trim()) return;
+    void run("automation model", () => selectProviderAutomationModel(activeProvider.provider_id, automationModelDraft.trim(), {
+      supportsVision: automationSupportsVision,
+      visionRequired: automationVisionRequired,
+    }));
   };
   const onToggleMultiModel = (model: string, enabled: boolean) => {
     if (!activeProvider) return;
@@ -175,6 +202,54 @@ export function ControlPlaneSettings() {
           <div style={providerRows}>
             {(providers?.providers ?? []).map((provider) => <ProviderTile key={provider.provider_id} provider={provider} active={provider.provider_id === providers?.active_provider_id} />)}
           </div>
+        </Panel>
+
+        <Panel icon={<Server size={16} />} title="Provider Endpoint">
+          <label style={field}>
+            <span>Provider mode</span>
+            <select aria-label="Provider mode" value={providerModeDraft} onChange={(event) => setProviderModeDraft(event.target.value)} style={select}>
+              <option value="litellm_sdk">LiteLLM SDK</option>
+              <option value="litellm_proxy">LiteLLM proxy</option>
+              <option value="openai_compatible">OpenAI-compatible URL</option>
+              <option value="native">Native provider</option>
+            </select>
+          </label>
+          <label style={field}>
+            <span>Base URL</span>
+            <input aria-label="Provider base URL" value={connectionUrlDraft} onChange={(event) => setConnectionUrlDraft(event.target.value)} placeholder="http://localhost:20128/v1" style={input} />
+          </label>
+          <div style={actions}>
+            <Button size="sm" onClick={onSaveConnection} disabled={!activeProvider || Boolean(busy)}><Save size={14} />Save endpoint</Button>
+          </div>
+          <Muted>Use this for LiteLLM proxy, OmniRoute, LM Studio, or any OpenAI-compatible `/v1` endpoint.</Muted>
+        </Panel>
+      </section>
+
+      <section style={grid2}>
+        <Panel icon={<Wrench size={16} />} title="Browser / Computer Model">
+          <label style={field}>
+            <span>Automation model</span>
+            <select aria-label="Automation model" value={automationModelDraft} onChange={(event) => setAutomationModelDraft(event.target.value)} style={select}>
+              {automationModelDraft && !(activeProvider?.models ?? []).includes(automationModelDraft) && <option value={automationModelDraft}>{automationModelDraft}</option>}
+              {(activeProvider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}
+            </select>
+          </label>
+          <div style={inlineField}>
+            <input aria-label="Automation model id" value={automationModelDraft} onChange={(event) => setAutomationModelDraft(event.target.value)} placeholder="Model for browser/computer use" style={input} />
+            <Button aria-label="Save automation model" size="sm" onClick={onSaveAutomationModel} disabled={!automationModelDraft.trim() || Boolean(busy)}><Save size={14} /></Button>
+          </div>
+          <label style={checkRow}>
+            <input type="checkbox" checked={automationSupportsVision} onChange={(event) => setAutomationSupportsVision(event.target.checked)} />
+            <span>Selected automation model supports vision</span>
+          </label>
+          <label style={checkRow}>
+            <input type="checkbox" checked={automationVisionRequired} onChange={(event) => setAutomationVisionRequired(event.target.checked)} />
+            <span>Require vision for browser/computer tasks</span>
+          </label>
+          <Chip
+            label={activeProvider?.automation_validation?.ready ? "automation ready" : activeProvider?.automation_validation?.reason_code ?? "automation not configured"}
+            ok={Boolean(activeProvider?.automation_validation?.ready)}
+          />
         </Panel>
 
         <Panel icon={<KeyRound size={16} />} title="Credentials">

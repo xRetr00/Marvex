@@ -73,6 +73,7 @@ def handle_jsonl_command(
                 provider_name=_provider_name(payload),
                 request=request,
                 base_url=_optional_string(payload.get("base_url")),
+                provider_mode=_optional_string(payload.get("provider_mode")),
                 timeout_seconds=_optional_float(payload.get("timeout_seconds")),
                 lmstudio_responses_api_key=_optional_string(
                     payload.get("lmstudio_responses_api_key")
@@ -88,6 +89,7 @@ def handle_jsonl_command(
                 target_contract=_optional_string(payload.get("target_contract")) or "",
                 raw_output_text=_optional_string(payload.get("raw_output_text")) or "",
                 base_url=_optional_string(payload.get("base_url")),
+                provider_mode=_optional_string(payload.get("provider_mode")),
                 timeout_seconds=_optional_float(payload.get("timeout_seconds")),
                 lmstudio_responses_api_key=_optional_string(
                     payload.get("lmstudio_responses_api_key")

@@ -82,6 +82,7 @@ def test_provider_runtime_config_supports_additive_connection_fields():
         "lmstudio_responses_api_key",
         "litellm_api_key",
         "base_url",
+        "provider_mode",
         "timeout_seconds",
     ]
     assert config.base_url is None

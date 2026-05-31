@@ -5,7 +5,7 @@ import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
 import { getShellRuntimeConfig, showOverlay, submitChatTurn, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
-import { idleAssistantState, normalizeAssistantState, statusLabel, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
+import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
@@ -285,7 +285,7 @@ export function ChatApp() {
           {(pending || state.status !== "idle") && <Loader variant="circular" size="sm" />}
           <Status status={state.status === "idle" ? "online" : "degraded"}>
             <StatusIndicator />
-            <StatusLabel>{state.status === "idle" ? "Ready" : statusLabel(state.status)}</StatusLabel>
+            <StatusLabel>{state.status === "idle" ? "Ready" : displayDetail(state)}</StatusLabel>
           </Status>
           <div style={{ width: 1, height: 24, background: "var(--border)" }} />
           <button onClick={() => void marvexRestart()} title="Restart Marvex" style={iconBtn}><RotateCcw size={15} /></button>
@@ -332,6 +332,7 @@ export function ChatApp() {
                 onApprovalDecision={decideChatApproval}
                 onClarificationAnswer={answerClarification}
                 pending={pending}
+                activityLabel={state.status === "idle" ? "Marvex is thinking" : displayDetail(state)}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
             )}

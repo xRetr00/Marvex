@@ -23,6 +23,7 @@ class LiteLLMProviderConfig:
     provider_name: str = "litellm"
     api_key: str | None = None
     base_url: str | None = None
+    provider_mode: str = "litellm_sdk"
     timeout_seconds: float | None = None
     error_id: str = "litellm-error-001"
 
@@ -42,7 +43,7 @@ class LiteLLMProvider:
     def send(self, request: ProviderRequest) -> ProviderResponse:
         messages = self._build_messages(request)
         call_args = {
-            "model": request.model,
+            "model": self._model_for_call(request.model),
             "messages": messages,
         }
         allowed_options, ignored_options = self._filter_provider_options(
@@ -289,3 +290,12 @@ class LiteLLMProvider:
         if value in {"error", "content_filter"}:
             return FinishReason.ERROR
         return FinishReason.UNKNOWN
+
+    def _model_for_call(self, model: str) -> str:
+        if (
+            self._config.base_url
+            and self._config.provider_mode in {"openai_compatible", "litellm_proxy"}
+            and "/" not in model
+        ):
+            return f"openai/{model}"
+        return model

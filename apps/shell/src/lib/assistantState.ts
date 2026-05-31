@@ -69,7 +69,11 @@ export function shouldShowOverlay(state: AssistantStateEvent): boolean {
 
 export function displayDetail(state: AssistantStateEvent): string {
   const detail = state.detail?.trim();
-  return detail ? detail : statusLabel(state.status);
+  return detail ? prettyStatusDetail(detail) : statusLabel(state.status);
+}
+
+function prettyStatusDetail(detail: string): string {
+  return detail.replace(/[_-]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
 export function waveformLevel(state: AssistantStateEvent, phase = 0): number {

@@ -96,6 +96,51 @@ def test_litellm_config_base_url_and_timeout_are_forwarded(monkeypatch):
     assert calls[0]["timeout"] == 5
 
 
+def test_litellm_openai_compatible_mode_prefixes_plain_model_ids(monkeypatch):
+    from packages.adapters.providers.litellm import litellm_provider
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return make_completion_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+
+    LiteLLMProvider(
+        LiteLLMProviderConfig(
+            base_url="http://localhost:20128/v1",
+            provider_mode="openai_compatible",
+        )
+    ).send(make_request().model_copy(update={"model": "omniroute-qwen"}))
+
+    assert calls[0]["model"] == "openai/omniroute-qwen"
+    assert calls[0]["api_base"] == "http://localhost:20128/v1"
+
+
+def test_litellm_openai_compatible_mode_preserves_prefixed_model_ids(monkeypatch):
+    from packages.adapters.providers.litellm import litellm_provider
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    calls: list[dict[str, object]] = []
+
+    def fake_completion(**kwargs):
+        calls.append(kwargs)
+        return make_completion_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+
+    LiteLLMProvider(
+        LiteLLMProviderConfig(
+            base_url="http://localhost:20128/v1",
+            provider_mode="openai_compatible",
+        )
+    ).send(make_request().model_copy(update={"model": "openai/gpt-4o-mini"}))
+
+    assert calls[0]["model"] == "openai/gpt-4o-mini"
+
+
 def test_litellm_request_timeout_overrides_config_timeout(monkeypatch):
     from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig

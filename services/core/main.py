@@ -404,6 +404,7 @@ class _ProviderWorkerProcessProvider:
         *,
         provider_name: str,
         base_url: str | None = None,
+        provider_mode: str | None = None,
         timeout_seconds: float | None = None,
         provider_secret: str | None = None,
         python_executable: str = sys.executable,
@@ -411,6 +412,7 @@ class _ProviderWorkerProcessProvider:
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
+        self._provider_mode = provider_mode
         self._timeout_seconds = timeout_seconds
         self._provider_secret = provider_secret
         self._python_executable = python_executable
@@ -431,6 +433,8 @@ class _ProviderWorkerProcessProvider:
         }
         if self._base_url is not None:
             send_command["base_url"] = self._base_url
+        if self._provider_mode is not None:
+            send_command["provider_mode"] = self._provider_mode
         if self._timeout_seconds is not None:
             send_command["timeout_seconds"] = self._timeout_seconds
         if self._provider_secret:
@@ -480,6 +484,8 @@ class _ProviderWorkerProcessProvider:
         }
         if self._base_url is not None:
             command["base_url"] = self._base_url
+        if self._provider_mode is not None:
+            command["provider_mode"] = self._provider_mode
         if self._timeout_seconds is not None:
             command["timeout_seconds"] = self._timeout_seconds
         if self._provider_secret:
@@ -768,13 +774,18 @@ class _CoreServiceProviderWorkerTurnExecutor:
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
+        self._provider_mode: str | None = None
         self._timeout_seconds = timeout_seconds
         self._provider = _ProviderWorkerProcessProvider(
             provider_name=provider_name,
             base_url=base_url,
+            provider_mode=self._provider_mode,
             timeout_seconds=timeout_seconds,
         )
         self._provider_secret: str | None = None
+        self._automation_model = model
+        self._automation_model_supports_vision = False
+        self._automation_vision_required = False
         self._intent_classifier = _IntentWorkerProcessClassifier(
             timeout_seconds=timeout_seconds,
         )
@@ -815,23 +826,47 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 except Exception:
                     pass
 
-    def configure_provider(self, *, provider_name: str, model: str, provider_secret: str | None = None) -> None:
+    def configure_provider(
+        self,
+        *,
+        provider_name: str,
+        model: str,
+        provider_secret: str | None = None,
+        base_url: str | None = None,
+        automation_model: str | None = None,
+        automation_model_supports_vision: bool = False,
+        automation_vision_required: bool = False,
+        provider_mode: str | None = None,
+    ) -> None:
         provider_name = provider_name.strip()
         model = model.strip()
         if not provider_name or not model:
             return
         provider_secret = provider_secret.strip() if isinstance(provider_secret, str) and provider_secret.strip() else None
-        if provider_name != self._provider_name or provider_secret != self._provider_secret:
+        clean_base_url = base_url.strip() if isinstance(base_url, str) and base_url.strip() else None
+        clean_provider_mode = provider_mode.strip() if isinstance(provider_mode, str) and provider_mode.strip() else None
+        if (
+            provider_name != self._provider_name
+            or provider_secret != self._provider_secret
+            or clean_base_url != self._base_url
+            or clean_provider_mode != self._provider_mode
+        ):
             self._provider.shutdown()
             self._provider = _ProviderWorkerProcessProvider(
                 provider_name=provider_name,
-                base_url=self._base_url,
+                base_url=clean_base_url,
+                provider_mode=clean_provider_mode,
                 timeout_seconds=self._timeout_seconds,
                 provider_secret=provider_secret,
             )
             self._provider_name = provider_name
             self._provider_secret = provider_secret
+            self._base_url = clean_base_url
+            self._provider_mode = clean_provider_mode
         self._model = model
+        self._automation_model = (automation_model or model).strip() or model
+        self._automation_model_supports_vision = bool(automation_model_supports_vision)
+        self._automation_vision_required = bool(automation_vision_required)
         # CRITICAL: keep the provider-selection runtime in lockstep with the
         # explicit user choice. The selection runtime was built once at
         # startup with a single hardcoded candidate (litellm /
@@ -1496,9 +1531,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "approval_decision": effective_approval_decision or "",
                     "live_execution_enabled": True,
                     "raw_persistence_enabled": True,
-                    "provider_model": self._model,
+                    "provider_model": self._automation_model,
                     "provider_base_url": self._base_url or "",
                     "provider_api_key": self._provider_secret or "",
+                    "provider_model_supports_vision": self._automation_model_supports_vision,
+                    "automation_vision_required": self._automation_vision_required,
                 },
             )
             loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
@@ -2297,6 +2334,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     )
                     capability_id = "computer_use.action" if is_computer else "browser_use.task"
                     loop.step("tool")
+                    self._publish(AssistantStatusKind.USING_TOOLS, detail=capability_id, trace_id=turn_input.trace_id)
                     tool_response = self._tool_executor.execute(
                         turn_input,
                         action=turn_input.user_visible_input or "approved automation action",
@@ -2309,14 +2347,17 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             "approval_decision": "approve",
                             "live_execution_enabled": True,
                             "raw_persistence_enabled": True,
-                            "provider_model": self._model,
+                            "provider_model": self._automation_model,
                             "provider_base_url": self._base_url or "",
                             "provider_api_key": self._provider_secret or "",
+                            "provider_model_supports_vision": self._automation_model_supports_vision,
+                            "automation_vision_required": self._automation_vision_required,
                         },
                     )
                     final_text = _browser_or_computer_use_final_text(tool_response)
                 else:
                     loop.step("tool")
+                    self._publish(AssistantStatusKind.USING_TOOLS, detail="approval_resume", trace_id=turn_input.trace_id)
                     tool_response = self._tool_executor.execute(
                         turn_input,
                         action="approved risky action confirmation",
@@ -3881,13 +3922,35 @@ def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provi
     if active is None:
         return
     model = str(active.get("active_model") or "").strip()
+    base_url = str(active.get("base_url") or "").strip() or None
+    provider_mode = str(active.get("provider_mode") or "").strip() or None
+    automation_model = str(active.get("automation_model") or "").strip() or model
+    automation_capabilities = active.get("automation_model_capabilities")
+    automation_policy = active.get("automation_policy")
     secret = None
     if provider_control is not None and hasattr(provider_control, "secret_value"):
         try:
             secret = provider_control.secret_value(active_provider_id)
         except Exception:
             secret = None
-    configure(provider_name=active_provider_id, model=model, provider_secret=secret)
+    configure(
+        provider_name=active_provider_id,
+        model=model,
+        provider_secret=secret,
+        base_url=base_url,
+        provider_mode=provider_mode,
+        automation_model=automation_model,
+        automation_model_supports_vision=bool(
+            automation_capabilities.get("vision")
+            if isinstance(automation_capabilities, dict)
+            else False
+        ),
+        automation_vision_required=bool(
+            automation_policy.get("vision_required")
+            if isinstance(automation_policy, dict)
+            else False
+        ),
+    )
 
 
 def health_once_payload() -> dict[str, object]:

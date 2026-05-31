@@ -32,8 +32,15 @@ describe("ControlPlaneSettings", () => {
               configured: true,
               healthy: true,
               active_model: "qwen2.5-coder-7b",
+              automation_model: "qwen2.5-coder-7b",
               models: ["qwen2.5-coder-7b", "llama-3.1-8b"],
               multi_models: ["qwen2.5-coder-7b"],
+              base_url: "http://127.0.0.1:1234/v1",
+              provider_mode: "openai_compatible",
+              supports_custom_base_url: true,
+              automation_model_capabilities: { vision: false },
+              automation_policy: { vision_required: false },
+              automation_validation: { ready: true, reason_code: null },
               secret_present: secretPresent,
               secret_display: secretPresent ? "sk-p****cret" : "",
               secret_value_present: false,
@@ -63,11 +70,22 @@ describe("ControlPlaneSettings", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Active provider"), "lmstudio_responses");
     await userEvent.selectOptions(screen.getByLabelText("Active model"), "llama-3.1-8b");
+    await userEvent.selectOptions(screen.getByLabelText("Provider mode"), "openai_compatible");
+    await userEvent.clear(screen.getByLabelText("Provider base URL"));
+    await userEvent.type(screen.getByLabelText("Provider base URL"), "http://localhost:20128/v1");
+    await userEvent.click(screen.getByRole("button", { name: /Save endpoint/i }));
+    await userEvent.clear(screen.getByLabelText("Automation model id"));
+    await userEvent.type(screen.getByLabelText("Automation model id"), "gpt-4o");
+    await userEvent.click(screen.getByLabelText("Selected automation model supports vision"));
+    await userEvent.click(screen.getByLabelText("Require vision for browser/computer tasks"));
+    await userEvent.click(screen.getByRole("button", { name: /Save automation model/i }));
     await userEvent.type(screen.getByLabelText("Provider API key"), "sk-plain-text-secret");
     await userEvent.click(screen.getByRole("button", { name: /Save key/i }));
     await userEvent.click(screen.getByRole("button", { name: /Install Browser automation/i }));
     await userEvent.click(screen.getByRole("button", { name: /Open full control plane/i }));
 
+    await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/connection", "POST", { base_url: "http://localhost:20128/v1", provider_mode: "openai_compatible" }));
+    expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/automation", "POST", { model: "gpt-4o", supports_vision: true, vision_required: true });
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
     expect(mockedOpenControlPlane).toHaveBeenCalledTimes(1);

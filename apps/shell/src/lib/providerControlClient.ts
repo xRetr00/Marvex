@@ -7,8 +7,18 @@ export const providerRowSchema = z.object({
   configured: z.boolean().optional(),
   healthy: z.boolean().optional(),
   active_model: z.string().optional(),
+  automation_model: z.string().optional(),
   models: z.array(z.string()).optional(),
   multi_models: z.array(z.string()).optional(),
+  base_url: z.string().optional(),
+  provider_mode: z.string().optional(),
+  supports_custom_base_url: z.boolean().optional(),
+  automation_model_capabilities: z.record(z.string(), z.boolean()).optional(),
+  automation_policy: z.record(z.string(), z.boolean()).optional(),
+  automation_validation: z.object({
+    ready: z.boolean(),
+    reason_code: z.string().nullable().optional(),
+  }).optional(),
   secret_present: z.boolean().optional(),
   secret_display: z.string().optional(),
   secret_value_present: z.literal(false).optional(),
@@ -38,6 +48,22 @@ export async function selectProviderModel(providerId: string, model: string): Pr
 
 export async function selectProviderMultiModels(providerId: string, models: string[]): Promise<ProviderCatalog> {
   return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/models/multi`, "POST", { models }));
+}
+
+export async function setProviderConnection(providerId: string, baseUrl: string, providerMode: string): Promise<ProviderCatalog> {
+  return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/connection`, "POST", { base_url: baseUrl, provider_mode: providerMode }));
+}
+
+export async function selectProviderAutomationModel(
+  providerId: string,
+  model: string,
+  options: { supportsVision?: boolean; visionRequired?: boolean } = {},
+): Promise<ProviderCatalog> {
+  return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/automation`, "POST", {
+    model,
+    supports_vision: options.supportsVision,
+    vision_required: options.visionRequired,
+  }));
 }
 
 export async function refreshProviderModels(providerId: string): Promise<ProviderCatalog> {

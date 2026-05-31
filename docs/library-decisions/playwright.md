@@ -16,7 +16,7 @@ pyproject dependency: playwright
 
 declared dependency: playwright==1.60.0
 
-verified date: 2026-05-18
+verified date: 2026-05-31
 
 verified by: Codex
 
@@ -28,4 +28,6 @@ adopt / defer / reject decision: Adopt narrowly for browser automation adapter m
 
 risks: Browser automation can perform real-world actions, expose credentials, submit forms, persist screenshots/DOM, and violate site rules. Mitigations in this phase are isolated-session policy, risk/side-effect classification, approval-required browser actions, no sensitive form submission, no CAPTCHA/anti-bot bypass, and safe result envelopes only.
 
-comparison to custom routing: Playwright is not an assistant planner, browser brain, provider router, or policy engine. It is a browser SDK behind a Marvex adapter and cannot bypass CapabilityRuntime policy.
+playwright mcp: Marvex now admits Playwright MCP as a built-in local MCP backend through ToolWorker. The default command is `npx @playwright/mcp@latest --browser=chrome`, headed by default. Extension mode (`--extension`) and CDP endpoint mode are represented in the adapter configuration for existing profile workflows. The unsafe code/evaluate path remains separately approval-gated because it is equivalent to arbitrary browser-context code execution.
+
+comparison to custom routing: Playwright is not an assistant planner, browser brain, provider router, or policy engine. It is a browser SDK/MCP backend behind a Marvex adapter and cannot bypass CapabilityRuntime policy.

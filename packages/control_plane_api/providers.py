@@ -7,6 +7,7 @@ from collections.abc import Callable
 from importlib import import_module
 from typing import Any
 from urllib.error import URLError
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from .voice import _read_json
@@ -24,20 +25,39 @@ class ProviderControlState:
     configured: bool = False
     healthy: bool = False
     active_model: str = ""
+    automation_model: str = ""
     models: list[str] = field(default_factory=list)
     multi_models: list[str] = field(default_factory=list)
+    base_url: str = ""
+    provider_mode: str = "native"
+    supports_custom_base_url: bool = False
+    automation_model_capabilities: dict[str, bool] = field(default_factory=dict)
+    automation_policy: dict[str, bool] = field(default_factory=lambda: {"vision_required": False})
     secret_present: bool = False
     secret_display: str = ""
 
     def projection(self) -> dict[str, Any]:
+        automation_capabilities = dict(self.automation_model_capabilities)
+        automation_policy = dict(self.automation_policy)
         return {
             "provider_id": self.provider_id,
             "label": self.label,
             "configured": self.configured,
             "healthy": self.healthy,
             "active_model": self.active_model,
+            "automation_model": self.automation_model,
             "models": list(self.models),
             "multi_models": list(self.multi_models),
+            "base_url": self.base_url,
+            "provider_mode": self.provider_mode,
+            "supports_custom_base_url": self.supports_custom_base_url,
+            "automation_model_capabilities": automation_capabilities,
+            "automation_policy": automation_policy,
+            "automation_validation": _automation_validation(
+                automation_model=self.automation_model,
+                capabilities=automation_capabilities,
+                policy=automation_policy,
+            ),
             "secret_present": self.secret_present,
             "secret_display": self.secret_display if self.secret_present else "",
             "secret_value_present": False,
@@ -66,8 +86,12 @@ class InMemoryProviderControl:
                 configured=False,
                 healthy=False,
                 active_model="",
+                automation_model="",
                 models=[],
                 multi_models=[],
+                base_url=_first_env("MARVEX_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL") or "http://127.0.0.1:1234/v1",
+                provider_mode="openai_compatible",
+                supports_custom_base_url=True,
                 secret_present=False,
             ),
             ProviderControlState(
@@ -76,8 +100,12 @@ class InMemoryProviderControl:
                 configured=False,
                 healthy=False,
                 active_model="",
+                automation_model="",
                 models=[],
                 multi_models=[],
+                base_url=_first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL") or "",
+                provider_mode="litellm_sdk",
+                supports_custom_base_url=True,
                 secret_present=False,
             ),
         )
@@ -129,6 +157,56 @@ class InMemoryProviderControl:
         row.configured = True
         return self._changed()
 
+    def set_connection(
+        self,
+        provider_id: str,
+        *,
+        base_url: str,
+        provider_mode: str | None = None,
+    ) -> dict[str, Any]:
+        row = self._provider(provider_id)
+        cleaned_base_url = str(base_url or "").strip()
+        if cleaned_base_url and not _safe_provider_base_url(cleaned_base_url):
+            raise ValueError("invalid_base_url")
+        row.base_url = cleaned_base_url
+        if provider_mode is not None:
+            cleaned_mode = _clean_provider_mode(str(provider_mode))
+            if not cleaned_mode:
+                raise ValueError("invalid_provider_mode")
+            row.provider_mode = cleaned_mode
+        row.supports_custom_base_url = True
+        row.configured = True
+        return self._changed()
+
+    def set_automation_model(
+        self,
+        provider_id: str,
+        *,
+        model: str,
+        supports_vision: bool | None = None,
+        vision_required: bool | None = None,
+    ) -> dict[str, Any]:
+        row = self._provider(provider_id)
+        cleaned_model = str(model or "").strip()
+        if not cleaned_model:
+            raise ValueError("model_required")
+        row.automation_model = cleaned_model
+        if cleaned_model not in row.models:
+            row.models.append(cleaned_model)
+        capabilities = dict(row.automation_model_capabilities)
+        capabilities["vision"] = bool(
+            _model_id_suggests_vision(cleaned_model)
+            if supports_vision is None
+            else supports_vision
+        )
+        row.automation_model_capabilities = capabilities
+        policy = dict(row.automation_policy)
+        if vision_required is not None:
+            policy["vision_required"] = bool(vision_required)
+        row.automation_policy = policy
+        row.configured = True
+        return self._changed()
+
     def set_secret(self, provider_id: str, secret_value: str) -> dict[str, Any]:
         row = self._provider(provider_id)
         if not secret_value.strip():
@@ -153,8 +231,6 @@ class InMemoryProviderControl:
     def refresh_models(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
         models = self._discover_models(provider_id)
-        if provider_id == "litellm":
-            models = _dedupe([*models, "openrouter/anthropic/claude-3.5-sonnet"])
         row.healthy = bool(models)
         if models:
             row.models = _dedupe([*models, *row.models])
@@ -209,12 +285,37 @@ class InMemoryProviderControl:
             active_model = row_data.get("active_model")
             if isinstance(active_model, str) and active_model.strip():
                 row.active_model = active_model.strip()
+            automation_model = row_data.get("automation_model")
+            if isinstance(automation_model, str) and automation_model.strip():
+                row.automation_model = automation_model.strip()
+            base_url = row_data.get("base_url")
+            if isinstance(base_url, str) and (not base_url.strip() or _safe_provider_base_url(base_url)):
+                row.base_url = base_url.strip()
+            provider_mode = row_data.get("provider_mode")
+            if isinstance(provider_mode, str):
+                cleaned_mode = _clean_provider_mode(provider_mode)
+                if cleaned_mode:
+                    row.provider_mode = cleaned_mode
             models = row_data.get("models")
             if isinstance(models, list):
                 row.models = [str(m) for m in models if isinstance(m, str) and m.strip()]
             multi = row_data.get("multi_models")
             if isinstance(multi, list):
                 row.multi_models = [str(m) for m in multi if isinstance(m, str) and m.strip()]
+            capabilities = row_data.get("automation_model_capabilities")
+            if isinstance(capabilities, dict):
+                row.automation_model_capabilities = {
+                    str(key): bool(value)
+                    for key, value in capabilities.items()
+                    if isinstance(key, str)
+                }
+            policy = row_data.get("automation_policy")
+            if isinstance(policy, dict):
+                row.automation_policy = {
+                    str(key): bool(value)
+                    for key, value in policy.items()
+                    if isinstance(key, str)
+                }
             if row_data.get("configured") is True:
                 row.configured = True
 
@@ -228,8 +329,13 @@ class InMemoryProviderControl:
                 {
                     "provider_id": row.provider_id,
                     "active_model": row.active_model,
+                    "automation_model": row.automation_model,
                     "models": list(row.models),
                     "multi_models": list(row.multi_models),
+                    "base_url": row.base_url,
+                    "provider_mode": row.provider_mode,
+                    "automation_model_capabilities": dict(row.automation_model_capabilities),
+                    "automation_policy": dict(row.automation_policy),
                     "configured": row.configured,
                 }
                 for row in self._providers.values()
@@ -249,9 +355,13 @@ class InMemoryProviderControl:
     def _discover_models(self, provider_id: str) -> list[str]:
         secret = self.secret_value(provider_id)
         try:
-            return _dedupe(self._model_discovery(provider_id, secret))
+            row = self._provider(provider_id)
+            return _dedupe(self._model_discovery(provider_id, secret, row.base_url))
         except TypeError:
-            return _dedupe(self._model_discovery(provider_id))
+            try:
+                return _dedupe(self._model_discovery(provider_id, secret))
+            except TypeError:
+                return _dedupe(self._model_discovery(provider_id))
 
 
 def handle_provider_control_request(
@@ -285,6 +395,30 @@ def handle_provider_control_request(
             if not isinstance(models, list):
                 raise ValueError("models_required")
             return "200 OK", _safe_catalog(control.set_multi_models(provider_id, models))
+        if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/connection") and method == "POST":
+            provider_id = _provider_path_id(path, suffix="/connection")
+            body = _read_json(environ)
+            provider_mode = body.get("provider_mode")
+            return "200 OK", _safe_catalog(
+                control.set_connection(
+                    provider_id,
+                    base_url=str(body.get("base_url") or "").strip(),
+                    provider_mode=str(provider_mode).strip() if provider_mode is not None else None,
+                )
+            )
+        if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/automation") and method == "POST":
+            provider_id = _provider_path_id(path, suffix="/automation")
+            body = _read_json(environ)
+            supports_vision = body.get("supports_vision")
+            vision_required = body.get("vision_required")
+            return "200 OK", _safe_catalog(
+                control.set_automation_model(
+                    provider_id,
+                    model=str(body.get("model") or "").strip(),
+                    supports_vision=supports_vision if isinstance(supports_vision, bool) else None,
+                    vision_required=vision_required if isinstance(vision_required, bool) else None,
+                )
+            )
         if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/models/refresh") and method == "POST":
             provider_id = _provider_path_id(path, suffix="/models/refresh")
             if not hasattr(control, "refresh_models"):
@@ -329,18 +463,63 @@ def _mask_secret(value: str) -> str:
     return f"{cleaned[:4]}****{cleaned[-4:]}"
 
 
-def _default_model_discovery(provider_id: str, secret: str | None = None) -> list[str]:
+def _clean_provider_mode(value: str) -> str:
+    cleaned = value.strip()
+    return cleaned if cleaned in {"native", "litellm_sdk", "litellm_proxy", "openai_compatible"} else ""
+
+
+def _safe_provider_base_url(value: str) -> bool:
+    parsed = urlparse(value.strip())
+    return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _model_id_suggests_vision(model: str) -> bool:
+    normalized = "".join(character.lower() if character.isalnum() else "-" for character in model)
+    markers = (
+        "vision",
+        "visual",
+        "multimodal",
+        "omni",
+        "gpt-4o",
+        "gpt-5",
+        "gemini",
+        "qwen-vl",
+        "qwen2-vl",
+        "qwen2-5-vl",
+        "qwen3-vl",
+        "pixtral",
+        "llava",
+        "vl-",
+        "-vl",
+    )
+    return any(marker in normalized for marker in markers)
+
+
+def _automation_validation(
+    *,
+    automation_model: str,
+    capabilities: dict[str, bool],
+    policy: dict[str, bool],
+) -> dict[str, object]:
+    if not automation_model.strip():
+        return {"ready": False, "reason_code": "automation_model_required"}
+    if policy.get("vision_required") and not capabilities.get("vision"):
+        return {"ready": False, "reason_code": "automation_vision_model_required"}
+    return {"ready": True, "reason_code": None}
+
+
+def _default_model_discovery(provider_id: str, secret: str | None = None, base_url: str | None = None) -> list[str]:
     if provider_id == "lmstudio_responses":
-        base_url = _first_env("MARVEX_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL") or "http://127.0.0.1:1234/v1"
-        return _openai_compatible_models(base_url, api_key=secret)
+        effective_base_url = base_url or _first_env("MARVEX_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL") or "http://127.0.0.1:1234/v1"
+        return _openai_compatible_models(effective_base_url, api_key=secret)
     if provider_id == "litellm":
         configured = _split_models(
             _first_env("MARVEX_LITELLM_MODELS", "LITELLM_MODELS", "LITELLM_MODEL")
         )
-        base_url = _first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL")
-        if base_url:
-            configured.extend(_openai_compatible_models(base_url, api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY")))
-        configured.extend(_litellm_sdk_models(api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"), api_base=base_url))
+        effective_base_url = base_url or _first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL")
+        if effective_base_url:
+            configured.extend(_openai_compatible_models(effective_base_url, api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY")))
+        configured.extend(_litellm_sdk_models(api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"), api_base=effective_base_url))
         return _dedupe(configured)
     return []
 

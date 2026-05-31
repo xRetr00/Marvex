@@ -22,6 +22,7 @@ class ProviderRuntimeConfig:
     lmstudio_responses_api_key: str | None = None
     litellm_api_key: str | None = None
     base_url: str | None = None
+    provider_mode: str | None = None
     timeout_seconds: float | None = None
 
 
@@ -47,6 +48,7 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         provider_config_kwargs = {
             "api_key": _clean_optional_string(config.litellm_api_key),
             "base_url": _clean_optional_string(config.base_url),
+            "provider_mode": _clean_optional_string(config.provider_mode),
             "timeout_seconds": config.timeout_seconds,
         }
         provider_config_kwargs = {
@@ -147,6 +149,8 @@ def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
         raise ValueError("timeout_seconds is only supported for network provider adapters")
     if config.timeout_seconds is not None and config.timeout_seconds <= 0:
         raise ValueError("timeout_seconds must be greater than zero")
+    if config.provider_name == "fake" and _clean_optional_string(config.provider_mode) is not None:
+        raise ValueError("provider_mode is only supported for network provider adapters")
 
 
 def _has_lmstudio_responses_api_key(config: ProviderRuntimeConfig) -> bool:

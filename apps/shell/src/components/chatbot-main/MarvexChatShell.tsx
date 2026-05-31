@@ -46,6 +46,7 @@ export type MarvexChatShellProps = {
   onToggleVoice?: () => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
   assistantOrbState?: "thinking" | "listening" | "talking" | null;
+  activityLabel?: string;
 };
 
 export function MarvexChatShell({
@@ -58,6 +59,7 @@ export function MarvexChatShell({
   onToggleVoice,
   renderAssistantOrb,
   assistantOrbState = null,
+  activityLabel = "Marvex is thinking",
 }: MarvexChatShellProps) {
   const conversationRef = useRef<HTMLDivElement | null>(null);
 
@@ -140,11 +142,11 @@ export function MarvexChatShell({
           ))}
           {pending ? (
             <ChatbotMessage from="assistant">
-              <ChatbotAssistantFrame orb={renderAssistantOrb("thinking")}>
-                <ChatbotMessageContent from="assistant" className="text-muted-foreground">
-                  Marvex is thinking
-                </ChatbotMessageContent>
-              </ChatbotAssistantFrame>
+                <ChatbotAssistantFrame orb={renderAssistantOrb("thinking")}>
+                  <ChatbotMessageContent from="assistant" className="text-muted-foreground">
+                  {activityLabel}
+                  </ChatbotMessageContent>
+                </ChatbotAssistantFrame>
             </ChatbotMessage>
           ) : null}
         </ChatbotConversationContent>

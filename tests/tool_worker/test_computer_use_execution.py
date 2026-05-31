@@ -181,6 +181,51 @@ def test_approved_windows_computer_use_calls_windows_mcp_backend(monkeypatch, tm
     assert result.result.raw_output_persisted is True
 
 
+def test_approved_playwright_mcp_task_uses_builtin_backend(monkeypatch, tmp_path) -> None:
+    import services.tool_worker.controller as controller
+
+    def fake_playwright_backend(request):
+        from packages.adapters.capabilities.playwright_mcp import PlaywrightMcpExecutionReport
+
+        return PlaywrightMcpExecutionReport(
+            status="succeeded",
+            tool_name="browser_navigate",
+            action_count=1,
+            browser="chrome",
+            artifact_payloads={"tool_result": {"content_count": 1}},
+        )
+
+    monkeypatch.setattr(controller, "execute_playwright_mcp_task", fake_playwright_backend)
+    monkeypatch.setenv("MARVEX_AUTOMATION_ARTIFACT_DIR", str(tmp_path))
+
+    result = ToolWorkerController().execute(
+        trace_id="trace-playwright-live",
+        turn_id="turn-playwright-live",
+        capability_id="playwright_mcp.task",
+        action="navigate with playwright mcp",
+        capability="browser_click_type",
+        resource_type="browser",
+        arguments={
+            "url": "https://www.youtube.com/",
+            "approval_request_id": "approval-turn-playwright-live",
+            "approval_decision": "approve",
+            "raw_persistence_enabled": True,
+            "live_execution_enabled": True,
+        },
+    )
+
+    assert result.ok is True
+    assert result.result is not None
+    assert result.result.status == "succeeded"
+    safe = result.result.safe_result
+    assert safe["adapter"] == "playwright-mcp"
+    assert safe["live_execution"] is True
+    assert safe["tool_name"] == "browser_navigate"
+    assert safe["browser"] == "chrome"
+    assert safe["raw_playwright_payload_persisted"] is True
+    assert result.result.raw_output_persisted is True
+
+
 def test_destructive_computer_actions_still_require_explicit_action_approval() -> None:
     result = ToolWorkerController().execute(
         trace_id="trace-computer-destroy",

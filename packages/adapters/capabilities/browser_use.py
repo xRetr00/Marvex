@@ -253,6 +253,8 @@ def execute_browser_use_task(request: CapabilityExecutionRequest) -> BrowserUseE
         return BrowserUseExecutionReport(status="denied", reason_code="browser_use_live_execution_not_enabled")
     if not _provider_configured(request.arguments):
         return BrowserUseExecutionReport(status="denied", reason_code="provider_config_required")
+    if _vision_required_without_model_support(request.arguments):
+        return BrowserUseExecutionReport(status="denied", reason_code="vision_model_required")
     try:
         return _run_browser_use_task(request, task)
     except Exception as exc:  # pragma: no cover - live backend failures vary by local machine
@@ -420,6 +422,13 @@ def _provider_configured(arguments: dict[str, object]) -> bool:
         or arguments.get("provider_api_key")
         or os.environ.get("MARVEX_AUTOMATION_API_KEY")
         or os.environ.get("OPENAI_API_KEY")
+    )
+
+
+def _vision_required_without_model_support(arguments: dict[str, object]) -> bool:
+    return (
+        arguments.get("automation_vision_required") is True
+        and arguments.get("provider_model_supports_vision") is not True
     )
 
 

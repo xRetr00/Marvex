@@ -71,12 +71,14 @@ LEGACY_TOKEN_EXEMPT_FILES = {
     CAPABILITY_ADAPTER_ROOT / "builtins.py": ("shell",),
     CAPABILITY_ADAPTER_ROOT / "browser.py": ("browser",),
     CAPABILITY_ADAPTER_ROOT / "browser_use.py": ("browser",),
+    CAPABILITY_ADAPTER_ROOT / "playwright_mcp.py": ("browser",),
     CAPABILITY_ADAPTER_ROOT / "computer_use.py": ("shell", "browser"),
     CAPABILITY_ADAPTER_ROOT / "files.py": ("subprocess",),
     CAPABILITY_ADAPTER_ROOT / "tools" / "base.py": ("shell",),
 }
 ADAPTER_REAL_BACKEND_IMPORT_EXEMPT_FILES = {
     CAPABILITY_ADAPTER_ROOT / "browser_use.py": ("os", "pathlib"),
+    CAPABILITY_ADAPTER_ROOT / "playwright_mcp.py": ("os",),
     CAPABILITY_ADAPTER_ROOT / "computer_use.py": ("os",),
     CAPABILITY_ADAPTER_ROOT / "files.py": ("pathlib", "subprocess"),
     CAPABILITY_ADAPTER_ROOT / "tools" / "_write_support.py": ("pathlib",),

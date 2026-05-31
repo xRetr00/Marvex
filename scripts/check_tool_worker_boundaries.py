@@ -23,6 +23,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "packages.adapters.capabilities.computer_use",
     "packages.adapters.capabilities.files",
     "packages.adapters.capabilities.mcp",
+    "packages.adapters.capabilities.playwright_mcp",
     "packages.capability_runtime",
     "packages.sandbox_runtime",
     "packages.contracts",

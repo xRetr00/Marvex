@@ -16,7 +16,7 @@ pyproject dependency: litellm
 
 declared dependency: litellm==1.85.0
 
-verified date: 2026-05-18
+verified date: 2026-05-31
 
 verified by: Codex
 
@@ -26,4 +26,6 @@ exact dependency pin: `litellm==1.85.0`
 
 pin decision: Adopt `litellm==1.85.0` for the SDK adoption fix because resolver dry-run showed it accepts `openai>=2.20.0` and can coexist with `openai-agents==0.17.2`, `openai==2.37.0`, `mcp==1.27.1`, `playwright==1.60.0`, and `semantic-router==0.1.14`.
 
-risks: LiteLLM PyPI versions 1.82.7 and 1.82.8 were reported compromised in March 2026 and must not be used. Any future LiteLLM upgrade requires a separate dependency-upgrade task with tests and an updated decision record. LiteLLM chat completions do not guarantee support for Marvex `previous_response_id`, so this adapter records it only as raw metadata. LM Studio stateful Responses should remain a separate native adapter.
+provider modes: Marvex now treats LiteLLM as two related surfaces behind the same provider adapter. `litellm_sdk` uses normal LiteLLM provider/model prefixes such as `openai/...`, `anthropic/...`, `openrouter/...`, and `qwen/...`. `openai_compatible` and `litellm_proxy` accept a GUI-configured base URL such as `http://localhost:20128/v1`; plain model ids from `/models` are normalized to `openai/<model>` for the LiteLLM SDK call while already-prefixed model ids are preserved.
+
+risks: LiteLLM PyPI versions 1.82.7 and 1.82.8 were reported compromised in March 2026 and must not be used. Any future LiteLLM upgrade requires a separate dependency-upgrade task with tests and an updated decision record. LiteLLM chat completions do not guarantee support for Marvex `previous_response_id`, so this adapter records it only as raw metadata. LM Studio stateful Responses should remain a separate native adapter. URL-based providers can expose arbitrary compatible or partially compatible APIs; Marvex stores the base URL and model selection but never persists provider secrets.

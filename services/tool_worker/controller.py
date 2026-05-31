@@ -58,6 +58,10 @@ from packages.adapters.capabilities.computer_use import (
     destructive_action_requested,
     execute_windows_computer_action,
 )
+from packages.adapters.capabilities.playwright_mcp import (
+    execute_playwright_mcp_task,
+    playwright_mcp_safe_result,
+)
 from packages.desktop_agent_runtime.windows_uia import collect_projection as collect_desktop_uia_projection
 
 from .models import (
@@ -407,6 +411,15 @@ class ToolWorkerController:
                 denied_count=1 if result.status == "denied" else 0,
                 executed_fake_count=0,
             )
+        elif capability_id == "playwright_mcp.task":
+            result = _playwright_mcp_result(request)
+            summary = CapabilityExecutionSummary.from_result(
+                result,
+                readiness_count=1,
+                eligible_count=1 if result.status == "succeeded" else 0,
+                denied_count=1 if result.status == "denied" else 0,
+                executed_fake_count=0,
+            )
         elif capability_id == "computer_use.action":
             result = _computer_use_result(request)
             summary = CapabilityExecutionSummary.from_result(
@@ -710,6 +723,22 @@ def _mcp_metadata(server_ref: McpServerRef, policy: McpAllowlistPolicy) -> dict[
 def _browser_use_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
     report = execute_browser_use_task(request)
     safe_result, raw_persisted = browser_use_safe_result(request=request, report=report)
+    return CapabilityResultEnvelope(
+        schema_version=request.schema_version,
+        result_id=f"{request.request_id}:result",
+        trace_id=request.trace_id,
+        turn_id=request.turn_id,
+        capability_ref=request.proposal.capability_ref,
+        status=report.status,
+        safe_result=safe_result,
+        raw_input_persisted=False,
+        raw_output_persisted=raw_persisted,
+    )
+
+
+def _playwright_mcp_result(request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
+    report = execute_playwright_mcp_task(request)
+    safe_result, raw_persisted = playwright_mcp_safe_result(request=request, report=report)
     return CapabilityResultEnvelope(
         schema_version=request.schema_version,
         result_id=f"{request.request_id}:result",

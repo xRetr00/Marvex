@@ -176,6 +176,101 @@ def test_default_litellm_model_refresh_uses_configured_model_list(monkeypatch) -
     assert provider["models"][:2] == ["openai/gpt-4.1-mini", "openrouter/auto"]
 
 
+def test_litellm_model_refresh_does_not_inject_openrouter_when_unconfigured(monkeypatch) -> None:
+    monkeypatch.delenv("MARVEX_LITELLM_MODELS", raising=False)
+    monkeypatch.delenv("LITELLM_MODELS", raising=False)
+    monkeypatch.delenv("LITELLM_MODEL", raising=False)
+    control = InMemoryProviderControl(model_discovery=lambda provider_id: [] if provider_id == "litellm" else [])
+
+    payload = control.refresh_models("litellm")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["healthy"] is False
+    assert provider["models"] == []
+
+
+def test_provider_connection_base_url_round_trips_without_secret_echo() -> None:
+    control = InMemoryProviderControl()
+
+    payload = control.set_connection(
+        "litellm",
+        base_url="http://localhost:20128/v1",
+        provider_mode="openai_compatible",
+    )
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["base_url"] == "http://localhost:20128/v1"
+    assert provider["provider_mode"] == "openai_compatible"
+    assert provider["supports_custom_base_url"] is True
+    assert "api_key" not in json.dumps(payload).lower()
+
+
+def test_provider_automation_model_keeps_browser_computer_choice_separate() -> None:
+    control = InMemoryProviderControl()
+    control.set_active_model("litellm", "openai/gpt-4.1-mini")
+
+    payload = control.set_automation_model(
+        "litellm",
+        model="openai/gpt-4o",
+        supports_vision=True,
+        vision_required=True,
+    )
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["active_model"] == "openai/gpt-4.1-mini"
+    assert provider["automation_model"] == "openai/gpt-4o"
+    assert provider["automation_model_capabilities"]["vision"] is True
+    assert provider["automation_policy"]["vision_required"] is True
+    assert provider["automation_validation"]["ready"] is True
+
+
+def test_provider_automation_validation_blocks_required_vision_without_capability() -> None:
+    control = InMemoryProviderControl()
+
+    payload = control.set_automation_model(
+        "litellm",
+        model="qwen/qwen3-coder",
+        supports_vision=False,
+        vision_required=True,
+    )
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["automation_validation"] == {
+        "ready": False,
+        "reason_code": "automation_vision_model_required",
+    }
+
+
+def test_provider_connection_and_automation_routes_are_exposed() -> None:
+    app = create_control_plane_test_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        provider_control=InMemoryProviderControl(),
+    )
+
+    connection_status, _headers, connection = asgi_call(
+        app,
+        "/control/providers/litellm/connection",
+        method="POST",
+        body={"base_url": "http://localhost:20128/v1", "provider_mode": "openai_compatible"},
+    )
+    automation_status, _headers, automation = asgi_call(
+        app,
+        "/control/providers/litellm/automation",
+        method="POST",
+        body={"model": "gpt-4o", "supports_vision": True, "vision_required": True},
+    )
+
+    assert connection_status == "200 OK"
+    litellm_connection = next(row for row in connection["providers"] if row["provider_id"] == "litellm")
+    assert litellm_connection["base_url"] == "http://localhost:20128/v1"
+    assert automation_status == "200 OK"
+    litellm_automation = next(row for row in automation["providers"] if row["provider_id"] == "litellm")
+    assert litellm_automation["automation_model"] == "gpt-4o"
+    assert litellm_automation["automation_validation"]["ready"] is True
+
+
 def test_litellm_model_refresh_uses_in_memory_secret_for_sdk_discovery(monkeypatch) -> None:
     captured = {}
 

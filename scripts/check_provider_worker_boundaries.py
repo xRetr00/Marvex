@@ -15,6 +15,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "datetime",
     "enum",
     "json",
+    "os",
     "packages.capability_runtime",
     "packages.contracts",
     "packages.provider_runtime",
