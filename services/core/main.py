@@ -2334,6 +2334,41 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         capability_id=str(pending_automation.get("capability_id") or "browser_use.task"),
                         arguments=arguments,
                     )
+                    # A destructive desktop action (delete/shutdown/registry/
+                    # PowerShell) is gated behind a SECOND, explicit approval. The
+                    # ToolWorker reports this instead of executing; re-stash the
+                    # call with the destructive decision pre-set and pause again so
+                    # the user must approve once more before it runs.
+                    if _automation_needs_destructive_approval(tool_response) and str(
+                        arguments.get("destructive_action_decision") or ""
+                    ).strip().lower() != "approve":
+                        repeat = dict(pending_automation)
+                        repeat_arguments = dict(repeat.get("arguments") or {})
+                        repeat_arguments["destructive_action_decision"] = "approve"
+                        repeat["arguments"] = repeat_arguments
+                        self._pending_automation[effective_resume_approval] = repeat
+                        loop.step("approval", stop_reason="waiting_for_human_approval")
+                        if self._approval_store is not None:
+                            self._approval_store.add_pending(approval_request)
+                        return _entrypoint_text_result(
+                            turn_input,
+                            text=(
+                                "This is a destructive desktop action. Approve once more to proceed. "
+                                f"approval_request_id={approval_request.approval_request_id}"
+                            ),
+                            metadata=_with_loop_metadata(
+                                {
+                                    **metadata,
+                                    "approval_request": approval_request.model_dump(mode="json"),
+                                    "destructive_action_approval_required": True,
+                                    "automation": tool_response,
+                                },
+                                loop,
+                                self._trace_reader,
+                                turn_input,
+                            ),
+                            stage_name="destructive_approval_pause",
+                        )
                     loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
                     return _entrypoint_text_result(
                         turn_input,
@@ -3034,6 +3069,14 @@ def _browser_use_requested(text: str | None) -> bool:
     # the generic "Action executed" stub.
     lowered = (text or "").lower()
     return any(part in lowered for part in ("browser", "youtube", "navigate", "webpage", "web page", "open yt", "go to ", "open http"))
+
+
+def _automation_needs_destructive_approval(tool_response: dict[str, object]) -> bool:
+    """True when the ToolWorker paused a desktop action for a SECOND, explicit
+    destructive-action approval (delete/shutdown/registry/PowerShell)."""
+
+    safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
+    return safe_result.get("destructive_action_approval_required") is True
 
 
 def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str:
