@@ -627,6 +627,24 @@ class VoiceWorkerController:
                                     "audio_rms_peak": round(max_rms_window, 1),
                                 }
                             )
+                            # Second chance: the fresh-stream probe catches wakes
+                            # the long-lived persistent stream misses (its decoder
+                            # state drifts over a long session). Treat a probe hit
+                            # as a real wake and capture the command.
+                            if hit:
+                                self._error = None
+                                detections += 1
+                                wake_trace = f"trace-wake-listen-{len(self._events) + 1}"
+                                self._record(
+                                    VoiceWorkerEventType.WAKEWORD_DETECTED,
+                                    trace_id=wake_trace,
+                                    summary={"via": "batch_probe", "keyword": keyword, "phrase": self.config.wakeword.phrase},
+                                )
+                                _emit({"event": "wake_listen_detected", "via": "batch_probe", "detections": detections})
+                                self._run_post_wake_capture(
+                                    parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic
+                                )
+                                batch = []
                         max_rms_window = 0.0
         finally:
             self._continuous_active = False

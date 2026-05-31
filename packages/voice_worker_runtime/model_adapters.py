@@ -695,7 +695,12 @@ def _resolve_kws_files(root: Path) -> tuple[Path, Path, Path, Path, Path] | None
 # a high "#threshold" (e.g. the shipped ":1.5 #0.2" parsed wrong, or ":0.2 #2.0")
 # never fires. Boost 2.0 + threshold 0.2 is the working pair.
 _KWS_KEYWORD_BOOST = 2.0
-_KWS_KEYWORD_THRESHOLD = 0.2
+# Trigger threshold (lower = easier to fire). Field logs showed real-voice
+# "Hey Marvex" rarely cleared 0.2 even when loud and clear, so detection was
+# near-zero across sessions. 0.1 trades a few possible false wakes for actually
+# firing on the user's pronunciation; the fresh-stream batch probe is a second
+# chance on top of this.
+_KWS_KEYWORD_THRESHOLD = 0.1
 
 
 # ARPAbet phonemes for coined wake words NOT in the model's en.phone lexicon

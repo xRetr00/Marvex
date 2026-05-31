@@ -357,8 +357,8 @@ def test_normalized_keywords_use_boost_colon_threshold_hash_order(tmp_path: Path
     assert out is not None
     text = out.read_text(encoding="utf-8")
     assert ":2.0" in text  # boost
-    assert "#0.2" in text  # threshold
-    assert "#2.0" not in text  # never a 2.0 threshold (the bug)
+    assert "#0.1" in text  # threshold (low for recall on real voice)
+    assert "#2.0" not in text  # never a 2.0 threshold (the inverted-order bug)
     assert "@HEY_MARVEX" in text
 
 
@@ -384,5 +384,5 @@ def test_generate_keywords_phoneme_model_uses_en_phone_lexicon(tmp_path: Path) -
     assert out is not None
     text = out.read_text(encoding="utf-8")
     assert "HH EY1 M AA1 R V EH1 K S" in text
-    assert ":2.0 #0.2" in text
+    assert ":2.0 #0.1" in text
     assert "@HEY_MARVEX" in text

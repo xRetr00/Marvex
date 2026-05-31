@@ -228,6 +228,8 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "text_len",
         "status",
         "backend",
+        "via",
+        "confidence",
     ):
         if key in payload:
             safe[key] = payload[key]
