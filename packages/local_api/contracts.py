@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from typing import Any, Protocol
 
@@ -9,6 +9,7 @@ from packages.contracts import AssistantTurnInput, AssistantTurnResult
 
 SCHEMA_VERSION = "0.1.1-draft"
 LOCAL_TURNS_PATH = "/v1/turns"
+LOCAL_TURNS_STREAM_PATH = "/v1/turns/stream"
 LOCAL_TRACES_PREFIX = "/v1/traces/"
 LOCAL_TURNS_FAKE_EXECUTION_MODE = "assistant_runtime_fake_provider"
 LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE = "assistant_runtime_lmstudio_responses"
@@ -64,6 +65,13 @@ class LocalTurnRequestEnvelope:
 
 
 TurnHandler = Callable[[LocalTurnRequestEnvelope], AssistantTurnResult]
+
+# Streaming handler (docs/TODO/06). Yields SSE-ready event dicts as the turn
+# progresses: {"type": "delta", "text": str} for incremental assistant text,
+# then exactly one terminal {"type": "final", "result": <AssistantTurnResult
+# json>} or {"type": "error", "message": str}. Additive; the non-streaming
+# TurnHandler path is unchanged.
+StreamTurnHandler = Callable[[LocalTurnRequestEnvelope], Iterator[dict[str, Any]]]
 
 
 class TraceReader(Protocol):

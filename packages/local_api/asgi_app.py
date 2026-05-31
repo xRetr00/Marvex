@@ -4,7 +4,7 @@ import json
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 
 from packages.contracts import AssistantTurnInput, ErrorCode, ErrorEnvelope
 from packages.process_runtime import HealthVersionProvider
@@ -16,8 +16,10 @@ from .contracts import (
     LOCAL_TURN_REQUEST_FIELDS,
     LOCAL_TURNS_EXECUTION_MODE,
     LOCAL_TURNS_PATH,
+    LOCAL_TURNS_STREAM_PATH,
     SCHEMA_VERSION,
     LocalTurnRequestEnvelope,
+    StreamTurnHandler,
     TraceReader,
     TurnHandler,
 )
@@ -27,6 +29,7 @@ def create_local_api_asgi_app(
     provider: HealthVersionProvider,
     *,
     turn_handler: TurnHandler | None = None,
+    stream_turn_handler: StreamTurnHandler | None = None,
     trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
     accepted_turn_execution_modes: tuple[str, ...] = (LOCAL_TURNS_EXECUTION_MODE,),
@@ -80,6 +83,54 @@ def create_local_api_asgi_app(
                 status_code=500,
             )
         return _json(result.model_dump(mode="json"))
+
+    @app.post(LOCAL_TURNS_STREAM_PATH, response_model=None)
+    async def turns_stream(request: Request):
+        # Streaming turn (docs/TODO/06): same request envelope as /v1/turns, but
+        # the response is an SSE stream of {"type":"delta"|"final"|"error"} JSON
+        # events. Auth/validation failures are returned as a normal JSON error
+        # BEFORE the stream begins; failures mid-stream surface as an error event.
+        auth_error = validate_local_bearer_token(
+            authorization_header=request.headers.get("authorization"),
+            expected_token=local_auth_token or "",
+            trace_id="trace-local-api-auth-required",
+        )
+        if auth_error is not None:
+            return _json(auth_error.model_dump(mode="json"), status_code=401)
+        if stream_turn_handler is None:
+            return _json(
+                _error_envelope(
+                    trace_id="trace-local-api-stream-handler-unavailable",
+                    error_id="local-api-stream-handler-unavailable",
+                    code=ErrorCode.SERVICE_UNHEALTHY,
+                    message="Local API streaming turn handler unavailable.",
+                    recoverable=True,
+                    reason="stream_handler_unavailable",
+                ).model_dump(mode="json"),
+                status_code=503,
+            )
+        parsed = await _parse_turn_request(request, accepted_turn_execution_modes=accepted_turn_execution_modes)
+        if isinstance(parsed, ErrorEnvelope):
+            return _json(parsed.model_dump(mode="json"), status_code=400)
+
+        def event_stream():
+            try:
+                for event in stream_turn_handler(parsed):
+                    yield _sse_event(event)
+            except Exception:
+                yield _sse_event(
+                    {
+                        "type": "error",
+                        "message": "Local API streaming turn handler failed.",
+                        "reason": "handler_failure",
+                    }
+                )
+
+        return StreamingResponse(
+            event_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
+        )
 
     @app.get(f"{LOCAL_TRACES_PREFIX}{{trace_id:path}}", response_model=None)
     async def trace(trace_id: str, request: Request) -> JSONResponse:
@@ -272,3 +323,13 @@ def _error_envelope(
 
 def _json(payload: dict[str, Any], *, status_code: int = 200) -> JSONResponse:
     return JSONResponse(status_code=status_code, content=payload)
+
+
+def _sse_event(event: dict[str, Any]) -> str:
+    """Serialize one event as a Server-Sent-Events frame (``data: ...\\n\\n``)."""
+
+    try:
+        body = json.dumps(event, default=str)
+    except Exception:
+        body = json.dumps({"type": "error", "message": "unserializable event", "reason": "encode_failure"})
+    return f"data: {body}\n\n"

@@ -310,9 +310,11 @@ def test_adapter_source_has_no_forbidden_boundary_imports_or_raw_http():
     ).read_text(encoding="utf-8").lower()
     # "tool" was removed from this list in Phase 2 (docs/TODO/02): the adapter
     # now opt-in supports OpenAI-style tool-calling (sends request.tools, parses
-    # response tool_calls). The genuinely dangerous boundaries below remain
-    # forbidden - no raw HTTP, no cross-boundary package imports, no streaming
-    # yet (that is item 06), no mcp/lmstudio/voice/etc. coupling.
+    # response tool_calls). "stream" was removed in item 06: the adapter now has
+    # an opt-in stream_send that yields packages.contracts streaming events (the
+    # non-streaming send stays unchanged, asserted separately). The genuinely
+    # dangerous boundaries below remain forbidden - no raw HTTP, no
+    # cross-boundary package imports, no mcp/lmstudio/voice/etc. coupling.
     forbidden = [
         "ht" + "tpx",
         "req" + "uests",
@@ -326,7 +328,6 @@ def test_adapter_source_has_no_forbidden_boundary_imports_or_raw_http():
         "services.",
         "lmstudio",
         "mcp",
-        "stream",
         "memory",
         "intent",
         "voice",

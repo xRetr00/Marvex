@@ -13,6 +13,11 @@ from packages.contracts import (
     ProviderRequest,
     ProviderResponse,
 )
+from packages.contracts.streaming_models import (
+    StreamCompleted,
+    StreamError,
+    StreamTextDelta,
+)
 from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
 
 from .conversation_store import LiteLLMConversationStore
@@ -147,6 +152,72 @@ class LiteLLMProvider:
             error=None,
             tool_calls=tool_calls or None,
         )
+
+    def stream_send(self, request: ProviderRequest):
+        """Yield streaming events for a turn (docs/TODO/06).
+
+        Additive and opt-in: ``send`` is byte-for-byte unchanged. This issues a
+        chat-completions streaming call (``stream=True``) and yields
+        StreamTextDelta for each content chunk, then a terminal StreamCompleted
+        (or StreamError on failure, so the caller falls back to non-streaming).
+        """
+
+        messages = self._build_messages(request)
+        call_args: dict[str, Any] = {
+            "model": self._model_for_call(request.model),
+            "messages": messages,
+            "stream": True,
+        }
+        allowed_options, _ignored = self._filter_provider_options(request.provider_options)
+        if self._config.base_url is not None:
+            call_args["api_base"] = self._config.base_url
+        if self._config.api_key is not None:
+            call_args["api_key"] = self._config.api_key
+        if self._config.timeout_seconds is not None:
+            call_args["timeout"] = self._config.timeout_seconds
+        call_args.update(allowed_options)
+        if request.tools:
+            call_args["tools"] = request.tools
+
+        try:
+            stream = litellm.completion(**call_args)
+        except Exception as exc:
+            yield StreamError(self._safe_exception_message(exc))
+            return
+
+        response_id: str | None = None
+        finish_reason = "stop"
+        final_text_parts: list[str] = []
+        try:
+            for chunk in stream:
+                chunk_id = self._read_attr(chunk, "id")
+                if isinstance(chunk_id, str) and chunk_id:
+                    response_id = chunk_id
+                delta = self._read_first_choice_attr(chunk, "delta")
+                content = self._read_attr(delta, "content")
+                if isinstance(content, str) and content:
+                    final_text_parts.append(content)
+                    yield StreamTextDelta(content)
+                chunk_finish = self._read_first_choice_attr(chunk, "finish_reason")
+                if isinstance(chunk_finish, str) and chunk_finish:
+                    finish_reason = chunk_finish
+        except Exception as exc:
+            yield StreamError(self._safe_exception_message(exc))
+            return
+
+        output_text = "".join(final_text_parts)
+        self._record_turn(response_id, messages, output_text)
+        yield StreamCompleted(
+            response_id=response_id,
+            finish_reason=finish_reason,
+            output_text=output_text,
+        )
+
+    def _safe_exception_message(self, exc: Exception) -> str:
+        message = str(exc)
+        if self._config.api_key:
+            message = message.replace(self._config.api_key, "[REDACTED]")
+        return message or type(exc).__name__
 
     def map_raw_output_to_structured_result(
         self,

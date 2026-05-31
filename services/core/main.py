@@ -3897,6 +3897,7 @@ def create_core_service_app(
                 approval_decision=request.approval_decision,
             )
         ),
+        stream_turn_handler=lambda request: _stream_turn_events(service, request),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
         accepted_turn_execution_modes=(
@@ -3921,6 +3922,71 @@ def _apply_ui_directives(result: AssistantTurnResult) -> AssistantTurnResult:
     new_metadata = {**final.metadata, "ui_directives": directives}
     new_final = final.model_copy(update={"text": new_text, "metadata": new_metadata})
     return result.model_copy(update={"assistant_final_response": new_final})
+
+
+def _stream_text_chunks(text: str, *, max_chars: int = 24) -> list[str]:
+    """Split assistant text into small streamable chunks on whitespace.
+
+    Chunks stay <= ~max_chars but never split a word, so the shell can append
+    them progressively and the voice path can reassemble sentence boundaries.
+    The concatenation of all chunks equals the input text exactly.
+    """
+
+    if not text:
+        return []
+    chunks: list[str] = []
+    current = ""
+    # Tokenize keeping trailing whitespace attached so re-joining is lossless.
+    token = ""
+    for char in text:
+        token += char
+        if char.isspace():
+            if len(current) + len(token) > max_chars and current:
+                chunks.append(current)
+                current = token
+            else:
+                current += token
+            token = ""
+    current += token
+    if current:
+        chunks.append(current)
+    return chunks
+
+
+def _stream_turn_events(service: Any, request: Any):
+    """Streaming turn handler (docs/TODO/06).
+
+    Runs the full turn through the unchanged ``submit_turn`` pipeline (so tools,
+    approval, clarification, refs, and persistence behave identically), then
+    streams the reconciled final assistant text as incremental ``delta`` events
+    followed by a single terminal ``final`` event carrying the full
+    ``AssistantTurnResult``. This preserves the request/response contract while
+    giving the shell incremental render and the voice path sentence-by-sentence
+    speech. Provider-level token streaming (``stream_send``) is available on the
+    adapters for a future low-latency path.
+    """
+
+    try:
+        result = _apply_ui_directives(
+            service.submit_turn(
+                request.assistant_turn_input,
+                previous_response_id=request.previous_response_id,
+                resume_approval_id=request.resume_approval_id,
+                approval_decision=request.approval_decision,
+            )
+        )
+    except Exception:
+        yield {"type": "error", "message": "Streaming turn failed.", "reason": "handler_failure"}
+        return
+    final = result.assistant_final_response
+    text = (
+        final.text
+        if (final is not None and final.response_type == AssistantResponseType.TEXT and final.text)
+        else ""
+    )
+    for chunk in _stream_text_chunks(text):
+        yield {"type": "delta", "text": chunk}
+    yield {"type": "final", "result": result.model_dump(mode="json")}
 
 
 def create_control_plane_service_app(
