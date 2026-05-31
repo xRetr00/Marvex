@@ -64,28 +64,31 @@ if errorlevel 1 exit /b 1
 call :PrepareVoiceAndService
 if errorlevel 1 exit /b 1
 
-if "%SkipInstaller%"=="1" (
-    call :BuildTauriApp
-    if errorlevel 1 exit /b 1
-    
-    call :WriteSection "Build Summary (Skip Installer Mode)"
-    echo [OK] Tauri app compiled successfully (no installer bundled)
-    echo.
-    echo Compiled app location:
-    echo   %ShellTauriDir%\target\release\marvex-service.exe
-    echo.
-    echo To generate the final installer, run:
-    echo   build-installer.bat
-    echo.
-) else (
-    call :BuildTauriApp
-    if errorlevel 1 exit /b 1
+rem NOTE: goto-based branching (not a parenthesized if/else). An echo such as
+rem "...(no installer bundled)" inside a (...) block would have its ")" close the
+rem block early, making BOTH branches run (Tauri built twice, then the installer
+rem search erroring in -SkipInstaller mode). goto avoids that fragility entirely.
+if "%SkipInstaller%"=="1" goto :SkipInstallerBranch
 
-    call :LocateInstallers
-    if errorlevel 1 exit /b 1
+call :BuildTauriApp
+if errorlevel 1 exit /b 1
+call :LocateInstallers
+if errorlevel 1 exit /b 1
+call :PrintSummary
+exit /b 0
 
-    call :PrintSummary
-)
+:SkipInstallerBranch
+call :BuildTauriApp
+if errorlevel 1 exit /b 1
+call :WriteSection "Build Summary (Skip Installer Mode)"
+echo [OK] Tauri app compiled successfully ^(no installer bundled^)
+echo.
+echo Compiled app location:
+echo   %ShellTauriDir%\target\release\marvex-service.exe
+echo.
+echo To generate the final installer, run:
+echo   build-installer.bat
+echo.
 exit /b 0
 
 rem ============================================================================
