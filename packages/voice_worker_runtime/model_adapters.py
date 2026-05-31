@@ -35,7 +35,19 @@ class MoonshineSttRunner:
             # Resolving + str-converting the path yields a pure-backslash
             # absolute form that moonshine concatenates without the broken
             # prefix interaction.
-            path_str = str(Path(path).resolve()) if path is not None else str(path)
+            # moonshine-c-api appends "/tokenizer.bin" to this base. Win32
+            # rejects a forward slash only under a \\?\ extended-length base, and
+            # Path.resolve() on Windows can RETURN that \\?\ form - which is what
+            # produced "Required tokenizer file does not exist" even though the
+            # file is on disk. Use a plain absolute path with the prefix stripped.
+            import os as _os
+
+            if path is not None:
+                path_str = _os.path.abspath(str(path))
+                if path_str.startswith("\\\\?\\"):
+                    path_str = path_str[4:]
+            else:
+                path_str = str(path)
             try:
                 transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
             except TypeError:
@@ -632,14 +644,29 @@ def _moonshine_model_arch(path: Path | None) -> Any | None:
         model_arch = import_module("moonshine_voice.moonshine_api").ModelArch
     except Exception:
         return None
-    if (path / "streaming_config.json").exists():
+    config = path / "streaming_config.json"
+    if config.exists():
+        # Identify the streaming arch from the model DIMENSIONS, not the dir
+        # name. The asset installs as "moonshine-v2", so name matching returned
+        # None -> Transcriber loaded a mismatched default layout -> "Required
+        # tokenizer file does not exist". Dims per the Moonshine v2 paper:
+        # Tiny enc=320/6L, Small enc=620/10L, Medium enc=768/14L.
+        encoder_dim = 0
+        depth = 0
+        try:
+            import json as _json
+
+            dims = _json.loads(config.read_text(encoding="utf-8"))
+            encoder_dim = int(dims.get("encoder_dim", 0) or 0)
+            depth = int(dims.get("depth", 0) or 0)
+        except Exception:
+            pass
         name = path.name.lower()
-        if "medium" in name:
+        if encoder_dim >= 768 or depth >= 14 or "medium" in name:
             return model_arch.MEDIUM_STREAMING
-        if "small" in name:
+        if encoder_dim >= 620 or depth >= 10 or "small" in name:
             return model_arch.SMALL_STREAMING
-        if "tiny" in name:
-            return model_arch.TINY_STREAMING
+        return model_arch.TINY_STREAMING
     if (path / "encoder_model.ort").exists() and "tiny" in path.name.lower():
         return model_arch.TINY
     return None
