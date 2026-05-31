@@ -123,6 +123,38 @@ pub async fn http_post_json_with_timeout(
         .await
 }
 
+/// Open a streaming POST (docs/TODO/06): returns the raw reqwest Response so the
+/// caller can read the SSE body incrementally via `Response::chunk()`. Loopback
+/// only. Non-2xx responses are read fully and returned as an error string.
+pub async fn open_post_stream(
+    host: &str,
+    port: u16,
+    path: &str,
+    token: Option<&str>,
+    body: &Value,
+    timeout: Duration,
+) -> Result<reqwest::Response, String> {
+    let local = LoopbackHttpClient::new(host, port, timeout)?;
+    let mut req = local
+        .client
+        .post(local.url(path)?)
+        .header("Accept", "text/event-stream")
+        .json(body);
+    if let Some(token) = token {
+        req = req.bearer_auth(token);
+    }
+    let resp = req
+        .send()
+        .await
+        .map_err(|err| format!("stream request failed: {err}"))?;
+    let status = resp.status();
+    if !status.is_success() {
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("stream http {}: {body}", status.as_u16()));
+    }
+    Ok(resp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{

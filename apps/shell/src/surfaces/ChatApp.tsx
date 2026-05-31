@@ -3,7 +3,7 @@ import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText,
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showOverlay, submitChatTurn, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { getShellRuntimeConfig, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
@@ -25,7 +25,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
@@ -101,15 +101,41 @@ export function ChatApp() {
     }
   }, [messages]);
 
+  // Replace the last (in-progress) assistant bubble; used for streaming deltas
+  // and final reconciliation so we never append a duplicate assistant message.
+  const updateLastAssistant = useCallback((patch: ChatMessage) => {
+    setMessages((prev) => {
+      const next = [...prev];
+      for (let i = next.length - 1; i >= 0; i--) {
+        if (next[i].role === "assistant") {
+          next[i] = patch;
+          return next;
+        }
+      }
+      next.push(patch);
+      return next;
+    });
+  }, []);
+
   const send = useCallback(async (text: string): Promise<string> => {
     if (!text.trim() || pending) return "";
     setPending(true);
-    setMessages((prev) => [...prev, { role: "user", text }]);
+    // Append the user message + an empty assistant bubble we stream into.
+    setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true }]);
     let replyText = "";
+    let streamed = "";
     try {
       const sessionId = sessionIdRef.current;
       if (!sessionId) throw new Error("backend session unavailable");
-      const result = await submitChatTurn(text, { session_id: sessionId }, previousResponseIdsRef.current[sessionId]);
+      const result = await submitChatTurnStream(
+        text,
+        { session_id: sessionId },
+        previousResponseIdsRef.current[sessionId],
+        (chunk) => {
+          streamed += chunk;
+          updateLastAssistant({ role: "assistant", text: streamed, streaming: true });
+        },
+      );
       const nextProviderResponseId = providerResponseIdFromTurnResult(result);
       if (nextProviderResponseId) {
         previousResponseIdsRef.current[sessionId] = nextProviderResponseId;
@@ -123,16 +149,17 @@ export function ChatApp() {
       }
       const outcome = outcomeFromTurnResult(result);
       replyText = outcome.text;
-      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) }]);
+      // Reconcile with the authoritative final result (text + stages + refs).
+      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) });
     } catch (error) {
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
-      setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
+      updateLastAssistant({ role: "assistant", text: outcome.text });
     } finally {
       setPending(false);
     }
     return replyText;
-  }, [pending]);
+  }, [pending, updateLastAssistant]);
 
   const answerClarification = useCallback((clarification: MarvexChatClarification, answerText: string) => {
     const reply = answerText.trim();

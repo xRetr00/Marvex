@@ -26,7 +26,8 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use supervisor::Supervisor;
 use tauri::{
-    image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Manager, WindowEvent,
+    image::Image, menu::MenuBuilder, tray::TrayIconBuilder, AppHandle, Emitter, Manager,
+    WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
 
@@ -216,6 +217,95 @@ async fn submit_chat_turn(
     )
     .await?;
     serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
+/// Streaming variant of `submit_chat_turn` (docs/TODO/06). Opens the Core SSE
+/// endpoint, emits a `chat-stream` Tauri event for each delta/final/error frame
+/// (tagged with `turn_id`), and resolves with the terminal `AssistantTurnResult`
+/// so callers can reconcile. `submit_chat_turn` stays the non-streaming path.
+#[tauri::command]
+async fn submit_chat_turn_stream(
+    app: AppHandle,
+    text: String,
+    metadata: Option<Value>,
+    previous_response_id: Option<String>,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
+    let text = text.trim().to_string();
+    if text.is_empty() {
+        return Err("chat text must be non-empty".to_string());
+    }
+    let (token, session_id) = {
+        let guard = state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?;
+        (guard.token.clone(), session_id_from_metadata(&metadata))
+    };
+    let now = monotonic_id();
+    let trace_id = format!("trace-shell-chat-{now}");
+    let turn_id = format!("turn-shell-chat-{now}");
+    let previous_response_id = previous_response_id.and_then(|id| {
+        let trimmed = id.trim().to_string();
+        (!trimmed.is_empty()).then_some(trimmed)
+    });
+    let body = json!({
+        "schema_version": "0.1.1-draft",
+        "execution_mode": "assistant_runtime_lmstudio_responses",
+        "assistant_turn_input": {
+            "schema_version": "0.1.1-draft",
+            "trace_id": trace_id,
+            "turn_id": turn_id,
+            "input_event_id": format!("event-shell-chat-{now}"),
+            "session_ref": {"ref_type": "session", "ref_id": session_id},
+            "identity_ref": null,
+            "user_visible_input": text,
+            "assistant_mode": "default",
+            "policy_context": {"requested_capabilities": [], "sensitivity": "normal"},
+            "metadata": safe_shell_turn_metadata(metadata)
+        },
+        "model": default_chat_model(),
+        "instructions": null,
+        "previous_response_id": previous_response_id,
+        "resume_approval_id": null,
+        "approval_decision": null,
+        "provider_options": {}
+    });
+
+    let mut response = http::open_post_stream(
+        "127.0.0.1",
+        8765,
+        "/v1/turns/stream",
+        Some(&token),
+        &body,
+        http::TURN_HTTP_TIMEOUT,
+    )
+    .await?;
+
+    let mut buffer = String::new();
+    let mut final_result: Option<Value> = None;
+    loop {
+        let chunk = response
+            .chunk()
+            .await
+            .map_err(|err| format!("stream read failed: {err}"))?;
+        let Some(bytes) = chunk else { break };
+        buffer.push_str(&String::from_utf8_lossy(&bytes));
+        while let Some(idx) = buffer.find("\n\n") {
+            let frame: String = buffer.drain(..idx + 2).collect();
+            let Some(data) = frame.lines().find_map(|line| line.strip_prefix("data:")) else {
+                continue;
+            };
+            let Ok(event) = serde_json::from_str::<Value>(data.trim()) else {
+                continue;
+            };
+            if event.get("type").and_then(|value| value.as_str()) == Some("final") {
+                final_result = event.get("result").cloned();
+            }
+            let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": event}));
+        }
+    }
+
+    final_result.ok_or_else(|| "stream ended without a final result".to_string())
 }
 
 fn session_id_from_metadata(metadata: &Option<Value>) -> String {
@@ -643,6 +733,7 @@ pub fn run() {
             backend_health,
             gui_health,
             submit_chat_turn,
+            submit_chat_turn_stream,
             resume_approval_turn,
             create_chat_session,
             list_chat_sessions,

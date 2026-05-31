@@ -1,4 +1,4 @@
-import { invoke } from "./tauriBridge";
+import { invoke, listen } from "./tauriBridge";
 
 export type ShellRuntimeConfig = {
   core_base_url: string;
@@ -80,6 +80,37 @@ export async function submitChatTurn(
   previousResponseId?: string,
 ): Promise<unknown> {
   return invoke("submit_chat_turn", { text, metadata, previousResponseId });
+}
+
+type ChatStreamEvent = {
+  turn_id: string;
+  event: { type: "delta" | "final" | "error"; text?: string; result?: unknown; message?: string };
+};
+
+/**
+ * Streaming chat turn (docs/TODO/06). Subscribes to the `chat-stream` Tauri
+ * event, forwards each text delta to `onDelta`, and resolves with the terminal
+ * AssistantTurnResult. Falls back semantics: callers can use `submitChatTurn`
+ * for the non-streaming path. Single in-flight turn is assumed (the UI gates on
+ * `pending`), so the global `chat-stream` listener needs no per-turn filtering.
+ */
+export async function submitChatTurnStream(
+  text: string,
+  metadata: ChatTurnMetadata | undefined,
+  previousResponseId: string | undefined,
+  onDelta: (chunk: string) => void,
+): Promise<unknown> {
+  const unlisten = await listen<ChatStreamEvent>("chat-stream", (message) => {
+    const event = message.payload?.event;
+    if (event && event.type === "delta" && typeof event.text === "string") {
+      onDelta(event.text);
+    }
+  });
+  try {
+    return await invoke("submit_chat_turn_stream", { text, metadata, previousResponseId });
+  } finally {
+    unlisten();
+  }
 }
 
 export async function resumeApprovalTurn(args: {

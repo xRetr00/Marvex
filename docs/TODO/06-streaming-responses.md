@@ -1,6 +1,7 @@
 # 06 — Streaming responses (text + voice)
 
-**Theme:** UX / Infra · **Size:** L · **Status:** in progress — foundation landed
+**Theme:** UX / Infra · **Size:** L · **Status:** transport landed end-to-end —
+true provider-token streaming is the remaining low-latency follow-up
 
 ## Progress
 
@@ -11,24 +12,49 @@
   stream errors (caller falls back to non-streaming), and returns a `StreamedTurn`
   the caller converts to the usual `AssistantTurnResult`. Pure + unit-tested.
 
-- **[remaining]** the integration layers (all additive, behind a flag; the
-  default non-streaming path stays byte-for-byte unchanged):
-  1. **Provider `stream_send`** on LMStudio Responses (`responses.create(stream=True)`)
-     and LiteLLM (`completion(stream=True)`), yielding `StreamTextDelta` /
-     `StreamCompleted` / `StreamError`. Share the event types via `packages/contracts`
-     so adapters don't import core. Relax the forbidden-`stream` boundary test on
-     the streaming path only.
-  2. **Core SSE endpoint** in `packages/local_api` that drives `run_streaming_turn`
-     and emits deltas + a terminal event carrying the full `AssistantTurnResult`.
-  3. **Rust/Tauri** streaming command that consumes the SSE and re-emits Tauri
-     events to the shell (keep `submit_chat_turn` as the non-streaming fallback).
-  4. **Shell** incremental render: append deltas to the in-progress bubble; on the
-     terminal event reconcile stages/refs/approval.
-  5. **Voice** path: feed deltas through `SentenceBoundaryDetector` → `TTSQueue`
-     (pairs with item 04) so the first sentence speaks before generation finishes.
+- **[done] Provider `stream_send`** on both adapters, yielding `StreamTextDelta` /
+  `StreamCompleted` / `StreamError` shared via `packages/contracts.streaming_models`:
+  LMStudio Responses (`responses.create(stream=True)`,
+  `tests/adapters/test_lmstudio_responses_streaming.py`) and LiteLLM
+  (`completion(stream=True)`, `tests/adapters/test_litellm_streaming.py`). The
+  non-streaming `send` stays byte-for-byte unchanged; the source `stream` boundary
+  token was relaxed (raw-HTTP / cross-package boundaries still enforced).
 
-These need the live app (fastapi/SSE/Tauri/vite) to wire and verify, so they were
-not landed blind.
+- **[done] Core SSE endpoint** `POST /v1/turns/stream` in `packages/local_api`
+  (`tests/local_api/test_turns_stream_api.py`): driven by an additive
+  `stream_turn_handler`, emits `data: {"type":"delta"|"final"|"error"}` SSE frames;
+  auth/validation failures return JSON before the stream opens. Non-streaming
+  `/v1/turns` is unchanged. `services/core/main._stream_turn_events` runs the full
+  unchanged `submit_turn` pipeline (tools/approval/clarify/refs/persistence
+  identical), then streams the reconciled final text via a lossless whitespace
+  chunker and a terminal `final` event carrying the complete `AssistantTurnResult`.
+
+- **[done] Tauri streaming command** `submit_chat_turn_stream`
+  (`apps/shell/src-tauri/src/lib.rs`, `http::open_post_stream`): reads the SSE body
+  via `Response::chunk()`, emits a `chat-stream` Tauri event per frame (tagged with
+  `turn_id`), and resolves with the terminal result. `submit_chat_turn` remains the
+  non-streaming fallback.
+
+- **[done] Shell incremental render** (`apps/shell/src/surfaces/ChatApp.tsx`,
+  `submitChatTurnStream` in `shellCommands.ts`): appends an in-progress assistant
+  bubble, grows it from `chat-stream` deltas, and on the terminal event reconciles
+  text + stages + refs + approval/clarification with the authoritative result.
+
+- **[remaining] True provider-token streaming for low latency.** The Core handler
+  currently streams the *reconciled final text* (computed by the unchanged
+  `submit_turn`), so the UI animates progressively but model latency is unchanged.
+  Real token-by-token latency reduction requires plumbing `stream_send` through the
+  ProviderWorker JSONL subprocess (a new streaming command + multi-frame read in
+  `_ProviderWorkerProcessProvider`) and a streaming turn path in the executor for
+  the no-tool case. This was deliberately not landed blind because it crosses the
+  process boundary and can't be verified without the live app.
+
+- **[remaining] Voice early-sentence TTS** (item 5; pairs with item 04). The
+  `chat-stream` deltas are now available shell-side as the integration point, but
+  speaking the first sentence *before generation finishes* only helps once the
+  above true-token streaming lands (under post-compute streaming the full answer is
+  already computed before deltas emit). The voice path currently speaks the full
+  reply, which is correct and unregressed.
 
 ## Problem
 
