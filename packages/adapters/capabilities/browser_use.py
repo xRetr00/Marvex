@@ -380,7 +380,7 @@ def _report_from_history(
         profile_mode=profile_mode,
         profile_directory=profile_directory,
         step_count=len(items),
-        action_count=max(1, len(items)),
+        action_count=len(items),
         final_url=str(final_url) if final_url else None,
         final_title=str(final_title) if final_title else None,
         artifact_payloads=payloads,
@@ -416,12 +416,13 @@ def _raw_persistence_enabled(arguments: dict[str, object]) -> bool:
 
 
 def _provider_configured(arguments: dict[str, object]) -> bool:
+    # Require a base_url: Marvex is local-first (LM Studio / LiteLLM / OpenRouter
+    # all set an explicit base_url). Without it ChatOpenAILike(base_url=None)
+    # would silently call the public OpenAI endpoint instead of the user's
+    # configured provider.
     return bool(
         arguments.get("provider_base_url")
         or os.environ.get("MARVEX_AUTOMATION_BASE_URL")
-        or arguments.get("provider_api_key")
-        or os.environ.get("MARVEX_AUTOMATION_API_KEY")
-        or os.environ.get("OPENAI_API_KEY")
     )
 
 

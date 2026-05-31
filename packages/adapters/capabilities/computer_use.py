@@ -7,9 +7,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from mcp import ClientSession
-from mcp.client.stdio import StdioServerParameters, stdio_client
-
 from packages.automation_runtime import persist_automation_artifacts
 from packages.capability_runtime import (
     CapabilityExecutionMode,
@@ -236,6 +233,11 @@ def computer_use_safe_result(*, request, report: ComputerUseExecutionReport) -> 
 
 
 async def _execute_windows_mcp(arguments: dict[str, object]) -> ComputerUseExecutionReport:
+    # Lazy import: the tool worker imports this module at load, so a missing mcp
+    # SDK must not take the whole worker down (it degrades to a failed result).
+    from mcp import ClientSession
+    from mcp.client.stdio import StdioServerParameters, stdio_client
+
     config = WindowsMcpServerConfig.builtin()
     params = StdioServerParameters(command=config.command, args=list(config.args))
     async with stdio_client(params) as streams:
@@ -277,11 +279,25 @@ def _select_windows_mcp_tool(arguments: dict[str, object], tool_names: tuple[str
         for tool_name in tool_names:
             if preferred.lower() in tool_name.lower():
                 return tool_name
-    return tool_names[0] if tool_names else None
+    # Fail closed: never fall back to an arbitrary first tool, which could fire
+    # an unintended (possibly destructive) desktop action.
+    return None
 
 
 def _windows_mcp_arguments(arguments: dict[str, object]) -> dict[str, object]:
-    blocked = {"approval_request_id", "approval_decision", "destructive_action_decision", "raw_persistence_enabled"}
+    # Never forward Marvex control/credential keys to the external MCP tool call.
+    blocked = {
+        "approval_request_id",
+        "approval_decision",
+        "destructive_action_decision",
+        "raw_persistence_enabled",
+        "live_execution_enabled",
+        "provider_model",
+        "provider_base_url",
+        "provider_api_key",
+        "provider_model_supports_vision",
+        "automation_vision_required",
+    }
     return {key: value for key, value in arguments.items() if key not in blocked}
 
 

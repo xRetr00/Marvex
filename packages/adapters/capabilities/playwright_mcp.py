@@ -5,8 +5,6 @@ import os
 import re
 from typing import Any, Literal
 
-from mcp import ClientSession, StdioServerParameters
-from mcp.client.stdio import stdio_client
 from pydantic import BaseModel, ConfigDict, Field
 
 from packages.automation_runtime import persist_automation_artifacts
@@ -36,7 +34,10 @@ class PlaywrightMcpServerConfig(PlaywrightMcpModel):
         extension_mode: bool = False,
         cdp_endpoint: str | None = None,
     ) -> "PlaywrightMcpServerConfig":
-        args: list[str] = ["@playwright/mcp@latest"]
+        # Pinnable for reproducibility/offline; defaults to latest. Set
+        # MARVEX_PLAYWRIGHT_MCP_SPEC=@playwright/mcp@<version> to lock it.
+        spec = (os.environ.get("MARVEX_PLAYWRIGHT_MCP_SPEC") or "@playwright/mcp@latest").strip()
+        args: list[str] = [spec]
         if extension_mode:
             args.append("--extension")
         elif cdp_endpoint:
@@ -127,6 +128,10 @@ async def _run_playwright_mcp(
     tool_name: str,
     tool_args: dict[str, Any],
 ) -> PlaywrightMcpExecutionReport:
+    # Lazy import so a missing mcp SDK can't break tool-worker import.
+    from mcp import ClientSession, StdioServerParameters
+    from mcp.client.stdio import stdio_client
+
     server = StdioServerParameters(command=config.command, args=list(config.args))
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
