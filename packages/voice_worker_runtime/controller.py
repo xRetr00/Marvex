@@ -304,7 +304,13 @@ class VoiceWorkerController:
             return tuple(captured), "no_speech"
         return tuple(captured), "max_utterance"
 
-    def _run_post_wake_capture(self, *, parent_trace_id: str, read_frame: "Callable[[], Any] | None" = None) -> None:
+    def _run_post_wake_capture(
+        self,
+        *,
+        parent_trace_id: str,
+        read_frame: "Callable[[], Any] | None" = None,
+        on_diagnostic: "Callable[[dict[str, object]], None] | None" = None,
+    ) -> None:
         """VAD-endpoint a user utterance after wake and run STT on it.
 
         Emits VAD_SPEECH_STARTED / VAD_SPEECH_ENDED / TRANSCRIPTION_STARTED /
@@ -312,12 +318,24 @@ class VoiceWorkerController:
         event's summary so a downstream consumer (shell) can submit a chat
         turn. ``read_frame`` lets the continuous wake loop reuse the same
         gap-free mic stream; the legacy path uses the chunked adapter.
-        Failures are swallowed; the wake event was already recorded.
+        ``on_diagnostic`` surfaces the post-wake stages to the worker stderr so
+        "nothing happens after the wake word" is diagnosable (did we capture a
+        command? did STT run? did it produce text?). Failures are swallowed; the
+        wake event was already recorded.
         """
 
+        def _diag(payload: dict[str, object]) -> None:
+            if on_diagnostic is not None:
+                try:
+                    on_diagnostic(payload)
+                except Exception:
+                    pass
+
         try:
+            _diag({"event": "post_wake_capture", "stage": "listening"})
             vad_decider = self._resolve_vad_decider()
             frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame)
+            _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames)})
             if not frames or reason == "no_speech":
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
@@ -366,9 +384,19 @@ class VoiceWorkerController:
                 trace_id=parent_trace_id,
                 summary=summary,
             )
-        except Exception:
+            _diag(
+                {
+                    "event": "post_wake_stt",
+                    "status": str(transcription.status),
+                    "backend": self.config.active_stt_backend_id,
+                    "text_present": bool(transcription.status == "succeeded" and transcription.text),
+                    "text_len": len(transcription.text or ""),
+                }
+            )
+        except Exception as exc:
             # Defensive: any failure here is logged but must not crash
             # the supervisor tick loop.
+            _diag({"event": "post_wake_capture", "stage": "error", "reason": type(exc).__name__})
             self._record(
                 VoiceWorkerEventType.ERROR,
                 trace_id=parent_trace_id,
@@ -536,7 +564,9 @@ class VoiceWorkerController:
                             summary=detection.safe_projection(),
                         )
                         # Capture the command from the SAME continuous stream.
-                        self._run_post_wake_capture(parent_trace_id=wake_trace, read_frame=reader)
+                        self._run_post_wake_capture(
+                            parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic
+                        )
                         batch = []
                     elif decode_count % max(1, diagnostic_interval_decodes) == 0:
                         _emit(

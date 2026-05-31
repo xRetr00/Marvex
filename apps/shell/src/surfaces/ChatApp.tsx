@@ -183,14 +183,19 @@ export function ChatApp() {
     void (next ? startVoiceWorker() : stopVoiceWorker()).catch(() => setMicActive(!next));
   }, [micActive]);
 
-  // Voice loop bridge (docs/TODO/04): while the mic is active, poll the worker
-  // for a freshly recognized transcript, run it as a chat turn, and speak the
-  // reply back through the worker. The worker handles wake -> capture -> STT
-  // and emits transcript_text; the shell mediates turn + speak because the
-  // worker is loopback-isolated from Core.
+  // Voice loop bridge (docs/TODO/04): poll the worker for a freshly recognized
+  // transcript, run it as a chat turn, and speak the reply back through the
+  // worker. The worker handles wake -> capture -> STT and emits transcript_text;
+  // the shell mediates turn + speak because the worker is loopback-isolated from
+  // Core. This must run for HANDS-FREE wake word too (not only the manual mic
+  // button): the wake word fires in the worker independently, so if we only
+  // polled while micActive, "Hey Marvex" would transcribe but nothing would
+  // reach the UI.
+  const wakewordActive = backend?.wakeword === "enabled" || backend?.wakeword === "running";
+  const voiceBridgeActive = micActive || wakewordActive;
   const lastVoiceEventRef = useRef<string>("");
   useEffect(() => {
-    if (!micActive) return;
+    if (!voiceBridgeActive) return;
     let cancelled = false;
     let busy = false;
     const timer = setInterval(() => {
@@ -220,7 +225,7 @@ export function ChatApp() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [micActive, send]);
+  }, [voiceBridgeActive, send]);
 
   const navItems = useMemo(() => [
     { id: "chat" as TabId, icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
