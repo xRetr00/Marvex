@@ -98,3 +98,26 @@ def test_resolve_vad_decider_defaults_without_crashing():
     # Default silero adapter is unavailable in the test env; decider must not
     # raise and should return a bool.
     assert isinstance(decider(frame), bool)
+
+
+def test_default_vad_decider_detects_speech_via_window_energy() -> None:
+    # Regression: per-100ms-frame silero/webrtc always read as silence (silero
+    # min_speech_duration_ms=250; webrtc needs 10/20/30ms frames), which made
+    # post-wake capture return no_speech. The default decider now decides over a
+    # sliding window with an RMS-energy fallback, so loud speech frames register.
+    import array as _array
+    import math as _math
+
+    controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter())
+    decider = controller._resolve_vad_decider()  # noqa: SLF001 - exercising the real default
+
+    def frame(tag: str, amplitude: int) -> AudioFrame:
+        samples = _array.array("h", [int(amplitude * _math.sin(i * 0.4)) for i in range(160)])
+        return AudioFrame(frame_id=tag, pcm=samples.tobytes(), sample_rate=16_000, channel_count=1, duration_ms=100)
+
+    # Quiet ambient frames -> not speech.
+    assert decider(frame("q1", 80)) is False
+    assert decider(frame("q2", 80)) is False
+    # Loud speech-level frames -> speech (energy fallback >= floor, silero absent in dev env).
+    decider(frame("s1", 9000))
+    assert decider(frame("s2", 9000)) is True

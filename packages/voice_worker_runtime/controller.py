@@ -218,11 +218,25 @@ class VoiceWorkerController:
         else:
             adapter = SileroVadAdapter()
 
+        # Decide over a short SLIDING WINDOW, not a single 100ms frame: silero's
+        # get_speech_timestamps has min_speech_duration_ms=250, so a lone 100ms
+        # frame ALWAYS reads as silence (this is why post-wake capture returned
+        # no_speech while the user was clearly speaking). webrtc likewise needs
+        # exact 10/20/30ms frames. A ~500ms window satisfies both. RMS energy is
+        # an OR fallback because it reliably separates speech here (ambient RMS
+        # ~200-650 vs speech >1500 in the field logs) and never errors.
+        window: deque[Any] = deque(maxlen=5)
+        energy_floor = float(getattr(self.config.vad, "speech_rms_floor", 0.0) or 1200.0)
+
         def decide(frame: Any) -> bool:
+            window.append(frame)
+            frames = tuple(window)
             try:
-                return bool(adapter.decide((frame,)).is_speech)
+                if bool(adapter.decide(frames).is_speech):
+                    return True
             except Exception:
-                return False
+                pass
+            return _frames_rms(frames) >= energy_floor
 
         return decide
 
