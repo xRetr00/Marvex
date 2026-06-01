@@ -47,20 +47,20 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14, maxWidth: 760 }}>
-      <Card title="Marvex">
+      <Card title="Runtime health">
         <Row label="Runtime phase" value={backend?.phase ?? "…"} ok={backend?.ready} />
         <Row label="Ready" value={backend?.ready ? "yes" : "no"} ok={backend?.ready} />
         <Row label="Launched" value={backend?.launched ? "yes" : "no"} ok={backend?.launched} />
       </Card>
 
-      <Card title="Workers / Daemons">
+      <Card title="Worker mesh">
         {workerNames.length === 0 && <Muted>No services reported.</Muted>}
         {workerNames.map((name) => (
           <Row key={name} label={name.replace(/_/g, " ")} value={services[name]} ok={serviceOk(services[name])} />
         ))}
       </Card>
 
-      <Card title="Voice / Wake word">
+      <Card title="Voice pipeline">
         <Row label="Wake word" value={String((voice as { wakeword_status?: string } | null)?.wakeword_status ?? backend?.wakeword ?? "unknown")} ok={backend?.wakeword === "running" || backend?.wakeword === "enabled"} />
         <Row label="Lifecycle" value={voiceLifecycleLabel(voice, voiceWorkerProcessRunning)} ok={voiceWorkerProcessRunning || Boolean((voice as { process_started?: boolean } | null)?.process_started)} />
         <Row label="STT backend" value={String((voice as { active_stt_backend_id?: string } | null)?.active_stt_backend_id ?? "—")} />
@@ -68,7 +68,7 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
         <Row label="Active voice" value={String((voice as { active_voice_id?: string } | null)?.active_voice_id ?? "—")} />
       </Card>
 
-      <Card title="Provider / LLM">
+      <Card title="Provider stack">
         {providers.length === 0 && <Muted>No providers reported.</Muted>}
         {providers.map((p, i) => (
           <Row key={i} label={String(p.provider_id ?? p.id ?? `provider ${i + 1}`)} value={String(p.active_model ?? p.model ?? p.status ?? "—")} ok={Boolean(p.healthy)} />
@@ -113,8 +113,8 @@ function voiceLifecycleLabel(voice: Record<string, unknown> | null, processRunni
 
 function Card({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <section style={{ background: "var(--card)", borderRadius: 14, padding: 16, border: "1px solid var(--border)" }}>
-      <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase", letterSpacing: "0.04em" }}>{title}</h2>
+    <section className="marvex-glass" style={{ borderRadius: 8, padding: 16 }}>
+      <h2 style={{ margin: "0 0 10px", fontSize: 13, fontWeight: 750, color: "var(--foreground)" }}>{title}</h2>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{children}</div>
     </section>
   );
