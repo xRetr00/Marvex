@@ -2196,6 +2196,23 @@ wheels = [
 ]
 
 [[package]]
+name = "local-wake"
+version = "0.1.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "librosa" },
+    { name = "numpy" },
+    { name = "onnxruntime" },
+    { name = "silero-vad" },
+    { name = "sounddevice" },
+    { name = "soundfile" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/b2/ce/c29b445d4abbfd74e5de9e293355eb6fe7230a1a321b2e873fb4763e8822/local_wake-0.1.2.tar.gz", hash = "sha256:d2cfa34b83983ec2f07e178d08c1ba7aa7d67a21e55cfb87440f4777d463fb83", size = 1552914, upload-time = "2026-03-08T10:44:09.884Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c5/76/fdcec6ddef3e3316a5d52683bf107f75802439ed4f47dfb1a09b24dcb675/local_wake-0.1.2-py3-none-any.whl", hash = "sha256:9ab3ce091a332d76649fdb0bee352f4a117de05ee1b5551efbdf9461fc8fa986", size = 1554722, upload-time = "2026-03-08T10:44:08.237Z" },
+]
+
+[[package]]
 name = "loguru"
 version = "0.7.3"
 source = { registry = "https://pypi.org/simple" }
@@ -2447,6 +2464,7 @@ dependencies = [
     { name = "kokoro-onnx" },
     { name = "litellm" },
     { name = "llama-index-core" },
+    { name = "local-wake" },
     { name = "mcp" },
     { name = "moonshine-voice" },
     { name = "openai" },
@@ -2494,6 +2512,7 @@ requires-dist = [
     { name = "kokoro-onnx", specifier = "==0.5.0" },
     { name = "litellm", specifier = "==1.85.0" },
     { name = "llama-index-core", specifier = ">=0.14.22" },
+    { name = "local-wake", specifier = ">=0.1.2" },
     { name = "mcp", specifier = "==1.27.1" },
     { name = "moonshine-voice", specifier = "==0.0.59" },
     { name = "openai", specifier = "==2.37.0" },
