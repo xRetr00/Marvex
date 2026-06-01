@@ -94,6 +94,14 @@ class SQLiteMemoryTreeIndex:
         rows = self._rows("SELECT chunk_id, document_id, source_id, ordinal, char_count FROM memory_tree_chunks ORDER BY ordinal, chunk_id", ())
         return tuple({"chunk_id": row[0], "document_id": row[1], "source_id": row[2], "ordinal": row[3], "char_count": row[4], "raw_secret_persisted": False} for row in rows)
 
+    def documents(self) -> tuple[CanonicalMemoryDocument, ...]:
+        rows = self._rows("SELECT payload_json FROM memory_tree_documents ORDER BY document_id", ())
+        return tuple(CanonicalMemoryDocument.model_validate(json.loads(row[0])) for row in rows)
+
+    def chunks(self) -> tuple[MemoryChunk, ...]:
+        rows = self._rows("SELECT payload_json FROM memory_tree_chunks ORDER BY ordinal, chunk_id", ())
+        return tuple(MemoryChunk.model_validate(json.loads(row[0])) for row in rows)
+
     def safe_scores(self) -> tuple[dict[str, object], ...]:
         rows = self._rows("SELECT chunk_id, importance, decision, payload_json FROM memory_tree_scores ORDER BY chunk_id", ())
         return tuple(_score_projection(row) for row in rows)

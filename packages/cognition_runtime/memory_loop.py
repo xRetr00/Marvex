@@ -119,6 +119,13 @@ class LocalMemoryLoop:
         return MemoryRecallResult(read_result=result, records=records, evidence_refs=refs, manual_note_count=0)
 
     def write_from_turn(self, turn_input: Any) -> MemoryWriteResult:
+        text = turn_input.user_visible_input or ""
+        derived = _derive_safe_fact(text)
+        if derived is None:
+            explicit = _derive_explicit_memory(text)
+            if explicit is not None:
+                return self._write_explicit_memory(turn_input, explicit)
+
         audit = evaluate_autonomy_action(
             self._policy,
             AutonomyAction(
@@ -129,7 +136,6 @@ class LocalMemoryLoop:
                 timestamp=datetime.now(UTC).isoformat(),
             ),
         )
-        derived = _derive_safe_fact(turn_input.user_visible_input or "")
         if derived is None or audit.decision != PolicyDecision.ALLOW or turn_input.session_ref is None:
             return MemoryWriteResult(written=False, policy_audit=audit, candidate=None, decision=None, record=None)
 
@@ -173,6 +179,61 @@ class LocalMemoryLoop:
             decision=decision,
             record=record,
             revised_memory_ref=memory_ref.ref_id if revised else None,
+            vault_path=str(vault_path),
+        )
+
+    def _write_explicit_memory(self, turn_input: Any, explicit: "_ExplicitMemory") -> MemoryWriteResult:
+        audit = evaluate_autonomy_action(
+            self._policy,
+            AutonomyAction(
+                action="explicit user memory write",
+                resource_type="explicit_memory",
+                capability="memory_explicit_write",
+                safe_trace_ref=turn_input.trace_id,
+                timestamp=datetime.now(UTC).isoformat(),
+            ),
+        )
+        if audit.decision != PolicyDecision.ALLOW or turn_input.session_ref is None:
+            return MemoryWriteResult(written=False, policy_audit=audit, candidate=None, decision=None, record=None)
+
+        conversation_ref = ConversationRef(ref_type="conversation", ref_id=f"conversation.{turn_input.session_ref.ref_id}")
+        memory_ref = MemoryRef(ref_type="memory", ref_id=_explicit_memory_ref_for(explicit.content, turn_input.turn_id))
+        candidate = MemoryWriteCandidate(
+            schema_version=turn_input.schema_version,
+            candidate_id=f"candidate.{turn_input.turn_id}",
+            scope="session",
+            memory_kind=explicit.memory_kind,
+            session_ref=turn_input.session_ref,
+            conversation_ref=conversation_ref,
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            proposed_content=explicit.content,
+            source="manual",
+            policy_status="approved",
+            raw_transcript_persisted=False,
+        )
+        decision = MemoryPolicyDecision(
+            schema_version=turn_input.schema_version,
+            candidate_id=candidate.candidate_id,
+            decision="approved",
+            decided_by="explicit_user",
+            reason_code="policy.explicit_user_memory_write",
+            approved_memory_ref=memory_ref,
+        )
+        record = build_memory_record_from_candidate(
+            candidate,
+            decision=decision,
+            created_at=datetime.now(UTC),
+            tags=("explicit", explicit.memory_kind),
+        )
+        self._store.write_record(record)
+        vault_path = self._ingest_record(record, topic_label="Explicit Memory")
+        return MemoryWriteResult(
+            written=True,
+            policy_audit=audit,
+            candidate=candidate,
+            decision=decision,
+            record=record,
             vault_path=str(vault_path),
         )
 
@@ -235,6 +296,12 @@ class _DerivedFact:
     content: str
 
 
+@dataclass(frozen=True)
+class _ExplicitMemory:
+    content: str
+    memory_kind: str
+
+
 def _derive_safe_fact(text: str) -> _DerivedFact | None:
     match = re.search(
         r"(?:remember that|actually,?)\s+my preferred project codename is\s+([A-Za-z][A-Za-z0-9_-]{0,40})",
@@ -251,5 +318,35 @@ def _derive_safe_fact(text: str) -> _DerivedFact | None:
     )
 
 
+def _derive_explicit_memory(text: str) -> _ExplicitMemory | None:
+    value = " ".join(text.strip().split())
+    if not value:
+        return None
+    patterns = (
+        r"^\s*remember\s+(?:this|that)[:\s]+(?P<content>.+)$",
+        r"^\s*save\s+(?:this|that)\s+to\s+memory[:\s]+(?P<content>.+)$",
+        r"^\s*note\s+that[:\s]+(?P<content>.+)$",
+        r"^\s*my\s+preference\s+is\s+(?P<content>.+)$",
+        r"^\s*i\s+prefer\s+(?P<content>.+)$",
+    )
+    for pattern in patterns:
+        match = re.match(pattern, value, flags=re.IGNORECASE)
+        if match is None:
+            continue
+        content = match.group("content").strip(" :")
+        if not content:
+            return None
+        lowered = value.lower()
+        kind = "preference" if "preference" in lowered or lowered.startswith("i prefer") else "fact"
+        return _ExplicitMemory(content=content, memory_kind=kind)
+    return None
+
+
 def _memory_ref_for(topic: str) -> str:
     return f"memory.loop.{topic}"
+
+
+def _explicit_memory_ref_for(content: str, turn_id: str) -> str:
+    words = re.findall(r"[A-Za-z0-9]+", content.lower())[:6]
+    slug = ".".join(words) or "memory"
+    return f"memory.explicit.{turn_id}.{slug}"[:160]

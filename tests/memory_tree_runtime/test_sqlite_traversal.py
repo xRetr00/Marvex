@@ -74,3 +74,19 @@ def test_memory_traversal_tools_return_source_grounded_evidence():
     assert digest.evidence_links
     assert drill.chunk_id == chunks[0].chunk_id
     assert "raw" not in repr(search.safe_projection()).lower()
+
+
+def test_sqlite_index_can_hydrate_runtime_for_semantic_search(tmp_path):
+    from packages.memory_tree_runtime import MemoryTreeRuntime, SQLiteMemoryTreeIndex, chunk_document
+
+    index = SQLiteMemoryTreeIndex(memory_db_path=tmp_path / "tree.db", local_user_root=tmp_path)
+    document = _document()
+    chunks = chunk_document(document, max_chars=80)
+    index.upsert_document(document)
+    index.upsert_chunks(chunks)
+
+    runtime = MemoryTreeRuntime.from_sqlite_index(index)
+    result = runtime.memory_tree_search("memory evidence")
+
+    assert result.results
+    assert result.results[0].evidence_links[0].source_id == "source-github"

@@ -67,3 +67,16 @@ def test_remember_ignores_empty_ids():
     store.remember("", entity_type=ENTITY_FILE, ref_id="a.txt", label="a", turn_id="t")
     store.remember("s1", entity_type=ENTITY_FILE, ref_id="", label="a", turn_id="t")
     assert store.most_recent("s1", entity_type=ENTITY_FILE) is None
+
+
+def test_conversation_entity_store_round_trips_safe_snapshot():
+    store = ConversationEntityStore()
+    store.remember("s1", entity_type=ENTITY_FILE, ref_id="Desktop/output.txt", label="output.txt", turn_id="t1")
+    store.remember("s1", entity_type=ENTITY_WEB_RESULT, ref_id="https://example.test", label="Example", turn_id="t2")
+
+    snapshot = store.safe_snapshot()
+    restored = ConversationEntityStore.from_snapshot(snapshot)
+
+    assert restored.most_recent("s1", entity_type=ENTITY_FILE).ref_id == "Desktop/output.txt"
+    assert restored.most_recent("s1", entity_type=ENTITY_WEB_RESULT).ref_id == "https://example.test"
+    assert snapshot["raw_content_persisted"] is False

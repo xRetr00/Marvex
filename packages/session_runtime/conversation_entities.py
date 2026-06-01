@@ -92,6 +92,43 @@ class ConversationEntityStore:
         items = self.recent(session_id, entity_type=entity_type)
         return items[0] if items else None
 
+    def safe_snapshot(self) -> dict[str, object]:
+        return {
+            "schema_version": "1",
+            "sessions": {
+                session_id: [entity.safe_projection() for entity in ring]
+                for session_id, ring in self._sessions.items()
+            },
+            "raw_content_persisted": False,
+        }
+
+    @classmethod
+    def from_snapshot(
+        cls,
+        payload: dict[str, object],
+        *,
+        max_per_session: int = 64,
+        max_sessions: int = 256,
+    ) -> "ConversationEntityStore":
+        store = cls(max_per_session=max_per_session, max_sessions=max_sessions)
+        sessions = payload.get("sessions", {}) if isinstance(payload, dict) else {}
+        if not isinstance(sessions, dict):
+            return store
+        for session_id, rows in sessions.items():
+            if not isinstance(session_id, str) or not isinstance(rows, list):
+                continue
+            for row in rows[-max_per_session:]:
+                if not isinstance(row, dict):
+                    continue
+                store.remember(
+                    session_id,
+                    entity_type=str(row.get("entity_type") or ""),
+                    ref_id=str(row.get("ref_id") or ""),
+                    label=str(row.get("label") or ""),
+                    turn_id=str(row.get("turn_id") or ""),
+                )
+        return store
+
 
 def _words(text: str) -> list[str]:
     cleaned = "".join(ch if ch.isalnum() else " " for ch in text.lower())

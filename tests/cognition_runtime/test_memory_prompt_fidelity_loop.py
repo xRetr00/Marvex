@@ -117,3 +117,22 @@ def test_local_memory_loop_policy_write_recall_restart_and_belief_revision(tmp_p
     assert "raw prompt" not in sample.lower()
     assert "transcript" not in sample.lower()
 
+
+def test_local_memory_loop_writes_explicit_remember_keywords(tmp_path) -> None:
+    from packages.cognition_runtime import LocalMemoryLoop
+
+    loop = LocalMemoryLoop.open(vault_root=tmp_path / "vault")
+
+    write = loop.write_from_turn(
+        _turn_input("Remember this: User prefers concise answers.", turn_id="turn-explicit-memory")
+    )
+    recall = loop.recall_for_turn(
+        _turn_input("What answer style do I prefer?", turn_id="turn-explicit-recall")
+    )
+
+    assert write.written is True
+    assert write.policy_audit.capability == "memory_explicit_write"
+    assert write.record is not None
+    assert write.record.memory_kind == "fact"
+    assert write.record.write_authorization == "explicit_user"
+    assert recall.records[0].content == "User prefers concise answers."
