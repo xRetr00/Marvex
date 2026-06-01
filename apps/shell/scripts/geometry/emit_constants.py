@@ -49,6 +49,7 @@ def render_rust(geo: PillGeometry) -> str:
     return f"""{_BANNER}
 // Source of truth: apps/shell/scripts/geometry/*.py
 // Logical pixels; multiply by the monitor scale factor before sizing the window.
+#![allow(dead_code)]
 
 /// Gap below the top edge of the monitor (the notch inset), logical px.
 pub const OVERLAY_TOP_MARGIN: i32 = {geo.top_margin};

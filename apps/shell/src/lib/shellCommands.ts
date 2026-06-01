@@ -155,10 +155,6 @@ export async function controlRequest(path: string, method = "GET", body?: unknow
   return invoke("control_request", { path, method, body });
 }
 
-export async function setOverlayClickThrough(ignore: boolean): Promise<void> {
-  await invoke("set_overlay_click_through", { ignore });
-}
-
 export type OverlayWindowSize = {
   width: number;
   height: number;
