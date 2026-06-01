@@ -1,5 +1,5 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import type { TurnStage, UiDirective } from "@/lib/localTurn";
+import type { CitationRef, TurnStage, UiDirective } from "@/lib/localTurn";
 import { RichMessage } from "@/components/marvex/RichMessage";
 import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationRequest, ConfirmationTitle } from "@/components/confirmation";
 import { QuestionTool } from "@/components/question-tool";
@@ -17,6 +17,7 @@ import {
   ChatbotScrollButton,
 } from "./conversation";
 import { ChatbotPromptInput } from "./prompt-input";
+import { AssistantActivity } from "./activity";
 
 export type MarvexChatClarificationOption = { id: string; label: string; description?: string };
 export type MarvexChatClarification = {
@@ -25,12 +26,14 @@ export type MarvexChatClarification = {
   allowCustom: boolean;
   options: MarvexChatClarificationOption[];
   originalText: string;
+  answerText?: string;
 };
 
 export type MarvexChatMessage = {
   role: "user" | "assistant" | "system";
   text: string;
   stages?: TurnStage[];
+  citations?: CitationRef[];
   directives?: UiDirective[];
   approval?: { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
   clarification?: MarvexChatClarification;
@@ -41,12 +44,16 @@ export type MarvexChatShellProps = {
   micActive?: boolean;
   pending: boolean;
   onSubmit: (text: string) => void | Promise<void>;
+  onStop?: () => void;
   onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
   onClarificationAnswer?: (clarification: MarvexChatClarification, answerText: string) => void | Promise<void>;
   onToggleVoice?: () => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
   assistantOrbState?: "thinking" | "listening" | "talking" | null;
   activityLabel?: string;
+  modelLabel?: string;
+  models?: Array<{ id: string; name: string; provider?: string; active?: boolean }>;
+  onSelectModel?: (modelId: string) => void | Promise<void>;
 };
 
 export function MarvexChatShell({
@@ -54,12 +61,16 @@ export function MarvexChatShell({
   micActive = false,
   pending,
   onSubmit,
+  onStop,
   onApprovalDecision,
   onClarificationAnswer,
   onToggleVoice,
   renderAssistantOrb,
   assistantOrbState = null,
   activityLabel = "Marvex is thinking",
+  modelLabel = "Assistant runtime",
+  models = [],
+  onSelectModel,
 }: MarvexChatShellProps) {
   const conversationRef = useRef<HTMLDivElement | null>(null);
 
@@ -78,19 +89,39 @@ export function MarvexChatShell({
       <ChatbotConversation ref={conversationRef} className={messages.length > 0 ? "bg-background/80" : "bg-transparent"}>
         {messages.length === 0 && !pending ? <ChatbotConversationEmpty /> : null}
         <ChatbotConversationContent>
-          {messages.map((message, index) => (
+          {messages.map((message, index) => {
+            if (
+              message.role === "assistant" &&
+              !message.text.trim() &&
+              !message.stages?.length &&
+              !message.directives?.length &&
+              !message.approval &&
+              !message.clarification
+            ) {
+              return null;
+            }
+            const visibleAssistantText = message.clarification ? "" : message.text;
+            return (
             <ChatbotMessage key={`${message.role}-${index}`} from={message.role}>
               {message.role === "assistant" ? (
                 <ChatbotAssistantFrame orb={renderAssistantOrb(assistantOrbState)}>
                   <ChatbotMessageContent from="assistant">
-                    <RichMessage text={message.text} stages={message.stages} directives={message.directives} />
+                    <RichMessage text={visibleAssistantText} stages={message.stages} citations={message.citations} directives={message.directives} />
                     {message.approval ? (
                       <Confirmation
                         approval={message.approval.status === "pending" ? { id: message.approval.approvalId } : { id: message.approval.approvalId, approved: message.approval.status === "approved" }}
                         state={message.approval.status === "pending" ? "approval-requested" : "approval-responded"}
-                        className="mt-3"
+                        className="mt-3 rounded-lg border-border/70 bg-card/72 shadow-[var(--shadow-card)] backdrop-blur-xl"
                       >
-                        <ConfirmationTitle>Approval required for this action.</ConfirmationTitle>
+                        <ConfirmationTitle>
+                          {message.approval.status === "pending"
+                            ? "Approval required before Marvex continues."
+                            : message.approval.status === "approved"
+                              ? "Approved."
+                              : message.approval.status === "denied"
+                                ? "Denied."
+                                : "Approval cancelled."}
+                        </ConfirmationTitle>
                         <ConfirmationRequest>
                           <ConfirmationActions>
                             <ConfirmationAction disabled={!onApprovalDecision || pending} onClick={() => void onApprovalDecision?.(message.approval!, "approve")}>Approve</ConfirmationAction>
@@ -117,6 +148,7 @@ export function MarvexChatShell({
                           },
                         ]}
                         allowSkip={false}
+                        output={message.clarification.answerText ? { answer: { kind: "single", selectedIds: [message.clarification.options.find((option) => option.label === message.clarification?.answerText)?.id ?? ""], text: undefined } } : undefined}
                         onSubmitAnswer={(answer) => {
                           const clarification = message.clarification!;
                           const fromCustom = answer.text?.trim();
@@ -132,19 +164,19 @@ export function MarvexChatShell({
                     ) : null}
                   </ChatbotMessageContent>
                   <ChatbotMessageActions className="mt-2">
-                    <ChatbotCopyAction text={message.text} />
+                    {message.text.trim() ? <ChatbotCopyAction text={message.text} /> : null}
                   </ChatbotMessageActions>
                 </ChatbotAssistantFrame>
               ) : (
                 <ChatbotMessageContent from={message.role}>{message.text}</ChatbotMessageContent>
               )}
             </ChatbotMessage>
-          ))}
+          );})}
           {pending ? (
             <ChatbotMessage from="assistant">
                 <ChatbotAssistantFrame orb={renderAssistantOrb("thinking")}>
                   <ChatbotMessageContent from="assistant" className="text-muted-foreground">
-                  {activityLabel}
+                    <AssistantActivity label={activityLabel} />
                   </ChatbotMessageContent>
                 </ChatbotAssistantFrame>
             </ChatbotMessage>
@@ -153,7 +185,7 @@ export function MarvexChatShell({
       </ChatbotConversation>
       <ChatbotScrollButton targetRef={conversationRef} />
       <div className="border-t border-border/30 bg-background/86 pt-3 backdrop-blur-xl">
-        <ChatbotPromptInput disabled={pending} micActive={micActive} onSubmit={onSubmit} onToggleVoice={onToggleVoice} />
+        <ChatbotPromptInput disabled={pending} generating={pending} micActive={micActive} modelLabel={modelLabel} models={models} onSelectModel={onSelectModel} onStop={onStop} onSubmit={onSubmit} onToggleVoice={onToggleVoice} />
       </div>
     </section>
   );

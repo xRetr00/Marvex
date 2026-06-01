@@ -1,14 +1,15 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2 } from "lucide-react";
+import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2, Pencil, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
-import { type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { getShellRuntimeConfig, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localTurn";
+import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
-import { loadCachedMessages, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
+import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
+import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { startVoiceWorker, stopVoiceWorker, fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
@@ -25,7 +26,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 
@@ -45,6 +46,7 @@ export function ChatApp() {
   const previousResponseIdsRef = useRef<Record<string, string>>({});
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready." }]);
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
+  const [providers, setProviders] = useState<ProviderCatalog | null>(null);
   const [pending, setPending] = useState(false);
   const [micActive, setMicActive] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -67,6 +69,7 @@ export function ChatApp() {
 
   useEffect(() => {
     void getShellRuntimeConfig().then(setConfig).catch(() => setConfig(null));
+    void fetchProviders().then(setProviders).catch(() => undefined);
     let cleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
       try { setState(normalizeAssistantState(event.payload)); }
@@ -117,11 +120,18 @@ export function ChatApp() {
     });
   }, []);
 
-  const send = useCallback(async (text: string): Promise<string> => {
+  const send = useCallback(async (text: string, options: { appendUser?: boolean } = {}): Promise<string> => {
     if (!text.trim() || pending) return "";
+    const appendUser = options.appendUser ?? true;
     setPending(true);
-    // Append the user message + an empty assistant bubble we stream into.
-    setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true }]);
+    // Append a user message only for direct user turns. Follow-up UI controls
+    // such as clarification answers and approvals update the active assistant
+    // turn instead of creating transcript noise.
+    if (appendUser) {
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true }]);
+    } else {
+      updateLastAssistant({ role: "assistant", text: "", streaming: true });
+    }
     let replyText = "";
     let streamed = "";
     try {
@@ -150,7 +160,7 @@ export function ChatApp() {
       const outcome = outcomeFromTurnResult(result);
       replyText = outcome.text;
       // Reconcile with the authoritative final result (text + stages + refs).
-      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) });
+      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) });
     } catch (error) {
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
@@ -164,13 +174,26 @@ export function ChatApp() {
   const answerClarification = useCallback((clarification: MarvexChatClarification, answerText: string) => {
     const reply = answerText.trim();
     if (!reply) return;
+    setMessages((prev) => prev.map((message) => {
+      if (message.clarification?.originalText !== clarification.originalText) return message;
+      return {
+        ...message,
+        clarification: { ...message.clarification, answerText: reply },
+      };
+    }));
     // Re-ask the original question with the disambiguation so the backend
     // resolves it (and the spaced "open ai" trigger no longer fires).
     const composed = clarification.originalText.trim()
       ? `${clarification.originalText.trim()} (I mean: ${reply})`
       : reply;
-    void send(composed);
+    void send(composed, { appendUser: true });
   }, [send]);
+
+  const stopChatTurn = useCallback(() => {
+    void cancelActiveChatTurn().catch(() => undefined);
+    setPending(false);
+    setMessages((prev) => prev.filter((message) => !(message.role === "assistant" && !message.text.trim() && message.streaming)));
+  }, []);
 
   const decideChatApproval = useCallback(async (approval: ChatApproval, decision: "approve" | "deny" | "cancel") => {
     setPending(true);
@@ -191,7 +214,7 @@ export function ChatApp() {
             ...message.approval,
             status: decision === "approve" ? "approved" : decision === "cancel" ? "cancelled" : "denied",
           },
-          text: `${message.text}\n\n${outcome.text}`,
+          text: outcome.text,
           stages: outcome.stages ?? message.stages,
           directives: outcome.directives ?? message.directives,
         };
@@ -273,6 +296,42 @@ export function ChatApp() {
     }).catch(() => undefined);
   }, []);
 
+  const renameSession = useCallback((session: SessionMeta) => {
+    const title = window.prompt("Rename chat", session.title || "New chat")?.trim();
+    if (!title) return;
+    renameCachedSession(session.id, title);
+    setSessions(listCachedSessions());
+    void renameChatSession(session.id, title).catch(() => undefined);
+  }, []);
+
+  const removeSession = useCallback((session: SessionMeta) => {
+    deleteCachedSession(session.id);
+    setSessions(listCachedSessions());
+    void deleteChatSession(session.id).catch(() => undefined);
+    if (session.id === sessionIdRef.current) {
+      sessionIdRef.current = null;
+      setMessages([{ role: "system", text: "Marvex is ready." }]);
+    }
+  }, []);
+
+  const modelOptions = useMemo(() => {
+    const rows = providers?.providers ?? [];
+    return rows.flatMap((provider) => (provider.models ?? []).map((model) => ({
+      id: `${provider.provider_id}:${model}`,
+      name: model,
+      provider: provider.provider_id.split("_")[0],
+      active: provider.provider_id === providers?.active_provider_id && model === provider.active_model,
+      providerId: provider.provider_id,
+      model,
+    })));
+  }, [providers]);
+
+  const selectModel = useCallback((value: string) => {
+    const found = modelOptions.find((model) => model.id === value);
+    if (!found) return;
+    void selectProviderModel(found.providerId, found.model).then(setProviders).catch(() => undefined);
+  }, [modelOptions]);
+
   const openSession = useCallback((id: string) => {
     sessionIdRef.current = id;
     const cached = listCachedSessions().find((item) => item.id === id);
@@ -294,6 +353,10 @@ export function ChatApp() {
   }
 
   const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry", settings: "Settings" };
+  const activeSession = sessions.find((session) => session.id === sessionIdRef.current);
+  const headerSubtitle = activeTab === "chat"
+    ? `${activeSession?.title || "Current chat"} • ${backend?.phase ?? "runtime"}`
+    : `${backend?.ready ? "Core connected" : "Core starting"} • ${backend?.phase ?? "runtime"}`;
 
   return (
     <div className="marvex-chat-shell flex flex-col h-screen min-h-0 relative z-[1]">
@@ -304,7 +367,7 @@ export function ChatApp() {
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           <div>
             <ScrambleText as="h1" text={TAB_TITLES[activeTab]} className="m-0 text-[17px] font-bold" style={{ color: "var(--foreground)" }} />
-            <p style={{ margin: "1px 0 0", color: "var(--muted-foreground)", fontSize: 11 }}>{config ? `${config.core_base_url}` : "Connecting..."}</p>
+            <p style={{ margin: "1px 0 0", color: "var(--muted-foreground)", fontSize: 11 }}>{config ? headerSubtitle : "Connecting runtime..."}</p>
           </div>
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -326,19 +389,29 @@ export function ChatApp() {
             <motion.aside initial={{ x: -280, opacity: 0 }} animate={{ x: 0, opacity: 1 }} exit={{ x: -280, opacity: 0 }} transition={{ type: "spring", duration: 0.35, bounce: 0.1 }}
               style={{ position: "absolute", inset: "0 auto 0 0", width: 280, zIndex: 5, background: "var(--sidebar)", borderRight: "1px solid var(--sidebar-border)", display: "flex", flexDirection: "column" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", borderBottom: "1px solid var(--sidebar-border)" }}>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>Sessions</span>
+                <span style={{ fontSize: 13, fontWeight: 650 }}>Chat history</span>
                 <button onClick={() => setSidebarOpen(false)} style={{ background: "none", border: "none", color: "var(--muted-foreground)", cursor: "pointer", display: "grid", placeItems: "center" }}><X size={16} /></button>
               </div>
               <div style={{ padding: 10 }}>
-                <button onClick={startNewSession} style={{ ...iconBtn, width: "100%", height: 36, gap: 6 }}><Plus size={14} /> New chat</button>
+                <button aria-label="New chat" title="New chat" onClick={startNewSession} style={{ ...iconBtn, width: "100%", height: 36, justifyContent: "center" }}><Plus size={14} /></button>
               </div>
               <div style={{ flex: 1, overflow: "auto", padding: "0 10px 10px", display: "flex", flexDirection: "column", gap: 6 }}>
                 {sessions.map((s: SessionMeta) => (
-                  <button key={s.id} onClick={() => openSession(s.id)}
-                    style={{ textAlign: "left", padding: "8px 10px", borderRadius: 8, background: s.id === sessionIdRef.current ? "var(--sidebar-accent)" : "transparent", border: "1px solid var(--sidebar-border)", cursor: "pointer", color: "var(--foreground)" }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "New chat"}</div>
-                    <div style={{ fontSize: 10, color: "var(--muted-foreground)" }}>{new Date(s.updatedAt).toLocaleString()}</div>
-                  </button>
+                  <div key={s.id} role="button" tabIndex={0} onClick={() => openSession(s.id)} onKeyDown={(event) => { if (event.key === "Enter") openSession(s.id); }}
+                    style={{ textAlign: "left", padding: "10px", borderRadius: 8, background: s.id === sessionIdRef.current ? "var(--sidebar-accent)" : "color-mix(in srgb, var(--card) 45%, transparent)", border: "1px solid var(--sidebar-border)", cursor: "pointer", color: "var(--foreground)", boxShadow: s.id === sessionIdRef.current ? "inset 0 0 0 1px color-mix(in srgb, var(--foreground) 14%, transparent)" : "none" }}>
+                    <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+                      <div style={{ fontSize: 12, fontWeight: 650, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{s.title || "New chat"}</div>
+                      {s.id === sessionIdRef.current && <span style={{ width: 7, height: 7, borderRadius: 999, background: "#34d399", flex: "0 0 auto" }} />}
+                    </div>
+                    <div style={{ marginTop: 6, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8, fontSize: 10, color: "var(--muted-foreground)" }}>
+                      <span>{estimateSessionTokens(loadCachedMessages(s.id)) || s.tokenCount || 0} tokens</span>
+                      <span>{new Date(s.updatedAt).toLocaleDateString()}</span>
+                    </div>
+                    <div style={{ marginTop: 8, display: "flex", gap: 6 }}>
+                      <button type="button" title="Rename chat" onClick={(event) => { event.stopPropagation(); renameSession(s); }} style={{ ...miniSessionBtn }}><Pencil size={12} /> Rename</button>
+                      <button type="button" title="Delete chat" onClick={(event) => { event.stopPropagation(); removeSession(s); }} style={{ ...miniSessionBtn, color: "var(--destructive)" }}><Trash2 size={12} /> Delete</button>
+                    </div>
+                  </div>
                 ))}
                 {sessions.length === 0 && <span style={{ fontSize: 12, color: "var(--muted-foreground)" }}>No saved sessions yet.</span>}
               </div>
@@ -358,8 +431,12 @@ export function ChatApp() {
                 onToggleVoice={toggleVoiceCapture}
                 onApprovalDecision={decideChatApproval}
                 onClarificationAnswer={answerClarification}
+                onStop={stopChatTurn}
                 pending={pending}
                 activityLabel={state.status === "idle" ? "Marvex is thinking" : displayDetail(state)}
+                modelLabel={modelOptions.find((model) => model.active)?.name ?? (config ? "Select model" : "Connecting runtime")}
+                models={modelOptions}
+                onSelectModel={selectModel}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
             )}
@@ -470,6 +547,19 @@ const iconBtn: React.CSSProperties = {
   border: "1px solid var(--border)",
   background: "var(--secondary)",
   color: "var(--foreground)",
+  cursor: "pointer",
+};
+
+const miniSessionBtn: React.CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  gap: 4,
+  border: "1px solid var(--border)",
+  borderRadius: 6,
+  background: "var(--secondary)",
+  color: "var(--muted-foreground)",
+  padding: "4px 6px",
+  fontSize: 10,
   cursor: "pointer",
 };
 
