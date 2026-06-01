@@ -444,10 +444,14 @@ if exist "%distPath%\assets" (
     exit /b 1
 )
 
+rem Use the ABSOLUTE Windows find.exe: when the build runs under a shell whose
+rem PATH has Git/MSYS usr/bin ahead of System32, a bare "find /c /v" is hijacked
+rem by MSYS find, which reads /c as a path and recursively scans the entire C:
+rem drive (permission-denied flood) and hangs the build.
 set "jsCount=0"
-for /f %%A in ('dir /b /a-d "%distPath%\assets\*.js" 2^>nul ^| find /c /v ""') do set "jsCount=%%A"
+for /f %%A in ('dir /b /a-d "%distPath%\assets\*.js" 2^>nul ^| "%SystemRoot%\System32\find.exe" /c /v ""') do set "jsCount=%%A"
 set "cssCount=0"
-for /f %%A in ('dir /b /a-d "%distPath%\assets\*.css" 2^>nul ^| find /c /v ""') do set "cssCount=%%A"
+for /f %%A in ('dir /b /a-d "%distPath%\assets\*.css" 2^>nul ^| "%SystemRoot%\System32\find.exe" /c /v ""') do set "cssCount=%%A"
 
 echo   JavaScript files: !jsCount!
 echo   CSS files: !cssCount!
