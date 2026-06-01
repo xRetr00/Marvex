@@ -60,6 +60,12 @@ class MemoryTreeRuntime:
     def with_documents(cls, *, documents: tuple[CanonicalMemoryDocument, ...], chunks: tuple[MemoryChunk, ...]) -> MemoryTreeRuntime:
         return cls(documents=documents, chunks=chunks)
 
+    @classmethod
+    def from_sqlite_index(cls, index: object) -> "MemoryTreeRuntime":
+        documents = tuple(index.documents()) if hasattr(index, "documents") else ()
+        chunks = tuple(index.chunks()) if hasattr(index, "chunks") else ()
+        return cls(documents=documents, chunks=chunks)
+
     def semantic_memory_search(self, query: MemorySemanticQuery) -> SemanticMemorySearchResult:
         metadata = {chunk.chunk_id: chunk.metadata for chunk in self._chunks}
         return semantic_rank_nodes(query, self._nodes, chunk_metadata=metadata)
