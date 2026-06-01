@@ -471,6 +471,29 @@ class VoiceWorkerController:
                 summary={"post_wake_capture": True, "reason_code": "post_wake_capture_failed"},
             )
 
+    def _effective_wake_backend_id(self) -> str:
+        """Wake backend to actually use this session.
+
+        Once the user has enrolled local-wake reference samples (via the in-app
+        recorder), local-wake takes over - it matches their own voice and
+        replaces the brittle sherpa KWS keyword path. Before any references
+        exist, fall back to the configured backend so wake isn't dead pre-
+        enrollment (push-to-talk/listen is always available regardless).
+        """
+
+        try:
+            from .wake_enrollment import list_wake_references, wake_reference_dir
+
+            references = list_wake_references(
+                wake_reference_dir(self.asset_manager.asset_root),
+                phrase=self.config.wakeword.phrase,
+            )
+            if references:
+                return "local-wake"
+        except Exception:
+            pass
+        return self.config.wakeword.backend_id
+
     def run_wake_listen_loop(
         self,
         *,
@@ -526,6 +549,11 @@ class VoiceWorkerController:
         def _locked():
             return lock if lock is not None else nullcontext()
 
+        # Resolve the effective wake backend once for this listen session: once
+        # the user has enrolled local-wake reference samples, local-wake takes
+        # over; otherwise the configured backend (sherpa KWS) is the stopgap.
+        wake_backend_id = self._effective_wake_backend_id()
+        _emit({"event": "wake_listen_backend", "backend_id": wake_backend_id})
         detections = 0
         frames_read = 0
         decode_count = 0
@@ -603,7 +631,7 @@ class VoiceWorkerController:
                 with _locked():
                     detection = self.backend_runtime.test_wakeword(
                         trace_id=f"wake-listen-{self._tick_counter_advance()}",
-                        backend_id=self.config.wakeword.backend_id,
+                        backend_id=wake_backend_id,
                         frames=frames,
                         phrase=self.config.wakeword.phrase,
                         threshold=self.config.wakeword.threshold,
@@ -679,7 +707,7 @@ class VoiceWorkerController:
                             probes_done += 1
                             try:
                                 hit, keyword = probe(
-                                    backend_id=self.config.wakeword.backend_id,
+                                    backend_id=wake_backend_id,
                                     frames=tuple(recent_frames),
                                     phrase=self.config.wakeword.phrase,
                                     threshold=self.config.wakeword.threshold,
