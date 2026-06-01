@@ -3,6 +3,7 @@ from __future__ import annotations
 # file size justification: control-plane contract coverage exercises many endpoints through one native ASGI fixture to preserve end-to-end behavior checks.
 
 import json
+from pathlib import Path
 
 from packages.capability_runtime import (
     ApprovalPrompt,
@@ -451,6 +452,7 @@ from packages.memory_runtime import MemoryRecord, MemoryRef
 from packages.skills_runtime import SkillManifest, SkillPromptContribution, SkillRef, SkillResourceKind, SkillResourceRef
 from packages.telemetry.trace_reader import InMemoryTraceReader
 from packages.memory_runtime import CurrentProcessMemoryStore
+from packages.mcp_runtime import McpServerRuntimeRegistry
 
 
 def _skill_manifest() -> SkillManifest:
@@ -472,7 +474,7 @@ def _skill_manifest() -> SkillManifest:
     )
 
 
-def _expanded_app():
+def _expanded_app(tmp_path=None):
     store = InMemoryApprovalStore.from_requests((_approval_request(),))
     store.approve("approval-request-1", reason="record approval history")
     approval_store = InMemoryApprovalStore.from_requests((_approval_request(),))
@@ -524,6 +526,7 @@ def _expanded_app():
         approval_history=store.list_history().decisions,
         mcp_marketplace=mcp_catalog,
         skills_marketplace=skills_catalog,
+        mcp_runtime_registry=McpServerRuntimeRegistry(state_path=(tmp_path or Path.cwd()) / "mcp-runtime.json") if tmp_path is not None else None,
         memory_store=memory_store,
         trace_reader=trace_reader,
         trace_ids=("trace-1",),
@@ -553,6 +556,23 @@ def test_control_plane_marketplace_endpoints_are_read_only_and_auth_protected() 
     assert proposal["launch_started"] is False
     assert disable_status == "200 OK"
     assert disable_payload["enabled"] is False
+
+
+def test_control_plane_installs_mcp_marketplace_entry_into_runtime_registry(tmp_path) -> None:
+    app = _expanded_app(tmp_path)
+
+    install_status, _headers, install_payload = _call(
+        app,
+        "/control/marketplace/mcp/local-test-mcp/install",
+        method="POST",
+    )
+    runtime_status, _runtime_headers, runtime_payload = _call(app, "/control/mcp/runtime")
+
+    assert install_status == "200 OK"
+    assert install_payload["installed"] is True
+    assert install_payload["server"]["server_id"] == "local-test-mcp"
+    assert runtime_status == "200 OK"
+    assert runtime_payload["servers"][0]["server_id"] == "local-test-mcp"
 
 
 def test_control_plane_skills_marketplace_preview_and_enable_are_safe() -> None:

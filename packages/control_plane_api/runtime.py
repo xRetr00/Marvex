@@ -85,6 +85,8 @@ def _create_control_plane_dispatcher(
     approval_history: tuple[ApprovalDecisionResponse, ...] = (),
     mcp_marketplace: Any | None = None,
     skills_marketplace: Any | None = None,
+    mcp_runtime_registry: Any | None = None,
+    skills_root: str | None = None,
     memory_store: Any | None = None,
     trace_reader: Any | None = None,
     trace_ids: tuple[str, ...] = (),
@@ -248,6 +250,31 @@ def _create_control_plane_dispatcher(
         if method == "GET" and path == f"{CONTROL_PREFIX}/marketplace/mcp":
             entries = tuple(mcp_marketplace.safe_projection()) if mcp_marketplace is not None else ()
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, "entries": entries, "read_only_browse": True, "raw_payload_persisted": False})
+        if method == "GET" and path == f"{CONTROL_PREFIX}/mcp/runtime":
+            payload = mcp_runtime_registry.safe_projection() if mcp_runtime_registry is not None else {"schema_version": SCHEMA_VERSION, "servers": [], "server_count": 0, "raw_registry_payload_persisted": False}
+            return _json_response(None, "200 OK", _safe_nested_mapping(payload))
+        if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/marketplace/mcp/") and path.endswith("/install"):
+            server_id = path.removeprefix(f"{CONTROL_PREFIX}/marketplace/mcp/").removesuffix("/install").strip("/")
+            entry = _find_entry(mcp_marketplace, server_id)
+            if entry is None:
+                return _json_response(None, "404 Not Found", _error("mcp_marketplace_entry_not_found", path))
+            if mcp_runtime_registry is None:
+                return _json_response(None, "404 Not Found", _error("mcp_runtime_registry_not_configured", path))
+            config = entry.to_installed_config()
+            installed = mcp_runtime_registry.upsert_server(config)
+            return _json_response(
+                None,
+                "200 OK",
+                {
+                    "schema_version": SCHEMA_VERSION,
+                    "installed": True,
+                    "server": installed.safe_projection(tool_count=0),
+                    "install_started": True,
+                    "launch_started": False,
+                    "auto_execution_allowed": False,
+                    "raw_registry_payload_persisted": False,
+                },
+            )
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/marketplace/mcp/") and path.endswith("/disable"):
             server_id = path.removeprefix(f"{CONTROL_PREFIX}/marketplace/mcp/").removesuffix("/disable").strip("/")
             state = MarketplaceEnablementState.disabled(subject_id=server_id, subject_kind="mcp_server", reason_code="disabled_by_control_plane")
@@ -263,6 +290,21 @@ def _create_control_plane_dispatcher(
             entries = tuple(skills_marketplace.safe_projection()) if skills_marketplace is not None else ()
             previews = tuple(_skill_previews(skills_marketplace)) if skills_marketplace is not None else ()
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, "entries": entries, "previews": previews, "raw_payload_persisted": False})
+        if method == "POST" and path == f"{CONTROL_PREFIX}/skills/install":
+            if not skills_root:
+                return _json_response(None, "404 Not Found", _error("skills_root_not_configured", path))
+            try:
+                from packages.skills_runtime import SkillPackageInstaller
+
+                payload = json.loads(_read_request_body(environ) or "{}")
+                source_path = str(payload.get("source_path") or "").strip()
+                if not source_path:
+                    return _json_response(None, "400 Bad Request", _error("missing_skill_source_path", path))
+                result = SkillPackageInstaller(managed_root=skills_root).install_from_directory(source_path, source_label="control_plane")
+                status = "200 OK" if result.installed else "400 Bad Request"
+                return _json_response(None, status, result.safe_projection())
+            except Exception:
+                return _json_response(None, "400 Bad Request", _error("skill_install_failed", path))
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/marketplace/skills/") and path.endswith("/disable"):
             skill_id = path.removeprefix(f"{CONTROL_PREFIX}/marketplace/skills/").removesuffix("/disable").strip("/")
             state = MarketplaceEnablementState.disabled(subject_id=skill_id, subject_kind="skill", reason_code="disabled_by_control_plane")

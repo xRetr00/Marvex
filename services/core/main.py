@@ -773,6 +773,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         approval_store: InMemoryApprovalStore | None = None,
         skill_manifests: tuple[SkillManifest, ...] = (),
         skill_loader: SkillInstructionLoader | None = None,
+        mcp_runtime_registry: object | None = None,
         connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
         structured_output_required: bool = False,
         desktop_agent_enabled: bool = False,
@@ -820,6 +821,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._approval_store = approval_store
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
+        self._mcp_runtime_registry = mcp_runtime_registry
         self._connector_autofetch_runtime = connector_autofetch_runtime
         self._structured_output_required = structured_output_required
         self._desktop_agent_enabled = desktop_agent_enabled
@@ -1245,6 +1247,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
             ComputerUseTool(),
             PlaywrightBrowserTool(),
         ]
+        if self._mcp_runtime_registry is not None:
+            try:
+                refresh = getattr(self._mcp_runtime_registry, "refresh_all_enabled", None)
+                if callable(refresh):
+                    refresh()
+                dynamic_registry = self._mcp_runtime_registry.to_tool_registry()
+                tools.extend(dynamic_registry.tools())
+            except Exception:
+                pass
         if self._memory_loop is not None:
             tools.extend(
                 memory_tools_registry(
@@ -3429,26 +3440,35 @@ def _enabled_connector_autofetch_policy(connector_ref: ConnectorRef) -> AutoFetc
 
 
 def _skill_loader_from_config(config: CoreServiceEntrypointConfig) -> SkillInstructionLoader | None:
-    if not config.skills_root:
-        return None
-    root = Path(config.skills_root)
+    root = _skills_root_from_config(config)
     if not root.is_dir():
         return None
     return SkillInstructionLoader(local_skill_root=root)
 
 
 def _skill_manifests_from_config(config: CoreServiceEntrypointConfig) -> tuple[SkillManifest, ...]:
-    if not config.skills_root:
-        return ()
-    root = Path(config.skills_root)
+    from packages.skills_runtime import scan_installed_skill_manifests
+
+    root = _skills_root_from_config(config)
     if not root.is_dir():
         return ()
-    manifests: list[SkillManifest] = []
-    for skill_dir in sorted(path for path in root.iterdir() if path.is_dir()):
-        manifest = _skill_manifest_from_directory(root, skill_dir)
-        if manifest is not None:
-            manifests.append(manifest)
-    return tuple(manifests)
+    return scan_installed_skill_manifests(root)
+
+
+def _skills_root_from_config(config: CoreServiceEntrypointConfig) -> Path:
+    if config.skills_root:
+        return Path(config.skills_root)
+    explicit = os.environ.get("MARVEX_SKILLS_ROOT", "").strip()
+    if explicit:
+        return Path(explicit)
+    base = (
+        os.environ.get("MARVEX_DATA_DIR", "").strip()
+        or os.environ.get("LOCALAPPDATA", "").strip()
+        or os.environ.get("APPDATA", "").strip()
+        or os.environ.get("XDG_DATA_HOME", "").strip()
+        or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
+    )
+    return Path(base) / "com.marvex.shell" / "skills"
 
 
 def _skill_manifest_from_directory(root: Path, skill_dir: Path) -> SkillManifest | None:
@@ -3936,6 +3956,7 @@ def _create_turn_executor(
         approval_store=approval_store,
         skill_manifests=_skill_manifests_from_config(config),
         skill_loader=skill_loader,
+        mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
         connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
         desktop_agent_enabled=config.desktop_agent_enabled,
     )
@@ -3965,6 +3986,12 @@ def _effective_file_capability_root(config: CoreServiceEntrypointConfig) -> str 
         return configured
     env_root = os.environ.get("MARVEX_FILE_CAPABILITY_ROOT", "").strip()
     return env_root or None
+
+
+def _mcp_runtime_registry_from_config(config: CoreServiceEntrypointConfig) -> object:
+    from packages.mcp_runtime import McpServerRuntimeRegistry
+
+    return McpServerRuntimeRegistry(state_path=_mcp_runtime_state_path())
 
 
 def create_core_service_app(
@@ -4112,6 +4139,8 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
+        mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
+        skills_root=str(_skills_root_from_config(config)),
         voice_worker_control=VoiceWorkerControlPlaneFacade(),
     )
 
@@ -4181,6 +4210,20 @@ def _provider_control_state_path() -> str | None:
         or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
     )
     return os.path.join(base, "com.marvex.shell", "provider_control.json")
+
+
+def _mcp_runtime_state_path() -> str:
+    explicit = os.environ.get("MARVEX_MCP_RUNTIME_STATE", "").strip()
+    if explicit:
+        return explicit
+    base = (
+        os.environ.get("MARVEX_DATA_DIR", "").strip()
+        or os.environ.get("LOCALAPPDATA", "").strip()
+        or os.environ.get("APPDATA", "").strip()
+        or os.environ.get("XDG_DATA_HOME", "").strip()
+        or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
+    )
+    return os.path.join(base, "com.marvex.shell", "mcp_runtime.json")
 
 
 def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provider_control: Any | None = None) -> None:

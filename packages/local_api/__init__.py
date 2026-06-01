@@ -5,8 +5,24 @@ from .contracts import (
     TraceReader,
     TurnHandler,
 )
-from .asgi_app import create_local_api_asgi_app
-from .runner import create_default_health_version_provider, run_local_health_version_api
+
+
+def create_local_api_asgi_app(*args, **kwargs):
+    from .asgi_app import create_local_api_asgi_app as _create_local_api_asgi_app
+
+    return _create_local_api_asgi_app(*args, **kwargs)
+
+
+def create_default_health_version_provider(*args, **kwargs):
+    from .runner import create_default_health_version_provider as _create_default_health_version_provider
+
+    return _create_default_health_version_provider(*args, **kwargs)
+
+
+def run_local_health_version_api(*args, **kwargs):
+    from .runner import run_local_health_version_api as _run_local_health_version_api
+
+    return _run_local_health_version_api(*args, **kwargs)
 
 __all__ = [
     "LOCAL_AUTH_HEADER",

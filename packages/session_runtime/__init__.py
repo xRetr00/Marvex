@@ -15,6 +15,7 @@ from .models import (
     build_turn_linkage_from_assistant_turn_input,
 )
 from .registry import BackendSessionCoordinator, CurrentProcessSessionRegistry
+from .session_context import SessionContextItem, SessionContextStore
 
 __all__ = [
     "BackendSessionCoordinator",
@@ -27,6 +28,8 @@ __all__ = [
     "SafeConversationProjection",
     "SafeSessionHandle",
     "SafeSessionProjection",
+    "SessionContextItem",
+    "SessionContextStore",
     "TurnLinkageMetadata",
     "build_turn_linkage_from_assistant_turn_input",
     "resolve_file_reference",
