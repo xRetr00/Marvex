@@ -4,6 +4,7 @@ version = "0.2.0"
 description = "Marvex Windows Shell"
 authors = ["Marvex"]
 edition = "2021"
+default-run = "marvex-shell"
 
 [lib]
 name = "marvex_shell_lib"
