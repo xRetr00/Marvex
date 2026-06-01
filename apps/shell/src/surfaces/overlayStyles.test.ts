@@ -15,6 +15,6 @@ describe("overlay stylesheet isolation", () => {
     expect(mainStyles).not.toMatch(/overlay-shell|marvex-island|marvex-overlay-document/);
     expect(overlayStyles).toMatch(/overlay-shell/);
     expect(overlayStyles).toMatch(/marvex-overlay-document/);
-    expect(overlayStyles).toMatch(/marvex-dynamic-island-pill/);
+    expect(overlayStyles).toMatch(/marvex-island-pill/);
   });
 });

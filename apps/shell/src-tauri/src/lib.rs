@@ -1,4 +1,5 @@
 mod http;
+mod overlay_geometry;
 mod state_stream;
 mod supervisor;
 mod token;
@@ -491,46 +492,40 @@ fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Res
 }
 
 #[tauri::command]
-fn set_overlay_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("overlay") {
-        window
-            .set_ignore_cursor_events(ignore)
-            .map_err(|err| err.to_string())?;
-    }
-    Ok(())
-}
-
-#[tauri::command]
-fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn set_overlay_size(app: AppHandle, width: f64, height: f64, radius: Option<f64>) -> Result<(), String> {
     if !width.is_finite() || !height.is_finite() {
         return Err("overlay size must be finite".to_string());
     }
     if let Some(window) = app.get_webview_window("overlay") {
         let scale = window.scale_factor().unwrap_or(1.0);
+        let radius_px = radius
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| (value * scale).round() as u32);
         let requested_width = ((width.max(1.0)) * scale).round() as u32;
         let requested_height = ((height.max(1.0)) * scale).round() as u32;
         let (width, height, x, y) = if let Ok(Some(monitor)) = window.current_monitor() {
             let monitor_size = monitor.size();
             let monitor_position = monitor.position();
-            let margin = 16_i32;
+            let margin = ((overlay_geometry::OVERLAY_TOP_MARGIN as f64) * scale).round() as i32;
             let width = requested_width
-                .min(monitor_size.width.saturating_sub((margin * 2) as u32))
+                .min(monitor_size.width.saturating_sub((margin.max(0) * 2) as u32))
                 .max(1);
             let height = requested_height
-                .min(monitor_size.height.saturating_sub((margin * 2) as u32))
+                .min(monitor_size.height.saturating_sub((margin.max(0) * 2) as u32))
                 .max(1);
-            let x = monitor_position.x + (monitor_size.width as i32) - (width as i32) - margin;
+            // Top-center notch anchor: centre horizontally on the monitor.
+            let x = monitor_position.x + ((monitor_size.width as i32) - (width as i32)) / 2;
             let y = monitor_position.y + margin;
             (width, height, x.max(monitor_position.x), y)
         } else {
-            (requested_width, requested_height, 0, 16)
+            (requested_width, requested_height, 0, overlay_geometry::OVERLAY_TOP_MARGIN)
         };
         window
             .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
                 width, height,
             )))
             .map_err(|err| err.to_string())?;
-        apply_overlay_window_region(&window, width, height);
+        apply_overlay_window_region(&window, width, height, radius_px);
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
     Ok(())
@@ -600,7 +595,12 @@ async fn resume_approval_turn(
 }
 
 #[cfg(windows)]
-fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height: u32) {
+fn apply_overlay_window_region(
+    window: &tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+    radius: Option<u32>,
+) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
 
@@ -608,7 +608,13 @@ fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height
         return;
     };
     let hwnd = HWND(hwnd.0);
-    let diameter = width.min(height).max(1) as i32;
+    // Corner rounding diameter. Default to a stadium (min dimension) when the
+    // caller doesn't supply a radius; otherwise match the pill's visual radius
+    // so the clip hugs the pill exactly and never exposes a window corner.
+    let max_diameter = width.min(height).max(1);
+    let diameter = radius
+        .map(|r| (r.saturating_mul(2)).clamp(1, max_diameter))
+        .unwrap_or(max_diameter) as i32;
     let region = unsafe {
         CreateRoundRectRgn(
             0,
@@ -627,7 +633,13 @@ fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height
 }
 
 #[cfg(not(windows))]
-fn apply_overlay_window_region(_window: &tauri::WebviewWindow, _width: u32, _height: u32) {}
+fn apply_overlay_window_region(
+    _window: &tauri::WebviewWindow,
+    _width: u32,
+    _height: u32,
+    _radius: Option<u32>,
+) {
+}
 
 #[tauri::command]
 fn show_chat(app: AppHandle) -> Result<(), String> {
@@ -739,7 +751,6 @@ pub fn run() {
             list_chat_sessions,
             control_request,
             control_plane_entry_url,
-            set_overlay_click_through,
             set_overlay_size,
             show_chat,
             show_overlay,
@@ -805,12 +816,17 @@ pub fn run() {
                     (window.current_monitor(), window.outer_size())
                 {
                     let m = monitor.size();
-                    let x = (m.width as i32) - (size.width as i32) - 16;
-                    let _ = window.set_position(tauri::PhysicalPosition::new(x.max(0), 16));
+                    // Top-center notch anchor (refined once the webview reports
+                    // its measured size via set_overlay_size).
+                    let x = ((m.width as i32) - (size.width as i32)) / 2;
+                    let _ = window.set_position(tauri::PhysicalPosition::new(
+                        x.max(0),
+                        overlay_geometry::OVERLAY_TOP_MARGIN.max(0),
+                    ));
                 }
-                // The island window stays interactive (small, top-right) so the
-                // webview receives hover/click events. Ignoring cursor events
-                // would silently swallow hover and the click-to-open-chat.
+                // The island window stays fully interactive — no click-through.
+                // The rounded region clip (set in set_overlay_size) is what lets
+                // desktop clicks outside the pill pass through.
             }
             Ok(())
         })

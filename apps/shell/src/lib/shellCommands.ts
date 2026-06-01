@@ -155,17 +155,13 @@ export async function controlRequest(path: string, method = "GET", body?: unknow
   return invoke("control_request", { path, method, body });
 }
 
-export async function setOverlayClickThrough(ignore: boolean): Promise<void> {
-  await invoke("set_overlay_click_through", { ignore });
-}
-
 export type OverlayWindowSize = {
   width: number;
   height: number;
 };
 
-export async function setOverlaySize({ width, height }: OverlayWindowSize): Promise<void> {
-  await invoke("set_overlay_size", { width, height });
+export async function setOverlaySize({ width, height }: OverlayWindowSize, radius?: number): Promise<void> {
+  await invoke("set_overlay_size", { width, height, radius: radius ?? null });
 }
 
 export async function showChat(): Promise<void> {

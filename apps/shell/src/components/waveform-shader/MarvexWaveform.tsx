@@ -62,9 +62,14 @@ void main() {
     float a = 0.01;
     float c = smoothstep(a, -a, d.w);
     vec3 col = d.rgb * sqrt(c) * 0.5;
-    col += pow(luma(col), 0.3) * 1.0;
+    // Gate the glow by the line coverage so the *background* stays black/zero
+    // instead of being lifted into a faint grey haze across the whole canvas.
+    col += pow(luma(col), 0.3) * c;
 
-    gl_FragColor = vec4(col, 1.0);
+    // Premultiplied-alpha output: transparent where there is no wave, so the
+    // canvas blends into the pill (#060606) instead of painting an opaque box.
+    float alpha = clamp(c, 0.0, 1.0);
+    gl_FragColor = vec4(col * alpha, alpha);
 }
 `;
 
@@ -93,8 +98,12 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const gl = canvas.getContext("webgl");
-    if (!gl) return;
+    // alpha:true + a transparent clear let the pill show through; the shader
+    // outputs premultiplied alpha so only the wave is opaque.
+    const gl = canvas.getContext("webgl", { alpha: true, premultipliedAlpha: true, antialias: true });
+    // Bail when WebGL is unavailable (headless/jsdom, blocklisted GPUs); the
+    // canvas still renders at its sized dimensions, just without the shader.
+    if (!gl || typeof gl.createShader !== "function") return;
 
     const compileShader = (type: number, src: string): WebGLShader | null => {
       const shader = gl.createShader(type);
@@ -123,6 +132,11 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
       return;
     }
     gl.useProgram(program);
+
+    // Premultiplied-alpha blending so the transparent background composites
+    // cleanly over the pill instead of darkening it.
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
