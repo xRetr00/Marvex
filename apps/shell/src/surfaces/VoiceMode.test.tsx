@@ -99,6 +99,8 @@ describe("VoiceMode", () => {
     render(<VoiceMode />);
 
     expect(await screen.findByRole("heading", { name: "Voice Mode" })).toBeInTheDocument();
+    expect(await screen.findByText("Voice control deck")).toBeInTheDocument();
+    expect(await screen.findByText("Model asset cards")).toBeInTheDocument();
     expect(screen.getByLabelText("STT model")).toHaveValue("moonshine-v2");
     expect(screen.getByLabelText("TTS library")).toHaveValue("kokoro-onnx");
     expect(screen.getByLabelText("Voice")).toHaveValue("af_heart");

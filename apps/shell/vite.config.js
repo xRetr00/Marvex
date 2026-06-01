@@ -23,6 +23,31 @@ export default defineConfig({
                         return undefined;
                     if (id.includes("@react-three"))
                         return "vendor-three-react";
+                    if (id.includes("@radix-ui") || id.includes("cmdk"))
+                        return "vendor-radix";
+                    if (id.includes("framer-motion") || id.includes("motion"))
+                        return "vendor-motion";
+                    if (id.includes("@melloware") || id.includes("react-lazylog"))
+                        return "vendor-logs";
+                    if (id.includes("streamdown") ||
+                        id.includes("micromark") ||
+                        id.includes("remark") ||
+                        id.includes("rehype") ||
+                        id.includes("unified") ||
+                        id.includes("unist") ||
+                        id.includes("mdast") ||
+                        id.includes("hast") ||
+                        id.includes("vfile") ||
+                        id.includes("devlop") ||
+                        id.includes("decode-named-character-reference") ||
+                        id.includes("property-information") ||
+                        id.includes("space-separated-tokens") ||
+                        id.includes("comma-separated-tokens") ||
+                        id.includes("html-url-attributes") ||
+                        id.includes("zwitch"))
+                        return "vendor-markdown";
+                    if (id.includes("lucide-react") || id.includes("@remixicon"))
+                        return "vendor-icons";
                     if (id.includes("three/examples"))
                         return "vendor-three-examples";
                     if (id.includes("three/src/renderers"))

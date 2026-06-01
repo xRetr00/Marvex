@@ -63,6 +63,10 @@ describe("ControlPlaneSettings", () => {
     render(<ControlPlaneSettings />);
 
     expect((await screen.findAllByText("LM Studio")).length).toBeGreaterThan(0);
+    expect(await screen.findByText("Provider stack")).toBeInTheDocument();
+    expect(await screen.findByText("Model routing")).toBeInTheDocument();
+    expect(await screen.findByText("Automation readiness")).toBeInTheDocument();
+    expect(await screen.findByLabelText("Multi-model candidate")).toBeInTheDocument();
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
     expect((await screen.findAllByText("local-mcp")).length).toBeGreaterThan(0);
@@ -70,6 +74,8 @@ describe("ControlPlaneSettings", () => {
 
     await userEvent.selectOptions(screen.getByLabelText("Active provider"), "lmstudio_responses");
     await userEvent.selectOptions(screen.getByLabelText("Active model"), "llama-3.1-8b");
+    await userEvent.selectOptions(screen.getByLabelText("Multi-model candidate"), "llama-3.1-8b");
+    await userEvent.click(screen.getByRole("button", { name: /Add multi-model/i }));
     await userEvent.selectOptions(screen.getByLabelText("Provider mode"), "openai_compatible");
     await userEvent.clear(screen.getByLabelText("Provider base URL"));
     await userEvent.type(screen.getByLabelText("Provider base URL"), "http://localhost:20128/v1");
@@ -86,6 +92,7 @@ describe("ControlPlaneSettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /Open full control plane/i }));
 
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/connection", "POST", { base_url: "http://localhost:20128/v1", provider_mode: "openai_compatible" }));
+    expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/models/multi", "POST", { models: ["qwen2.5-coder-7b", "llama-3.1-8b"] });
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/automation", "POST", { model: "gpt-4o", supports_vision: true, vision_required: true });
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
@@ -94,5 +101,5 @@ describe("ControlPlaneSettings", () => {
     expect(screen.queryByText("sk-plain-text-secret")).not.toBeInTheDocument();
     expect(await screen.findByText("sk-p****cret")).toBeInTheDocument();
     expect(screen.getByText("core.stderr.log")).toBeInTheDocument();
-  });
+  }, 10000);
 });

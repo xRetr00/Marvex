@@ -113,6 +113,10 @@ export async function submitChatTurnStream(
   }
 }
 
+export async function cancelActiveChatTurn(): Promise<{ schema_version: string; cancel_requested: boolean }> {
+  return invoke("cancel_active_chat_turn");
+}
+
 export async function resumeApprovalTurn(args: {
   text: string;
   traceId: string;
@@ -145,6 +149,14 @@ export async function createChatSession(title?: string): Promise<{ schema_versio
 
 export async function listChatSessions(): Promise<{ schema_version: string; sessions: BackendSession[]; session_count: number; transcript_persisted: false }> {
   return invoke("list_chat_sessions");
+}
+
+export async function renameChatSession(sessionId: string, title: string): Promise<unknown> {
+  return controlRequest(`/sessions/${encodeURIComponent(sessionId)}`, "PATCH", { title });
+}
+
+export async function deleteChatSession(sessionId: string): Promise<unknown> {
+  return controlRequest(`/sessions/${encodeURIComponent(sessionId)}`, "DELETE");
 }
 
 export async function controlPlaneEntryUrl(): Promise<string> {

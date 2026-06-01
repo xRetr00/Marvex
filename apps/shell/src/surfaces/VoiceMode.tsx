@@ -113,6 +113,7 @@ export function VoiceMode() {
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
           <div>
             <h2 style={{ margin: 0, fontSize: 18 }}>Voice Mode</h2>
+            <div style={{ marginTop: 4, color: "var(--foreground)", fontSize: 12, fontWeight: 650 }}>Voice control deck</div>
             <p style={{ margin: "4px 0 0", color: "var(--muted-foreground)", fontSize: 12 }}>{message}</p>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
@@ -138,7 +139,7 @@ export function VoiceMode() {
 
       <section style={panelStyle}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, marginBottom: 10 }}>
-          <h3 style={{ margin: 0, fontSize: 13, textTransform: "uppercase", letterSpacing: 0, color: "var(--muted-foreground)" }}>Model Assets</h3>
+          <h3 style={{ margin: 0, fontSize: 13, letterSpacing: 0, color: "var(--foreground)", fontWeight: 750 }}>Model asset cards</h3>
           <div style={{ display: "flex", gap: 8 }}>
             <TextButton disabled={Boolean(busy)} onClick={() => void run("Test STT", testVoiceWorkerStt)}><Play size={14} /> Test STT</TextButton>
             <TextButton disabled={Boolean(busy)} onClick={() => void run("Test TTS", () => testVoiceWorkerTts())}><Volume2 size={14} /> Test TTS</TextButton>
@@ -232,10 +233,11 @@ function TextButton(props: ButtonHTMLAttributes<HTMLButtonElement>) {
 }
 
 const panelStyle: CSSProperties = {
-  background: "var(--card)",
-  border: "1px solid var(--border)",
+  background: "linear-gradient(180deg, color-mix(in srgb, var(--card) 88%, transparent), color-mix(in srgb, var(--secondary) 48%, transparent))",
+  border: "1px solid color-mix(in srgb, var(--foreground) 10%, transparent)",
   borderRadius: 8,
   padding: 14,
+  boxShadow: "var(--shadow-card)",
 };
 
 const gridStyle: CSSProperties = {
@@ -292,4 +294,5 @@ const assetRowStyle: CSSProperties = {
   alignItems: "center",
   gap: 10,
   background: "var(--muted)",
+  boxShadow: "var(--shadow-card)",
 };

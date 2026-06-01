@@ -27,6 +27,8 @@ describe("LogsView", () => {
     render(<LogsView />);
 
     expect(await screen.findByText("core.stderr.log")).toBeInTheDocument();
+    expect(await screen.findByText("Runtime signals")).toBeInTheDocument();
+    expect(await screen.findByText("Trace cards")).toBeInTheDocument();
     expect(await screen.findByPlaceholderText("Search logs")).toBeInTheDocument();
     expect(await screen.findByText("1 line")).toBeInTheDocument();
     expect(await screen.findByText("service ready")).toBeInTheDocument();

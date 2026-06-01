@@ -393,10 +393,14 @@ export function QuestionPrompt({
   );
 }
 
-function formatAnswer(answer: QuestionAnswer) {
+function formatAnswer(answer: QuestionAnswer, question?: QuestionConfig) {
   if (answer.kind === "skip") return "Skipped";
   if (answer.kind === "text") return answer.text || "Answered";
-  const ids = answer.selectedIds?.length ? answer.selectedIds.join(", ") : "";
+  const ids = answer.selectedIds?.length
+    ? answer.selectedIds
+        .map((id) => question?.options?.find((option) => option.id === id)?.label ?? id)
+        .join(", ")
+    : "";
   if (answer.text) return ids ? `${ids} (${answer.text})` : answer.text;
   return ids || "Answered";
 }
@@ -483,17 +487,15 @@ export function QuestionTool({
       return summaryAnswers
         .map(
           (item) =>
-            `${item.index}: ${
-              item.answer ? formatAnswer(item.answer) : "Pending"
-            }`,
+            `${item.index}: ${item.answer ? formatAnswer(item.answer, questions[item.index - 1]) : "Pending"}`,
         )
         .join(" • ");
     }
-    if (outputAnswer) return formatAnswer(outputAnswer);
+    if (outputAnswer) return `Answered: ${formatAnswer(outputAnswer, question)}`;
     if (localAnswers[clampedIndex])
-      return formatAnswer(localAnswers[clampedIndex]);
+      return `Answered: ${formatAnswer(localAnswers[clampedIndex], question)}`;
     return "Pending";
-  }, [isComplete, summaryAnswers, outputAnswer, localAnswers, clampedIndex]);
+  }, [isComplete, summaryAnswers, outputAnswer, localAnswers, clampedIndex, question, questions]);
 
   const goPrev = () => {
     if (!canGoPrev) return;
