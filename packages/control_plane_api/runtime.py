@@ -189,6 +189,26 @@ def _create_control_plane_dispatcher(
                     "transcript_persisted": False,
                 },
             )
+        if path.startswith(f"{CONTROL_PREFIX}/sessions/") and method in {"PATCH", "DELETE"}:
+            session_id = path.removeprefix(f"{CONTROL_PREFIX}/sessions/").strip("/")
+            if not session_id:
+                return _json_response(None, "400 Bad Request", {"schema_version": SCHEMA_VERSION, "error": "session_id_required"})
+            if method == "DELETE":
+                deleted = sessions.delete_session(session_id)
+                return _json_response(
+                    None,
+                    "200 OK" if deleted else "404 Not Found",
+                    {"schema_version": SCHEMA_VERSION, "deleted": deleted, "session_id": session_id, "transcript_persisted": False},
+                )
+            title = _parse_session_title(environ)
+            handle = sessions.rename_session(session_id, title=title)
+            if handle is None:
+                return _json_response(None, "404 Not Found", {"schema_version": SCHEMA_VERSION, "error": "session_not_found", "session_id": session_id})
+            return _json_response(
+                None,
+                "200 OK",
+                {"schema_version": SCHEMA_VERSION, "session": handle.safe_projection(), "transcript_persisted": False},
+            )
 
         voice_response = handle_voice_control_request(method=method, path=path, environ=environ, voice_control=voice_control, voice_worker_control=voice_worker_control)
         if voice_response is not None:

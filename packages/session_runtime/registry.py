@@ -142,6 +142,20 @@ class BackendSessionCoordinator(CurrentProcessSessionRegistry):
             )
         )
 
+    def rename_session(self, session_id: str, *, title: str) -> SafeSessionHandle | None:
+        handle = self._handles_by_session_ref_id.get(session_id)
+        if handle is None:
+            return None
+        updated = handle.model_copy(update={"title": _safe_title(title), "updated_at_unix_ms": self._clock()})
+        self._handles_by_session_ref_id[session_id] = updated
+        return updated
+
+    def delete_session(self, session_id: str) -> bool:
+        existed = self._handles_by_session_ref_id.pop(session_id, None) is not None
+        self._trace_ids_by_session_ref_id.pop(session_id, None)
+        self._turns_by_session_ref_id.pop(session_id, None)
+        return existed
+
 def _unique_conversation_refs(
     turn_linkages: tuple[TurnLinkageMetadata, ...],
 ) -> tuple[ConversationRef, ...]:

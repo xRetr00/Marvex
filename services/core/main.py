@@ -1999,6 +1999,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "fabricated": False,
                 "self_correction_applied": correction_applied,
                 "evidence_ref_count": len(cognition.evidence_refs),
+                "evidence_refs": [ref.safe_projection() for ref in web_refs],
             },
         }
         return provider_result.model_copy(update={"metadata": metadata})
