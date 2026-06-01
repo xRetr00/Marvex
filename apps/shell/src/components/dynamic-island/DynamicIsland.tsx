@@ -73,11 +73,12 @@ export default function DynamicIsland({
     // Grow downward from the top-center notch (the anchor borrowed from the
     // dynamic-island-web-main clone) instead of scaling from the middle.
     transformOrigin: "center top",
+    // Inset-only: the window is clipped exactly to the pill, so any *outer* drop
+    // shadow would be hard-clipped at the window edge. The real Dynamic Island is
+    // a shadowless cutout; a bright top edge + faint ring give it physical depth.
     boxShadow: [
-      "0 1px 2px rgba(0,0,0,0.92)",
-      "0 4px 12px rgba(0,0,0,0.72)",
-      "0 16px 40px rgba(0,0,0,0.48)",
-      "inset 0 1px 0 rgba(255,255,255,0.06)",
+      "inset 0 1px 0 rgba(255,255,255,0.08)",
+      "inset 0 0 0 1px rgba(255,255,255,0.05)",
       "inset 0 -1px 0 rgba(255,255,255,0.02)",
     ].join(", "),
   };

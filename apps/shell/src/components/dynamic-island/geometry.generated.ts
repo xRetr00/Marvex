@@ -6,7 +6,7 @@ export const ISLAND_GEOMETRY = {
   idle: { minWidth: 124, height: 44, radius: 22 },
   expanded: { maxWidth: 360, radius: 28 },
   padding: { x: 18, y: 10 },
-  shadowPadding: 12,
+  shadowPadding: 0,
   anchor: { position: "top-center" as const, topMargin: 12 },
   waveform: {
     compact: { width: 64, height: 24 },

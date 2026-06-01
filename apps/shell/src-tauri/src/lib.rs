@@ -492,12 +492,15 @@ fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Res
 }
 
 #[tauri::command]
-fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), String> {
+fn set_overlay_size(app: AppHandle, width: f64, height: f64, radius: Option<f64>) -> Result<(), String> {
     if !width.is_finite() || !height.is_finite() {
         return Err("overlay size must be finite".to_string());
     }
     if let Some(window) = app.get_webview_window("overlay") {
         let scale = window.scale_factor().unwrap_or(1.0);
+        let radius_px = radius
+            .filter(|value| value.is_finite() && *value >= 0.0)
+            .map(|value| (value * scale).round() as u32);
         let requested_width = ((width.max(1.0)) * scale).round() as u32;
         let requested_height = ((height.max(1.0)) * scale).round() as u32;
         let (width, height, x, y) = if let Ok(Some(monitor)) = window.current_monitor() {
@@ -522,7 +525,7 @@ fn set_overlay_size(app: AppHandle, width: f64, height: f64) -> Result<(), Strin
                 width, height,
             )))
             .map_err(|err| err.to_string())?;
-        apply_overlay_window_region(&window, width, height);
+        apply_overlay_window_region(&window, width, height, radius_px);
         let _ = window.set_position(tauri::PhysicalPosition::new(x, y));
     }
     Ok(())
@@ -592,7 +595,12 @@ async fn resume_approval_turn(
 }
 
 #[cfg(windows)]
-fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height: u32) {
+fn apply_overlay_window_region(
+    window: &tauri::WebviewWindow,
+    width: u32,
+    height: u32,
+    radius: Option<u32>,
+) {
     use windows::Win32::Foundation::HWND;
     use windows::Win32::Graphics::Gdi::{CreateRoundRectRgn, SetWindowRgn};
 
@@ -600,7 +608,13 @@ fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height
         return;
     };
     let hwnd = HWND(hwnd.0);
-    let diameter = width.min(height).max(1) as i32;
+    // Corner rounding diameter. Default to a stadium (min dimension) when the
+    // caller doesn't supply a radius; otherwise match the pill's visual radius
+    // so the clip hugs the pill exactly and never exposes a window corner.
+    let max_diameter = width.min(height).max(1);
+    let diameter = radius
+        .map(|r| (r.saturating_mul(2)).clamp(1, max_diameter))
+        .unwrap_or(max_diameter) as i32;
     let region = unsafe {
         CreateRoundRectRgn(
             0,
@@ -619,7 +633,13 @@ fn apply_overlay_window_region(window: &tauri::WebviewWindow, width: u32, height
 }
 
 #[cfg(not(windows))]
-fn apply_overlay_window_region(_window: &tauri::WebviewWindow, _width: u32, _height: u32) {}
+fn apply_overlay_window_region(
+    _window: &tauri::WebviewWindow,
+    _width: u32,
+    _height: u32,
+    _radius: Option<u32>,
+) {
+}
 
 #[tauri::command]
 fn show_chat(app: AppHandle) -> Result<(), String> {

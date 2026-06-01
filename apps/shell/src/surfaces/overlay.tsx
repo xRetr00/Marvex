@@ -156,7 +156,10 @@ export function OverlaySurface() {
       const next = toOverlayWindowSize(rect);
       if (sizesClose(lastOverlaySizeRef.current, next)) return;
       lastOverlaySizeRef.current = next;
-      void setOverlaySize(next).catch(() => undefined);
+      // Match the native window's rounded-region radius to the pill's visual
+      // radius so the clip hugs the pill exactly (no white corner slivers).
+      const radius = expanded ? ISLAND_GEOMETRY.expanded.radius : ISLAND_GEOMETRY.idle.radius;
+      void setOverlaySize(next, radius).catch(() => undefined);
     };
     const scheduleUpdate = () => {
       if (frame) return;

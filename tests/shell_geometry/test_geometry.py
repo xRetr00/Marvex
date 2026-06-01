@@ -31,7 +31,8 @@ def test_expanded_is_larger_and_anchored_top_center() -> None:
     geo = pill_geometry.compute_pill_geometry()
     assert geo.expanded_max_width > geo.idle_width
     assert geo.anchor == "top-center"
-    assert geo.shadow_padding > 0
+    # Zero shadow padding: the window is clipped exactly to the pill.
+    assert geo.shadow_padding >= 0
     assert geo.top_margin >= 0
 
 

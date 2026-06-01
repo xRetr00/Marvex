@@ -26,9 +26,9 @@ body.marvex-overlay-document *::after {
   min-width: 0;
   min-height: 0;
   margin: 0;
-  /* Transparent breathing room around the pill so the native rounded window
-     never clips the drop shadow. Kept in sync with ISLAND_GEOMETRY.shadowPadding. */
-  padding: 12px;
+  /* No padding: the native window is clipped exactly to the pill so no window
+     surface is ever visible around it. Kept in sync with ISLAND_GEOMETRY.shadowPadding. */
+  padding: 0;
   display: block;
   background: transparent;
   background-color: transparent;

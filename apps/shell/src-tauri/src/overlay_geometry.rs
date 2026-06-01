@@ -6,6 +6,6 @@
 /// Gap below the top edge of the monitor (the notch inset), logical px.
 pub const OVERLAY_TOP_MARGIN: i32 = 12;
 /// Transparent breathing room reserved around the pill for its drop shadow.
-pub const OVERLAY_SHADOW_PADDING: u32 = 12;
+pub const OVERLAY_SHADOW_PADDING: u32 = 0;
 /// Horizontal anchor of the overlay window. "top-center" centres on the monitor.
 pub const OVERLAY_ANCHOR: &str = "top-center";

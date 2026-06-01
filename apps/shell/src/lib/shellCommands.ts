@@ -160,8 +160,8 @@ export type OverlayWindowSize = {
   height: number;
 };
 
-export async function setOverlaySize({ width, height }: OverlayWindowSize): Promise<void> {
-  await invoke("set_overlay_size", { width, height });
+export async function setOverlaySize({ width, height }: OverlayWindowSize, radius?: number): Promise<void> {
+  await invoke("set_overlay_size", { width, height, radius: radius ?? null });
 }
 
 export async function showChat(): Promise<void> {

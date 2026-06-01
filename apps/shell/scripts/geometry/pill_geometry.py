@@ -58,8 +58,10 @@ def compute_pill_geometry() -> PillGeometry:
         radius_expanded=28,
         padding_x=padding_x,
         padding_y=padding_y,
-        # Sized to the largest shadow blur so the contact + ambient shadow fit.
-        shadow_padding=12,
+        # Zero: the native window is clipped exactly to the pill (like the real
+        # Dynamic Island, a shadowless cutout). Any padding would expose the
+        # window surface around the pill — the "grey/white box" bug.
+        shadow_padding=0,
         # Gap below the top edge of the monitor (the "notch" inset).
         top_margin=12,
         anchor="top-center",
