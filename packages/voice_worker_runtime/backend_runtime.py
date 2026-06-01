@@ -104,6 +104,9 @@ _TTS_MODELS = {
 }
 _WAKEWORD_MODELS = {
     "sherpa-onnx-kws": ("hey-marvex", "sherpa-onnx", "sherpa_onnx"),
+    # local-wake matches user-recorded reference WAVs via embedding+DTW; the
+    # "model" asset is the speech-embedding ONNX local-wake ships/uses.
+    "local-wake": ("hey-marvex", "local-wake", "lwake"),
 }
 
 
@@ -143,6 +146,22 @@ class VoiceWorkerBackendRuntime:
         self._wakeword_runner: Any = wakeword_runner or SherpaOnnxKwsRunner(
             asset_manager=self.asset_manager,
         )
+        # local-wake backend (DTW over speech embeddings) routed by backend_id.
+        # Lazily built so the sherpa path is unaffected when local-wake is unused.
+        self._local_wake_runner: Any | None = None
+
+    def _wakeword_runner_for(self, backend_id: str) -> Any:
+        if self._custom_wakeword_runner or backend_id != "local-wake":
+            return self._wakeword_runner
+        if self._local_wake_runner is None:
+            from .local_wake_adapter import LocalWakeRunner
+            from .wake_enrollment import wake_reference_dir
+
+            self._local_wake_runner = LocalWakeRunner(
+                asset_manager=self.asset_manager,
+                reference_dir=wake_reference_dir(self.asset_manager.asset_root),
+            )
+        return self._local_wake_runner
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
         return self.audio_refs.remember_frames(trace_id=trace_id, frames=frames)
@@ -233,14 +252,14 @@ class VoiceWorkerBackendRuntime:
         blocker = None if self._custom_wakeword_runner and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
         if blocker is not None:
             return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=backend_id, reason_code=blocker)
-        return self._wakeword_runner(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
+        return self._wakeword_runner_for(backend_id)(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
 
     def probe_wakeword(self, *, backend_id: str, frames: tuple[AudioFrame, ...], phrase: str, threshold: float) -> tuple[bool, str]:
         """Batch-probe ``frames`` on a FRESH stream (diagnostic only). Returns
         (detected, keyword). No-op (False, "") when the runner has no batch
         probe (e.g. test fakes) or the model is not ready."""
 
-        probe = getattr(self._wakeword_runner, "batch_probe", None)
+        probe = getattr(self._wakeword_runner_for(backend_id), "batch_probe", None)
         if not callable(probe):
             return False, ""
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")

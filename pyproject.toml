@@ -17,6 +17,7 @@ dependencies = [
   "semantic-router==0.1.15",
   "Authlib==1.7.2",
   "browser-use==0.11.13",
+  "local-wake>=0.1.2",
   "llama-index-core>=0.14.22",
   "ddgs>=9.14.4",
   "fastapi>=0.135,<0.137",
