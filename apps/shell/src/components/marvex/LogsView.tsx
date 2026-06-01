@@ -53,12 +53,12 @@ export function LogsView() {
         <Button size="sm" variant="ghost" onClick={() => setReload((n) => n + 1)}><RefreshCw size={14} /></Button>
       </div>
 
-      <section style={{ background: "var(--card)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase" }}>Telemetry</h3>
+      <section className="marvex-glass" style={{ borderRadius: 8, padding: 14 }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 750, color: "var(--foreground)" }}>Runtime signals</h3>
         {Object.keys(telemetry).length === 0 ? <Muted>No telemetry.</Muted> : (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 6 }}>
             {Object.entries(telemetry).slice(0, 24).map(([k, v]) => (
-              <div key={k} style={{ fontSize: 11, padding: "6px 9px", borderRadius: 8, background: "var(--secondary)", border: "1px solid var(--border)" }}>
+              <div key={k} style={{ fontSize: 11, padding: "8px 10px", borderRadius: 8, background: "linear-gradient(180deg, var(--secondary), color-mix(in srgb, var(--card) 70%, transparent))", border: "1px solid var(--border)", boxShadow: "var(--shadow-card)" }}>
                 <div style={{ color: "var(--muted-foreground)" }}>{k.replace(/_/g, " ")}</div>
                 <div style={{ fontWeight: 600 }}>{typeof v === "object" ? JSON.stringify(v) : String(v)}</div>
               </div>
@@ -67,12 +67,12 @@ export function LogsView() {
         )}
       </section>
 
-      <section style={{ background: "var(--card)", borderRadius: 14, padding: 14, border: "1px solid var(--border)" }}>
-        <h3 style={{ margin: "0 0 8px", fontSize: 12, fontWeight: 700, color: "var(--muted-foreground)", textTransform: "uppercase" }}>Traces</h3>
+      <section className="marvex-glass" style={{ borderRadius: 8, padding: 14 }}>
+        <h3 style={{ margin: "0 0 8px", fontSize: 13, fontWeight: 750, color: "var(--foreground)" }}>Trace cards</h3>
         {traces.length === 0 ? <Muted>No trace projections.</Muted> : (
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
             {traces.slice(0, 30).map((t, i) => (
-              <code key={i} style={{ fontSize: 11, fontFamily: "ui-monospace, monospace", color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+              <code key={i} style={{ fontSize: 11, fontFamily: "ui-monospace, monospace", color: "var(--foreground)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", border: "1px solid var(--border)", borderRadius: 8, padding: "7px 9px", background: "var(--background)" }}>
                 {JSON.stringify(t)}
               </code>
             ))}
