@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { lazy, Suspense, useMemo } from "react";
 import { parseRichResponse, directivesToBlocks, type RichBlock } from "@/lib/richContent";
 import type { TurnStage, UiDirective } from "@/lib/localTurn";
 import {
@@ -7,31 +7,15 @@ import {
   ChainOfThoughtContent,
   ChainOfThoughtStep,
 } from "@/components/chain-of-thought";
+import { ShimmerText } from "@/components/chatbot-main/activity";
+import { InlineCitation } from "@/components/chatbot-main/inline-citation";
 import ProductCard from "@/components/product-card";
 import { ExpandableCard } from "@/components/expandable-card";
 import AgentPlan from "@/components/agent-plan";
 import { AlertBadge } from "@/components/alert-badge";
-import ButtonCopy from "@/components/button-copy";
-import { ScrambleText } from "@/components/scramble-text";
+import type { CitationRef } from "@/lib/localTurn";
 
-// Reveal the answer with the Marvex scramble effect, tuned so the whole string
-// resolves in ~1.4s regardless of length (skip scramble for very long replies).
-function ScrambleAnswer({ text }: { text: string }) {
-  const len = text.length;
-  if (len > 1500) {
-    return <p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground">{text}</p>;
-  }
-  const speed = Math.min(22, Math.max(4, Math.round(1400 / Math.max(1, len))));
-  return (
-    <ScrambleText
-      as="p"
-      text={text}
-      speed={speed}
-      scrambleDepth={5}
-      className="whitespace-pre-wrap text-sm leading-relaxed text-foreground"
-    />
-  );
-}
+const ChatbotMarkdown = lazy(() => import("@/components/chatbot-main/markdown").then((module) => ({ default: module.ChatbotMarkdown })));
 
 function stageStatus(status: string): "complete" | "active" | "pending" {
   if (["completed", "succeeded", "ok", "done"].includes(status)) return "complete";
@@ -43,10 +27,51 @@ function prettyStage(name: string): string {
   return name.replace(/[_-]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
 }
 
-function BlockView({ block }: { block: RichBlock }) {
+function citationNumber(id: string): string {
+  return id.replace(/^web\.evidence\./i, "").replace(/^memory\.evidence\./i, "");
+}
+
+function citationByMarker(citations: CitationRef[]): Map<string, CitationRef> {
+  const map = new Map<string, CitationRef>();
+  citations.forEach((citation) => {
+    map.set(citation.id, citation);
+    map.set(citationNumber(citation.id), citation);
+  });
+  return map;
+}
+
+function MarkdownWithCitations({ text, citations }: { text: string; citations: CitationRef[] }) {
+  const lookup = citationByMarker(citations);
+  const parts = text.split(/(\[(?:web|memory)\.evidence\.[^\]]+\]|\[citation\s+\d+\])/gi);
+  return (
+    <div className="space-y-2">
+      {parts.map((part, index) => {
+        const evidence = part.match(/^\[((?:web|memory)\.evidence\.[^\]]+)\]$/i)?.[1];
+        const numbered = part.match(/^\[citation\s+(\d+)\]$/i)?.[1];
+        const citation = evidence ? lookup.get(evidence) : numbered ? lookup.get(numbered) : undefined;
+        if (evidence || numbered) {
+          const number = Number(citationNumber(evidence || numbered || "")) || Number(numbered) || index;
+          return <InlineCitation key={`${part}-${index}`} index={number} citation={citation} />;
+        }
+        if (!part) return null;
+        return (
+          <Suspense key={index} fallback={<span className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/88">{part}</span>}>
+            <ChatbotMarkdown content={part} />
+          </Suspense>
+        );
+      })}
+    </div>
+  );
+}
+
+function BlockView({ block, citations }: { block: RichBlock; citations: CitationRef[] }) {
   switch (block.type) {
     case "text":
-      return <ScrambleAnswer text={block.text} />;
+      return (
+        <Suspense fallback={<p className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/88">{block.text}</p>}>
+          <MarkdownWithCitations text={block.text} citations={citations} />
+        </Suspense>
+      );
     case "info":
       return (
         <div className="rounded-xl border border-border bg-card/60 p-4">
@@ -101,45 +126,62 @@ function BlockView({ block }: { block: RichBlock }) {
   }
 }
 
+function sanitizeAssistantText(text: string): string {
+  return text
+    .split(/\n+/)
+    .filter((line) => !/approval_request_id\s*=/.test(line))
+    .filter((line) => !/^Approval required before continuing\./i.test(line.trim()))
+    .map((line) => line.replace(/\[web\.evidence\.(\d+)\]/gi, "[citation $1]"))
+    .join("\n")
+    .trim();
+}
+
 export interface RichMessageProps {
   text: string;
   stages?: TurnStage[];
+  citations?: CitationRef[];
   /** Backend model-driven directives; when present they drive rendering (not keyword heuristics). */
   directives?: UiDirective[];
 }
 
 /** Renders an assistant response as rich blocks. Backend directives are
  *  authoritative; the text heuristic is only a fallback when none are present. */
-export function RichMessage({ text, stages, directives }: RichMessageProps) {
+export function RichMessage({ text, stages, citations = [], directives }: RichMessageProps) {
+  const safeText = sanitizeAssistantText(text);
   const blocks = useMemo(() => {
     if (directives && directives.length > 0) {
       const fromDirectives = directivesToBlocks(directives as Array<Record<string, unknown>>);
       // Keep any user-visible prose alongside the model's cards.
-      return text.trim() ? [{ type: "text", text: text.trim() } as RichBlock, ...fromDirectives] : fromDirectives;
+      return safeText.trim() ? [{ type: "text", text: safeText.trim() } as RichBlock, ...fromDirectives] : fromDirectives;
     }
-    return parseRichResponse(text);
-  }, [text, directives]);
+    return parseRichResponse(safeText);
+  }, [safeText, directives]);
 
   return (
     <div className="flex flex-col gap-3">
       {stages && stages.length > 0 && (
-        <ChainOfThought defaultOpen={false}>
-          <ChainOfThoughtHeader>Reasoning</ChainOfThoughtHeader>
-          <ChainOfThoughtContent>
-            {stages.map((stage, i) => (
-              <ChainOfThoughtStep key={`${stage.stage_name}-${i}`} label={prettyStage(stage.stage_name)} status={stageStatus(stage.status)} />
-            ))}
+        <ChainOfThought className="max-w-[min(100%,72ch)] space-y-2">
+          <ChainOfThoughtHeader className="px-0 py-1">Activity</ChainOfThoughtHeader>
+          <ChainOfThoughtContent className="rounded-lg border border-border/45 bg-card/35 p-3 shadow-[var(--shadow-card)]">
+            {stages.map((stage, i) => {
+              const status = stageStatus(stage.status);
+              return (
+                <ChainOfThoughtStep
+                  key={`${stage.stage_name}-${i}`}
+                  label={status === "active" ? <ShimmerText>{prettyStage(stage.stage_name)}</ShimmerText> : prettyStage(stage.stage_name)}
+                  description={status === "active" ? "Working on this step now." : status === "complete" ? "Step completed." : "Queued."}
+                  status={status}
+                />
+              );
+            })}
           </ChainOfThoughtContent>
         </ChainOfThought>
       )}
 
       {blocks.map((block, i) => (
-        <BlockView key={i} block={block} />
+        <BlockView key={i} block={block} citations={citations} />
       ))}
 
-      <div className="flex justify-end">
-        <ButtonCopy onCopy={() => void navigator.clipboard?.writeText(text)} />
-      </div>
     </div>
   );
 }
