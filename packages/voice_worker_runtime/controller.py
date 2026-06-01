@@ -1170,6 +1170,59 @@ class VoiceWorkerController:
             summary={"reason_code": "no_speech", "listen": True},
         )
 
+    def _handle_record_wake_reference(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        """Capture one spoken "Hey Marvex" and save it as a local-wake reference WAV.
+
+        Used by the in-app enrollment flow: the shell calls this 4-6 times; each
+        call VAD-endpoints one utterance and writes <slug>-NN.wav into the wake
+        reference dir that LocalWakeRunner reads. Returns the saved path + the
+        running reference count so the UI can show progress.
+        """
+
+        from .wake_enrollment import (
+            list_wake_references,
+            next_reference_path,
+            wake_reference_dir,
+            write_wake_reference_wav,
+        )
+
+        trace_id = self._trace_id_for(command)
+        phrase = str(command.payload.get("phrase") or self.config.wakeword.phrase or "Hey Marvex")
+        if self._continuous_active:
+            return self._record(
+                VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                trace_id=trace_id,
+                summary={"reason_code": "continuous_capture_active", "record_wake_reference": True},
+            )
+        vad_decider = self._resolve_vad_decider()
+        frames, reason = self._capture_utterance(vad_decider=vad_decider)
+        if not frames or reason == "no_speech":
+            return self._record(
+                VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                trace_id=trace_id,
+                summary={"reason_code": "no_speech", "record_wake_reference": True, "phrase": phrase},
+            )
+        reference_dir = wake_reference_dir(self.asset_manager.asset_root)
+        target = next_reference_path(reference_dir, phrase=phrase)
+        status = write_wake_reference_wav(
+            target,
+            [frame.pcm for frame in frames],
+            sample_rate=self.config.audio.sample_rate,
+        )
+        count = len(list_wake_references(reference_dir, phrase=phrase))
+        return self._record(
+            VoiceWorkerEventType.VAD_SPEECH_ENDED,
+            trace_id=trace_id,
+            summary={
+                "record_wake_reference": True,
+                "reference_path": status["path"],
+                "reference_bytes": status["bytes"],
+                "reference_count": count,
+                "phrase": phrase,
+                "endpoint_reason": reason,
+            },
+        )
+
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
         return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))

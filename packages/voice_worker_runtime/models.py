@@ -182,6 +182,7 @@ class VoiceWorkerCommand(VoiceRuntimeModel):
         "switch_active_voice",
         "speak",
         "listen",
+        "record_wake_reference",
     ]
     command_id: str = Field(..., min_length=1)
     trace_id: str | None = Field(default=None, min_length=1)

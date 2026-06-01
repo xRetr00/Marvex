@@ -106,6 +106,16 @@ export function listenVoiceWorker(): Promise<VoiceWorkerStatus> {
 }
 
 /**
+ * Record one "Hey Marvex" reference sample for the local-wake backend (in-app
+ * enrollment). Call 4-6 times; each VAD-endpoints one utterance and saves a
+ * reference WAV. The worker returns the saved path + running reference count in
+ * the latest event summary.
+ */
+export function recordWakeReference(phrase = "Hey Marvex"): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/record-wake-reference", "POST", { phrase }) as Promise<VoiceWorkerStatus>;
+}
+
+/**
  * Extract the most recent recognized transcript from a worker status snapshot.
  * The worker emits transcript_text on a TRANSCRIPTION_COMPLETED event after a
  * wake-word capture; the shell polls status, picks it up, and drives the turn.
