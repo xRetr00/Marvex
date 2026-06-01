@@ -53,10 +53,16 @@ class BrowserUseBackendProbe(BrowserUseModel):
 
     @classmethod
     def from_installed_backend(cls) -> "BrowserUseBackendProbe":
+        package_importable = importlib.util.find_spec("browser_use") is not None
+        sdk_package_importable = importlib.util.find_spec("browser_use_sdk") is not None
         return cls(
-            package_importable=importlib.util.find_spec("browser_use") is not None,
-            sdk_package_importable=importlib.util.find_spec("browser_use_sdk") is not None,
-            blocked_reason="browser_use_backend_installed_owner_mode_approval_required",
+            package_importable=package_importable,
+            sdk_package_importable=sdk_package_importable,
+            blocked_reason=(
+                "browser_use_backend_installed_owner_mode_approval_required"
+                if package_importable
+                else "browser_use_backend_installed_but_execution_disabled_by_policy"
+            ),
         )
 
     def safe_projection(self) -> dict[str, object]:
@@ -206,6 +212,8 @@ class BrowserUseExecutionReport(BrowserUseModel):
     final_url: str | None = None
     final_title: str | None = None
     reason_code: str | None = None
+    install_dep_id: str | None = None
+    missing_dependencies: tuple[str, ...] = ()
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
 
     def final_url_host(self) -> str | None:
@@ -248,7 +256,12 @@ def execute_browser_use_task(request: CapabilityExecutionRequest) -> BrowserUseE
     if not task:
         return BrowserUseExecutionReport(status="denied", reason_code="task_required")
     if importlib.util.find_spec("browser_use") is None:
-        return BrowserUseExecutionReport(status="failed", reason_code="browser_use_unavailable")
+        return BrowserUseExecutionReport(
+            status="denied",
+            reason_code="browser_use_unavailable",
+            install_dep_id="browser",
+            missing_dependencies=("browser_use",),
+        )
     if not _live_execution_enabled(request.arguments):
         return BrowserUseExecutionReport(status="denied", reason_code="browser_use_live_execution_not_enabled")
     if not _provider_configured(request.arguments):
@@ -293,6 +306,8 @@ def browser_use_safe_result(
             "final_url_host": report.final_url_host(),
             "final_title_present": bool(report.final_title),
             "reason_code": report.reason_code,
+            "install_dep_id": report.install_dep_id,
+            "missing_dependencies": report.missing_dependencies,
             "approval_required": True,
             "approved_execution": request.approval_decision is not None,
             "raw_browser_payload_persisted": bool(records),

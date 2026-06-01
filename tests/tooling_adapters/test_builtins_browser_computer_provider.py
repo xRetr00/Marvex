@@ -254,6 +254,68 @@ def test_browser_use_backend_can_be_imported_but_not_executed_without_policy() -
         assert probe.safe_projection()["blocked_reason"] == "browser_use_backend_installed_but_execution_disabled_by_policy"
 
 
+def test_browser_use_missing_dependency_is_safe_denial(monkeypatch) -> None:
+    from packages.adapters.capabilities import browser_use
+    from packages.capability_runtime import (
+        CapabilityCallProposal,
+        CapabilityExecutionMode,
+        CapabilityExecutionRequest,
+        CapabilityKind,
+        CapabilityPermissionDecision,
+        CapabilityRef,
+        HumanApprovalRequirement,
+    )
+    from packages.capability_runtime.approvals import ApprovalDecision
+
+    monkeypatch.setattr(browser_use.importlib.util, "find_spec", lambda name: None)
+    capability_ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier="browser_use.task")
+    proposal = CapabilityCallProposal(
+        schema_version="1",
+        proposal_id="proposal-browser-missing",
+        trace_id="trace-browser-missing",
+        turn_id="turn-browser-missing",
+        capability_ref=capability_ref,
+        proposed_action="browser_use_task",
+        risk_level=ToolRiskLevel.HIGH,
+        side_effect_level=ToolSideEffectLevel.BROWSER_ACTION,
+        execution_mode=CapabilityExecutionMode.APPROVED_EXECUTE,
+        arguments_schema={"type": "object"},
+    )
+    request = CapabilityExecutionRequest(
+        schema_version="1",
+        request_id="request-browser-missing",
+        trace_id="trace-browser-missing",
+        turn_id="turn-browser-missing",
+        proposal=proposal,
+        permission_decision=CapabilityPermissionDecision(
+            schema_version="1",
+            decision_id="permission-browser-missing",
+            capability_ref=capability_ref,
+            decision="approved",
+            reason_code="test",
+            human_approval=HumanApprovalRequirement(required=False, reason_code="test", prompt_user_visible=False),
+        ),
+        approval_decision=ApprovalDecision(
+            schema_version="1",
+            decision_id="approval-browser-missing",
+            approval_request_id="approval-browser-missing",
+            capability_ref=capability_ref,
+            decision="approved",
+            decided_by="user",
+        ),
+        arguments={"task": "open example.com", "live_execution_enabled": True, "provider_base_url": "http://localhost"},
+    )
+
+    report = browser_use.execute_browser_use_task(request)
+
+    assert report.status == "denied"
+    assert report.reason_code == "browser_use_unavailable"
+    safe, raw_persisted = browser_use.browser_use_safe_result(request=request, report=report)
+    assert safe["install_dep_id"] == "browser"
+    assert safe["missing_dependencies"] == ("browser_use",)
+    assert raw_persisted is False
+
+
 def test_openai_computer_use_seam_requires_approval_and_treats_screen_as_untrusted() -> None:
     config = OpenAIComputerUseHarnessConfig(
         schema_version="1",

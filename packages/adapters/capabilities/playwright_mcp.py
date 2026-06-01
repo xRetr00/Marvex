@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 import re
 from typing import Any, Literal
@@ -61,6 +62,8 @@ class PlaywrightMcpExecutionReport(PlaywrightMcpModel):
     extension_mode: bool = False
     cdp_endpoint_present: bool = False
     reason_code: str | None = None
+    install_dep_id: str | None = None
+    missing_dependencies: tuple[str, ...] = ()
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -73,6 +76,17 @@ def execute_playwright_mcp_task(request: CapabilityExecutionRequest) -> Playwrig
         return PlaywrightMcpExecutionReport(status="denied", reason_code="playwright_mcp_tool_required")
     if _unsafe_code_tool(tool_name) and request.arguments.get("unsafe_code_approved") is not True:
         return PlaywrightMcpExecutionReport(status="denied", reason_code="playwright_mcp_unsafe_code_requires_approval", tool_name=tool_name)
+    if importlib.util.find_spec("mcp") is None:
+        return PlaywrightMcpExecutionReport(
+            status="denied",
+            tool_name=tool_name,
+            browser=config.browser,
+            extension_mode=config.extension_mode,
+            cdp_endpoint_present=bool(config.cdp_endpoint),
+            reason_code="playwright_mcp_dependency_unavailable",
+            install_dep_id="mcp",
+            missing_dependencies=("mcp",),
+        )
     try:
         return asyncio.run(_run_playwright_mcp(config, tool_name=tool_name, tool_args=tool_args))
     except Exception as exc:  # pragma: no cover - local MCP failures vary by machine
@@ -114,6 +128,8 @@ def playwright_mcp_safe_result(
             "extension_mode": report.extension_mode,
             "cdp_endpoint_present": report.cdp_endpoint_present,
             "reason_code": report.reason_code,
+            "install_dep_id": report.install_dep_id,
+            "missing_dependencies": report.missing_dependencies,
             "approval_required": True,
             "raw_playwright_payload_persisted": bool(records),
             "artifact_ids": {key: value.artifact_id for key, value in records.items()},

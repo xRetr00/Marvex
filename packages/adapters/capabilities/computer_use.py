@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import os
 from typing import Literal
 from typing import Any
@@ -41,6 +42,8 @@ class ComputerUseExecutionReport(ComputerUseModel):
     tool_name: str | None = None
     action_count: int = Field(default=0, ge=0)
     reason_code: str | None = None
+    install_dep_id: str | None = None
+    missing_dependencies: tuple[str, ...] = ()
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -188,6 +191,14 @@ def execute_windows_computer_action(request) -> ComputerUseExecutionReport:
         return ComputerUseExecutionReport(status="failed", reason_code="windows_required")
     if not _live_execution_enabled(request.arguments):
         return ComputerUseExecutionReport(status="failed", reason_code="windows_mcp_live_execution_not_enabled")
+    missing_dependencies = _missing_computer_use_dependencies()
+    if missing_dependencies:
+        return ComputerUseExecutionReport(
+            status="denied",
+            reason_code="computer_use_dependency_unavailable",
+            install_dep_id="computer_use",
+            missing_dependencies=missing_dependencies,
+        )
     try:
         return asyncio.run(_execute_windows_mcp(request.arguments))
     except Exception as exc:  # pragma: no cover - live MCP availability varies by machine
@@ -220,10 +231,12 @@ def computer_use_safe_result(*, request, report: ComputerUseExecutionReport) -> 
             "live_execution": report.status == "succeeded",
             "action_count": report.action_count,
             "reason_code": report.reason_code,
+            "install_dep_id": report.install_dep_id,
+            "missing_dependencies": report.missing_dependencies,
             "approval_required": True,
             "approved_execution": request.approval_decision is not None,
-            "credential_entry_allowed": True,
-            "arbitrary_desktop_control_allowed": True,
+            "credential_entry_allowed": False,
+            "arbitrary_desktop_control_allowed": False,
             "raw_screen_persisted": "screen" in records,
             "raw_action_payload_persisted": "action_log" in records,
             "artifact_ids": {key: value.artifact_id for key, value in records.items()},
@@ -305,6 +318,17 @@ def _raw_persistence_enabled(arguments: dict[str, object]) -> bool:
     if arguments.get("raw_persistence_enabled") is True:
         return True
     return os.environ.get("MARVEX_AUTOMATION_RAW_PERSISTENCE", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _missing_computer_use_dependencies() -> tuple[str, ...]:
+    missing: list[str] = []
+    for package_name in ("mcp", "uiautomation"):
+        try:
+            if importlib.util.find_spec(package_name) is None:
+                missing.append(package_name)
+        except (ModuleNotFoundError, ValueError):
+            missing.append(package_name)
+    return tuple(missing)
 
 
 def _live_execution_enabled(arguments: dict[str, object]) -> bool:
