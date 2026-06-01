@@ -328,19 +328,24 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
     from browser_use.llm.openai.like import ChatOpenAILike
 
     profile = str(request.arguments.get("chrome_profile") or request.arguments.get("profile_directory") or "Default")
-    profile_candidates = chrome_profile_candidates(preferred_profile=profile)
-    profile_mode = profile_candidates[0]["mode"]
-    browser_kwargs = {
-        "headless": bool(request.arguments.get("headless", False)),
-        "keep_alive": bool(request.arguments.get("keep_alive", False)),
-    }
-    try:
-        browser = Browser.from_system_chrome(profile_directory=profile, **browser_kwargs)
-    except Exception:
-        fallback = profile_candidates[-1]
-        profile_mode = fallback["mode"]
-        Path(fallback["user_data_dir"]).mkdir(parents=True, exist_ok=True)
-        browser = Browser(user_data_dir=fallback["user_data_dir"], profile_directory=profile, **browser_kwargs)
+    # Drive the user's REAL Chrome (their profile + logins) by attaching over the
+    # DevTools/CDP endpoint, instead of launching a throwaway profile that closes
+    # on completion. ensure_debuggable_chrome (re)launches the user's Chrome with
+    # the debug port on their User Data dir when one isn't already listening.
+    from .chrome_cdp import ensure_debuggable_chrome
+
+    chrome = ensure_debuggable_chrome(profile_directory=profile)
+    cdp_url = chrome.get("cdp_url")
+    if not cdp_url:
+        return BrowserUseExecutionReport(
+            status="denied",
+            reason_code=str(chrome.get("reason_code") or "chrome_cdp_unavailable"),
+            profile_mode="system_chrome_cdp",
+            profile_directory=profile,
+        )
+    profile_mode = "system_chrome_cdp_reused" if chrome.get("reused") else "system_chrome_cdp_launched"
+    # keep_alive: never close the user's own browser when the task finishes.
+    browser = Browser(cdp_url=str(cdp_url), keep_alive=True)
     llm = ChatOpenAILike(
         model=str(request.arguments.get("provider_model") or os.environ.get("MARVEX_AUTOMATION_MODEL") or "local-model"),
         base_url=request.arguments.get("provider_base_url") or os.environ.get("MARVEX_AUTOMATION_BASE_URL"),

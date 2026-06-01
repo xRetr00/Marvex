@@ -183,6 +183,23 @@ def _config_from_arguments(arguments: dict[str, object]) -> PlaywrightMcpServerC
         browser = "chrome"
     extension_mode = arguments.get("extension_mode") is True
     cdp_endpoint = str(arguments.get("cdp_endpoint") or "").strip() or None
+    # Prefer driving the user's REAL Chrome (their profile + logins) via CDP, the
+    # same instance browser_use attaches to, instead of a throwaway Playwright
+    # profile. Only when no explicit endpoint/extension mode is requested and the
+    # caller hasn't opted out via MARVEX_PLAYWRIGHT_MCP_NO_CDP.
+    if (
+        cdp_endpoint is None
+        and not extension_mode
+        and os.environ.get("MARVEX_PLAYWRIGHT_MCP_NO_CDP", "").strip().lower() not in {"1", "true", "yes", "on"}
+    ):
+        try:
+            from .chrome_cdp import ensure_debuggable_chrome
+
+            resolved = ensure_debuggable_chrome()
+            if resolved.get("cdp_url"):
+                cdp_endpoint = str(resolved["cdp_url"])
+        except Exception:
+            cdp_endpoint = None
     return PlaywrightMcpServerConfig.builtin(
         browser=browser,  # type: ignore[arg-type]
         extension_mode=extension_mode,
