@@ -14,6 +14,7 @@ SCHEMA_VERSION = "1"
 class AutonomyMode(str, Enum):
     LOCKED_DOWN = "locked_down"
     ASK_BEFORE_RISKY = "ask_before_risky"
+    OWNER_SAFE = "owner_safe"
     AUTO_MARVEX = "auto_marvex"
     CUSTOM = "custom"
 
@@ -53,6 +54,7 @@ class CapabilityPermissionMatrix(CapabilityRuntimeModel):
     auto_fetch: ActionPermission = ActionPermission.ASK
     memory_search: ActionPermission = ActionPermission.ALLOW
     semantic_memory_search: ActionPermission = ActionPermission.ALLOW
+    memory_explicit_write: ActionPermission = ActionPermission.ALLOW
     memory_auto_write: ActionPermission = ActionPermission.ASK
     profile_write: ActionPermission = ActionPermission.ASK
     learning_mutation_candidates: ActionPermission = ActionPermission.ASK
@@ -251,6 +253,17 @@ class AutonomyPolicy(CapabilityRuntimeModel):
                 provider_fallback=ProviderFallbackPolicy(provider_retry=ActionPermission.ALLOW, provider_fallback=ActionPermission.ALLOW),
                 learning_mutation=LearningMutationPolicy(candidate_apply=ActionPermission.ALLOW, skill_candidate_apply=ActionPermission.ALLOW, preference_candidate_apply=ActionPermission.ALLOW),
             )
+        if mode == AutonomyMode.OWNER_SAFE:
+            return cls(
+                mode=mode,
+                matrix=_owner_safe_matrix(),
+                memory_auto_write=MemoryAutoWritePolicy(memory_auto_write=ActionPermission.ASK),
+                connector_sync=ConnectorSyncPolicy(oauth_connect=ActionPermission.ASK, live_sync=ActionPermission.ASK, auto_fetch=ActionPermission.ASK),
+                mcp_execution=MCPExecutionPolicy(execute_tool=ActionPermission.ASK),
+                skill_execution=SkillExecutionPolicy(update_or_create_skill=ActionPermission.ASK),
+                provider_fallback=ProviderFallbackPolicy(provider_retry=ActionPermission.ASK, provider_fallback=ActionPermission.ASK),
+                learning_mutation=LearningMutationPolicy(candidate_apply=ActionPermission.ASK, skill_candidate_apply=ActionPermission.ASK, preference_candidate_apply=ActionPermission.ASK),
+            )
         if mode == AutonomyMode.CUSTOM:
             return cls.custom()
         return cls(mode=mode, matrix=_ask_before_risky_matrix())
@@ -371,6 +384,7 @@ def _locked_down_matrix() -> CapabilityPermissionMatrix:
         "live_oauth_sync": ActionPermission.DENY,
         "auto_fetch": ActionPermission.DENY,
         "memory_auto_write": ActionPermission.DENY,
+        "memory_explicit_write": ActionPermission.ALLOW,
         "profile_write": ActionPermission.DENY,
         "learning_mutation_candidates": ActionPermission.DENY,
         "provider_retry_fallback": ActionPermission.DENY,
@@ -395,4 +409,26 @@ def _auto_marvex_matrix() -> CapabilityPermissionMatrix:
         skills_update_create=ActionPermission.ALLOW,
         learning_mutation_candidates=ActionPermission.ALLOW,
         provider_retry_fallback=ActionPermission.ALLOW,
+    )
+
+
+def _owner_safe_matrix() -> CapabilityPermissionMatrix:
+    return CapabilityPermissionMatrix(
+        memory_explicit_write=ActionPermission.ALLOW,
+        memory_auto_write=ActionPermission.ASK,
+        profile_write=ActionPermission.ASK,
+        auto_fetch=ActionPermission.ASK,
+        live_oauth_sync=ActionPermission.ASK,
+        connectors_oauth=ActionPermission.ASK,
+        mcp_execute=ActionPermission.ASK,
+        mcp_install_launch=ActionPermission.ASK,
+        skills_update_create=ActionPermission.ASK,
+        provider_retry_fallback=ActionPermission.ASK,
+        learning_mutation_candidates=ActionPermission.ASK,
+        file_write=ActionPermission.ASK,
+        file_delete=ActionPermission.ASK,
+        browser_click_type=ActionPermission.ASK,
+        computer_actions=ActionPermission.ASK,
+        external_upload_send=ActionPermission.ASK,
+        shell_command_execution=ActionPermission.ASK,
     )

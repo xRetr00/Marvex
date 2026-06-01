@@ -16,6 +16,8 @@ def test_grounding_lists_real_tools_including_web_search():
     assert "file.patch" in grounding
     # web.search is advertised even though it lives on the executor.
     assert "web.search" in grounding
+    assert "memory.search" in grounding
+    assert "memory.remember" in grounding
 
 
 def test_grounding_injects_current_date():

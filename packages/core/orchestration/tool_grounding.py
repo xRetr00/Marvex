@@ -28,6 +28,12 @@ _WEB_SEARCH_LINE = (
     "- web.search: Search the web and return result titles, URLs, and snippets "
     "to ground a current/factual answer."
 )
+_MEMORY_TOOL_LINES = (
+    "- memory.search: Search approved Marvex memory and return safe previews with memory refs.",
+    "- memory.remember: Save memory only when the user explicitly asks to remember something; otherwise create a pending memory candidate.",
+    "- memory.forget: Forget an exact approved memory ref through the policy boundary.",
+    "- memory.list_recent: List recent approved memory refs and safe previews.",
+)
 
 
 def _static_tool_catalog() -> str:
@@ -45,6 +51,7 @@ def _static_tool_catalog() -> str:
             for tool in registry.tools():
                 lines.append(f"- {tool.identifier()}: {tool.description}")
         lines.append(_WEB_SEARCH_LINE)
+        lines.extend(_MEMORY_TOOL_LINES)
         _TOOL_CATALOG_CACHE = "\n".join(lines)
     except Exception:
         _TOOL_CATALOG_CACHE = _WEB_SEARCH_LINE

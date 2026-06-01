@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from packages.adapters.capabilities.tools import default_registry, file_tools_registry
+from packages.adapters.capabilities.tools import ToolRegistry, default_registry, file_tools_registry, mcp_tools_registry
 from packages.capability_runtime import (
     CapabilityCallProposal,
     CapabilityExecutionMode,
@@ -22,7 +22,8 @@ from packages.core.orchestration.agentic_tools import (
 
 def _builder(root: str | None = None):
     def build(tool_id: str, arguments: dict) -> CapabilityExecutionRequest:
-        ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier=tool_id)
+        kind = CapabilityKind.MCP_TOOL if tool_id.startswith("mcp.") else CapabilityKind.TOOL
+        ref = CapabilityRef(kind=kind, identifier=tool_id)
         proposal = CapabilityCallProposal(
             schema_version="1",
             proposal_id=f"p.{tool_id}",
@@ -116,6 +117,21 @@ def test_safe_file_read_executes(tmp_path: Path):
     )
     assert outcome.executed_tool_ids == ["file.read"]
     assert "hello world" in outcome.tool_messages[0]["content"]
+
+
+def test_mcp_tool_is_model_callable_and_executes_through_agentic_loop():
+    registry = ToolRegistry(mcp_tools_registry().tools())
+    schemas = registry.tool_schemas()
+
+    outcome = execute_tool_calls(
+        [_call("mcp.local.echo", '{"message": "hello from model"}')],
+        registry=registry,
+        request_builder=_builder(),
+    )
+
+    assert schemas[0]["function"]["name"] == "mcp.local.echo"
+    assert outcome.executed_tool_ids == ["mcp.local.echo"]
+    assert "hello from model" in outcome.tool_messages[0]["content"]
 
 
 def test_multiple_calls_mixed_outcomes(tmp_path: Path):

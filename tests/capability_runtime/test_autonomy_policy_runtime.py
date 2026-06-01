@@ -104,6 +104,18 @@ def test_named_policy_objects_match_auto_marvex_matrix() -> None:
     assert policy.learning_mutation.preference_candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
 
 
+def test_owner_safe_policy_auto_allows_safe_agent_tools_but_keeps_side_effects_gated() -> None:
+    policy = AutonomyPolicy.for_mode(AutonomyMode.OWNER_SAFE)
+
+    for capability in ("read", "list", "search", "web_search", "memory_search", "semantic_memory_search", "memory_explicit_write", "skills_use"):
+        audit = evaluate_autonomy_action(policy, AutonomyAction(action=capability, resource_type="agent_tool", capability=capability))
+        assert audit.decision == PolicyDecision.ALLOW
+
+    for capability in ("file_write", "file_delete", "browser_click_type", "computer_actions", "mcp_execute", "connectors_oauth", "external_upload_send", "shell_command_execution", "memory_auto_write"):
+        audit = evaluate_autonomy_action(policy, AutonomyAction(action=capability, resource_type="side_effect", capability=capability))
+        assert audit.decision == PolicyDecision.APPROVAL_REQUIRED
+
+
 def test_policy_decision_audit_contains_required_traceable_fields() -> None:
     policy = AutonomyPolicy.custom().with_permissions(file_delete=ActionPermission.QUARANTINE)
     audit = evaluate_autonomy_action(

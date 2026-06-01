@@ -60,6 +60,9 @@ class Tool(ABC):
     def identifier(cls) -> str:
         return f"{cls.ref_prefix}{cls.id}"
 
+    def tool_id(self) -> str:
+        return self.identifier()
+
     def json_schema(self) -> dict[str, object]:
         """JSON schema for the tool's parameters, for model tool-calling."""
 

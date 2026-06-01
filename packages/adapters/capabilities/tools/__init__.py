@@ -25,6 +25,8 @@ from .base import Tool, denied_result, succeeded_result
 from .calculator import CalculatorTool
 from .diagnostics import CapabilityDiagnosticsTool
 from .list import ListDirectoryTool
+from .memory import MemoryForgetTool, MemoryListRecentTool, MemoryRememberTool, MemorySearchTool
+from .mcp import LocalMcpEchoTool
 from .patch import PatchFileTool
 from .read import ReadFileTool
 from .repo_status import RepoStatusTool
@@ -41,7 +43,7 @@ class ToolRegistry:
     def __init__(self, tools: tuple[Tool, ...]) -> None:
         self._tools: dict[str, Tool] = {}
         for tool in tools:
-            identifier = tool.identifier()
+            identifier = tool.tool_id()
             if identifier in self._tools:
                 raise ValueError(f"duplicate tool identifier: {identifier}")
             self._tools[identifier] = tool
@@ -64,7 +66,7 @@ class ToolRegistry:
                 {
                     "type": "function",
                     "function": {
-                        "name": tool.identifier(),
+                        "name": tool.tool_id(),
                         "description": tool.description,
                         "parameters": tool.json_schema(),
                     },
@@ -118,10 +120,57 @@ def file_tools_registry() -> ToolRegistry:
     )
 
 
+def memory_tools_registry(
+    *,
+    memory_store: object,
+    memory_tree_runtime: object | None = None,
+    session_ref: object | None = None,
+    conversation_ref: object | None = None,
+) -> ToolRegistry:
+    """Construct agent-callable memory tools around injected memory backends."""
+
+    return ToolRegistry(
+        (
+            MemorySearchTool(
+                memory_store=memory_store,
+                memory_tree_runtime=memory_tree_runtime,
+                session_ref=session_ref,
+                conversation_ref=conversation_ref,
+            ),
+            MemoryRememberTool(
+                memory_store=memory_store,
+                memory_tree_runtime=memory_tree_runtime,
+                session_ref=session_ref,
+                conversation_ref=conversation_ref,
+            ),
+            MemoryForgetTool(
+                memory_store=memory_store,
+                memory_tree_runtime=memory_tree_runtime,
+                session_ref=session_ref,
+                conversation_ref=conversation_ref,
+            ),
+            MemoryListRecentTool(
+                memory_store=memory_store,
+                memory_tree_runtime=memory_tree_runtime,
+                session_ref=session_ref,
+                conversation_ref=conversation_ref,
+            ),
+        )
+    )
+
+
+def mcp_tools_registry() -> ToolRegistry:
+    """Construct agent-callable MCP tools that are already allowlisted."""
+
+    return ToolRegistry((LocalMcpEchoTool(),))
+
+
 __all__ = [
     "ToolRegistry",
     "default_registry",
     "file_tools_registry",
+    "memory_tools_registry",
+    "mcp_tools_registry",
     "Tool",
     "succeeded_result",
     "denied_result",
@@ -136,4 +185,9 @@ __all__ = [
     "WriteFileTool",
     "PatchFileTool",
     "WebSearchTool",
+    "MemorySearchTool",
+    "MemoryRememberTool",
+    "MemoryForgetTool",
+    "MemoryListRecentTool",
+    "LocalMcpEchoTool",
 ]

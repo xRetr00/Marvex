@@ -118,6 +118,16 @@ def test_manifests_cover_every_registered_tool():
     assert "builtin.calculator" in identifiers
 
 
+def test_memory_tools_are_model_callable_when_registered():
+    from packages.adapters.capabilities.tools import memory_tools_registry
+    from packages.memory_runtime.store import CurrentProcessMemoryStore
+
+    registry = memory_tools_registry(memory_store=CurrentProcessMemoryStore())
+    ids = {schema["function"]["name"] for schema in registry.tool_schemas()}
+
+    assert {"memory.search", "memory.remember", "memory.forget", "memory.list_recent"}.issubset(ids)
+
+
 def test_duplicate_identifier_rejected():
     import pytest
 
