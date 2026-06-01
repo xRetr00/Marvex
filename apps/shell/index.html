@@ -4,6 +4,36 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Marvex</title>
+    <script>
+      // Apply the transparent / no-scroll overlay document class synchronously
+      // (before React mounts) so the overlay window never flashes a background or
+      // a scrollbar, and so it holds even if the React class toggle is delayed.
+      (function () {
+        try {
+          var p = new URLSearchParams(window.location.search);
+          if (p.get("surface") === "overlay" || window.location.pathname.indexOf("overlay") !== -1) {
+            document.documentElement.classList.add("marvex-overlay-document");
+            document.addEventListener("DOMContentLoaded", function () {
+              document.body.classList.add("marvex-overlay-document");
+            });
+          }
+        } catch (e) {}
+      })();
+    </script>
+    <style>
+      /* Guaranteed overlay base, independent of bundled CSS load order. */
+      html.marvex-overlay-document,
+      html.marvex-overlay-document body {
+        margin: 0 !important;
+        background: transparent !important;
+        overflow: hidden !important;
+      }
+      html.marvex-overlay-document ::-webkit-scrollbar {
+        width: 0 !important;
+        height: 0 !important;
+        display: none !important;
+      }
+    </style>
   </head>
   <body>
     <div id="root"></div>

@@ -28,7 +28,9 @@ export interface DynamicIslandProps {
 function resolveWidth(view: IslandView, width: DynamicIslandProps["width"]): string {
   if (typeof width === "number") return `${width}px`;
   if (typeof width === "string") return width;
-  return view === "expanded" ? `${ISLAND_GEOMETRY.expanded.maxWidth}px` : `${ISLAND_GEOMETRY.idle.minWidth}px`;
+  // Idle hugs its content (dot + state label + mini waveform) with a minimum;
+  // expanded uses the generated max width.
+  return view === "expanded" ? `${ISLAND_GEOMETRY.expanded.maxWidth}px` : "max-content";
 }
 
 export default function DynamicIsland({
@@ -57,6 +59,7 @@ export default function DynamicIsland({
 
   const pillStyle: CSSProperties = {
     width: resolveWidth(view, width),
+    minWidth: view === "idle" && width === undefined ? ISLAND_GEOMETRY.idle.minWidth : undefined,
     boxSizing: "border-box",
     // Near-black (not pure #000) so the pill reads as a physical object above the
     // desktop without a white halo.

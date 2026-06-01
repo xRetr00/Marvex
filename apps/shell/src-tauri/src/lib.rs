@@ -812,6 +812,12 @@ pub fn run() {
                 });
             }
             if let Some(window) = app.get_webview_window("overlay") {
+                // Enforce the borderless/native options at runtime so nothing
+                // (config drift, plugins, platform defaults) can give the island
+                // a title bar, taskbar entry, or window-shadow frame.
+                let _ = window.set_decorations(false);
+                let _ = window.set_shadow(false);
+                let _ = window.set_skip_taskbar(true);
                 if let (Ok(Some(monitor)), Ok(size)) =
                     (window.current_monitor(), window.outer_size())
                 {

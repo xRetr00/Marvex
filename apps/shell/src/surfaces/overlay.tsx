@@ -6,6 +6,7 @@ import {
   idleAssistantState,
   normalizeAssistantState,
   shouldShowOverlay,
+  statusLabel,
   waveformLevel,
   type AssistantStateEvent,
 } from "../lib/assistantState";
@@ -199,6 +200,7 @@ export function OverlaySurface() {
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 7, height: 7, borderRadius: "50%", background: "#ffe0c2", display: "block", flex: "0 0 auto" }}
               />
+              <span style={idleLabelStyle}>{statusLabel(state.status)}</span>
               <IslandWaveform variant="compact" audioLevel={audioLevel} active={isActive} />
             </div>
           }
@@ -209,7 +211,7 @@ export function OverlaySurface() {
               <div style={{ display: "flex", flexDirection: "column", alignItems: "stretch", gap: 8, width: "100%" }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
                   <AnimatePresence mode="wait">
-                    <TextShimmer text={isActive ? statusText : "Marvex"} key={isActive ? statusText : "marvex"} />
+                    <TextShimmer text={statusText} key={statusText} />
                   </AnimatePresence>
                   <button
                     type="button"
@@ -236,6 +238,14 @@ function IslandCardView({ card, onDismiss }: { card: IslandCard; onDismiss: () =
   }
   return <InfoCard title={card.title ?? "Marvex"} body={card.body} onDismiss={onDismiss} />;
 }
+
+const idleLabelStyle: React.CSSProperties = {
+  fontSize: 11,
+  fontWeight: 600,
+  letterSpacing: "0.01em",
+  color: "rgba(255,224,194,0.9)",
+  whiteSpace: "nowrap",
+};
 
 const chevronStyle: React.CSSProperties = {
   border: 0,
