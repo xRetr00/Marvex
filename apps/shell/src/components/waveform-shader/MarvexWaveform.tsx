@@ -94,7 +94,9 @@ export function MarvexWaveform({ audioLevel, className, width = 320, height = 80
     if (!canvas) return;
 
     const gl = canvas.getContext("webgl");
-    if (!gl) return;
+    // Bail when WebGL is unavailable (headless/jsdom, blocklisted GPUs); the
+    // canvas still renders at its sized dimensions, just without the shader.
+    if (!gl || typeof gl.createShader !== "function") return;
 
     const compileShader = (type: number, src: string): WebGLShader | null => {
       const shader = gl.createShader(type);
