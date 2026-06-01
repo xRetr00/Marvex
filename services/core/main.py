@@ -17,6 +17,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 from packages.contracts.state_event import AssistantStatusKind
 from packages.control_plane_api import (
     ControlPlaneRuntime,
@@ -24,7 +26,6 @@ from packages.control_plane_api import (
     InMemoryProviderControl,
     InMemoryApprovalStore,
 )
-from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
 from packages.control_plane_api.browser_session import BrowserSessionManager
 from packages.control_plane_api.logs import LocalLogReader, LocalLogWriter
 from packages.state_bus import AssistantStateBus, get_default_bus
@@ -96,12 +97,6 @@ from packages.learning_runtime import (
     ToolOutcomeFeedback,
 )
 from packages.local_api import LocalApiConfig, create_local_api_asgi_app
-from packages.local_api.asgi_host import (
-    AsgiHostConfig,
-    ServerFactory,
-    build_asgi_startup_message,
-    run_dual_asgi_host,
-)
 from packages.local_api.contracts import (
     LOCAL_TURNS_EXECUTION_MODE,
     LOCAL_TURNS_LMSTUDIO_RESPONSES_EXECUTION_MODE,
@@ -127,6 +122,7 @@ from packages.session_runtime import (
     ConversationEntityStore,
     ENTITY_FILE,
     CurrentProcessSessionRegistry,
+    SessionContextStore,
     build_turn_linkage_from_assistant_turn_input,
     resolve_file_reference,
 )
@@ -148,6 +144,15 @@ from packages.web_search_runtime import (
     WebSearchQuery,
     WebSearchResult,
     WikipediaWebSearchAdapter,
+)
+from services.core.safe_state import (
+    automation_pending_state_path as _automation_pending_state_path,
+    conversation_entity_state_path as _conversation_entity_state_path,
+    load_pending_automation_state as _load_pending_automation_state,
+    load_json_state as _load_json_state,
+    save_pending_automation_state as _save_pending_automation_state,
+    save_json_state as _save_json_state,
+    session_context_state_path as _session_context_state_path,
 )
 
 
@@ -789,7 +794,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
         # Pending model-initiated automation tool calls, keyed by approval id, so
         # the approval-resume executes the exact capability + args the model
         # requested (browser_use / computer_use / playwright_mcp).
-        self._pending_automation: dict[str, dict[str, object]] = {}
+        self._pending_automation_path = _automation_pending_state_path()
+        self._pending_automation: dict[str, dict[str, object]] = _load_pending_automation_state(
+            self._pending_automation_path
+        )
         self._intent_classifier = _IntentWorkerProcessClassifier(
             timeout_seconds=timeout_seconds,
         )
@@ -819,7 +827,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._state_bus: AssistantStateBus | None = None
         # Conversation-scoped working memory (docs/TODO/01): remembers files the
         # assistant produced so "that file"/"it" resolves across turns.
-        self._entity_store = ConversationEntityStore()
+        self._entity_store_path = _conversation_entity_state_path()
+        self._session_context_path = _session_context_state_path()
+        self._entity_store = ConversationEntityStore.from_snapshot(_load_json_state(self._entity_store_path))
+        self._session_context = SessionContextStore.from_snapshot(_load_json_state(self._session_context_path))
 
     def shutdown(self) -> None:
         for worker in (self._provider, self._intent_classifier, self._tool_executor):
@@ -948,6 +959,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             label=label,
             turn_id=turn_input.turn_id,
         )
+        _save_json_state(self._entity_store_path, self._entity_store.safe_snapshot())
 
     def _classify_intent_llm(self, turn_input: AssistantTurnInput) -> dict[str, object] | None:
         """Classify intent via the provider; return the worker-shaped dict or None.
@@ -1086,6 +1098,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 # create, so the approval-resume executes precisely what the model
                 # asked (not a text-heuristic). _approval_request uses turn_id.
                 self._pending_automation[f"approval-{turn_input.turn_id}"] = dict(loop_result.automation)
+                _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
             return self._run_approval_path(
                 turn_input,
                 metadata={
@@ -1160,6 +1173,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "cognition": cognition.safe_projection().model_dump(mode="json"),
             "memory_loop": _memory_write_projection(memory_write),
             "session": session_projection,
+            "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
             "provider_selection": selection_projection,
             "provider_boundary": "provider_worker_process",
             "agentic_tool_loop": {
@@ -1173,6 +1187,23 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         self._publish(AssistantStatusKind.IDLE, detail="turn_complete", trace_id=turn_input.trace_id)
+        self._session_context.record_assistant_turn(
+            self._session_id_of(turn_input),
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            text=text,
+            tool_result_refs=tuple(executed_tool_ids),
+            memory_refs=tuple(
+                ref
+                for ref in (
+                    getattr(getattr(memory_write, "record", None), "memory_ref", None).ref_id
+                    if getattr(memory_write, "record", None) is not None
+                    else None,
+                )
+                if isinstance(ref, str)
+            ),
+        )
+        _save_json_state(self._session_context_path, self._session_context.safe_snapshot())
         return _entrypoint_text_result(
             turn_input,
             text=text,
@@ -1191,6 +1222,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             WebSearchTool,
             default_registry,
             file_tools_registry,
+            mcp_tools_registry,
+            memory_tools_registry,
         )
         from packages.adapters.capabilities.tools.clarify import ClarifyTool
         from packages.adapters.capabilities.tools.automation import (
@@ -1206,11 +1239,20 @@ class _CoreServiceProviderWorkerTurnExecutor:
         tools = [
             *default_registry().tools(),
             *file_tools_registry().tools(),
+            *mcp_tools_registry().tools(),
             ClarifyTool(),
             BrowserUseTool(),
             ComputerUseTool(),
             PlaywrightBrowserTool(),
         ]
+        if self._memory_loop is not None:
+            tools.extend(
+                memory_tools_registry(
+                    memory_store=self._memory_loop.memory_store,
+                    memory_tree_runtime=self._memory_tree_runtime,
+                    session_ref=getattr(self, "_current_turn_session_ref", None),
+                ).tools()
+            )
         if self._web_search_provider is not None:
             tools.append(WebSearchTool(provider=self._web_search_provider))
         return ToolRegistry(tuple(tools))
@@ -1240,7 +1282,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 if not file_root:
                     return None
                 merged.setdefault("root", file_root)
-            ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier=tool_id)
+            ref_kind = CapabilityKind.MCP_TOOL if tool_id.startswith("mcp.") else CapabilityKind.TOOL
+            ref = CapabilityRef(kind=ref_kind, identifier=tool_id)
             proposal = CapabilityCallProposal(
                 schema_version=turn_input.schema_version,
                 proposal_id=f"agentic.{turn_input.turn_id}.{tool_id}",
@@ -1304,6 +1347,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
             turn_input,
             previous_response_id=previous_response_id,
         )
+        self._current_turn_session_ref = turn_input.session_ref
+        self._session_context.record_user_turn(
+            self._session_id_of(turn_input),
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            text=turn_input.user_visible_input or "",
+        )
+        _save_json_state(self._session_context_path, self._session_context.safe_snapshot())
         self._session_registry.record_turn(linkage)
         session_projection = _session_projection(self._session_registry, turn_input)
 
@@ -1588,7 +1639,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             # configured, or the loop errors.
             if _agentic_tools_enabled() and self._web_search_provider is not None:
                 provider_turn_input, provider_instructions = _turn_input_with_prompt(
-                    turn_input, cognition, desktop_context=desktop_context
+                    turn_input,
+                    cognition,
+                    desktop_context=desktop_context,
+                    session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
                 )
                 agentic_result = self._run_agentic_tool_loop(
                     turn_input,
@@ -1620,6 +1674,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             turn_input,
             cognition,
             desktop_context=desktop_context,
+            session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
         )
         # Agentic tool-calling loop (docs/TODO/02), opt-in behind a flag. When
         # enabled and a provider returns tool calls, run them through the
@@ -1703,6 +1758,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
                 "memory_loop": _memory_write_projection(memory_write),
                 "session": session_projection,
+                "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
                 "provider_selection": selection_projection,
                 "learning": learning_projection,
             }
@@ -1713,6 +1769,26 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         self._publish(AssistantStatusKind.IDLE, detail="turn_complete", trace_id=turn_input.trace_id)
+        final_text = ""
+        final = getattr(result, "assistant_final_response", None)
+        if final is not None and isinstance(getattr(final, "text", None), str):
+            final_text = str(final.text)
+        self._session_context.record_assistant_turn(
+            self._session_id_of(turn_input),
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            text=final_text,
+            memory_refs=tuple(
+                ref
+                for ref in (
+                    getattr(getattr(memory_write, "record", None), "memory_ref", None).ref_id
+                    if getattr(memory_write, "record", None) is not None
+                    else None,
+                )
+                if isinstance(ref, str)
+            ),
+        )
+        _save_json_state(self._session_context_path, self._session_context.safe_snapshot())
         return result.model_copy(update={"metadata": metadata})
 
     def _run_tool_path(
@@ -2030,7 +2106,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
         previous_response_id: str | None = None,
         extra_user_instruction: str | None = None,
     ) -> AssistantTurnResult:
-        provider_turn_input, provider_instructions = _turn_input_with_prompt(turn_input, cognition)
+        provider_turn_input, provider_instructions = _turn_input_with_prompt(
+            turn_input,
+            cognition,
+            session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+        )
         if extra_user_instruction and extra_user_instruction.strip():
             # Used by the grounded-answer self-correction retry: append the
             # correction directive to the model input so it revises in-turn.
@@ -2305,6 +2385,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 # the EXACT capability + args the model requested, with the user's
                 # provider creds. Stored when the agentic loop paused for approval.
                 pending_automation = self._pending_automation.pop(effective_resume_approval, None)
+                _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
                 if pending_automation is not None:
                     loop.step("tool")
                     self._publish(
@@ -2347,6 +2428,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         repeat_arguments["destructive_action_decision"] = "approve"
                         repeat["arguments"] = repeat_arguments
                         self._pending_automation[effective_resume_approval] = repeat
+                        _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
                         loop.step("approval", stop_reason="waiting_for_human_approval")
                         if self._approval_store is not None:
                             self._approval_store.add_pending(approval_request)
@@ -3139,10 +3221,13 @@ def _turn_input_with_prompt(
     cognition: CognitionTurnAssembly,
     *,
     desktop_context: dict[str, object] | None = None,
+    session_context: str | None = None,
 ) -> tuple[AssistantTurnInput, str | None]:
     payload = cognition.provider_prompt_payload
     prompt_text = str(getattr(payload, "input_text", "") or "")
     instructions = getattr(payload, "instructions", None)
+    if session_context and session_context.strip():
+        prompt_text = prompt_text + "\n\n" + session_context.strip()
     if desktop_context and desktop_context.get("available") is True:
         content = str(desktop_context.get("content") or "").strip()
         if content:
@@ -3273,7 +3358,21 @@ def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> obj
 
 
 def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | None:
-    return _DemoMemoryTreeRuntime() if config.demo_memory_evidence else None
+    if config.demo_memory_evidence:
+        return _DemoMemoryTreeRuntime()
+    if not config.memory_vault_root:
+        return None
+    root = Path(config.memory_vault_root).expanduser().resolve()
+    index_path = root / "memory_tree.sqlite"
+    if not index_path.exists():
+        return None
+    try:
+        index = SQLiteMemoryTreeIndex(memory_db_path=index_path, local_user_root=root)
+        if not index.safe_chunks():
+            return None
+        return MemoryTreeRuntime.from_sqlite_index(index)
+    except Exception:
+        return None
 
 
 def _memory_loop_from_config(config: CoreServiceEntrypointConfig) -> LocalMemoryLoop | None:
@@ -4158,6 +4257,12 @@ def run_core_service(
     server_factory: ServerFactory | None = None,
     control_server_factory: ServerFactory | None = None,
 ) -> int:
+    from packages.local_api.asgi_host import (
+        AsgiHostConfig,
+        build_asgi_startup_message,
+        run_dual_asgi_host,
+    )
+
     effective_config = config or CoreServiceEntrypointConfig()
     if not effective_config.allow_remote:
         _validate_loopback(effective_config.host)
@@ -4206,6 +4311,8 @@ def run_core_service(
         allow_remote=effective_config.allow_remote,
     )
     try:
+        from packages.control_plane_api.asgi_app import create_control_plane_asgi_app
+
         return run_dual_asgi_host(
             core_app=core_app,
             control_app=create_control_plane_asgi_app(

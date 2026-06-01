@@ -2,8 +2,9 @@ from __future__ import annotations
 
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
-from packages.adapters.capabilities import browser_use, computer_use
+from packages.adapters.capabilities import browser_use, computer_use, playwright_mcp
 from packages.adapters.capabilities.playwright_mcp import PlaywrightMcpServerConfig, execute_playwright_mcp_task
 
 
@@ -165,3 +166,50 @@ def test_playwright_mcp_unsafe_code_tool_requires_extra_approval(monkeypatch) ->
 
     assert report.status == "denied"
     assert report.reason_code == "playwright_mcp_unsafe_code_requires_approval"
+
+
+def test_computer_use_missing_dependency_safe_result_points_to_runtime_install() -> None:
+    report = computer_use.ComputerUseExecutionReport(
+        status="denied",
+        reason_code="computer_use_dependency_unavailable",
+        install_dep_id="computer_use",
+        missing_dependencies=("mcp", "uiautomation"),
+    )
+    request = SimpleNamespace(
+        arguments={},
+        trace_id="trace-computer-missing",
+        turn_id="turn-computer-missing",
+        approval_decision=object(),
+        proposal=SimpleNamespace(
+            capability_ref=SimpleNamespace(identifier="computer_use.action"),
+        ),
+    )
+
+    safe, raw_persisted = computer_use.computer_use_safe_result(request=request, report=report)
+
+    assert safe["install_dep_id"] == "computer_use"
+    assert safe["missing_dependencies"] == ("mcp", "uiautomation")
+    assert raw_persisted is False
+
+
+def test_playwright_mcp_missing_dependency_safe_result_points_to_runtime_install() -> None:
+    report = playwright_mcp.PlaywrightMcpExecutionReport(
+        status="denied",
+        reason_code="playwright_mcp_dependency_unavailable",
+        install_dep_id="mcp",
+        missing_dependencies=("mcp",),
+    )
+    request = SimpleNamespace(
+        arguments={},
+        trace_id="trace-playwright-missing",
+        turn_id="turn-playwright-missing",
+        proposal=SimpleNamespace(
+            capability_ref=SimpleNamespace(identifier="playwright_mcp.task"),
+        ),
+    )
+
+    safe, raw_persisted = playwright_mcp.playwright_mcp_safe_result(request=request, report=report)
+
+    assert safe["install_dep_id"] == "mcp"
+    assert safe["missing_dependencies"] == ("mcp",)
+    assert raw_persisted is False
