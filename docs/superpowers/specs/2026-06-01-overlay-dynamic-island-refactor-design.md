@@ -34,11 +34,29 @@ Portability table:
 
 | File | Action |
 |------|--------|
-| `WebToastView.tsx` | Copy verbatim — pure DOM (`createPortal`). The pill renderer. |
+| `WebToastView.tsx` | Copy verbatim — pure DOM (`createPortal`). The transient **card** renderer (info + approval), **not** the morph pill. |
 | `toast.ts`, `useToast.ts`, `variants.ts`, `index.tsx` | Copy verbatim. |
 | `ToastProvider.web.tsx` | Copy as `ToastProvider.tsx` (drop the `.web` suffix). |
 | `types.ts` | Copy, but remove `import type { ColorValue, ImageSourcePropType } from 'react-native'` and alias both to `string`. |
 | `ToastProvider.tsx` (native), `ToastViewNativeComponent.ts`, `ios/`, `android/` | **Do not copy** — React Native only, no Windows runtime. |
+
+### Morph pill source (added 2026-06-01)
+
+pretty-toast's `WebToastView` is a **toast** — fixed position, no expand/collapse. A Dynamic
+Island needs the Framer-Motion `layout` **morph** (the black pill auto-resizing between
+compact and expanded). Two local demos provide exactly that:
+
+- **`UI_EXTERNAL_Helpers/components/dynamic-island.tsx`** — the original the current Marvex
+  island was derived from. Rich morph: `motion/react` `layout` pill + spring `BOUNCE_VARIANTS`
+  keyed per transition + enter blur/scale. **This is the vendored morph shell**, stripped of
+  its demo views (weather/call/timer/notification/music) and the debug toolbar.
+- **`temp/dynamic-island-web-main/src/components/DynanmicIsland/DynamicIsland.tsx`** — a
+  Next.js web clone. Reference only: borrow its `transformOrigin: top` / `originY: 0` anchor
+  so the pill grows downward from the top-center notch.
+
+Division of labor: **morph pill shell** ← `UI_EXTERNAL_Helpers` (vendored, stripped);
+**card/queue/swipe lifecycle** ← pretty-toast web subset. framer-motion + lucide + Tailwind
+are already Marvex dependencies, so no new runtime deps.
 
 ## 2. Architecture
 
@@ -51,7 +69,8 @@ apps/shell/src/components/pretty-toast/        ← VENDORED (copied)
 
 apps/shell/src/components/dynamic-island/      ← Marvex, built on top
   geometry.generated.ts    (emitted by Python; DO NOT hand-edit)
-  DynamicIsland.tsx         (morphing pill: idle ⇄ expanded)
+  DynamicIsland.tsx         (VENDORED morph shell from UI_EXTERNAL_Helpers, stripped of
+                             demo views + toolbar; idle ⇄ expanded via framer-motion layout)
   IslandWaveform.tsx        (wraps existing MarvexWaveform; compact vs expanded dims)
   cards/ApprovalCard.tsx    (Approve / Deny, wired to control plane)
   cards/InfoCard.tsx        (welcome / transient info)
