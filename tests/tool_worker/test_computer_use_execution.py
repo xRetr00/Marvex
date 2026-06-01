@@ -68,6 +68,8 @@ def test_approved_desktop_computer_action_uses_policy_gated_adapter() -> None:
     assert result.result.safe_result["adapter"] == "windows-desktop-computer-use"
     assert result.result.safe_result["ufo_external_process"] == "operator_configured"
     assert result.result.safe_result["omniparser_external_process"] == "operator_configured"
+    assert result.result.safe_result["credential_entry_allowed"] is False
+    assert result.result.safe_result["arbitrary_desktop_control_allowed"] is False
     assert result.result.safe_result["raw_screen_persisted"] is False
 
 
