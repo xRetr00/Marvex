@@ -25,6 +25,7 @@ class TraceStage(str, Enum):
     PROVIDER_RESPONSE_RECEIVED = "provider_response_received"
     FINAL_RESPONSE_CREATED = "final_response_created"
     TURN_COMPLETED = "turn_completed"
+    TURN_AWAITING_APPROVAL = "turn_awaiting_approval"
     TURN_FAILED = "turn_failed"
 
 

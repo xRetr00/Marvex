@@ -2868,13 +2868,35 @@ def _with_loop_metadata(
             completed_data["approval_request_id"] = approval_request_id
         if isinstance(decision, str) and decision:
             completed_data["approval_status"] = decision
+    # A turn paused for human approval is NOT a failure: it is a normal gate
+    # (browser/desktop automation, risky tools). Emitting it as TURN_FAILED at
+    # WARNING made every approval-gated op look broken in the logs/UI even though
+    # it succeeds on approve. Give it its own non-failure stage at INFO.
+    if loop.stop_reason == "finalized":
+        completed_stage, completed_level, completed_message = (
+            TraceStage.TURN_COMPLETED,
+            TraceLevel.INFO,
+            "Core agentic turn finalized.",
+        )
+    elif loop.stop_reason == "waiting_for_human_approval":
+        completed_stage, completed_level, completed_message = (
+            TraceStage.TURN_AWAITING_APPROVAL,
+            TraceLevel.INFO,
+            "Core agentic turn awaiting human approval.",
+        )
+    else:
+        completed_stage, completed_level, completed_message = (
+            TraceStage.TURN_FAILED,
+            TraceLevel.WARNING,
+            "Core agentic turn finalized.",
+        )
     _emit_core_event(
         trace_reader,
         turn_input,
-        TraceStage.TURN_COMPLETED if loop.stop_reason == "finalized" else TraceStage.TURN_FAILED,
-        "Core agentic turn finalized.",
+        completed_stage,
+        completed_message,
         completed_data,
-        level=TraceLevel.INFO if loop.stop_reason == "finalized" else TraceLevel.WARNING,
+        level=completed_level,
     )
     _persist_trace_events(
         getattr(trace_reader, "_marvex_persistent_trace_store", None),

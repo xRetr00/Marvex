@@ -83,6 +83,29 @@ def _frames_rms(frames: tuple[Any, ...]) -> float:
     return math.sqrt(total_sq / count)
 
 
+def _adaptive_energy_floor(
+    ambient_rms: float | None,
+    *,
+    base_floor: float,
+    multiplier: float = 1.8,
+    min_floor: float = 350.0,
+) -> float:
+    """Speech RMS threshold relative to the measured ambient noise floor.
+
+    Hardcoded absolutes (the old 1200) silently break low-gain microphones:
+    field logs had speech >1500, but a quieter mic sits at ambient ~490 / speech
+    ~700-1000, so a 1200 floor reads every utterance as silence. Deriving the
+    floor from the live ambient RMS tracks the mic instead of a magic number:
+    high above ambient (so background noise is not speech) but low enough that
+    real speech crosses it on any gain. Falls back to ``base_floor`` when no
+    ambient estimate is available yet.
+    """
+
+    if ambient_rms and ambient_rms > 0:
+        return max(min_floor, ambient_rms * multiplier)
+    return base_floor
+
+
 class VoiceWorkerController:
     def __init__(
         self,
@@ -199,7 +222,12 @@ class VoiceWorkerController:
             self._record(VoiceWorkerEventType.ERROR, trace_id=self._error.trace_id, summary=tick.safe_projection())
         return tick
 
-    def _resolve_vad_decider(self) -> "Callable[[Any], bool]":
+    def _resolve_vad_decider(
+        self,
+        *,
+        ambient_rms: float | None = None,
+        stats: "dict[str, float] | None" = None,
+    ) -> "Callable[[Any], bool]":
         """Return an is-speech decider for a single frame.
 
         Uses the configured VAD backend (silero primary, webrtc fallback). A
@@ -207,6 +235,12 @@ class VoiceWorkerController:
         Moonshine STT has no internal padding/long-form chunking like Whisper -
         it expects a trimmed utterance - so VAD endpointing here is what makes
         moonshine-v2 transcribe correctly rather than choking on silence.
+
+        ``ambient_rms`` (measured live by the wake loop) makes the RMS energy
+        fallback adaptive instead of a hardcoded absolute, so low-gain mics work.
+        ``stats`` (if given) is populated with the energy floor used and the
+        per-path hit counts + max RMS observed, so post-wake diagnostics can show
+        exactly why a capture did/didn't endpoint.
         """
 
         injected = getattr(self, "_vad_decider", None)
@@ -223,20 +257,34 @@ class VoiceWorkerController:
         # frame ALWAYS reads as silence (this is why post-wake capture returned
         # no_speech while the user was clearly speaking). webrtc likewise needs
         # exact 10/20/30ms frames. A ~500ms window satisfies both. RMS energy is
-        # an OR fallback because it reliably separates speech here (ambient RMS
-        # ~200-650 vs speech >1500 in the field logs) and never errors.
+        # an OR fallback; the floor is derived from the live ambient RMS so it
+        # tracks the mic (ambient ~490 / speech ~800 on a quiet mic) instead of a
+        # magic 1200 that silently breaks low-gain inputs.
         window: deque[Any] = deque(maxlen=5)
-        energy_floor = float(getattr(self.config.vad, "speech_rms_floor", 0.0) or 1200.0)
+        base_floor = float(getattr(self.config.vad, "speech_rms_floor", 0.0) or 700.0)
+        energy_floor = _adaptive_energy_floor(ambient_rms, base_floor=base_floor)
+        if stats is not None:
+            stats["energy_floor"] = round(energy_floor, 1)
+            stats["ambient_rms"] = round(float(ambient_rms or 0.0), 1)
 
         def decide(frame: Any) -> bool:
             window.append(frame)
             frames = tuple(window)
+            rms = _frames_rms(frames)
+            if stats is not None and rms > stats.get("max_window_rms", 0.0):
+                stats["max_window_rms"] = round(rms, 1)
             try:
                 if bool(adapter.decide(frames).is_speech):
+                    if stats is not None:
+                        stats["silero_hits"] = stats.get("silero_hits", 0.0) + 1
                     return True
             except Exception:
                 pass
-            return _frames_rms(frames) >= energy_floor
+            if rms >= energy_floor:
+                if stats is not None:
+                    stats["energy_hits"] = stats.get("energy_hits", 0.0) + 1
+                return True
+            return False
 
         return decide
 
@@ -324,6 +372,7 @@ class VoiceWorkerController:
         parent_trace_id: str,
         read_frame: "Callable[[], Any] | None" = None,
         on_diagnostic: "Callable[[dict[str, object]], None] | None" = None,
+        ambient_rms: float | None = None,
     ) -> None:
         """VAD-endpoint a user utterance after wake and run STT on it.
 
@@ -346,10 +395,15 @@ class VoiceWorkerController:
                     pass
 
         try:
-            _diag({"event": "post_wake_capture", "stage": "listening"})
-            vad_decider = self._resolve_vad_decider()
+            _diag({"event": "post_wake_capture", "stage": "listening", "ambient_rms": round(float(ambient_rms or 0.0), 1)})
+            vad_stats: dict[str, float] = {}
+            vad_decider = self._resolve_vad_decider(ambient_rms=ambient_rms, stats=vad_stats)
             frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame)
-            _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames)})
+            # Decisive endpoint diagnostic: the captured frame count, the reason,
+            # the energy floor used, the max RMS the VAD actually saw, and which
+            # path (silero vs energy) carried detection. With this, a no_speech on
+            # a clearly-spoken utterance tells us exactly where the gate failed.
+            _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames), **vad_stats})
             if not frames or reason == "no_speech":
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
@@ -479,6 +533,9 @@ class VoiceWorkerController:
         last_reason_code: str | None = None
         last_rms = 0.0
         max_rms_window = 0.0
+        # Live ambient-noise estimate (EMA of quiet decodes), used to make the
+        # post-wake VAD energy floor + the batch-probe gate adaptive to the mic.
+        ambient_ema = 0.0
         # Rolling buffer of recent frames (~6s) for the batch self-probe below.
         recent_frames: deque[Any] = deque(maxlen=max(2 * max(1, frames_per_decode), 60))
         probes_done = 0
@@ -534,6 +591,12 @@ class VoiceWorkerController:
                 # not matching" (RMS healthy, confidence still 0).
                 last_rms = _frames_rms(frames)
                 max_rms_window = max(max_rms_window, last_rms)
+                # Track ambient as a slow EMA, but only fold in quiet decodes so
+                # speech spikes don't inflate the noise floor. Seed on first read.
+                if ambient_ema <= 0.0:
+                    ambient_ema = last_rms
+                elif last_rms < ambient_ema * 1.5:
+                    ambient_ema = 0.9 * ambient_ema + 0.1 * last_rms
                 recent_frames.extend(frames)
                 # Detection + command capture mutate worker state + the KWS
                 # session, so take the lock only around that brief work.
@@ -579,7 +642,7 @@ class VoiceWorkerController:
                         )
                         # Capture the command from the SAME continuous stream.
                         self._run_post_wake_capture(
-                            parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic
+                            parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic, ambient_rms=ambient_ema
                         )
                         batch = []
                     elif decode_count % max(1, diagnostic_interval_decodes) == 0:
@@ -601,10 +664,15 @@ class VoiceWorkerController:
                         # detected-here-but-not-live => the persistent-stream feed
                         # is the bug; not-detected-either => audio content/format.
                         probe = getattr(self.backend_runtime, "probe_wakeword", None)
+                        # Adaptive probe gate: fire the recovery probe when this
+                        # decode window rose meaningfully above the live ambient
+                        # floor, instead of a hardcoded 800 that a low-gain mic
+                        # (ambient ~490 / peak ~550) never reaches.
+                        probe_gate = max(450.0, ambient_ema * 1.4)
                         if (
                             callable(probe)
                             and detections == 0
-                            and max_rms_window >= 800.0
+                            and max_rms_window >= probe_gate
                             and probes_done < 5
                             and len(recent_frames) >= max(1, frames_per_decode)
                         ):
@@ -642,7 +710,7 @@ class VoiceWorkerController:
                                 )
                                 _emit({"event": "wake_listen_detected", "via": "batch_probe", "detections": detections})
                                 self._run_post_wake_capture(
-                                    parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic
+                                    parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic, ambient_rms=ambient_ema
                                 )
                                 batch = []
                         max_rms_window = 0.0
