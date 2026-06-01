@@ -26,7 +26,9 @@ body.marvex-overlay-document *::after {
   min-width: 0;
   min-height: 0;
   margin: 0;
-  padding: 8px;
+  /* No padding: the native window is clipped exactly to the pill so no window
+     surface is ever visible around it. Kept in sync with ISLAND_GEOMETRY.shadowPadding. */
+  padding: 0;
   display: block;
   background: transparent;
   background-color: transparent;
@@ -49,134 +51,10 @@ body.marvex-overlay-document *::after {
   box-shadow: none;
 }
 
-/* ── Dynamic Island pill ──────────────────────────────────────────────────── */
-
-.marvex-dynamic-island-pill {
+/* The morph pill itself is styled inline by the DynamicIsland component
+   (background, radius, shadow, padding come from geometry.generated.ts). This
+   base rule exists so the overlay stylesheet owns the class and the pill never
+   inherits a stray background from the document. */
+.marvex-island-pill {
   background: #060606;
-  border-radius: 30px;
-  /* Multi-layer shadow: tight contact shadow + diffused ambient glow */
-  box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.9),
-    0 4px 12px rgba(0, 0, 0, 0.7),
-    0 14px 38px rgba(0, 0, 0, 0.45),
-    /* Subtle warm inner-edge highlight to suggest the pill is floating */
-    inset 0 1px 0 rgba(255, 255, 255, 0.055),
-    inset 0 -1px 0 rgba(255, 255, 255, 0.018);
-}
-
-/* ── Island card ──────────────────────────────────────────────────────────── */
-
-.marvex-island-card {
-  width: 100%;
-  /* Remove fixed min-height; let content drive height naturally so approval
-     actions (3 buttons × ~30px + gaps = ~100px) never overflow the card. */
-  display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
-  /* Start icon + copy aligned to the top when approval actions are tall */
-  align-items: start;
-  gap: 12px;
-  padding: 4px 0;
-  color: #fff;
-  user-select: none;
-  touch-action: none;
-}
-
-.marvex-island-card-icon {
-  width: 42px;
-  height: 42px;
-  border-radius: 999px;
-  display: grid;
-  place-items: center;
-  flex-shrink: 0;
-  background: rgba(255, 224, 194, 0.10);
-  /* Subtle ring instead of a flat disc */
-  box-shadow: inset 0 0 0 1px rgba(255, 224, 194, 0.18);
-  color: #ffe0c2;
-  font-weight: 800;
-  font-size: 15px;
-}
-
-.marvex-island-card-copy {
-  min-width: 0;
-  padding-top: 2px;
-}
-
-.marvex-island-card-title {
-  font-size: 13px;
-  line-height: 18px;
-  font-weight: 650;
-  letter-spacing: -0.01em;
-}
-
-.marvex-island-card-body {
-  margin-top: 3px;
-  font-size: 11.5px;
-  line-height: 15px;
-  color: rgba(255, 255, 255, 0.55);
-  overflow-wrap: anywhere;
-}
-
-/* ── Card action buttons ──────────────────────────────────────────────────── */
-
-.marvex-island-card-action,
-.marvex-island-approval-actions button {
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.10);
-  color: #ffe0c2;
-  padding: 5px 11px;
-  font-size: 11px;
-  font-weight: 650;
-  letter-spacing: 0.01em;
-  cursor: pointer;
-  transition: background 0.15s ease, opacity 0.15s ease;
-  white-space: nowrap;
-}
-
-.marvex-island-card-action:hover,
-.marvex-island-approval-actions button:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-
-.marvex-island-card-action:active,
-.marvex-island-approval-actions button:active {
-  background: rgba(255, 255, 255, 0.20);
-}
-
-.marvex-island-card-action:disabled,
-.marvex-island-approval-actions button:disabled {
-  opacity: 0.38;
-  cursor: not-allowed;
-}
-
-/* Approval action column — row layout so buttons sit beside the copy, not
-   below it, and the card height stays bounded. */
-.marvex-island-approval-actions {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  align-self: center;
-}
-
-/* Approve button gets a soft green tint to distinguish it. */
-.marvex-island-approval-actions button:first-child {
-  background: rgba(52, 199, 89, 0.14);
-  box-shadow: inset 0 0 0 1px rgba(52, 199, 89, 0.22);
-  color: #7afca0;
-}
-
-.marvex-island-approval-actions button:first-child:hover {
-  background: rgba(52, 199, 89, 0.22);
-}
-
-/* Deny button gets a subtle red tint. */
-.marvex-island-approval-actions button:nth-child(2) {
-  background: rgba(229, 77, 46, 0.13);
-  box-shadow: inset 0 0 0 1px rgba(229, 77, 46, 0.20);
-  color: #ff9a87;
-}
-
-.marvex-island-approval-actions button:nth-child(2):hover {
-  background: rgba(229, 77, 46, 0.22);
 }
