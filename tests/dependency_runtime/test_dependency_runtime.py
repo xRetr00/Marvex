@@ -71,6 +71,8 @@ def test_detect_all_returns_all_groups() -> None:
     assert "wakeword" in ids
     assert "web_search" in ids
     assert "browser" in ids
+    assert "mcp" in ids
+    assert "computer_use" in ids
     assert "embeddings" in ids
 
 
@@ -82,6 +84,8 @@ def test_detect_features_all_false_when_no_deps() -> None:
     assert features.wakeword is False
     assert features.web_search is False
     assert features.browser is False
+    assert features.mcp is False
+    assert features.computer_use is False
     assert features.embeddings is False
 
 
@@ -93,6 +97,24 @@ def test_detect_features_web_search_true_when_ddgs_present() -> None:
         features = detect_features()
     assert features.web_search is True
     assert features.tts is False
+
+
+def test_browser_dep_group_requires_browser_use_and_playwright() -> None:
+    def _fake_find_spec(name: str):
+        return object() if name == "playwright" else None
+
+    browser_group = next(group for group in DEP_GROUPS if group.id == "browser")
+    with patch("importlib.util.find_spec", side_effect=_fake_find_spec):
+        info = detect_dep(browser_group)
+
+    assert info.installed is False
+
+
+def test_mcp_and_computer_use_dep_groups_have_install_specs() -> None:
+    groups = {group.id: group for group in DEP_GROUPS}
+
+    assert groups["mcp"].install_specs == ("mcp",)
+    assert groups["computer_use"].install_specs == ("mcp", "uiautomation")
 
 
 # ---------------------------------------------------------------------------

@@ -1,6 +1,6 @@
 """Dependency + feature detection for runtime-downloadable heavy deps.
 
-Each heavy dep group (tts, stt, wakeword, browser, embeddings) is checked
+Each heavy dep group (tts, stt, wakeword, browser, mcp, computer_use, embeddings) is checked
 with importlib.util.find_spec (no import attempted) plus optional model-file
 presence.  Features degrade gracefully: missing dep → feature disabled.
 No network, no pip, no side-effects in this module.
@@ -48,6 +48,8 @@ class DepGroup(BaseModel):
     model_paths: tuple[str, ...] = ()
     # pip-installable specifier(s) for runtime install (may differ from import name)
     install_specs: tuple[str, ...] = ()
+    # Some features need every listed import, while others are alternatives.
+    require_all_packages: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +91,22 @@ DEP_GROUPS: tuple[DepGroup, ...] = (
         feature="browser",
         packages=("playwright", "browser_use"),
         install_specs=("playwright", "browser-use"),
+        require_all_packages=True,
+    ),
+    DepGroup(
+        id="mcp",
+        label="MCP Python SDK",
+        feature="mcp",
+        packages=("mcp",),
+        install_specs=("mcp",),
+    ),
+    DepGroup(
+        id="computer_use",
+        label="Windows computer use",
+        feature="computer_use",
+        packages=("mcp", "uiautomation"),
+        install_specs=("mcp", "uiautomation"),
+        require_all_packages=True,
     ),
     DepGroup(
         id="embeddings",
@@ -110,6 +128,8 @@ class FeatureAvailability(BaseModel):
     wakeword: bool = False
     web_search: bool = False
     browser: bool = False
+    mcp: bool = False
+    computer_use: bool = False
     embeddings: bool = False
 
 
@@ -133,7 +153,8 @@ def _model_files_present(group: DepGroup) -> bool:
 
 def detect_dep(group: DepGroup) -> DepInfo:
     """Check whether a single dep group is installed (no import, no network)."""
-    pkg_ok = any(_spec_present(pkg) for pkg in group.packages)
+    package_results = tuple(_spec_present(pkg) for pkg in group.packages)
+    pkg_ok = all(package_results) if group.require_all_packages else any(package_results)
     models_ok = _model_files_present(group)
     installed = pkg_ok and models_ok
     return DepInfo(
@@ -159,5 +180,7 @@ def detect_features() -> FeatureAvailability:
         wakeword=infos.get("wakeword", False),
         web_search=infos.get("web_search", False),
         browser=infos.get("browser", False),
+        mcp=infos.get("mcp", False),
+        computer_use=infos.get("computer_use", False),
         embeddings=infos.get("embeddings", False),
     )
