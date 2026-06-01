@@ -31,6 +31,7 @@ use tauri::{
     WindowEvent,
 };
 use tauri_plugin_autostart::ManagerExt as AutostartManagerExt;
+use tokio::sync::oneshot;
 
 #[derive(Clone, Serialize)]
 struct ShellRuntimeConfig {
@@ -43,6 +44,7 @@ struct ShellRuntimeConfig {
 struct ShellState {
     token: String,
     supervisor: Supervisor,
+    active_chat_cancel: Option<oneshot::Sender<()>>,
 }
 
 const TRAY_ICON_BYTES: &[u8] = include_bytes!(concat!(
@@ -236,11 +238,13 @@ async fn submit_chat_turn_stream(
     if text.is_empty() {
         return Err("chat text must be non-empty".to_string());
     }
-    let (token, session_id) = {
-        let guard = state
+    let (token, session_id, mut cancel_rx) = {
+        let mut guard = state
             .lock()
             .map_err(|_| "shell state unavailable".to_string())?;
-        (guard.token.clone(), session_id_from_metadata(&metadata))
+        let (cancel_tx, cancel_rx) = oneshot::channel();
+        guard.active_chat_cancel = Some(cancel_tx);
+        (guard.token.clone(), session_id_from_metadata(&metadata), cancel_rx)
     };
     let now = monotonic_id();
     let trace_id = format!("trace-shell-chat-{now}");
@@ -272,23 +276,33 @@ async fn submit_chat_turn_stream(
         "provider_options": {}
     });
 
-    let mut response = http::open_post_stream(
-        "127.0.0.1",
-        8765,
-        "/v1/turns/stream",
-        Some(&token),
-        &body,
-        http::TURN_HTTP_TIMEOUT,
-    )
-    .await?;
+    let mut response = tokio::select! {
+        result = http::open_post_stream(
+            "127.0.0.1",
+            8765,
+            "/v1/turns/stream",
+            Some(&token),
+            &body,
+            http::TURN_HTTP_TIMEOUT,
+        ) => result?,
+        _ = &mut cancel_rx => {
+            clear_active_chat_cancel(&state);
+            let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
+            return Err("chat turn cancelled".to_string());
+        }
+    };
 
     let mut buffer = String::new();
     let mut final_result: Option<Value> = None;
     loop {
-        let chunk = response
-            .chunk()
-            .await
-            .map_err(|err| format!("stream read failed: {err}"))?;
+        let chunk = tokio::select! {
+            result = response.chunk() => result.map_err(|err| format!("stream read failed: {err}"))?,
+            _ = &mut cancel_rx => {
+                clear_active_chat_cancel(&state);
+                let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
+                return Err("chat turn cancelled".to_string());
+            }
+        };
         let Some(bytes) = chunk else { break };
         buffer.push_str(&String::from_utf8_lossy(&bytes));
         while let Some(idx) = buffer.find("\n\n") {
@@ -306,7 +320,30 @@ async fn submit_chat_turn_stream(
         }
     }
 
+    clear_active_chat_cancel(&state);
     final_result.ok_or_else(|| "stream ended without a final result".to_string())
+}
+
+fn clear_active_chat_cancel(state: &tauri::State<'_, Mutex<ShellState>>) {
+    if let Ok(mut guard) = state.lock() {
+        guard.active_chat_cancel = None;
+    }
+}
+
+#[tauri::command]
+fn cancel_active_chat_turn(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
+    let sender = {
+        let mut guard = state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?;
+        guard.active_chat_cancel.take()
+    };
+    if let Some(sender) = sender {
+        let _ = sender.send(());
+        Ok(json!({"schema_version": "1", "cancel_requested": true}))
+    } else {
+        Ok(json!({"schema_version": "1", "cancel_requested": false}))
+    }
 }
 
 fn session_id_from_metadata(metadata: &Option<Value>) -> String {
@@ -746,6 +783,7 @@ pub fn run() {
             gui_health,
             submit_chat_turn,
             submit_chat_turn_stream,
+            cancel_active_chat_turn,
             resume_approval_turn,
             create_chat_session,
             list_chat_sessions,
@@ -789,7 +827,7 @@ pub fn run() {
                 token.clone(),
                 supervisor.shutdown_flag(),
             );
-            app.manage(Mutex::new(ShellState { token, supervisor }));
+            app.manage(Mutex::new(ShellState { token, supervisor, active_chat_cancel: None }));
             build_tray(app.handle())?;
             #[cfg(target_os = "windows")]
             {
