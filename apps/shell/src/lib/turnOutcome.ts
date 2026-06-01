@@ -1,4 +1,4 @@
-import { stagesFromTurnResult, uiDirectivesFromTurnResult, type TurnStage, type UiDirective } from "./localTurn";
+import { citationsFromTurnResult, stagesFromTurnResult, uiDirectivesFromTurnResult, type CitationRef, type TurnStage, type UiDirective } from "./localTurn";
 
 export type TurnOutcomeKind =
   | "ok"
@@ -13,6 +13,7 @@ export interface TurnOutcome {
   text: string;
   stages?: TurnStage[];
   directives?: UiDirective[];
+  citations?: CitationRef[];
 }
 
 function lower(value: unknown): string {
@@ -22,6 +23,9 @@ function lower(value: unknown): string {
 export function outcomeFromError(error: unknown): TurnOutcome {
   const message = error instanceof Error ? error.message : String(error);
   const m = message.toLowerCase();
+  if (m.includes("chat turn cancelled") || m.includes("user_cancelled")) {
+    return { kind: "empty", text: "" };
+  }
   if (
     m.includes("connection refused") ||
     m.includes("connect") ||
@@ -49,6 +53,7 @@ export function outcomeFromTurnResult(payload: unknown): TurnOutcome {
       text,
       stages: stagesFromTurnResult(payload),
       directives: uiDirectivesFromTurnResult(payload),
+      citations: citationsFromTurnResult(payload),
     };
   }
   const errMsg = result.error?.message;

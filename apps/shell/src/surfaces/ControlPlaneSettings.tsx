@@ -44,6 +44,7 @@ export function ControlPlaneSettings() {
   const [connectionUrlDraft, setConnectionUrlDraft] = useState("");
   const [providerModeDraft, setProviderModeDraft] = useState("native");
   const [automationModelDraft, setAutomationModelDraft] = useState("");
+  const [multiModelDraft, setMultiModelDraft] = useState("");
   const [automationSupportsVision, setAutomationSupportsVision] = useState(false);
   const [automationVisionRequired, setAutomationVisionRequired] = useState(false);
   const [showKeyDraft, setShowKeyDraft] = useState(false);
@@ -86,6 +87,7 @@ export function ControlPlaneSettings() {
     setConnectionUrlDraft(activeProvider.base_url ?? "");
     setProviderModeDraft(activeProvider.provider_mode ?? "native");
     setAutomationModelDraft(activeProvider.automation_model || activeProvider.active_model || "");
+    setMultiModelDraft((activeProvider.models ?? []).find((model) => !(activeProvider.multi_models ?? []).includes(model)) ?? activeProvider.models?.[0] ?? "");
     setAutomationSupportsVision(Boolean(activeProvider.automation_model_capabilities?.vision));
     setAutomationVisionRequired(Boolean(activeProvider.automation_policy?.vision_required));
   }, [activeProvider?.provider_id]);
@@ -134,12 +136,16 @@ export function ControlPlaneSettings() {
       visionRequired: automationVisionRequired,
     }));
   };
-  const onToggleMultiModel = (model: string, enabled: boolean) => {
-    if (!activeProvider) return;
+  const onAddMultiModel = () => {
+    if (!activeProvider || !multiModelDraft) return;
     const current = new Set(activeProvider.multi_models ?? []);
-    if (enabled) current.add(model);
-    else current.delete(model);
+    current.add(multiModelDraft);
     void run("multi models", () => selectProviderMultiModels(activeProvider.provider_id, [...current]));
+  };
+  const onRemoveMultiModel = (model: string) => {
+    if (!activeProvider) return;
+    const next = (activeProvider.multi_models ?? []).filter((item) => item !== model);
+    void run("multi models", () => selectProviderMultiModels(activeProvider.provider_id, next));
   };
   const onSaveKey = () => {
     if (!activeProvider || !keyDraft.trim()) return;
@@ -172,7 +178,7 @@ export function ControlPlaneSettings() {
       {error && <div style={notice}>{error}</div>}
 
       <section style={grid2}>
-        <Panel icon={<Server size={16} />} title="Providers / Models">
+        <Panel icon={<Server size={16} />} title="Provider stack">
           <label style={field}>
             <span>Active provider</span>
             <select aria-label="Active provider" value={providers?.active_provider_id ?? ""} onChange={(event) => onSelectProvider(event.target.value)} style={select}>
@@ -181,6 +187,7 @@ export function ControlPlaneSettings() {
               ))}
             </select>
           </label>
+          <strong style={subhead}>Model routing</strong>
           <div style={splitControls}>
             <label style={field}>
               <span>Active model</span>
@@ -195,13 +202,26 @@ export function ControlPlaneSettings() {
             <Button aria-label="Add model" size="sm" variant="outline" onClick={onAddModel} disabled={!modelDraft.trim() || Boolean(busy)}><Plus size={14} /></Button>
           </div>
           <div style={modelList}>
-            <strong style={subhead}>Multi models</strong>
-            {(activeProvider?.models ?? []).length === 0 ? <Muted>No models discovered yet.</Muted> : (activeProvider?.models ?? []).map((model) => (
-              <label key={model} style={checkRow}>
-                <input type="checkbox" checked={Boolean(activeProvider?.multi_models?.includes(model))} onChange={(event) => onToggleMultiModel(model, event.target.checked)} />
-                <span>{model}</span>
+            <div style={inlineField}>
+              <label style={field}>
+                <span>Multi models</span>
+                <select aria-label="Multi-model candidate" value={multiModelDraft} onChange={(event) => setMultiModelDraft(event.target.value)} style={select}>
+                  {(activeProvider?.models ?? []).map((model) => <option key={model} value={model}>{model}</option>)}
+                </select>
               </label>
-            ))}
+              <Button aria-label="Add multi-model" size="sm" variant="outline" onClick={onAddMultiModel} disabled={!activeProvider || !multiModelDraft || Boolean(busy)}><Plus size={14} /></Button>
+            </div>
+            {(activeProvider?.models ?? []).length === 0 ? <Muted>No models discovered yet.</Muted> : null}
+            <div style={selectedModels}>
+              {(activeProvider?.multi_models ?? []).length === 0 ? <Muted>No multi-models selected.</Muted> : (activeProvider?.multi_models ?? []).map((model) => (
+                <span key={model} style={selectedModelChip}>
+                  {model}
+                  <button type="button" aria-label={`Remove multi-model ${model}`} onClick={() => onRemoveMultiModel(model)} style={chipRemoveButton}>
+                    <Trash2 size={11} />
+                  </button>
+                </span>
+              ))}
+            </div>
           </div>
           <div style={providerRows}>
             {(providers?.providers ?? []).map((provider) => <ProviderTile key={provider.provider_id} provider={provider} active={provider.provider_id === providers?.active_provider_id} />)}
@@ -230,7 +250,7 @@ export function ControlPlaneSettings() {
       </section>
 
       <section style={grid2}>
-        <Panel icon={<Wrench size={16} />} title="Browser / Computer Model">
+        <Panel icon={<Wrench size={16} />} title="Automation readiness">
           <label style={field}>
             <span>Automation model</span>
             <select aria-label="Automation model" value={automationModelDraft} onChange={(event) => setAutomationModelDraft(event.target.value)} style={select}>
@@ -242,14 +262,8 @@ export function ControlPlaneSettings() {
             <input aria-label="Automation model id" value={automationModelDraft} onChange={(event) => setAutomationModelDraft(event.target.value)} placeholder="Model for browser/computer use" style={input} />
             <Button aria-label="Save automation model" size="sm" onClick={onSaveAutomationModel} disabled={!automationModelDraft.trim() || Boolean(busy)}><Save size={14} /></Button>
           </div>
-          <label style={checkRow}>
-            <input type="checkbox" checked={automationSupportsVision} onChange={(event) => setAutomationSupportsVision(event.target.checked)} />
-            <span>Selected automation model supports vision</span>
-          </label>
-          <label style={checkRow}>
-            <input type="checkbox" checked={automationVisionRequired} onChange={(event) => setAutomationVisionRequired(event.target.checked)} />
-            <span>Require vision for browser/computer tasks</span>
-          </label>
+          <ModelToggleRow label="Selected automation model supports vision" checked={automationSupportsVision} onChange={setAutomationSupportsVision} />
+          <ModelToggleRow label="Require vision for browser/computer tasks" checked={automationVisionRequired} onChange={setAutomationVisionRequired} />
           <Chip
             label={activeProvider?.automation_validation?.ready ? "automation ready" : activeProvider?.automation_validation?.reason_code ?? "automation not configured"}
             ok={Boolean(activeProvider?.automation_validation?.ready)}
@@ -334,10 +348,22 @@ export function ControlPlaneSettings() {
 function ProviderTile({ provider, active }: { provider: ProviderRow; active: boolean }) {
   return (
     <div style={{ ...tile, borderColor: active ? "var(--primary)" : "var(--border)" }}>
-      <strong>{provider.label ?? provider.provider_id}</strong>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <img alt="" src={`https://models.dev/logos/${provider.provider_id.split("_")[0]}.svg`} style={{ width: 16, height: 16, borderRadius: 999, filter: "invert(1)", opacity: 0.8 }} onError={(event) => { event.currentTarget.style.display = "none"; }} />
+        <strong style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{provider.label ?? provider.provider_id}</strong>
+      </div>
       <span>{provider.active_model || "no model"}</span>
       <Chip label={provider.healthy ? "healthy" : "check"} ok={Boolean(provider.healthy)} />
     </div>
+  );
+}
+
+function ModelToggleRow({ label, checked, onChange }: { label: string; checked: boolean; onChange: (checked: boolean) => void }) {
+  return (
+    <button type="button" aria-label={label} aria-pressed={checked} onClick={() => onChange(!checked)} style={{ ...toggleRow, borderColor: checked ? "color-mix(in srgb, var(--primary) 55%, var(--border))" : "var(--border)" }}>
+      <span style={{ ...toggleDot, background: checked ? "var(--primary)" : "transparent", borderColor: checked ? "var(--primary)" : "var(--muted-foreground)" }} />
+      <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{label}</span>
+    </button>
   );
 }
 
@@ -383,7 +409,7 @@ const input: React.CSSProperties = { height: 34, minWidth: 0, width: "100%", bor
 const splitControls: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "end" };
 const inlineField: React.CSSProperties = { display: "grid", gridTemplateColumns: "minmax(0, 1fr) auto", gap: 8, alignItems: "center", minWidth: 0 };
 const providerRows: React.CSSProperties = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 8 };
-const tile: React.CSSProperties = { display: "grid", gap: 5, borderRadius: 8, border: "1px solid var(--border)", padding: 10, background: "color-mix(in srgb, var(--card) 80%, transparent)", fontSize: 12, minWidth: 0 };
+const tile: React.CSSProperties = { display: "grid", gap: 7, borderRadius: 8, border: "1px solid var(--border)", padding: 10, background: "linear-gradient(180deg, color-mix(in srgb, var(--card) 88%, transparent), color-mix(in srgb, var(--secondary) 55%, transparent))", boxShadow: "var(--shadow-card)", fontSize: 12, minWidth: 0 };
 const secretState: React.CSSProperties = { display: "grid", gridTemplateColumns: "auto minmax(0, 1fr) auto", gap: 8, alignItems: "center", fontSize: 12 };
 const actions: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 8 };
 const chips: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6 };
@@ -393,6 +419,10 @@ const row: React.CSSProperties = { display: "flex", justifyContent: "space-betwe
 const rowStyleCompact: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12, minWidth: 0 };
 const miniTable: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12, minWidth: 0 };
 const modelList: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12 };
-const checkRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, minWidth: 0 };
+const selectedModels: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6, minWidth: 0 };
+const selectedModelChip: React.CSSProperties = { display: "inline-flex", alignItems: "center", gap: 6, maxWidth: "100%", border: "1px solid var(--border)", borderRadius: 999, background: "var(--secondary)", color: "var(--foreground)", padding: "4px 6px 4px 9px", fontSize: 11 };
+const chipRemoveButton: React.CSSProperties = { display: "grid", placeItems: "center", width: 18, height: 18, border: "1px solid var(--border)", borderRadius: 999, background: "var(--background)", color: "var(--muted-foreground)", cursor: "pointer" };
+const toggleRow: React.CSSProperties = { display: "grid", gridTemplateColumns: "14px minmax(0, 1fr)", alignItems: "center", gap: 8, minWidth: 0, borderRadius: 8, border: "1px solid var(--border)", background: "color-mix(in srgb, var(--secondary) 70%, transparent)", color: "var(--foreground)", padding: "7px 9px", fontSize: 12, textAlign: "left", cursor: "pointer" };
+const toggleDot: React.CSSProperties = { width: 10, height: 10, borderRadius: 999, border: "1px solid var(--muted-foreground)", boxShadow: "0 0 0 3px color-mix(in srgb, var(--primary) 10%, transparent)" };
 const subhead: React.CSSProperties = { fontSize: 12 };
 const notice: React.CSSProperties = { border: "1px solid var(--destructive)", color: "var(--destructive)", borderRadius: 8, padding: 10, fontSize: 12 };

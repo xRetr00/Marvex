@@ -19,6 +19,14 @@ export interface UiDirective {
   [key: string]: unknown;
 }
 
+export interface CitationRef {
+  id: string;
+  title?: string;
+  url?: string;
+  domain?: string;
+  snippet?: string;
+}
+
 /** Read backend UI directives from assistant_final_response.metadata.ui_directives. */
 export function uiDirectivesFromTurnResult(payload: unknown): UiDirective[] {
   if (!payload || typeof payload !== "object") return [];
@@ -46,4 +54,31 @@ export function stagesFromTurnResult(payload: unknown): TurnStage[] {
       return { stage_name: stage.stage_name, status: typeof stage.status === "string" ? stage.status : "completed" };
     })
     .filter((s): s is TurnStage => s !== null);
+}
+
+export function citationsFromTurnResult(payload: unknown): CitationRef[] {
+  if (!payload || typeof payload !== "object") return [];
+  const resultMetadata = (payload as { metadata?: unknown }).metadata;
+  const finalMetadata = (payload as { assistant_final_response?: { metadata?: unknown } }).assistant_final_response?.metadata;
+  const refs: CitationRef[] = [];
+  for (const metadata of [resultMetadata, finalMetadata]) {
+    if (!metadata || typeof metadata !== "object") continue;
+    const grounding = (metadata as { grounding?: unknown }).grounding;
+    const webRefs = grounding && typeof grounding === "object" ? (grounding as { evidence_refs?: unknown; web_evidence_refs?: unknown }).evidence_refs ?? (grounding as { web_evidence_refs?: unknown }).web_evidence_refs : undefined;
+    if (!Array.isArray(webRefs)) continue;
+    for (const entry of webRefs) {
+      if (!entry || typeof entry !== "object") continue;
+      const ref = entry as { evidence_id?: unknown; source_url?: unknown; url?: unknown; title?: unknown; domain?: unknown; snippet?: unknown };
+      const id = typeof ref.evidence_id === "string" ? ref.evidence_id : "";
+      if (!id) continue;
+      refs.push({
+        id,
+        url: typeof ref.source_url === "string" ? ref.source_url : typeof ref.url === "string" ? ref.url : undefined,
+        title: typeof ref.title === "string" ? ref.title : undefined,
+        domain: typeof ref.domain === "string" ? ref.domain : undefined,
+        snippet: typeof ref.snippet === "string" ? ref.snippet : undefined,
+      });
+    }
+  }
+  return Array.from(new Map(refs.map((ref) => [ref.id, ref])).values());
 }

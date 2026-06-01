@@ -10,6 +10,7 @@ export interface SessionMeta {
   updatedAt: number;
   title: string;
   lastProviderResponseId?: string;
+  tokenCount?: number;
 }
 
 const INDEX_KEY = "marvex.session.cache.index";
@@ -51,9 +52,30 @@ export function saveCachedMessages(id: string, messages: StoredMessage[]): void 
     id,
     title: firstUser ? firstUser.text.slice(0, 48) : "New chat",
     updatedAt: Date.now(),
+    tokenCount: estimateSessionTokens(messages),
   });
 }
 
 export function listCachedSessions(): SessionMeta[] {
   return readJson<SessionMeta[]>(INDEX_KEY, []).sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+export function renameCachedSession(id: string, title: string): void {
+  const cleaned = title.trim().slice(0, 80) || "New chat";
+  const next = listCachedSessions().map((item) => item.id === id ? { ...item, title: cleaned, updatedAt: Date.now() } : item);
+  writeJson(INDEX_KEY, next.sort((a, b) => b.updatedAt - a.updatedAt));
+}
+
+export function deleteCachedSession(id: string): void {
+  writeJson(INDEX_KEY, listCachedSessions().filter((item) => item.id !== id));
+  try {
+    localStorage.removeItem(MSG_PREFIX + id);
+  } catch {
+    /* optional cache */
+  }
+}
+
+export function estimateSessionTokens(messages: StoredMessage[]): number {
+  const chars = messages.reduce((sum, message) => sum + (message.text?.length ?? 0), 0);
+  return Math.max(0, Math.ceil(chars / 4));
 }
