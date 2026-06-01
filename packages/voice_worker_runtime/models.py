@@ -216,6 +216,12 @@ class VoiceWorkerStatus(VoiceRuntimeModel):
     mic_status: str = "stopped"
     playback_status: str = "stopped"
     wakeword_status: str = "disabled"
+    # Wake backend truth (so the UI/user can see local-wake is actually active):
+    # the backend the listen loop will use, the count of enrolled local-wake
+    # reference samples on disk, and whether the local-wake package is importable.
+    effective_wakeword_backend_id: str = ""
+    wake_reference_count: int = 0
+    local_wake_available: bool = False
     queued_tts_count: int = 0
     recent_events: tuple[VoiceWorkerEvent, ...] = ()
     error: VoiceWorkerErrorEnvelope | None = None
@@ -245,6 +251,9 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
     mic_status: str
     playback_status: str
     wakeword_status: str
+    effective_wakeword_backend_id: str = ""
+    wake_reference_count: int = 0
+    local_wake_available: bool = False
     queued_tts_count: int
     health: dict[str, object]
     recent_events: tuple[dict[str, object], ...] = ()
@@ -274,6 +283,9 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
             mic_status=status.mic_status,
             playback_status=status.playback_status,
             wakeword_status=status.wakeword_status,
+            effective_wakeword_backend_id=status.effective_wakeword_backend_id,
+            wake_reference_count=status.wake_reference_count,
+            local_wake_available=status.local_wake_available,
             queued_tts_count=status.queued_tts_count,
             health=VoiceWorkerHealth(
                 lifecycle_state=status.lifecycle_state,

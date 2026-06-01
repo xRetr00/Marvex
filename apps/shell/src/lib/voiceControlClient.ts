@@ -25,6 +25,9 @@ export type VoiceWorkerStatus = {
   active_tts_backend_id: string;
   active_voice_id: string;
   wakeword_status: string;
+  effective_wakeword_backend_id?: string;
+  wake_reference_count?: number;
+  local_wake_available?: boolean;
   model_assets?: {
     installed?: Array<Record<string, unknown>>;
     installed_count?: number;

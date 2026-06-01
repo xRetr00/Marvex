@@ -230,6 +230,18 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "backend",
         "via",
         "confidence",
+        # wake backend + adaptive-VAD post-wake diagnostics (docs: voice fixes):
+        # without these the "which wake backend / why did capture endpoint"
+        # signal is invisible because this sink drops unknown keys.
+        "backend_id",
+        "ambient_rms",
+        "energy_floor",
+        "max_window_rms",
+        "silero_hits",
+        "energy_hits",
+        "frame_count",
+        "endpoint_reason",
+        "reference_count",
     ):
         if key in payload:
             safe[key] = payload[key]

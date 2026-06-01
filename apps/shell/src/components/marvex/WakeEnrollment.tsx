@@ -5,8 +5,11 @@ import { recordWakeReference, fetchVoiceWorkerStatus, type VoiceWorkerStatus } f
 const TARGET_SAMPLES = 6;
 const PHRASE = "Hey Marvex";
 
-/** Pull the running reference count out of the worker's latest record event. */
+/** Authoritative on-disk reference count, falling back to the latest record event. */
 function referenceCountFromStatus(status: VoiceWorkerStatus | null): number | null {
+  if (status && typeof status.wake_reference_count === "number") {
+    return status.wake_reference_count;
+  }
   const events = status?.recent_events;
   if (!Array.isArray(events)) return null;
   for (let i = events.length - 1; i >= 0; i--) {
@@ -39,12 +42,16 @@ export function WakeEnrollment() {
   const [count, setCount] = useState<number>(0);
   const [recording, setRecording] = useState(false);
   const [message, setMessage] = useState<string>("");
+  const [backendId, setBackendId] = useState<string>("");
+  const [available, setAvailable] = useState<boolean | null>(null);
 
   const refresh = useCallback(async () => {
     try {
       const status = await fetchVoiceWorkerStatus();
       const c = referenceCountFromStatus(status);
       if (c !== null) setCount(c);
+      if (status.effective_wakeword_backend_id) setBackendId(status.effective_wakeword_backend_id);
+      if (typeof status.local_wake_available === "boolean") setAvailable(status.local_wake_available);
     } catch {
       /* worker not up yet */
     }
@@ -68,6 +75,8 @@ export function WakeEnrollment() {
         setMessage("Turn off the mic/wake listener first, then record.");
       } else {
         if (c !== null) setCount(c);
+        if (status.effective_wakeword_backend_id) setBackendId(status.effective_wakeword_backend_id);
+        if (typeof status.local_wake_available === "boolean") setAvailable(status.local_wake_available);
         setMessage("Saved ✓");
       }
     } catch (error) {
@@ -99,6 +108,13 @@ export function WakeEnrollment() {
         ))}
       </div>
       <div style={{ fontSize: 12, color: "var(--muted-foreground)" }}>{count} / {TARGET_SAMPLES} samples recorded</div>
+
+      <div style={{ fontSize: 11, color: "var(--muted-foreground)", display: "flex", alignItems: "center", gap: 6 }}>
+        <span style={{ width: 7, height: 7, borderRadius: 999, background: backendId === "local-wake" ? "#34d399" : "#f59e0b", flex: "0 0 auto" }} />
+        Wake backend: <strong style={{ color: "var(--foreground)" }}>{backendId || "…"}</strong>
+        {available === false && " — local-wake package unavailable"}
+        {backendId !== "local-wake" && count === 0 && " (records here switch it to local-wake)"}
+      </div>
 
       <button
         onClick={() => void record()}

@@ -148,6 +148,21 @@ class VoiceWorkerController:
 
     def status(self) -> VoiceWorkerStatus:
         self.asset_manager.discover_installed()
+        import importlib.util
+
+        from .wake_enrollment import list_wake_references, wake_reference_dir
+
+        effective_backend = self._effective_wake_backend_id()
+        try:
+            reference_count = len(
+                list_wake_references(
+                    wake_reference_dir(self.asset_manager.asset_root),
+                    phrase=self.config.wakeword.phrase,
+                )
+            )
+        except Exception:
+            reference_count = 0
+        local_wake_available = importlib.util.find_spec("lwake") is not None
         return VoiceWorkerStatus(
             worker_id=self.config.worker_id,
             lifecycle_state=self._state,
@@ -160,13 +175,16 @@ class VoiceWorkerController:
             mic_status="started" if self._state in {VoiceWorkerLifecycleState.RUNNING, VoiceWorkerLifecycleState.PAUSED} else "stopped",
             playback_status=self._playback_status,
             wakeword_status="enabled" if self.config.wakeword.enabled else "disabled",
+            effective_wakeword_backend_id=effective_backend,
+            wake_reference_count=reference_count,
+            local_wake_available=local_wake_available,
             queued_tts_count=self._queued_tts_count,
             recent_events=tuple(self._events[-20:]),
             error=self._error,
             model_assets=self.asset_manager.registry(),
             stt_backend_status=self.backend_runtime.stt_status(self.config.active_stt_backend_id),
             tts_backend_status=self.backend_runtime.tts_status(self.config.active_tts_backend_id, self.config.active_voice_id),
-            wakeword_model_status=self.backend_runtime.wakeword_status(self.config.wakeword.backend_id),
+            wakeword_model_status=self.backend_runtime.wakeword_status(effective_backend),
             wakeword_supervisor_status=self.wakeword_supervisor.health().safe_projection(),
             telemetry=self._telemetry_summary(),
             telemetry_summary=self._telemetry_summary(),
