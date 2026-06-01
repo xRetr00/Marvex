@@ -4,6 +4,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from packages.mcp_runtime import InstalledMcpServerConfig, McpServerPackageSpec, McpServerTransportConfig
 from packages.skills_runtime import SkillManifest, SkillValidationResult
 
 _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_/")
@@ -17,6 +18,7 @@ _POLICY_OVERRIDE_MARKERS = (
     "system prompt",
 )
 _DANGEROUS_TOOL_PARTS = ("bash", "browser", "command", "desktop", "file", "filesystem", "fs", "http", "network", "powershell", "shell", "terminal", "url")
+_APPROVED_RUNTIME_DEP_GROUP_IDS = frozenset({"browser", "mcp", "computer_use", "web_search"})
 
 MarketplaceSubjectKind = Literal["mcp_server", "skill", "capability", "tool", "provider", "policy"]
 MarketplaceSource = Literal["official_registry", "approved_local", "manual_fixture"]
@@ -59,8 +61,14 @@ class McpMarketplaceEntry(MarketplaceModel):
     tool_summaries: tuple[McpRegistryToolSummary, ...] = ()
     transport_summaries: tuple[str, ...] = ()
     install_command: None = None
+    required_dep_group_id: str | None = None
+    package_registry_type: Literal["pypi", "npm", "oci", "local", "none"] = "none"
+    package_identifier: str | None = None
+    package_version: str | None = None
+    remote_url: str | None = None
+    remote_transport: Literal["streamable_http", "sse"] | None = None
     read_only_browse: Literal[True] = True
-    install_allowed: Literal[False] = False
+    install_allowed: bool = False
     launch_allowed: Literal[False] = False
     auto_execution_allowed: Literal[False] = False
     raw_registry_payload_persisted: Literal[False] = False
@@ -80,6 +88,21 @@ class McpMarketplaceEntry(MarketplaceModel):
         _reject_unsafe_text(value)
         return value
 
+    @field_validator("required_dep_group_id")
+    @classmethod
+    def _validate_required_dep_group_id(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        if value not in _APPROVED_RUNTIME_DEP_GROUP_IDS:
+            raise ValueError("required_dep_group_id must reference an approved runtime dep group")
+        return value
+
+    @model_validator(mode="after")
+    def _validate_install_policy(self) -> McpMarketplaceEntry:
+        if self.install_allowed and self.required_dep_group_id is None:
+            raise ValueError("install_allowed requires an approved runtime dep group")
+        return self
+
     def safe_projection(self) -> dict[str, object]:
         return {
             "server_id": self.server_id,
@@ -88,11 +111,41 @@ class McpMarketplaceEntry(MarketplaceModel):
             "tool_count": len(self.tool_summaries),
             "transport_count": len(self.transport_summaries),
             "read_only_browse": True,
-            "install_allowed": False,
+            "install_allowed": self.required_dep_group_id is not None,
+            "required_dep_group_id": self.required_dep_group_id,
+            "package_registry_type": self.package_registry_type,
+            "package_identifier": self.package_identifier,
+            "package_version": self.package_version,
+            "remote_transport": self.remote_transport,
             "launch_allowed": False,
             "auto_execution_allowed": False,
             "raw_registry_payload_persisted": False,
         }
+
+    def to_installed_config(self) -> InstalledMcpServerConfig:
+        if self.remote_url and self.remote_transport is not None:
+            transport = McpServerTransportConfig(type=self.remote_transport, url=self.remote_url)
+        elif self.package_identifier and self.package_registry_type == "pypi":
+            spec = self.package_identifier if self.package_version is None else f"{self.package_identifier}=={self.package_version}"
+            transport = McpServerTransportConfig(type="stdio", command="uvx", args=(spec,))
+        elif self.package_identifier and self.package_registry_type == "npm":
+            spec = self.package_identifier if self.package_version is None else f"{self.package_identifier}@{self.package_version}"
+            transport = McpServerTransportConfig(type="stdio", command="npx", args=("-y", spec))
+        else:
+            transport = McpServerTransportConfig(type="stdio", command="python", args=("-m", "mcp"))
+        return InstalledMcpServerConfig(
+            server_id=self.server_id,
+            display_name=self.display_name,
+            source="official_registry" if self.registry_name == "official_mcp_registry" else "approved_local",
+            transport=transport,
+            package=McpServerPackageSpec(
+                registry_type=self.package_registry_type,
+                identifier=self.package_identifier or "none",
+                version=self.package_version,
+            ),
+            allowed_tool_names=tuple(tool.name for tool in self.tool_summaries),
+            enabled=True,
+        )
 
 
 class MarketplaceValidationResult(MarketplaceModel):
@@ -330,7 +383,9 @@ def validate_mcp_server_manifest(entry: McpMarketplaceEntry) -> MarketplaceValid
     for tool in entry.tool_summaries:
         if _dangerous_tool_name(tool.name):
             reasons.append("blocked_dangerous_tool_name")
-    if entry.install_allowed or entry.launch_allowed or entry.auto_execution_allowed:
+    if entry.install_allowed and entry.required_dep_group_id is None:
+        reasons.append("unsafe_execution_allowed")
+    if entry.launch_allowed or entry.auto_execution_allowed:
         reasons.append("unsafe_execution_allowed")
     return MarketplaceValidationResult(
         schema_version=entry.schema_version,

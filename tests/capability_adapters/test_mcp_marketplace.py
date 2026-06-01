@@ -9,6 +9,7 @@ from packages.marketplace_runtime import (
     McpRegistryToolSummary,
     MarketplaceEnablementState,
     MarketplaceProposalStore,
+    catalog_from_official_registry_payload,
     validate_mcp_server_manifest,
 )
 
@@ -40,6 +41,55 @@ def test_mcp_marketplace_catalog_is_read_only_safe_metadata() -> None:
     assert rows[0]["launch_allowed"] is False
     assert rows[0]["auto_execution_allowed"] is False
     assert "install_command" not in rows[0]
+
+
+def test_mcp_marketplace_can_expose_approved_dependency_install_hint() -> None:
+    entry = _entry().model_copy(update={"required_dep_group_id": "mcp"})
+    catalog = McpMarketplaceCatalog.from_entries((entry,))
+
+    rows = catalog.safe_projection()
+    validation = validate_mcp_server_manifest(entry)
+
+    assert rows[0]["install_allowed"] is True
+    assert rows[0]["required_dep_group_id"] == "mcp"
+    assert validation.valid is True
+    assert "unsafe_execution_allowed" not in validation.reason_codes
+
+
+def test_official_registry_payload_maps_package_and_remote_install_metadata() -> None:
+    catalog = catalog_from_official_registry_payload(
+        {
+            "servers": [
+                {
+                    "server": {
+                        "name": "vendor/demo",
+                        "description": "Demo MCP server",
+                        "title": "Demo",
+                        "version": "1.0.0",
+                        "packages": [
+                            {
+                                "registryType": "npm",
+                                "identifier": "@vendor/demo-mcp",
+                                "version": "1.0.0",
+                                "transport": {"type": "stdio"},
+                            }
+                        ],
+                        "remotes": [{"type": "streamable-http", "url": "https://demo.example/mcp"}],
+                    },
+                    "_meta": {"io.modelcontextprotocol.registry/official": {"isLatest": True}},
+                }
+            ]
+        }
+    )
+
+    entry = catalog.entries[0]
+    config = entry.to_installed_config()
+
+    assert entry.package_registry_type == "npm"
+    assert entry.package_identifier == "@vendor/demo-mcp"
+    assert entry.required_dep_group_id == "mcp"
+    assert config.transport.type == "streamable_http"
+    assert config.transport.url == "https://demo.example/mcp"
 
 
 def test_mcp_manifest_validation_blocks_dangerous_tool_metadata() -> None:
