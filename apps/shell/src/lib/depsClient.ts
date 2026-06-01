@@ -17,6 +17,8 @@ export const depsResponseSchema = z.object({
     wakeword: z.boolean(),
     web_search: z.boolean(),
     browser: z.boolean(),
+    mcp: z.boolean(),
+    computer_use: z.boolean(),
     embeddings: z.boolean(),
   }),
 });

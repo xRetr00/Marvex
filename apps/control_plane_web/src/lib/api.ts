@@ -9,12 +9,14 @@ import {
   connectorsSchema,
   controlSnapshotSchema,
   diagnosticsSchema,
+  dependencyInstallSchema,
   enablementStateSchema,
   feedbackEventsSchema,
   learningApplySchema,
   learningCandidatesSchema,
   logsSchema,
   mcpMarketplaceSchema,
+  mcpServerInstallSchema,
   memoryForgetSchema,
   memoryInspectSchema,
   memoryTreeDailySchema,
@@ -91,6 +93,14 @@ export async function fetchMcpMarketplace(): Promise<McpMarketplace> {
 
 export async function proposeMcpAllowlist(serverId: string) {
   return allowlistProposalSchema.parse(await readJson(`/marketplace/mcp/${encodeURIComponent(serverId)}/allowlist-proposals`, { method: "POST" }));
+}
+
+export async function installDependency(depId: string) {
+  return dependencyInstallSchema.parse(await readJson("/deps/install", { method: "POST", body: JSON.stringify({ id: depId }) }));
+}
+
+export async function installMcpServer(serverId: string) {
+  return mcpServerInstallSchema.parse(await readJson(`/marketplace/mcp/${encodeURIComponent(serverId)}/install`, { method: "POST" }));
 }
 
 export async function fetchSkillsMarketplace(): Promise<SkillsMarketplace> {

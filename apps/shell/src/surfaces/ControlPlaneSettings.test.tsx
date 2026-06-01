@@ -49,11 +49,11 @@ describe("ControlPlaneSettings", () => {
           raw_secret_persisted: false,
         };
       }
-      if (path === "/deps") return { deps: [{ id: "browser", label: "Browser automation", group: "browser", installed: false, feature: "browser" }], features: { tts: true, stt: true, wakeword: true, web_search: true, browser: false, embeddings: false } };
+      if (path === "/deps") return { deps: [{ id: "browser", label: "Browser automation", group: "browser", installed: false, feature: "browser" }], features: { tts: true, stt: true, wakeword: true, web_search: true, browser: false, mcp: false, computer_use: false, embeddings: false } };
       if (path === "/deps/install") return { id: "browser", status: "installed", detail: "pip_install_succeeded" };
       if (path === "/logs") return { schema_version: "1", logs: [{ name: "core.stderr.log", source: "control", lines: ["service ready"] }], raw_log_payload_persisted: false };
       if (path === "/snapshot") return { schema_version: "1", traces: [{ trace_id: "trace-1", event_count: 2 }], telemetry: { trace_count: 1 }, raw_payload_persisted: false };
-      if (path === "/marketplace/mcp") return { schema_version: "1", entries: [{ server_id: "local-mcp", install_allowed: false }], read_only_browse: true, raw_payload_persisted: false };
+      if (path === "/marketplace/mcp") return { schema_version: "1", entries: [{ server_id: "local-mcp", install_allowed: true, required_dep_group_id: "mcp" }], read_only_browse: true, raw_payload_persisted: false };
       if (path === "/marketplace/skills") return { schema_version: "1", entries: [{ skill_id: "skill.planning", script_execution_allowed: false }], previews: [], raw_payload_persisted: false };
       return {};
     });
@@ -65,7 +65,7 @@ describe("ControlPlaneSettings", () => {
     expect((await screen.findAllByText("LM Studio")).length).toBeGreaterThan(0);
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
-    expect(await screen.findByText("local-mcp")).toBeInTheDocument();
+    expect((await screen.findAllByText("local-mcp")).length).toBeGreaterThan(0);
     expect(await screen.findByText("skill.planning")).toBeInTheDocument();
 
     await userEvent.selectOptions(screen.getByLabelText("Active provider"), "lmstudio_responses");
@@ -82,12 +82,14 @@ describe("ControlPlaneSettings", () => {
     await userEvent.type(screen.getByLabelText("Provider API key"), "sk-plain-text-secret");
     await userEvent.click(screen.getByRole("button", { name: /Save key/i }));
     await userEvent.click(screen.getByRole("button", { name: /Install Browser automation/i }));
+    await userEvent.click(screen.getByRole("button", { name: /Install MCP dependency mcp/i }));
     await userEvent.click(screen.getByRole("button", { name: /Open full control plane/i }));
 
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/connection", "POST", { base_url: "http://localhost:20128/v1", provider_mode: "openai_compatible" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/automation", "POST", { model: "gpt-4o", supports_vision: true, vision_required: true });
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "mcp" });
     expect(mockedOpenControlPlane).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("sk-plain-text-secret")).not.toBeInTheDocument();
     expect(await screen.findByText("sk-p****cret")).toBeInTheDocument();

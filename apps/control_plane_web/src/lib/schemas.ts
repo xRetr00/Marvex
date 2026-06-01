@@ -69,6 +69,8 @@ export const skillsMarketplaceSchema = z.object({
 
 export const enablementStateSchema = safeRecord;
 export const allowlistProposalSchema = safeRecord;
+export const dependencyInstallSchema = safeRecord;
+export const mcpServerInstallSchema = safeRecord;
 
 export const memoryInspectSchema = z.object({
   schema_version: z.string(),

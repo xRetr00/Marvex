@@ -47,7 +47,7 @@ describe("SetupPage", () => {
     vi.useFakeTimers();
     mockedMarkSetupDone.mockClear();
     mockedFetchDeps.mockReset();
-    mockedFetchDeps.mockResolvedValue({ deps: [], features: { tts: true, stt: true, wakeword: true, web_search: true, browser: true, embeddings: true } });
+    mockedFetchDeps.mockResolvedValue({ deps: [], features: { tts: true, stt: true, wakeword: true, web_search: true, browser: true, mcp: true, computer_use: true, embeddings: true } });
     mockedGetBackendHealth.mockReset();
     mockedGetBackendHealth.mockResolvedValue({ reachable: false });
     mockedGetSetupStatus.mockReset();

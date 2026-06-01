@@ -66,7 +66,8 @@ describe("Control Plane app", () => {
   it("renders marketplace, policy, memory, trace, and diagnostics views from safe endpoints", async () => {
     const responses: Record<string, unknown> = {
       "/control/snapshot": snapshot,
-      "/control/marketplace/mcp": { schema_version: "1", entries: [{ server_id: "local-test-mcp", read_only_browse: true, install_allowed: false, launch_allowed: false }], read_only_browse: true, raw_payload_persisted: false },
+      "/control/marketplace/mcp": { schema_version: "1", entries: [{ server_id: "local-test-mcp", read_only_browse: true, install_allowed: true, required_dep_group_id: "mcp", launch_allowed: false }], read_only_browse: true, raw_payload_persisted: false },
+      "/control/deps/install": { schema_version: "1", id: "mcp", status: "installing", detail: "pip_install_succeeded", raw_payload_persisted: false },
       "/control/marketplace/skills": { schema_version: "1", entries: [{ skill_id: "test.safe_skill", script_execution_allowed: false, remote_loading_allowed: false }], previews: [{ skill_id: "test.safe_skill", preview: "Use deterministic local fixtures.", raw_instruction_persisted: false }], raw_payload_persisted: false },
       "/control/memory": { schema_version: "1", records: [{ memory_ref: "memory-1", content_preview: "User prefers concise status updates.", raw_transcript_persisted: false }], record_count: 1, raw_transcript_persisted: false },
       "/control/traces/search": { schema_version: "1", traces: [{ trace_id: "trace-1", status: "completed", raw_payload_persisted: false }], match_count: 1, truncated: false, raw_payload_persisted: false },
@@ -95,6 +96,8 @@ describe("Control Plane app", () => {
 
     await userEvent.click(await screen.findByRole("button", { name: /MCP Marketplace/i }));
     expect(await screen.findByText("local-test-mcp")).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole("button", { name: /Install runtime dependency: mcp/i }));
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith(expect.stringContaining("/control/deps/install"), expect.objectContaining({ method: "POST" })));
     await userEvent.click(screen.getByRole("button", { name: /Skills Marketplace/i }));
     expect((await screen.findAllByText("test.safe_skill")).length).toBeGreaterThan(0);
     await userEvent.click(screen.getByRole("button", { name: /Memory Inspect/i }));

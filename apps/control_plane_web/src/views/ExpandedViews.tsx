@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { CheckCircle2, Mic, Search, ShieldAlert, Trash2, UserRound, Users, Volume2 } from "lucide-react";
+import { CheckCircle2, Download, Mic, Search, ShieldAlert, Trash2, UserRound, Users, Volume2 } from "lucide-react";
 import {
   applyLearningCandidate,
   downloadVoiceModel,
@@ -33,6 +33,8 @@ import {
   fetchSkillsMarketplace,
   fetchTraceSearch,
   forgetMemory,
+  installDependency,
+  installMcpServer,
   proposeMcpAllowlist,
   removeVoiceModel,
   selectAgent,
@@ -165,13 +167,24 @@ function recordValue(row: Record<string, unknown>, key: string) {
 
 export function McpMarketplaceView() {
   const query = useQuery({ queryKey: ["mcp-marketplace"], queryFn: fetchMcpMarketplace, retry: false });
-  const mutation = useMutation({ mutationFn: proposeMcpAllowlist });
+  const allowlistMutation = useMutation({ mutationFn: proposeMcpAllowlist });
+  const installMutation = useMutation({ mutationFn: installDependency });
+  const serverInstallMutation = useMutation({ mutationFn: installMcpServer });
   if (query.isLoading) return <InlineState message="Loading MCP registry metadata..." />;
   if (query.isError) return <InlineState message={query.error.message} />;
   const entries = query.data?.entries ?? [];
   return (
     <div className="space-y-4">
-      <Card><CardHeader><CardTitle>MCP Marketplace</CardTitle></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Official registry metadata is browsed read-only. Allowlisting creates a proposal only.</p>{entries.map((entry) => <Button key={String(entry.server_id)} variant="outline" onClick={() => mutation.mutate(String(entry.server_id))}><ShieldAlert className="mr-2" size={16} />Propose allowlist: {String(entry.server_id)}</Button>)}{mutation.data && <p className="text-sm">Proposal created: {String(mutation.data.proposal_id)}</p>}</CardContent></Card>
+      <Card><CardHeader><CardTitle>MCP Marketplace</CardTitle></CardHeader><CardContent className="space-y-3"><p className="text-sm text-muted-foreground">Registry metadata can request approved runtime dependencies. Allowlisting still creates a review proposal before tool execution.</p>{entries.map((entry) => {
+        const depId = typeof entry.required_dep_group_id === "string" ? entry.required_dep_group_id : "";
+        return (
+          <div key={String(entry.server_id)} className="flex flex-wrap gap-2">
+            {entry.install_allowed === true && depId ? <Button variant="outline" onClick={() => installMutation.mutate(depId)}><Download className="mr-2" size={16} />Install runtime dependency: {depId}</Button> : null}
+            <Button variant="outline" onClick={() => serverInstallMutation.mutate(String(entry.server_id))}><Download className="mr-2" size={16} />Install MCP server</Button>
+            <Button variant="outline" onClick={() => allowlistMutation.mutate(String(entry.server_id))}><ShieldAlert className="mr-2" size={16} />Propose allowlist: {String(entry.server_id)}</Button>
+          </div>
+        );
+      })}{installMutation.data && <p className="text-sm">Dependency install state: {String(installMutation.data.status)} {String(installMutation.data.id ?? "")}</p>}{serverInstallMutation.data && <p className="text-sm">MCP server install: {String(serverInstallMutation.data.installed)}</p>}{allowlistMutation.data && <p className="text-sm">Proposal created: {String(allowlistMutation.data.proposal_id)}</p>}</CardContent></Card>
       <SafeTable title="Registry Servers" rows={entries} empty="No MCP registry metadata available." />
     </div>
   );

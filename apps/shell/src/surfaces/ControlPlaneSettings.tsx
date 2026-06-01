@@ -104,6 +104,10 @@ export function ControlPlaneSettings() {
     }
   };
 
+  const installMcpServer = async (serverId: string) => {
+    await controlRequest(`/marketplace/mcp/${encodeURIComponent(serverId)}/install`, "POST");
+  };
+
   const onSelectProvider = (providerId: string) => void run("provider", () => selectProvider(providerId));
   const onSelectModel = (model: string) => {
     if (!activeProvider || !model.trim()) return;
@@ -290,6 +294,25 @@ export function ControlPlaneSettings() {
         </Panel>
 
         <Panel icon={<PlugZap size={16} />} title="MCP / Skills Marketplaces">
+          <div style={list}>
+            {mcp
+              .filter((row) => row.install_allowed === true && typeof row.required_dep_group_id === "string")
+              .map((row) => {
+                const depId = String(row.required_dep_group_id);
+                const serverId = String(row.server_id ?? depId);
+                return (
+                  <div key={`mcp-install-${serverId}`} style={rowStyleCompact}>
+                    <span>{serverId}</span>
+                    <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void run(`mcp:${depId}`, () => installDep(depId))}>
+                      Install MCP dependency {depId}
+                    </Button>
+                    <Button size="sm" variant="outline" disabled={Boolean(busy)} onClick={() => void run(`mcp-server:${serverId}`, () => installMcpServer(serverId))}>
+                      Install MCP server
+                    </Button>
+                  </div>
+                );
+              })}
+          </div>
           <MiniTable title="MCP" rows={mcp} primaryKey="server_id" />
           <MiniTable title="Skills" rows={skills} primaryKey="skill_id" />
         </Panel>
@@ -367,6 +390,7 @@ const chips: React.CSSProperties = { display: "flex", flexWrap: "wrap", gap: 6 }
 const chip: React.CSSProperties = { border: "1px solid var(--border)", borderRadius: 999, padding: "3px 8px", background: "var(--secondary)", fontSize: 11 };
 const list: React.CSSProperties = { display: "grid", gap: 8 };
 const row: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, border: "1px solid var(--border)", borderRadius: 8, padding: 9, fontSize: 12, minWidth: 0 };
+const rowStyleCompact: React.CSSProperties = { display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, fontSize: 12, minWidth: 0 };
 const miniTable: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12, minWidth: 0 };
 const modelList: React.CSSProperties = { display: "grid", gap: 6, fontSize: 12 };
 const checkRow: React.CSSProperties = { display: "flex", alignItems: "center", gap: 8, minWidth: 0 };
