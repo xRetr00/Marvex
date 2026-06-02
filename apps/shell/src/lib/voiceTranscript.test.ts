@@ -2,11 +2,11 @@ import { describe, expect, it } from "vitest";
 import { transcriptFromStatus } from "./voiceControlClient";
 
 describe("transcriptFromStatus", () => {
-  it("returns the latest transcription_completed transcript_text", () => {
+  it("returns the latest transcription_completed normalized_transcript_text", () => {
     const status = {
       recent_events: [
         { event_id: "e1", event_type: "wakeword_detected", summary: {} },
-        { event_id: "e2", event_type: "transcription_completed", summary: { transcript_text: "what is open source" } },
+        { event_id: "e2", event_type: "transcription_completed", summary: { normalized_transcript_text: "what is open source" } },
       ],
     } as never;
     expect(transcriptFromStatus(status)).toEqual({ text: "what is open source", eventId: "e2" });
@@ -15,11 +15,18 @@ describe("transcriptFromStatus", () => {
   it("picks the MOST RECENT transcript when several exist", () => {
     const status = {
       recent_events: [
-        { event_id: "e1", event_type: "transcription_completed", summary: { transcript_text: "first" } },
-        { event_id: "e2", event_type: "transcription_completed", summary: { transcript_text: "second" } },
+        { event_id: "e1", event_type: "transcription_completed", summary: { normalized_transcript_text: "first" } },
+        { event_id: "e2", event_type: "transcription_completed", summary: { normalized_transcript_text: "second" } },
       ],
     } as never;
     expect(transcriptFromStatus(status)?.text).toBe("second");
+  });
+
+  it("accepts the legacy transcript_text field during worker upgrade", () => {
+    const status = {
+      recent_events: [{ event_id: "e1", event_type: "transcription_completed", summary: { transcript_text: "legacy" } }],
+    } as never;
+    expect(transcriptFromStatus(status)?.text).toBe("legacy");
   });
 
   it("returns null when no transcription event is present", () => {
@@ -29,7 +36,7 @@ describe("transcriptFromStatus", () => {
 
   it("returns null when transcript text is empty/whitespace", () => {
     const status = {
-      recent_events: [{ event_id: "e1", event_type: "transcription_completed", summary: { transcript_text: "   " } }],
+      recent_events: [{ event_id: "e1", event_type: "transcription_completed", summary: { normalized_transcript_text: "   " } }],
     } as never;
     expect(transcriptFromStatus(status)).toBeNull();
   });

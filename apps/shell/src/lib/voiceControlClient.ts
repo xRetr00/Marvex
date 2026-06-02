@@ -120,8 +120,8 @@ export function recordWakeReference(phrase = "Hey Marvex"): Promise<VoiceWorkerS
 
 /**
  * Extract the most recent recognized transcript from a worker status snapshot.
- * The worker emits transcript_text on a TRANSCRIPTION_COMPLETED event after a
- * wake-word capture; the shell polls status, picks it up, and drives the turn.
+ * The worker emits normalized_transcript_text on TRANSCRIPTION_COMPLETED after
+ * wake or push-to-talk capture; the shell picks it up and drives the turn.
  */
 export function transcriptFromStatus(status: VoiceWorkerStatus | null | undefined): { text: string; eventId: string } | null {
   const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
@@ -131,7 +131,9 @@ export function transcriptFromStatus(status: VoiceWorkerStatus | null | undefine
     if (!event || typeof event !== "object") continue;
     if ((event as { event_type?: unknown }).event_type !== "transcription_completed") continue;
     const summary = (event as { summary?: Record<string, unknown> }).summary;
-    const text = summary && typeof summary.transcript_text === "string" ? summary.transcript_text.trim() : "";
+    const normalized = summary && typeof summary.normalized_transcript_text === "string" ? summary.normalized_transcript_text : undefined;
+    const legacy = summary && typeof summary.transcript_text === "string" ? summary.transcript_text : undefined;
+    const text = (normalized ?? legacy ?? "").trim();
     if (!text) return null;
     const eventId = String((event as { event_id?: unknown }).event_id ?? "");
     return { text, eventId };

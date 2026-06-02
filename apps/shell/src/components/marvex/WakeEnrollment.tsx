@@ -64,13 +64,13 @@ export function WakeEnrollment() {
   const record = useCallback(async () => {
     if (recording) return;
     setRecording(true);
-    setMessage("Listening — say “Hey Marvex” now…");
+    setMessage("Opening mic - wait a beat, then say \"Hey Marvex\" once.");
     try {
       const status = await recordWakeReference(PHRASE);
       const reason = lastRecordReason(status);
       const c = referenceCountFromStatus(status);
       if (reason === "no_speech") {
-        setMessage("Didn't catch that — speak right after pressing Record.");
+        setMessage("Didn't catch that - press Record, wait a beat, then say it once.");
       } else if (reason === "continuous_capture_active") {
         setMessage("Turn off the mic/wake listener first, then record.");
       } else {
