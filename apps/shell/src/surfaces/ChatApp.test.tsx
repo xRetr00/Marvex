@@ -176,7 +176,7 @@ describe("ChatApp module boundary", () => {
       BackgroundPlus: () => <div data-testid="chat-plus-background" />,
     }));
     vi.doMock("@/components/chat-messages-for-ui/agent-simple-orb", () => ({
-      AgentOrb: () => <div data-testid="agent-orb" />,
+      Orb: () => <div data-testid="agent-orb" />,
     }));
     vi.doMock("@/lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
     const submitChatTurnStream = vi.fn();
@@ -221,5 +221,142 @@ describe("ChatApp module boundary", () => {
     expect(submitChatTurnStream).not.toHaveBeenCalled();
     expect(speakVoiceWorker).not.toHaveBeenCalled();
     expect(startVoiceWorker).not.toHaveBeenCalled();
+  });
+
+  it("routes a queued composer dictation transcript into the input instead of submitting it", async () => {
+    vi.doMock("@/lib/backendStatus", () => ({
+      FAILED_PHASES: new Set<string>(),
+      serviceOk: () => true,
+      useBackendStatus: () => ({ ready: true, phase: "ready", services: {}, wakeword: "running" }),
+    }));
+    vi.doMock("@/components/marvex/StartupScreen", async () => {
+      const React = await import("react");
+      return {
+        StartupScreen: ({ onHelloDone }: { onHelloDone?: () => void }) => {
+          React.useEffect(() => {
+            onHelloDone?.();
+          }, [onHelloDone]);
+          return <div>startup</div>;
+        },
+      };
+    });
+    vi.doMock("@/components/ui/background-plus", () => ({
+      BackgroundPlus: () => <div data-testid="chat-plus-background" />,
+    }));
+    vi.doMock("@/components/chat-messages-for-ui/agent-simple-orb", () => ({
+      Orb: () => <div data-testid="agent-orb" />,
+    }));
+    vi.doMock("@/lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
+    const submitChatTurnStream = vi.fn();
+    vi.doMock("@/lib/shellCommands", () => ({
+      createChatSession: vi.fn(async () => ({ session: { session_ref: { ref_id: "session-1" }, title: "New chat", updated_at_unix_ms: 0 } })),
+      getShellRuntimeConfig: vi.fn(async () => ({ core_base_url: "http://localhost:8765" })),
+      listChatSessions: vi.fn(async () => ({ sessions: [] })),
+      cancelActiveChatTurn: vi.fn(),
+      deleteChatSession: vi.fn(),
+      marvexRestart: vi.fn(),
+      marvexShutdown: vi.fn(),
+      renameChatSession: vi.fn(),
+      resumeApprovalTurn: vi.fn(),
+      showOverlay: vi.fn(),
+      startBackend: vi.fn(),
+      submitChatTurnStream,
+    }));
+    const listenVoiceWorker = vi.fn(async () => ({
+      recent_events: [{ event_type: "vad_speech_started", event_id: "queued-1", summary: { manual_listen_queued: true } }],
+    }));
+    const fetchVoiceWorkerStatus = vi.fn(async () => ({
+      recent_events: [{ event_type: "transcription_completed", event_id: "voice-event-queued", summary: { normalized_transcript_text: "queued dictation text" } }],
+    }));
+    vi.doMock("@/lib/voiceControlClient", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/voiceControlClient")>("@/lib/voiceControlClient");
+      return {
+        ...actual,
+        fetchVoiceWorkerStatus,
+        listenVoiceWorker,
+        speakVoiceWorker: vi.fn(),
+        startVoiceWorker: vi.fn(),
+        stopVoiceWorker: vi.fn(),
+      };
+    });
+
+    const { ChatApp } = await import("./ChatApp");
+    render(<ChatApp />);
+    await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "Start dictation" }));
+
+    await waitFor(() => expect(listenVoiceWorker).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByPlaceholderText("Ask anything...")).toHaveValue("queued dictation text"), { timeout: 3000 });
+    expect(submitChatTurnStream).not.toHaveBeenCalled();
+  });
+
+  it("places manual voice mode beside the composer and only speaks one start cue", async () => {
+    vi.doMock("@/lib/backendStatus", () => ({
+      FAILED_PHASES: new Set<string>(),
+      serviceOk: () => true,
+      useBackendStatus: () => ({ ready: true, phase: "ready", services: {}, wakeword: "running" }),
+    }));
+    vi.doMock("@/components/marvex/StartupScreen", async () => {
+      const React = await import("react");
+      return {
+        StartupScreen: ({ onHelloDone }: { onHelloDone?: () => void }) => {
+          React.useEffect(() => {
+            onHelloDone?.();
+          }, [onHelloDone]);
+          return <div>startup</div>;
+        },
+      };
+    });
+    vi.doMock("@/components/ui/background-plus", () => ({
+      BackgroundPlus: () => <div data-testid="chat-plus-background" />,
+    }));
+    vi.doMock("@/components/chat-messages-for-ui/agent-simple-orb", () => ({
+      Orb: () => <div data-testid="agent-orb" />,
+    }));
+    vi.doMock("@/lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
+    vi.doMock("@/lib/shellCommands", () => ({
+      createChatSession: vi.fn(async () => ({ session: { session_ref: { ref_id: "session-1" }, title: "New chat", updated_at_unix_ms: 0 } })),
+      getShellRuntimeConfig: vi.fn(async () => ({ core_base_url: "http://localhost:8765" })),
+      listChatSessions: vi.fn(async () => ({ sessions: [] })),
+      cancelActiveChatTurn: vi.fn(),
+      deleteChatSession: vi.fn(),
+      marvexRestart: vi.fn(),
+      marvexShutdown: vi.fn(),
+      renameChatSession: vi.fn(),
+      resumeApprovalTurn: vi.fn(),
+      showOverlay: vi.fn(),
+      startBackend: vi.fn(),
+      submitChatTurnStream: vi.fn(),
+    }));
+    const speakVoiceWorker = vi.fn(async () => ({ recent_events: [] }));
+    const listenVoiceWorker = vi.fn(async () => ({
+      recent_events: [{ event_type: "vad_speech_started", event_id: "queued-voice", summary: { manual_listen_queued: true } }],
+    }));
+    const startVoiceWorker = vi.fn(async () => ({ recent_events: [] }));
+    vi.doMock("@/lib/voiceControlClient", async () => {
+      const actual = await vi.importActual<typeof import("@/lib/voiceControlClient")>("@/lib/voiceControlClient");
+      return {
+        ...actual,
+        fetchVoiceWorkerStatus: vi.fn(async () => ({ recent_events: [] })),
+        listenVoiceWorker,
+        speakVoiceWorker,
+        startVoiceWorker,
+        stopVoiceWorker: vi.fn(),
+      };
+    });
+
+    const { ChatApp } = await import("./ChatApp");
+    render(<ChatApp />);
+    await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
+
+    await userEvent.click(screen.getByRole("button", { name: "Start voice mode" }));
+
+    await waitFor(() => expect(startVoiceWorker).toHaveBeenCalled());
+    await waitFor(() => expect(listenVoiceWorker).toHaveBeenCalled());
+    expect(speakVoiceWorker).toHaveBeenCalledTimes(1);
+    const cueText = (speakVoiceWorker.mock.calls[0] as unknown[])[0];
+    expect(["Yes", "Here"]).toContain(cueText);
+    expect(screen.getByRole("button", { name: "Stop voice mode" })).toBeInTheDocument();
   });
 });

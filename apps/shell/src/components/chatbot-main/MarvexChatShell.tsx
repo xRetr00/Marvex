@@ -48,6 +48,10 @@ export type MarvexChatShellProps = {
   onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
   onClarificationAnswer?: (clarification: MarvexChatClarification, answerText: string) => void | Promise<void>;
   onToggleVoice?: () => void;
+  voiceSessionActive?: boolean;
+  voiceSessionListening?: boolean;
+  voiceSessionCue?: string;
+  onToggleVoiceSession?: () => void;
   composerValue?: string;
   onComposerValueChange?: (value: string) => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
@@ -67,6 +71,10 @@ export function MarvexChatShell({
   onApprovalDecision,
   onClarificationAnswer,
   onToggleVoice,
+  voiceSessionActive = false,
+  voiceSessionListening = false,
+  voiceSessionCue = "",
+  onToggleVoiceSession,
   composerValue,
   onComposerValueChange,
   renderAssistantOrb,
@@ -193,12 +201,16 @@ export function MarvexChatShell({
           disabled={pending}
           generating={pending}
           micActive={micActive}
+          voiceSessionActive={voiceSessionActive}
+          voiceSessionListening={voiceSessionListening}
+          voiceSessionCue={voiceSessionCue}
           modelLabel={modelLabel}
           models={models}
           onSelectModel={onSelectModel}
           onStop={onStop}
           onSubmit={onSubmit}
           onToggleVoice={onToggleVoice}
+          onToggleVoiceSession={onToggleVoiceSession}
           value={composerValue}
           onValueChange={onComposerValueChange}
         />

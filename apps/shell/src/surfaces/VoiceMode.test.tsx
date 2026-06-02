@@ -120,38 +120,13 @@ describe("VoiceMode", () => {
     expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });
 
-  it("renders dedicated voice session controls separate from backend lifecycle", async () => {
-    const user = userEvent.setup();
-    const onStartVoiceSession = vi.fn();
-    const onStopVoiceSession = vi.fn();
-    const onPushToTalk = vi.fn();
-
-    render(
-      <VoiceMode
-        voiceSessionActive
-        voiceSessionMode="push_to_talk"
-        voiceSessionListening
-        voiceSessionCue="Yes?"
-        voiceSessionTranscript="open the dashboard"
-        onStartVoiceSession={onStartVoiceSession}
-        onStopVoiceSession={onStopVoiceSession}
-        onPushToTalk={onPushToTalk}
-      />,
-    );
-
+  it("keeps conversation controls out of the Voice Mode diagnostics page", async () => {
+    render(<VoiceMode />);
     expect(await screen.findByRole("heading", { name: "Voice Mode" })).toBeInTheDocument();
-    expect(screen.getByText("Yes?")).toBeInTheDocument();
-    expect(screen.getByText("open the dashboard")).toBeInTheDocument();
-    expect(screen.getByTestId("voice-listening-wave")).toBeInTheDocument();
-
-    await user.click(screen.getByRole("button", { name: "Wake word voice session" }));
-    await user.click(screen.getByRole("button", { name: "Hands-free voice session" }));
-    await user.click(screen.getByRole("button", { name: "Hold to talk" }));
-    await user.click(screen.getByRole("button", { name: "Stop voice session" }));
-
-    expect(onStartVoiceSession).toHaveBeenCalledWith("wake");
-    expect(onStartVoiceSession).toHaveBeenCalledWith("hands_free");
-    expect(onPushToTalk).toHaveBeenCalledTimes(1);
-    expect(onStopVoiceSession).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText("Conversation session")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Wake word voice session" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hands-free voice session" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Hold to talk" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Stop voice session" })).not.toBeInTheDocument();
   });
 });

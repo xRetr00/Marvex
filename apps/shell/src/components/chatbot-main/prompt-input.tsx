@@ -1,4 +1,4 @@
-import { ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
+import { AudioLines, ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,10 @@ export type ChatbotPromptInputProps = {
   onSubmit: (text: string) => void | Promise<void>;
   onStop?: () => void;
   onToggleVoice?: () => void;
+  voiceSessionActive?: boolean;
+  voiceSessionListening?: boolean;
+  voiceSessionCue?: string;
+  onToggleVoiceSession?: () => void;
   placeholder?: string;
   value?: string;
   onValueChange?: (value: string) => void;
@@ -26,6 +30,10 @@ export function ChatbotPromptInput({
   onSubmit,
   onStop,
   onToggleVoice,
+  voiceSessionActive = false,
+  voiceSessionListening = false,
+  voiceSessionCue = "",
+  onToggleVoiceSession,
   placeholder = "Ask anything...",
   value,
   onValueChange,
@@ -117,6 +125,17 @@ export function ChatbotPromptInput({
             >
               {micActive ? <MicOff size={16} /> : <Mic size={16} />}
             </Button>
+            <Button
+              aria-label={voiceSessionActive ? "Stop voice mode" : "Start voice mode"}
+              className={cn("relative h-8 w-8 rounded-lg text-muted-foreground", voiceSessionActive && "bg-primary text-primary-foreground hover:bg-primary/90")}
+              onClick={onToggleVoiceSession}
+              size="icon"
+              title={voiceSessionCue || (voiceSessionActive ? "Voice mode" : "Start voice mode")}
+              type="button"
+              variant={voiceSessionActive ? "default" : "ghost"}
+            >
+              {voiceSessionListening ? <ListeningBars /> : <AudioLines size={16} />}
+            </Button>
             <div className="relative">
               <Button aria-label="Select model" className="h-8 max-w-[220px] rounded-full px-2 text-xs text-muted-foreground" onClick={() => setModelOpen((open) => !open)} type="button" variant="ghost">
                 <ModelLogo provider={models.find((model) => model.active)?.provider} />
@@ -156,6 +175,20 @@ export function ChatbotPromptInput({
         </div>
       </div>
     </form>
+  );
+}
+
+function ListeningBars() {
+  return (
+    <span aria-hidden="true" className="flex h-4 items-center gap-0.5">
+      {[7, 13, 9].map((height, index) => (
+        <span
+          key={index}
+          className="w-0.5 rounded-full bg-current animate-pulse"
+          style={{ height, animationDelay: `${index * 90}ms` }}
+        />
+      ))}
+    </span>
   );
 }
 

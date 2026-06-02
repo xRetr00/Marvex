@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import array
 import math
-import random
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -111,9 +110,6 @@ def _wakeword_public_blocker(blocker: str) -> str:
     if blocker == "model_asset_missing_manual_install_required":
         return "wakeword_model_not_installed"
     return blocker
-
-
-_LISTENING_CUES = ("Huh?", "Umm?", "Yes?")
 
 
 class VoiceWorkerController:
@@ -252,7 +248,6 @@ class VoiceWorkerController:
                 trace_id=wake_trace,
                 summary=tick.safe_projection(),
             )
-            self._play_listening_cue(trace_id=wake_trace)
             # Bridge: a successful wakeword detection should not just be
             # logged; it should hand off to STT so the rest of the
             # voice pipeline can run. The previous controller left this
@@ -521,24 +516,6 @@ class VoiceWorkerController:
                 summary={"post_wake_capture": True, "reason_code": "post_wake_capture_failed"},
             )
 
-    def _play_listening_cue(self, *, trace_id: str) -> None:
-        cue = random.choice(_LISTENING_CUES)
-        try:
-            result = self.backend_runtime.test_tts(
-                trace_id=trace_id,
-                backend_id=self.config.active_tts_backend_id,
-                voice_id=self.config.active_voice_id,
-                text=cue,
-            )
-            self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=trace_id, summary={**synthesis_summary(result), "listening_cue": True})
-            if result.status == "succeeded" and result.audio_ref:
-                self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "listening_cue": True})
-                playback = self.audio.play_audio(device_id=self.config.audio.output_device_id, audio_ref=result.audio_ref, sample_rate=result.sample_rate)
-                self._playback_status = playback.status
-                self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={**playback.model_dump(mode="json"), "listening_cue": True})
-        except Exception:
-            self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"reason_code": "listening_cue_failed", "listening_cue": True})
-
     def _effective_wake_backend_id(self) -> str:
         """Wake backend to actually use this session.
 
@@ -581,7 +558,7 @@ class VoiceWorkerController:
         idle_timeout: float = 0.5,
         lock: Any | None = None,
         on_diagnostic: "Callable[[dict[str, object]], None] | None" = None,
-        diagnostic_interval_decodes: int = 50,
+        diagnostic_interval_decodes: int = 10,
         debug_dump_path: str | None = None,
         debug_dump_seconds: float = 6.0,
     ) -> dict[str, object]:
@@ -773,7 +750,6 @@ class VoiceWorkerController:
                             trace_id=wake_trace,
                             summary=detection.safe_projection(),
                         )
-                        self._play_listening_cue(trace_id=wake_trace)
                         # Capture the command from the SAME continuous stream.
                         self._run_post_wake_capture(
                             parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic, ambient_rms=ambient_ema
@@ -843,7 +819,6 @@ class VoiceWorkerController:
                                     summary={"via": "batch_probe", "keyword": keyword, "phrase": self.config.wakeword.phrase},
                                 )
                                 _emit({"event": "wake_listen_detected", "via": "batch_probe", "detections": detections})
-                                self._play_listening_cue(trace_id=wake_trace)
                                 self._run_post_wake_capture(
                                     parent_trace_id=wake_trace, read_frame=reader, on_diagnostic=on_diagnostic, ambient_rms=ambient_ema
                                 )

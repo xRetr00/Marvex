@@ -11,7 +11,7 @@ import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, stopVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -24,7 +24,6 @@ import { StatusView } from "@/components/marvex/StatusView";
 import { WakeEnrollment } from "@/components/marvex/WakeEnrollment";
 import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
-import type { VoiceSessionMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
@@ -32,11 +31,21 @@ type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
+type VoiceCaptureTarget = "dictation" | "voice";
+type WorkerTranscript = { text: string; eventId: string };
 
-const LISTENING_CUES = ["Huh?", "Umm?", "Yes?"] as const;
+const LISTENING_CUES = ["Yes", "Here"] as const;
 
 function randomListeningCue(): string {
   return LISTENING_CUES[Math.floor(Math.random() * LISTENING_CUES.length)];
+}
+
+function manualListenQueued(status: unknown): boolean {
+  const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
+  if (!Array.isArray(events)) return false;
+  const event = events[events.length - 1];
+  const summary = event && typeof event === "object" ? (event as { summary?: Record<string, unknown> }).summary : undefined;
+  return Boolean(summary?.manual_listen_queued);
 }
 
 const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
@@ -60,16 +69,19 @@ export function ChatApp() {
   const [dictationActive, setDictationActive] = useState(false);
   const [composerText, setComposerText] = useState("");
   const [voiceSessionActive, setVoiceSessionActive] = useState(false);
-  const [voiceSessionMode, setVoiceSessionMode] = useState<VoiceSessionMode>("wake");
   const [voiceSessionListening, setVoiceSessionListening] = useState(false);
   const [voiceSessionCue, setVoiceSessionCue] = useState("");
-  const [voiceSessionTranscript, setVoiceSessionTranscript] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("chat");
 
   const backend = useBackendStatus();
   const [helloDone, setHelloDone] = useState(false);
   const [booted, setBooted] = useState(false);
+  const voiceSessionActiveRef = useRef(false);
+  const voiceListenPendingRef = useRef(false);
+  const voiceCaptureTargetRef = useRef<VoiceCaptureTarget | null>(null);
+  const manualVoiceCuePlayedRef = useRef(false);
+  const requestVoiceListenRef = useRef<(withCue?: boolean) => void>(() => undefined);
 
   const activateBackendSession = useCallback((session: BackendSession) => {
     const id = session.session_ref.ref_id;
@@ -247,85 +259,121 @@ export function ChatApp() {
   }, []);
 
   const handleVoiceTranscript = useCallback(async (text: string) => {
-    setVoiceSessionTranscript(text);
     const reply = await send(text);
     if (reply.speechText.trim()) {
       await speakVoiceWorker(reply.speechText, { bargeIn: true }).catch(() => undefined);
     }
   }, [send]);
 
-  const toggleDictation = useCallback(() => {
-    if (dictationActive || pending) return;
-    setDictationActive(true);
-    void listenVoiceWorker()
-      .then(async (status) => {
-        const transcript = transcriptFromStatus(status);
-        if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
-        lastVoiceEventRef.current = transcript.eventId;
-        setComposerText((current) => [current.trim(), transcript.text].filter(Boolean).join(" "));
-      })
-      .catch(() => undefined)
-      .finally(() => setDictationActive(false));
-  }, [dictationActive, pending]);
+  const consumeVoiceTranscript = useCallback(async (transcript: WorkerTranscript): Promise<boolean> => {
+    if (transcript.eventId === lastVoiceEventRef.current) return false;
+    lastVoiceEventRef.current = transcript.eventId;
+    const target = voiceCaptureTargetRef.current;
+    if (target === "dictation") {
+      setComposerText((current) => [current.trim(), transcript.text].filter(Boolean).join(" "));
+      setDictationActive(false);
+      voiceCaptureTargetRef.current = null;
+      return true;
+    }
+    if (target === "voice") {
+      setVoiceSessionListening(false);
+      voiceListenPendingRef.current = false;
+      voiceCaptureTargetRef.current = null;
+      await handleVoiceTranscript(transcript.text);
+      if (voiceSessionActiveRef.current) {
+        window.setTimeout(() => requestVoiceListenRef.current(false), 250);
+      }
+      return true;
+    }
+    await handleVoiceTranscript(transcript.text);
+    return true;
+  }, [handleVoiceTranscript]);
 
-  const runVoiceListenOnce = useCallback(async () => {
-    if (voiceSessionListening || pending) return;
-    const cue = randomListeningCue();
-    setVoiceSessionCue(cue);
+  const requestVoiceListen = useCallback(async (withCue = false) => {
+    if (voiceListenPendingRef.current || pending || !voiceSessionActiveRef.current) return;
+    voiceListenPendingRef.current = true;
+    voiceCaptureTargetRef.current = "voice";
     setVoiceSessionListening(true);
-    await speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
+    if (withCue && !manualVoiceCuePlayedRef.current) {
+      const cue = randomListeningCue();
+      manualVoiceCuePlayedRef.current = true;
+      setVoiceSessionCue(cue);
+      await speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
+    }
     try {
       const status = await listenVoiceWorker();
       const transcript = transcriptFromStatus(status);
-      if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
-      lastVoiceEventRef.current = transcript.eventId;
-      await handleVoiceTranscript(transcript.text);
-    } finally {
+      if (transcript) {
+        await consumeVoiceTranscript(transcript);
+        return;
+      }
+      if (manualListenQueued(status)) return;
+      voiceListenPendingRef.current = false;
+      voiceCaptureTargetRef.current = null;
+      setVoiceSessionListening(false);
+    } catch {
+      voiceListenPendingRef.current = false;
+      voiceCaptureTargetRef.current = null;
       setVoiceSessionListening(false);
     }
-  }, [handleVoiceTranscript, pending, voiceSessionListening]);
-
-  const startVoiceSession = useCallback((mode: VoiceSessionMode) => {
-    setVoiceSessionMode(mode);
-    setVoiceSessionActive(true);
-    setVoiceSessionCue("");
-    setVoiceSessionTranscript("");
-    if (mode === "wake") {
-      const cue = randomListeningCue();
-      setVoiceSessionCue(cue);
-      void startVoiceWorker().then(() => speakVoiceWorker(cue, { bargeIn: false })).catch(() => undefined);
-    } else {
-      void startVoiceWorker().catch(() => undefined);
-    }
-  }, []);
-
-  const stopVoiceSession = useCallback(() => {
-    setVoiceSessionActive(false);
-    setVoiceSessionListening(false);
-    void stopVoiceWorker().catch(() => undefined);
-  }, []);
-
-  const pushToTalk = useCallback(() => {
-    if (!voiceSessionActive || voiceSessionMode !== "push_to_talk") return;
-    void runVoiceListenOnce();
-  }, [runVoiceListenOnce, voiceSessionActive, voiceSessionMode]);
+  }, [consumeVoiceTranscript, pending]);
 
   useEffect(() => {
-    if (!voiceSessionActive || voiceSessionMode !== "hands_free" || voiceSessionListening || pending) return;
-    const timer = setTimeout(() => void runVoiceListenOnce(), 250);
-    return () => clearTimeout(timer);
-  }, [pending, runVoiceListenOnce, voiceSessionActive, voiceSessionListening, voiceSessionMode]);
+    requestVoiceListenRef.current = (withCue = false) => {
+      void requestVoiceListen(withCue);
+    };
+  }, [requestVoiceListen]);
+
+  const toggleDictation = useCallback(() => {
+    if (dictationActive || pending) return;
+    setDictationActive(true);
+    voiceCaptureTargetRef.current = "dictation";
+    void listenVoiceWorker()
+      .then(async (status) => {
+        const transcript = transcriptFromStatus(status);
+        if (transcript) {
+          await consumeVoiceTranscript(transcript);
+          return;
+        }
+        if (manualListenQueued(status)) return;
+        setDictationActive(false);
+        if (voiceCaptureTargetRef.current === "dictation") voiceCaptureTargetRef.current = null;
+      })
+      .catch(() => {
+        setDictationActive(false);
+        if (voiceCaptureTargetRef.current === "dictation") voiceCaptureTargetRef.current = null;
+      });
+  }, [consumeVoiceTranscript, dictationActive, pending]);
+
+  const toggleVoiceSession = useCallback(() => {
+    if (voiceSessionActiveRef.current) {
+      voiceSessionActiveRef.current = false;
+      voiceListenPendingRef.current = false;
+      if (voiceCaptureTargetRef.current === "voice") voiceCaptureTargetRef.current = null;
+      setVoiceSessionActive(false);
+      setVoiceSessionListening(false);
+      return;
+    }
+    voiceSessionActiveRef.current = true;
+    voiceListenPendingRef.current = false;
+    manualVoiceCuePlayedRef.current = false;
+    setVoiceSessionCue("");
+    setVoiceSessionActive(true);
+    void startVoiceWorker()
+      .catch(() => undefined)
+      .finally(() => requestVoiceListenRef.current(true));
+  }, []);
 
   // Voice loop bridge (docs/TODO/04): poll the worker for a freshly recognized
   // transcript, run it as a chat turn, and speak the reply back through the
   // worker. The worker handles wake -> capture -> STT and emits normalized text;
   // the shell mediates turn + speak because the worker is loopback-isolated from
-  // Core. This must run for HANDS-FREE wake word too (not only the manual mic
-  // button): the wake word fires in the worker independently, so if we only
-  // polled while micActive, "Hey Marvex" would transcribe but nothing would
-  // reach the UI.
+  // Core. This must run for background wake-word transcripts and queued manual
+  // listens too: if we only polled while the composer mic is active, "Hey
+  // Marvex" or a queued dictation capture could transcribe but never reach the
+  // UI.
   const wakewordActive = backend?.wakeword === "enabled" || backend?.wakeword === "running";
-  const voiceBridgeActive = dictationActive || wakewordActive || (voiceSessionActive && voiceSessionMode === "wake");
+  const voiceBridgeActive = dictationActive || wakewordActive || voiceSessionActive;
   useEffect(() => {
     if (!voiceBridgeActive) return;
     let cancelled = false;
@@ -337,9 +385,8 @@ export function ChatApp() {
         .then(async (status) => {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
-          if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
-          lastVoiceEventRef.current = transcript.eventId;
-          await handleVoiceTranscript(transcript.text);
+          if (!transcript) return;
+          await consumeVoiceTranscript(transcript);
         })
         .catch(() => undefined)
         .finally(() => {
@@ -350,7 +397,7 @@ export function ChatApp() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [handleVoiceTranscript, voiceBridgeActive]);
+  }, [consumeVoiceTranscript, voiceBridgeActive]);
 
   const navItems = useMemo(() => [
     { id: "chat" as TabId, icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
@@ -506,6 +553,10 @@ export function ChatApp() {
                 onComposerValueChange={setComposerText}
                 onSubmit={(text) => { setComposerText(""); void send(text); }}
                 onToggleVoice={toggleDictation}
+                voiceSessionActive={voiceSessionActive}
+                voiceSessionListening={voiceSessionListening}
+                voiceSessionCue={voiceSessionCue}
+                onToggleVoiceSession={toggleVoiceSession}
                 onApprovalDecision={decideChatApproval}
                 onClarificationAnswer={answerClarification}
                 onStop={stopChatTurn}
@@ -526,14 +577,6 @@ export function ChatApp() {
                 <WakeEnrollment />
                 <div style={{ height: 1, background: "var(--border)" }} />
                 <VoiceMode
-                  voiceSessionActive={voiceSessionActive}
-                  voiceSessionMode={voiceSessionMode}
-                  voiceSessionListening={voiceSessionListening}
-                  voiceSessionCue={voiceSessionCue}
-                  voiceSessionTranscript={voiceSessionTranscript}
-                  onStartVoiceSession={startVoiceSession}
-                  onStopVoiceSession={stopVoiceSession}
-                  onPushToTalk={pushToTalk}
                 />
               </div>
             )}

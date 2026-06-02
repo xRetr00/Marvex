@@ -31,6 +31,7 @@ describe("MarvexChatShell", () => {
   it("submits text through the Marvex backend callback and keeps composer controls local", async () => {
     const onSubmit = vi.fn();
     const onToggleVoice = vi.fn();
+    const onToggleVoiceSession = vi.fn();
     render(
       <MarvexChatShell
         messages={[]}
@@ -38,6 +39,7 @@ describe("MarvexChatShell", () => {
         micActive={false}
         onSubmit={onSubmit}
         onToggleVoice={onToggleVoice}
+        onToggleVoiceSession={onToggleVoiceSession}
         renderAssistantOrb={() => <span />}
       />,
     );
@@ -48,6 +50,8 @@ describe("MarvexChatShell", () => {
     expect(onSubmit).toHaveBeenCalledWith("Search the workspace");
     await userEvent.click(screen.getByRole("button", { name: "Start dictation" }));
     expect(onToggleVoice).toHaveBeenCalledTimes(1);
+    await userEvent.click(screen.getByRole("button", { name: "Start voice mode" }));
+    expect(onToggleVoiceSession).toHaveBeenCalledTimes(1);
   });
 
   it("renders assistant markdown and hides raw approval request internals", () => {
