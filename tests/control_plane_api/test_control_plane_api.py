@@ -170,7 +170,11 @@ def test_logs_endpoint_returns_sanitized_api_owned_log_projection() -> None:
         {
             "name": "core.stderr.log",
             "source": "control_plane_test",
-            "lines": ["service ready", "[redacted]", "[redacted]"],
+            "lines": [
+                "service ready",
+                "Authorization: Bearer [redacted]",
+                "api_key=[redacted]",
+            ],
         }
     ]
 
@@ -213,7 +217,7 @@ def test_local_log_writer_appends_sanitized_structured_lines(tmp_path) -> None:
         {
             "name": "turns.log",
             "source": "control_plane_api",
-            "lines": ["[redacted]"],
+            "lines": ["trace=trace-1 status=received Authorization: Bearer [redacted]"],
         }
     ]
 

@@ -271,6 +271,31 @@ def test_provider_connection_and_automation_routes_are_exposed() -> None:
     assert litellm_automation["automation_validation"]["ready"] is True
 
 
+def test_snapshot_settings_include_provider_control_catalog() -> None:
+    control = InMemoryProviderControl()
+    control.set_active_provider("litellm")
+    control.set_active_model("litellm", "openai/gpt-4.1-mini")
+    app = create_control_plane_test_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        provider_control=control,
+    )
+
+    status, _headers, payload = asgi_call(app, "/control/snapshot")
+
+    assert status == "200 OK"
+    assert payload["settings"]["active_provider_id"] == "litellm"
+    assert payload["settings"]["provider_control"]["active_provider_id"] == "litellm"
+    provider = next(
+        row
+        for row in payload["settings"]["provider_control"]["providers"]
+        if row["provider_id"] == "litellm"
+    )
+    assert provider["active_model"] == "openai/gpt-4.1-mini"
+    assert "api_key" not in json.dumps(payload).lower()
+
+
 def test_litellm_model_refresh_uses_in_memory_secret_for_sdk_discovery(monkeypatch) -> None:
     captured = {}
 

@@ -15,7 +15,6 @@ from packages.session_runtime import BackendSessionCoordinator
 from packages.telemetry.search import TraceSearchQuery, search_traces
 
 from .approvals import InMemoryApprovalStore
-from .agents import handle_agent_control_request
 from .browser_session import BrowserSessionManager
 from .deps import handle_deps_request
 from .logs import logs_payload
@@ -106,8 +105,6 @@ def _create_control_plane_dispatcher(
     marketplace_proposal_store: MarketplaceProposalStore | None = None,
     state_bus: Any | None = None,
     deps_pip_runner: Any | None = None,
-    agent_catalog_projection: dict[str, Any] | None = None,
-    persona_catalog_projection: dict[str, Any] | None = None,
     web_dist: str | None = None,
     log_reader: Any | None = None,
     session_coordinator: BackendSessionCoordinator | None = None,
@@ -223,12 +220,6 @@ def _create_control_plane_dispatcher(
         provider_response = handle_provider_control_request(method=method, path=path, environ=environ, provider_control=provider_control)
         if provider_response is not None:
             status, payload = provider_response
-            return _json_response(None, status, payload)
-
-        agent_response = handle_agent_control_request(method=method, path=path, environ=environ, agent_catalog_projection=agent_catalog_projection, persona_catalog_projection=persona_catalog_projection)
-        if agent_response is not None:
-            status, payload = agent_response
-            payload = _safe_nested_mapping(payload)
             return _json_response(None, status, payload)
 
         if method == "GET" and path == f"{CONTROL_PREFIX}/approvals":
@@ -452,6 +443,7 @@ def _create_control_plane_dispatcher(
                 payload["settings"] = {
                     **dict(payload.get("settings", {})),
                     "active_provider_id": provider_catalog.get("active_provider_id"),
+                    "provider_control": provider_catalog,
                 }
             trace_rows = _trace_rows(trace_reader=trace_reader, trace_ids=trace_ids)
             if trace_rows:

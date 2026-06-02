@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from typing import Any
 
 SCHEMA_VERSION = "1"
-UNSAFE_TEXT_PARTS = ("authorization", "bearer", "password", "secret", "token", "api_key", "apikey")
+_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|apikey|password|secret|token)\b(\s*[:=]\s*)(\"[^\"]*\"|'[^']*'|[^\s,;]+)"
+)
+_AUTHORIZATION_RE = re.compile(r"(?i)\b(authorization)\b(\s*[:=]\s*)(?!bearer\s+\[redacted\])(\"[^\"]*\"|'[^']*'|[^\s,;]+)")
+_BEARER_RE = re.compile(r"(?i)\bbearer\s+([^\s,;]+)")
 
 
 class LocalLogReader:
@@ -88,8 +93,9 @@ def _safe_log_projection(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def sanitize_log_text(value: str) -> str:
-    lowered = value.lower()
-    return "[redacted]" if any(part in lowered for part in UNSAFE_TEXT_PARTS) else value
+    redacted = _BEARER_RE.sub("Bearer [redacted]", value)
+    redacted = _AUTHORIZATION_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}[redacted]", redacted)
+    return _SECRET_ASSIGNMENT_RE.sub(lambda match: f"{match.group(1)}{match.group(2)}[redacted]", redacted)
 
 
 def _trace_log_projections(trace_reader: Any | None, *, max_lines: int) -> list[dict[str, Any]]:
