@@ -11,7 +11,7 @@ import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, stopVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -24,6 +24,7 @@ import { StatusView } from "@/components/marvex/StatusView";
 import { WakeEnrollment } from "@/components/marvex/WakeEnrollment";
 import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
+import type { VoiceSessionMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
@@ -31,6 +32,12 @@ type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
+
+const LISTENING_CUES = ["Huh?", "Umm?", "Yes?"] as const;
+
+function randomListeningCue(): string {
+  return LISTENING_CUES[Math.floor(Math.random() * LISTENING_CUES.length)];
+}
 
 const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
 
@@ -50,7 +57,13 @@ export function ChatApp() {
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [providers, setProviders] = useState<ProviderCatalog | null>(null);
   const [pending, setPending] = useState(false);
-  const [micActive, setMicActive] = useState(false);
+  const [dictationActive, setDictationActive] = useState(false);
+  const [composerText, setComposerText] = useState("");
+  const [voiceSessionActive, setVoiceSessionActive] = useState(false);
+  const [voiceSessionMode, setVoiceSessionMode] = useState<VoiceSessionMode>("wake");
+  const [voiceSessionListening, setVoiceSessionListening] = useState(false);
+  const [voiceSessionCue, setVoiceSessionCue] = useState("");
+  const [voiceSessionTranscript, setVoiceSessionTranscript] = useState("");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<TabId>("chat");
 
@@ -234,25 +247,74 @@ export function ChatApp() {
   }, []);
 
   const handleVoiceTranscript = useCallback(async (text: string) => {
+    setVoiceSessionTranscript(text);
     const reply = await send(text);
     if (reply.speechText.trim()) {
       await speakVoiceWorker(reply.speechText, { bargeIn: true }).catch(() => undefined);
     }
   }, [send]);
 
-  const toggleVoiceCapture = useCallback(() => {
-    if (micActive || pending) return;
-    setMicActive(true);
+  const toggleDictation = useCallback(() => {
+    if (dictationActive || pending) return;
+    setDictationActive(true);
     void listenVoiceWorker()
       .then(async (status) => {
         const transcript = transcriptFromStatus(status);
         if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
         lastVoiceEventRef.current = transcript.eventId;
-        await handleVoiceTranscript(transcript.text);
+        setComposerText((current) => [current.trim(), transcript.text].filter(Boolean).join(" "));
       })
       .catch(() => undefined)
-      .finally(() => setMicActive(false));
-  }, [handleVoiceTranscript, micActive, pending]);
+      .finally(() => setDictationActive(false));
+  }, [dictationActive, pending]);
+
+  const runVoiceListenOnce = useCallback(async () => {
+    if (voiceSessionListening || pending) return;
+    const cue = randomListeningCue();
+    setVoiceSessionCue(cue);
+    setVoiceSessionListening(true);
+    await speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
+    try {
+      const status = await listenVoiceWorker();
+      const transcript = transcriptFromStatus(status);
+      if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
+      lastVoiceEventRef.current = transcript.eventId;
+      await handleVoiceTranscript(transcript.text);
+    } finally {
+      setVoiceSessionListening(false);
+    }
+  }, [handleVoiceTranscript, pending, voiceSessionListening]);
+
+  const startVoiceSession = useCallback((mode: VoiceSessionMode) => {
+    setVoiceSessionMode(mode);
+    setVoiceSessionActive(true);
+    setVoiceSessionCue("");
+    setVoiceSessionTranscript("");
+    if (mode === "wake") {
+      const cue = randomListeningCue();
+      setVoiceSessionCue(cue);
+      void startVoiceWorker().then(() => speakVoiceWorker(cue, { bargeIn: false })).catch(() => undefined);
+    } else {
+      void startVoiceWorker().catch(() => undefined);
+    }
+  }, []);
+
+  const stopVoiceSession = useCallback(() => {
+    setVoiceSessionActive(false);
+    setVoiceSessionListening(false);
+    void stopVoiceWorker().catch(() => undefined);
+  }, []);
+
+  const pushToTalk = useCallback(() => {
+    if (!voiceSessionActive || voiceSessionMode !== "push_to_talk") return;
+    void runVoiceListenOnce();
+  }, [runVoiceListenOnce, voiceSessionActive, voiceSessionMode]);
+
+  useEffect(() => {
+    if (!voiceSessionActive || voiceSessionMode !== "hands_free" || voiceSessionListening || pending) return;
+    const timer = setTimeout(() => void runVoiceListenOnce(), 250);
+    return () => clearTimeout(timer);
+  }, [pending, runVoiceListenOnce, voiceSessionActive, voiceSessionListening, voiceSessionMode]);
 
   // Voice loop bridge (docs/TODO/04): poll the worker for a freshly recognized
   // transcript, run it as a chat turn, and speak the reply back through the
@@ -263,7 +325,7 @@ export function ChatApp() {
   // polled while micActive, "Hey Marvex" would transcribe but nothing would
   // reach the UI.
   const wakewordActive = backend?.wakeword === "enabled" || backend?.wakeword === "running";
-  const voiceBridgeActive = micActive || wakewordActive;
+  const voiceBridgeActive = dictationActive || wakewordActive || (voiceSessionActive && voiceSessionMode === "wake");
   useEffect(() => {
     if (!voiceBridgeActive) return;
     let cancelled = false;
@@ -271,7 +333,7 @@ export function ChatApp() {
     const timer = setInterval(() => {
       if (busy) return;
       busy = true;
-      void fetchVoiceWorkerStatus()
+      void Promise.resolve(fetchVoiceWorkerStatus())
         .then(async (status) => {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
@@ -439,9 +501,11 @@ export function ChatApp() {
               <MarvexChatShell
                 assistantOrbState={orbState}
                 messages={messages}
-                micActive={micActive}
-                onSubmit={(text) => { void send(text); }}
-                onToggleVoice={toggleVoiceCapture}
+                micActive={dictationActive}
+                composerValue={composerText}
+                onComposerValueChange={setComposerText}
+                onSubmit={(text) => { setComposerText(""); void send(text); }}
+                onToggleVoice={toggleDictation}
                 onApprovalDecision={decideChatApproval}
                 onClarificationAnswer={answerClarification}
                 onStop={stopChatTurn}
@@ -461,7 +525,16 @@ export function ChatApp() {
               <div style={{ flex: 1, overflow: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 24 }}>
                 <WakeEnrollment />
                 <div style={{ height: 1, background: "var(--border)" }} />
-                <VoiceMode />
+                <VoiceMode
+                  voiceSessionActive={voiceSessionActive}
+                  voiceSessionMode={voiceSessionMode}
+                  voiceSessionListening={voiceSessionListening}
+                  voiceSessionCue={voiceSessionCue}
+                  voiceSessionTranscript={voiceSessionTranscript}
+                  onStartVoiceSession={startVoiceSession}
+                  onStopVoiceSession={stopVoiceSession}
+                  onPushToTalk={pushToTalk}
+                />
               </div>
             )}
             {activeTab === "logs" && (

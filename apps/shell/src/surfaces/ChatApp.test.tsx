@@ -155,7 +155,7 @@ describe("ChatApp module boundary", () => {
     expect(resumeApprovalTurn).toHaveBeenCalledWith(expect.objectContaining({ approvalId: "approval-turn-shell-chat-1" }));
   });
 
-  it("uses the composer mic as push-to-talk and speaks only speech-safe replies", async () => {
+  it("uses the composer mic as dictation without submitting a voice turn", async () => {
     vi.doMock("@/lib/backendStatus", () => ({
       FAILED_PHASES: new Set<string>(),
       serviceOk: () => true,
@@ -179,9 +179,7 @@ describe("ChatApp module boundary", () => {
       AgentOrb: () => <div data-testid="agent-orb" />,
     }));
     vi.doMock("@/lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
-    const submitChatTurnStream = vi.fn(async () => ({
-      assistant_final_response: { text: "Voice reply", safe_for_speech: true },
-    }));
+    const submitChatTurnStream = vi.fn();
     vi.doMock("@/lib/shellCommands", () => ({
       createChatSession: vi.fn(async () => ({ session: { session_ref: { ref_id: "session-1" }, title: "New chat", updated_at_unix_ms: 0 } })),
       getShellRuntimeConfig: vi.fn(async () => ({ core_base_url: "http://localhost:8765" })),
@@ -216,11 +214,12 @@ describe("ChatApp module boundary", () => {
     render(<ChatApp />);
     await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
 
-    await userEvent.click(screen.getByRole("button", { name: "Start voice capture" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start dictation" }));
 
     await waitFor(() => expect(listenVoiceWorker).toHaveBeenCalled());
-    await waitFor(() => expect(submitChatTurnStream).toHaveBeenCalledWith("hello by voice", expect.any(Object), undefined, expect.any(Function)));
-    await waitFor(() => expect(speakVoiceWorker).toHaveBeenCalledWith("Voice reply", { bargeIn: true }));
+    await waitFor(() => expect(screen.getByPlaceholderText("Ask anything...")).toHaveValue("hello by voice"));
+    expect(submitChatTurnStream).not.toHaveBeenCalled();
+    expect(speakVoiceWorker).not.toHaveBeenCalled();
     expect(startVoiceWorker).not.toHaveBeenCalled();
   });
 });
