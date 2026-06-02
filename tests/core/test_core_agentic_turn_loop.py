@@ -332,11 +332,11 @@ def test_core_approval_required_can_resume_approve_deny_and_cancel() -> None:
         extra=["--resume-approval", "approval-turn-core-cancel", "--approval-decision", "cancel"],
     )
 
-    assert approved.error is None
-    assert approved.assistant_final_response is not None
-    assert "executed after approval" in approved.assistant_final_response.text.lower()
+    assert approved.error is not None
+    assert approved.error.details["reason"] == "approval_resume_missing_model_tool_call"
     assert approved.metadata["approval"]["decision"] == "approved"
-    assert approved.metadata["agentic_loop"]["executed_count"] == 1
+    assert approved.metadata["tool_boundary"] == "model_tool_call_required"
+    assert approved.metadata["agentic_loop"]["executed_count"] == 0
 
     assert denied.error is not None
     assert denied.error.details["reason"] == "approval_denied"
@@ -362,7 +362,7 @@ def test_core_approval_resume_requires_same_logical_turn_approval_id() -> None:
     assert result.metadata["agentic_loop"]["executed_count"] == 0
 
 
-def test_core_approval_resume_executes_approved_file_write(tmp_path: Path) -> None:
+def test_core_approval_resume_does_not_execute_parsed_file_write_without_model_tool_call(tmp_path: Path) -> None:
     root = tmp_path / "profile"
     (root / "Desktop").mkdir(parents=True)
     turn_id = "turn-core-write-resume"
@@ -387,8 +387,33 @@ def test_core_approval_resume_executes_approved_file_write(tmp_path: Path) -> No
         ],
     )
 
-    assert approved.error is None
-    assert approved.assistant_final_response is not None
-    assert "File written: Desktop/test.txt." == approved.assistant_final_response.text
-    assert (root / "Desktop" / "test.txt").read_text(encoding="utf-8") == "test"
-    assert approved.metadata["tool"]["result"]["capability_ref"]["identifier"] == "file.write"
+    assert approved.error is not None
+    assert approved.error.details["reason"] == "approval_resume_missing_model_tool_call"
+    assert approved.metadata["tool_boundary"] == "model_tool_call_required"
+    assert not (root / "Desktop" / "test.txt").exists()
+
+
+def test_core_approval_resume_does_not_execute_browser_text_without_model_tool_call() -> None:
+    turn_id = "turn-core-browser-resume"
+    paused = run_core_turn(
+        "use playwright to open example.com",
+        trace_id="trace-core-browser-resume",
+        turn_id=turn_id,
+    )
+
+    approved = run_core_turn(
+        "use playwright to open example.com",
+        trace_id="trace-core-browser-resume",
+        turn_id=turn_id,
+        extra=[
+            "--resume-approval",
+            paused.metadata["approval_request"]["approval_request_id"],
+            "--approval-decision",
+            "approve",
+        ],
+    )
+
+    assert approved.error is not None
+    assert approved.error.details["reason"] == "approval_resume_missing_model_tool_call"
+    assert approved.metadata["tool_boundary"] == "model_tool_call_required"
+    assert "automation" not in approved.metadata

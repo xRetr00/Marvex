@@ -118,20 +118,17 @@ def test_litellm_path_uses_mocked_litellm_call(monkeypatch, capsys):
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
         return SimpleNamespace(
             id="litellm-response-001",
-            choices=[
-                SimpleNamespace(
-                    finish_reason="stop",
-                    message=SimpleNamespace(content="litellm output"),
-                )
-            ],
+            status="completed",
+            output_text="litellm output",
+            output=[],
             usage={},
         )
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     exit_code = main(
         [
@@ -152,10 +149,8 @@ def test_litellm_path_uses_mocked_litellm_call(monkeypatch, capsys):
     assert calls == [
         {
             "model": "openrouter/test-model",
-            "messages": [
-                {"role": "system", "content": "Be concise."},
-                {"role": "user", "content": "Hello"},
-            ],
+            "input": "Hello",
+            "instructions": "Be concise.",
         }
     ]
 
@@ -169,7 +164,7 @@ def test_health_command_prints_human_health_output(capsys):
     assert exit_code == 0
     assert "service: marvex" in output
     assert "status: ok" in output
-    assert "version: 0.1.0" in output
+    assert "version: 0.2.0" in output
     assert "uptime_seconds: 0.0" in output
 
 
@@ -183,7 +178,7 @@ def test_health_command_json_output_validates_as_health_check(capsys):
     assert exit_code == 0
     assert health.service == "marvex"
     assert health.status == "ok"
-    assert health.version == "0.1.0"
+    assert health.version == "0.2.0"
     assert health.uptime_seconds == 0.0
     assert health.dependencies == {}
 
@@ -196,7 +191,7 @@ def test_version_command_prints_human_version_output(capsys):
     output = capsys.readouterr().out
     assert exit_code == 0
     assert "service: marvex" in output
-    assert "service_version: 0.1.0" in output
+    assert "service_version: 0.2.0" in output
 
 
 def test_version_command_json_output_validates_as_version_info(capsys):
@@ -208,12 +203,12 @@ def test_version_command_json_output_validates_as_version_info(capsys):
     version = VersionInfo.model_validate(json.loads(output))
     assert exit_code == 0
     assert version.service == "marvex"
-    assert version.service_version == "0.1.0"
+    assert version.service_version == "0.2.0"
     assert version.contract_versions == {
         "HealthCheck": "0.1.1-draft",
         "VersionInfo": "0.1.1-draft",
     }
-    assert version.build == {"version": "0.1.0"}
+    assert version.build == {"version": "0.2.0"}
 
 
 def test_cli_source_has_no_forbidden_modules_or_features():
