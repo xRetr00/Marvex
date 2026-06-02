@@ -250,10 +250,12 @@ def test_tool_worker_file_write_requires_approval_then_writes_inside_sandbox(tmp
     assert (root / "note.txt").read_text(encoding="utf-8") == "safe approved content"
     assert responses[1]["result"]["safe_result"] == {
         "operation": "write",
+        "write_mode": "create",
         "path": "note.txt",
         "bytes_written": len("safe approved content".encode("utf-8")),
         "created": True,
         "overwritten": False,
+        "appended": False,
         "raw_content_persisted": False,
     }
     assert responses[2]["ok"] is False

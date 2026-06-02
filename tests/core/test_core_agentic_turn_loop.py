@@ -209,7 +209,7 @@ def test_core_list_tools_uses_capability_diagnostics_not_provider() -> None:
     assert result.metadata["agentic_loop"]["executed_count"] == 1
 
 
-def test_core_file_write_turn_pauses_for_approval_instead_of_provider() -> None:
+def test_core_file_write_turn_requires_model_tool_call_before_approval() -> None:
     result = run_core_turn(
         "write test.txt on my desktop",
         trace_id="trace-core-write-approval",
@@ -218,10 +218,11 @@ def test_core_file_write_turn_pauses_for_approval_instead_of_provider() -> None:
 
     assert result.error is None
     assert result.assistant_final_response is not None
-    assert "Approval required" in result.assistant_final_response.text
+    assert "model-authored tool call" in result.assistant_final_response.text
     assert result.provider_turn_refs == []
-    assert result.metadata["agentic_loop"]["stop_reason"] == "waiting_for_human_approval"
-    assert result.metadata["approval_request"]["approval_request_id"] == "approval-turn-core-write-approval"
+    assert result.metadata["agentic_loop"]["stop_reason"] == "blocked"
+    assert result.metadata["tool_boundary"] == "model_tool_call_required"
+    assert result.metadata["file_write"]["model_tool_call_required"] is True
 
 
 def test_core_routes_non_provider_intent_kinds_without_generic_provider_fallthrough() -> None:
@@ -362,7 +363,7 @@ def test_core_approval_resume_requires_same_logical_turn_approval_id() -> None:
     assert result.metadata["agentic_loop"]["executed_count"] == 0
 
 
-def test_core_approval_resume_does_not_execute_parsed_file_write_without_model_tool_call(tmp_path: Path) -> None:
+def test_core_does_not_create_file_write_approval_without_model_tool_call(tmp_path: Path) -> None:
     root = tmp_path / "profile"
     (root / "Desktop").mkdir(parents=True)
     turn_id = "turn-core-write-resume"
@@ -373,27 +374,13 @@ def test_core_approval_resume_does_not_execute_parsed_file_write_without_model_t
         extra=["--file-capability-root", str(root)],
     )
 
-    approved = run_core_turn(
-        "write test.txt on my desktop",
-        trace_id="trace-core-write-resume",
-        turn_id=turn_id,
-        extra=[
-            "--file-capability-root",
-            str(root),
-            "--resume-approval",
-            paused.metadata["approval_request"]["approval_request_id"],
-            "--approval-decision",
-            "approve",
-        ],
-    )
-
-    assert approved.error is not None
-    assert approved.error.details["reason"] == "approval_resume_missing_model_tool_call"
-    assert approved.metadata["tool_boundary"] == "model_tool_call_required"
+    assert paused.error is None
+    assert paused.metadata["tool_boundary"] == "model_tool_call_required"
+    assert "approval_request" not in paused.metadata
     assert not (root / "Desktop" / "test.txt").exists()
 
 
-def test_core_approval_resume_does_not_execute_browser_text_without_model_tool_call() -> None:
+def test_core_does_not_create_browser_approval_without_model_tool_call() -> None:
     turn_id = "turn-core-browser-resume"
     paused = run_core_turn(
         "use playwright to open example.com",
@@ -401,19 +388,7 @@ def test_core_approval_resume_does_not_execute_browser_text_without_model_tool_c
         turn_id=turn_id,
     )
 
-    approved = run_core_turn(
-        "use playwright to open example.com",
-        trace_id="trace-core-browser-resume",
-        turn_id=turn_id,
-        extra=[
-            "--resume-approval",
-            paused.metadata["approval_request"]["approval_request_id"],
-            "--approval-decision",
-            "approve",
-        ],
-    )
-
-    assert approved.error is not None
-    assert approved.error.details["reason"] == "approval_resume_missing_model_tool_call"
-    assert approved.metadata["tool_boundary"] == "model_tool_call_required"
-    assert "automation" not in approved.metadata
+    assert paused.error is None
+    assert paused.metadata["tool_boundary"] == "model_tool_call_required"
+    assert paused.metadata["browser"]["model_tool_call_required"] is True
+    assert "approval_request" not in paused.metadata

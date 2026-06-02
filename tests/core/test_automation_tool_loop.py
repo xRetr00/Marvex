@@ -31,6 +31,8 @@ def test_browser_use_tool_pauses_for_approval_carrying_capability_and_args():
     assert a["capability_id"] == "browser_use.task"
     assert a["resource_type"] == "browser"
     assert a["arguments"] == {"task": "open youtube"}
+    assert autos[0].pending_tool["capability_id"] == "browser_use.task"
+    assert autos[0].pending_tool["arguments"] == {"task": "open youtube"}
     # Not executed in the loop.
     assert outcome.executed_tool_ids == []
 

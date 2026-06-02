@@ -39,9 +39,10 @@ def test_approved_browser_use_task_uses_controlled_adapter_without_raw_payloads(
         },
     )
 
-    assert result.ok is True
     assert result.result is not None
     assert result.result.status in {"succeeded", "denied"}
+    assert result.ok is (result.result.status == "succeeded")
+    assert result.blocked is (result.result.status == "denied")
     assert result.result.safe_result["adapter"] == "browser-use"
     assert result.result.safe_result["approval_required"] is True
     assert result.result.raw_input_persisted is False
@@ -63,8 +64,9 @@ def test_approved_desktop_computer_action_uses_policy_gated_adapter() -> None:
         },
     )
 
-    assert result.ok is True
     assert result.result is not None
+    assert result.ok is (result.result.status == "succeeded")
+    assert result.blocked is (result.result.status == "denied")
     assert result.result.safe_result["adapter"] == "windows-desktop-computer-use"
     assert result.result.safe_result["ufo_external_process"] == "operator_configured"
     assert result.result.safe_result["omniparser_external_process"] == "operator_configured"

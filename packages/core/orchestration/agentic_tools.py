@@ -27,7 +27,7 @@ from typing import Any, Callable
 from packages.adapters.capabilities.tools import ToolRegistry
 from packages.adapters.capabilities.tools.clarify import CLARIFY_TOOL_ID, clarification_payload_from_arguments
 from packages.adapters.capabilities.tools.automation import AUTOMATION_TOOL_CAPABILITIES
-from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel
+from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel, ToolSideEffectLevel
 
 # Builds an execution request for a resolved tool id + parsed arguments. The
 # caller injects sandbox root, trace/turn ids, and an approved permission for
@@ -43,6 +43,7 @@ class ToolCallResult:
     message: dict[str, Any]  # OpenAI-style {"role": "tool", ...}
     clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
     automation: dict[str, Any] | None = None  # set when an automation tool needs approval
+    pending_tool: dict[str, Any] | None = None  # model-authored tool call to resume after approval
 
 
 @dataclass
@@ -66,6 +67,10 @@ class ToolStepOutcome:
     @property
     def automation_calls(self) -> list[ToolCallResult]:
         return [r for r in self.results if r.automation is not None]
+
+    @property
+    def pending_tool_calls(self) -> list[ToolCallResult]:
+        return [r for r in self.results if r.pending_tool is not None]
 
     @property
     def all_messages(self) -> list[dict[str, Any]]:
@@ -153,6 +158,14 @@ def execute_tool_calls(
                         "capability": capability_label,
                         "arguments": arguments,
                     },
+                    pending_tool={
+                        "tool_id": name,
+                        "capability_id": capability_id,
+                        "resource_type": resource_type,
+                        "capability": capability_label,
+                        "arguments": arguments,
+                        "call_id": call_id,
+                    },
                 )
             )
             tool_messages.append(results[-1].message)
@@ -168,12 +181,27 @@ def execute_tool_calls(
             tool_messages.append(results[-1].message)
             continue
 
-        if tool.risk_level is not ToolRiskLevel.SAFE:
+        if tool.risk_level is not ToolRiskLevel.SAFE or tool.side_effect_level is not ToolSideEffectLevel.READ_ONLY:
             content = (
                 f"Tool '{name}' requires human approval before it can run. "
                 "It was not executed automatically."
             )
-            results.append(ToolCallResult(call_id, name, "needs_approval", _tool_message(call_id, content)))
+            results.append(
+                ToolCallResult(
+                    call_id,
+                    name,
+                    "needs_approval",
+                    _tool_message(call_id, content),
+                    pending_tool={
+                        "tool_id": name,
+                        "capability_id": name,
+                        "resource_type": _resource_type_for_tool(name),
+                        "capability": _capability_label_for_tool(name),
+                        "arguments": arguments,
+                        "call_id": call_id,
+                    },
+                )
+            )
             tool_messages.append(results[-1].message)
             continue
 
@@ -206,6 +234,30 @@ def execute_tool_calls(
     )
 
 
+def _resource_type_for_tool(tool_id: str) -> str:
+    if tool_id.startswith("file."):
+        return "file"
+    if tool_id.startswith("memory."):
+        return "memory"
+    if tool_id.startswith("browser") or "browser" in tool_id:
+        return "browser"
+    if "computer" in tool_id:
+        return "desktop"
+    return "tool"
+
+
+def _capability_label_for_tool(tool_id: str) -> str:
+    if tool_id in {"file.write", "file.patch"}:
+        return "file_write"
+    if tool_id in {"memory.remember", "memory.forget"}:
+        return "memory_auto_write"
+    if tool_id.startswith("file."):
+        return "read"
+    if tool_id.startswith("memory."):
+        return "memory_search"
+    return tool_id.replace(".", "_")
+
+
 @dataclass
 class ProviderStep:
     """The subset of a provider response the loop driver needs."""
@@ -225,6 +277,7 @@ class LoopResult:
     needs_approval_tool_ids: list[str] = field(default_factory=list)
     clarification: dict[str, Any] | None = None  # set when status == "needs_clarification"
     automation: dict[str, Any] | None = None  # capability+args when an automation tool needs approval
+    pending_tool: dict[str, Any] | None = None  # capability+args when any model-authored tool needs approval
     response_id: str | None = None  # provider response id at pause (for resume)
 
 
@@ -285,6 +338,7 @@ def run_tool_loop(
             )
         if outcome.needs_approval:
             automation_calls = outcome.automation_calls
+            pending_calls = outcome.pending_tool_calls
             return LoopResult(
                 status="needs_approval",
                 text=last_text,
@@ -292,6 +346,7 @@ def run_tool_loop(
                 executed_tool_ids=executed,
                 needs_approval_tool_ids=[r.tool_id for r in outcome.needs_approval],
                 automation=automation_calls[0].automation if automation_calls else None,
+                pending_tool=pending_calls[0].pending_tool if pending_calls else None,
                 response_id=prev,
             )
         tool_messages = outcome.all_messages

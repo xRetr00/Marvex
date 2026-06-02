@@ -472,8 +472,9 @@ class ToolWorkerController:
         )
         return self._result(
             command="execute",
-            ok=True,
+            ok=result.status == "succeeded",
             trace_id=trace_id,
+            blocked=result.status in {"denied", "requires_human_approval"},
             result=result,
             projection=SafeCapabilityProjection.from_summary(summary),
             policy_audit=_policy_projection(governance, audit),

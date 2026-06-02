@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from packages.adapters.capabilities.tools import ToolRegistry, default_registry, file_tools_registry, mcp_tools_registry
+from packages.adapters.capabilities.tools import ToolRegistry, default_registry, file_tools_registry, mcp_tools_registry, memory_tools_registry
 from packages.capability_runtime import (
     CapabilityCallProposal,
     CapabilityExecutionMode,
@@ -15,9 +15,12 @@ from packages.capability_runtime import (
     ToolSideEffectLevel,
 )
 from packages.core.orchestration.agentic_tools import (
+    ProviderStep,
     execute_tool_calls,
     parse_tool_arguments,
+    run_tool_loop,
 )
+from packages.memory_runtime import CurrentProcessMemoryStore
 
 
 def _builder(root: str | None = None):
@@ -105,7 +108,45 @@ def test_risky_tool_requires_approval_and_does_not_execute(tmp_path: Path):
     )
     assert outcome.results[0].status == "needs_approval"
     assert outcome.needs_approval
+    assert outcome.pending_tool_calls[0].pending_tool["capability_id"] == "file.write"
+    assert outcome.pending_tool_calls[0].pending_tool["arguments"] == {"path": "x.txt", "content": "data"}
     assert not (tmp_path / "x.txt").exists()  # never written
+
+
+def test_write_local_memory_tools_require_approval_and_do_not_auto_execute():
+    registry = memory_tools_registry(memory_store=CurrentProcessMemoryStore())
+    outcome = execute_tool_calls(
+        [_call("memory.remember", '{"content": "remember this: I prefer short answers"}')],
+        registry=registry,
+        request_builder=_builder(),
+    )
+
+    assert outcome.results[0].status == "needs_approval"
+    assert outcome.executed_tool_ids == []
+    assert outcome.pending_tool_calls[0].pending_tool["capability_id"] == "memory.remember"
+
+
+def test_loop_carries_pending_file_write_payload_for_approval_resume():
+    def send(_input_text, _tool_messages, _prev):
+        return ProviderStep(
+            output_text="",
+            tool_calls=[_call("file.write", '{"path": "x.txt", "content": "data"}')],
+            response_id="r-file-write",
+            error=False,
+        )
+
+    result = run_tool_loop(
+        send=send,
+        registry=file_tools_registry(),
+        request_builder=_builder(root="."),
+        max_steps=3,
+        initial_input="write a file",
+    )
+
+    assert result.status == "needs_approval"
+    assert result.pending_tool["capability_id"] == "file.write"
+    assert result.pending_tool["arguments"] == {"path": "x.txt", "content": "data"}
+    assert result.response_id == "r-file-write"
 
 
 def test_safe_file_read_executes(tmp_path: Path):

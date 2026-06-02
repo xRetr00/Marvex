@@ -120,7 +120,7 @@ class MemorySearchTool(_MemoryTool):
     id: ClassVar[str] = "search"
     name: ClassVar[str] = "Memory search"
     description: ClassVar[str] = "Search approved Marvex memory and return safe previews with memory refs."
-    risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
+    risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.MEDIUM
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.READ_ONLY
     params_model: ClassVar[type[BaseModel]] = MemorySearchParams
 
@@ -224,8 +224,18 @@ class MemoryRememberTool(_MemoryTool):
             created_at=datetime.now(UTC),
             tags=tuple(_safe_tag(tag) for tag in params.tags if _safe_tag(tag)),
         )
-        if self._memory_store is not None and hasattr(self._memory_store, "write_record"):
-            self._memory_store.write_record(record)
+        if self._memory_store is None or not hasattr(self._memory_store, "write_record"):
+            return succeeded_result(
+                request,
+                {
+                    "operation": "memory_remember",
+                    "written": False,
+                    "policy_status": "blocked",
+                    "reason_code": "memory.store_unavailable",
+                    "raw_transcript_persisted": False,
+                },
+            )
+        self._memory_store.write_record(record)
         return succeeded_result(
             request,
             {
@@ -243,7 +253,7 @@ class MemoryForgetTool(_MemoryTool):
     id: ClassVar[str] = "forget"
     name: ClassVar[str] = "Forget memory"
     description: ClassVar[str] = "Forget an exact memory ref. Query-based or broad memory deletion is not supported by this auto tool."
-    risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
+    risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.MEDIUM
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.WRITE_LOCAL
     params_model: ClassVar[type[BaseModel]] = MemoryForgetParams
 

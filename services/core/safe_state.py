@@ -89,12 +89,17 @@ def _sanitize_pending_automation(row: dict[str, object]) -> dict[str, object]:
     arguments = row.get("arguments")
     if not capability_id or not resource_type or not capability or not isinstance(arguments, dict):
         return {}
-    return {
+    sanitized = {
         "capability_id": capability_id,
         "resource_type": resource_type,
         "capability": capability,
         "arguments": _safe_automation_arguments(arguments),
     }
+    for key in ("tool_id", "call_id", "response_id"):
+        value = str(row.get(key) or "").strip()
+        if value:
+            sanitized[key] = value
+    return sanitized
 
 
 def _safe_automation_arguments(arguments: dict[object, object]) -> dict[str, object]:

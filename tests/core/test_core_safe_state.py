@@ -35,6 +35,9 @@ def test_core_safe_state_helpers_round_trip_session_and_entity_snapshots(tmp_pat
             "capability_id": "browser_use.task",
             "resource_type": "browser",
             "capability": "browser_click_type",
+            "tool_id": "builtin.browser_use",
+            "call_id": "call-browser",
+            "response_id": "response-browser",
             "arguments": {"task": "open example.com", "raw_secret": "drop"},
         }
     }
@@ -46,6 +49,9 @@ def test_core_safe_state_helpers_round_trip_session_and_entity_snapshots(tmp_pat
             "capability_id": "browser_use.task",
             "resource_type": "browser",
             "capability": "browser_click_type",
+            "tool_id": "builtin.browser_use",
+            "call_id": "call-browser",
+            "response_id": "response-browser",
             "arguments": {"task": "open example.com"},
         }
     }

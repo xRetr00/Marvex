@@ -1028,6 +1028,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         selection_projection: dict[str, object],
         desktop_context: dict[str, object] | None,
         require_grounded_validation: bool = False,
+        require_tool_call: bool = False,
+        required_tool_reason: str = "model_tool_call_required",
     ) -> AssistantTurnResult | None:
         """Drive the model-tool-call loop. Returns None to fall back.
 
@@ -1095,12 +1097,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
             return None
         if loop_result.status == "needs_approval":
             self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="agentic_tool_approval", trace_id=turn_input.trace_id)
-            if loop_result.automation is not None:
-                # The model called an automation tool (browser/desktop). Stash the
-                # exact capability + args keyed by the approval id this turn will
-                # create, so the approval-resume executes precisely what the model
-                # asked (not a text-heuristic). _approval_request uses turn_id.
-                self._pending_automation[f"approval-{turn_input.turn_id}"] = dict(loop_result.automation)
+            if loop_result.pending_tool is not None:
+                # Stash the exact model-authored tool call keyed by the approval
+                # id this turn will create, so approval-resume executes the
+                # model's requested capability+args rather than a text heuristic.
+                pending_tool = dict(loop_result.pending_tool)
+                if loop_result.response_id:
+                    pending_tool["response_id"] = loop_result.response_id
+                self._pending_automation[f"approval-{turn_input.turn_id}"] = pending_tool
                 _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
             return self._run_approval_path(
                 turn_input,
@@ -1137,6 +1141,49 @@ class _CoreServiceProviderWorkerTurnExecutor:
             # Grounded/search routes must finish through the grounded path so
             # evidence refs are enforced and citation metadata is emitted.
             return None
+        if require_tool_call and loop_result.status == "final" and not loop_result.executed_tool_ids:
+            loop.step("finalize", stop_reason="blocked")
+            blocked_metadata: dict[str, object] = {
+                "intent_boundary": "intent_worker_process",
+                "intent": intent_projection,
+                "intent_backend": intent_response.get("backend_name"),
+                "assistant_turn_spine": "used",
+                "cognition": cognition.safe_projection().model_dump(mode="json"),
+                "intent_plan": _intent_plan_projection(cognition.intent_plan),
+                "session": session_projection,
+                "provider_selection": selection_projection,
+                "tool_boundary": "model_tool_call_required",
+                "agentic_tool_loop": {
+                    "enabled": True,
+                    "executed_tool_ids": loop_result.executed_tool_ids,
+                    "executed_count": len(loop_result.executed_tool_ids),
+                    "model_tool_call_required": True,
+                    "reason_code": required_tool_reason,
+                },
+            }
+            if desktop_context is not None:
+                blocked_metadata["desktop_agent"] = desktop_context
+            if required_tool_reason == "browser_computer_use_tool_required":
+                blocked_metadata["browser"] = {
+                    "live_browser_executed": False,
+                    "approval_required": False,
+                    "model_tool_call_required": True,
+                    "raw_dom_persisted": False,
+                    "raw_screenshot_persisted": False,
+                }
+            if required_tool_reason == "file_write_tool_required":
+                blocked_metadata["file_write"] = {
+                    "executed": False,
+                    "approval_required": False,
+                    "model_tool_call_required": True,
+                    "raw_content_persisted": False,
+                }
+            return _entrypoint_text_result(
+                turn_input,
+                text="This action requires a model-authored tool call before approval can run.",
+                metadata=_with_loop_metadata(blocked_metadata, loop, self._trace_reader, turn_input),
+                stage_name="model_tool_call_required",
+            )
         stop_reason = "finalized" if loop_result.status == "final" else "max_steps_reached"
         loop.step("finalize", stop_reason=stop_reason)
         fallback_text = (
@@ -1529,6 +1576,30 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 arguments={"expression": _calculator_expression(turn_input.user_visible_input)},
             )
         if "risky_action" in route_intents:
+            if _file_write_request_from_input(turn_input.user_visible_input):
+                provider_turn_input, provider_instructions = _turn_input_with_prompt(
+                    turn_input,
+                    cognition,
+                    desktop_context=desktop_context,
+                    session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+                )
+                agentic_result = self._run_agentic_tool_loop(
+                    turn_input,
+                    provider_turn_input=provider_turn_input,
+                    provider_instructions=provider_instructions,
+                    cognition=cognition,
+                    loop=loop,
+                    previous_response_id=previous_response_id,
+                    intent_projection=intent_projection,
+                    intent_response=intent_response,
+                    session_projection=session_projection,
+                    selection_projection=selection_projection,
+                    desktop_context=desktop_context,
+                    require_tool_call=True,
+                    required_tool_reason="file_write_tool_required",
+                )
+                if agentic_result is not None:
+                    return agentic_result
             self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="risky_action", trace_id=turn_input.trace_id)
             return self._run_approval_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if "file_read_list_search" in route_intents:
@@ -1583,63 +1654,50 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 projection={"approval_resume_supported": True, "raw_payload_persisted": False},
             )
         if "browser_computer_use" in route_intents:
-            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="computer_use", trace_id=turn_input.trace_id)
-            if not effective_resume_approval:
-                return self._run_approval_path(
-                    turn_input,
-                    metadata={
+            self._publish(AssistantStatusKind.THINKING, detail="automation_tool_selection", trace_id=turn_input.trace_id)
+            provider_turn_input, provider_instructions = _turn_input_with_prompt(
+                turn_input,
+                cognition,
+                desktop_context=desktop_context,
+                session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+            )
+            agentic_result = self._run_agentic_tool_loop(
+                turn_input,
+                provider_turn_input=provider_turn_input,
+                provider_instructions=provider_instructions,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=previous_response_id,
+                intent_projection=intent_projection,
+                intent_response=intent_response,
+                session_projection=session_projection,
+                selection_projection=selection_projection,
+                desktop_context=desktop_context,
+                require_tool_call=True,
+                required_tool_reason="browser_computer_use_tool_required",
+            )
+            if agentic_result is not None:
+                return agentic_result
+            loop.step("finalize", stop_reason="blocked")
+            return _entrypoint_text_result(
+                turn_input,
+                text="Browser/computer-use requires a model-authored tool call before approval can run.",
+                metadata=_with_loop_metadata(
+                    {
                         **metadata,
                         "browser": {
                             "live_browser_executed": False,
-                            "approval_required": True,
+                            "approval_required": False,
+                            "model_tool_call_required": True,
                             "raw_dom_persisted": False,
                             "raw_screenshot_persisted": False,
                         },
                     },
-                    cognition=cognition,
-                    loop=loop,
-                )
-            if (effective_approval_decision or "").strip().lower() != "approve":
-                return self._run_approval_path(
-                    turn_input,
-                    metadata=metadata,
-                    cognition=cognition,
-                    loop=loop,
-                    resume_approval=effective_resume_approval,
-                    approval_decision=effective_approval_decision,
-                )
-            loop.step("tool")
-            tool_response = self._tool_executor.execute(
-                turn_input,
-                action=turn_input.user_visible_input or "browser computer-use action",
-                capability="browser_click_type",
-                resource_type="browser",
-                capability_id="browser_use.task",
-                arguments={
-                    "task": turn_input.user_visible_input or "browser computer-use action",
-                    "approval_request_id": effective_resume_approval,
-                    "approval_decision": effective_approval_decision or "",
-                    "live_execution_enabled": True,
-                    "raw_persistence_enabled": True,
-                    "provider_model": self._automation_model,
-                    "provider_base_url": self._base_url or "",
-                    "provider_api_key": self._provider_secret or "",
-                    "provider_model_supports_vision": self._automation_model_supports_vision,
-                    "automation_vision_required": self._automation_vision_required,
-                },
-            )
-            loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
-            return _entrypoint_text_result(
-                turn_input,
-                text=_browser_or_computer_use_final_text(tool_response),
-                metadata=_with_loop_metadata(
-                    {**metadata, "tool_boundary": "tool_worker_process", "computer_use": tool_response},
                     loop,
                     self._trace_reader,
                     turn_input,
                 ),
                 stage_name="computer_use",
-                tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:computer-use:result")],
             )
         if "web_search" in route_intents or "grounded_answer" in route_intents:
             # Clarification is model-driven now: the model calls the `clarify`
@@ -2367,6 +2425,131 @@ class _CoreServiceProviderWorkerTurnExecutor:
             stage_name="connector",
         )
 
+    def _execute_approved_memory_tool(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        capability_id: str,
+        arguments: dict[str, object],
+    ) -> dict[str, object]:
+        registry = self._agentic_tool_registry()
+        tool = registry.get(capability_id)
+        if tool is None:
+            return _local_tool_response(
+                turn_input,
+                capability_id=capability_id,
+                ok=False,
+                status="denied",
+                safe_result={"reason_code": "memory.tool_unavailable"},
+            )
+        ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier=capability_id)
+        proposal = CapabilityCallProposal(
+            schema_version=turn_input.schema_version,
+            proposal_id=f"{turn_input.turn_id}:{capability_id}:approved",
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            capability_ref=ref,
+            proposed_action=capability_id,
+            risk_level=tool.risk_level,
+            side_effect_level=tool.side_effect_level,
+            execution_mode=CapabilityExecutionMode.APPROVED_EXECUTE,
+            arguments_schema=tool.json_schema(),
+            raw_arguments_persisted=False,
+        )
+        permission = CapabilityPermissionDecision(
+            schema_version=turn_input.schema_version,
+            decision_id=f"{proposal.proposal_id}:permission",
+            capability_ref=ref,
+            decision="approved",
+            reason_code="human_approved_model_tool_call",
+            human_approval=HumanApprovalRequirement(
+                required=False,
+                reason_code="approved_by_user",
+                prompt_user_visible=False,
+                risk_level=tool.risk_level,
+                side_effect_level=tool.side_effect_level,
+            ),
+        )
+        approval = ApprovalDecision(
+            schema_version=turn_input.schema_version,
+            decision_id=f"{proposal.proposal_id}:approval",
+            approval_request_id=str(arguments.get("approval_request_id") or f"approval-{turn_input.turn_id}"),
+            capability_ref=ref,
+            decision="approved",
+            decided_by="user",
+            raw_decision_payload_persisted=False,
+        )
+        request = CapabilityExecutionRequest(
+            schema_version=turn_input.schema_version,
+            request_id=f"{proposal.proposal_id}:request",
+            trace_id=turn_input.trace_id,
+            turn_id=turn_input.turn_id,
+            proposal=proposal,
+            permission_decision=permission,
+            approval_decision=approval,
+            arguments=dict(arguments),
+            raw_arguments_persisted=False,
+        )
+        try:
+            envelope = registry.execute(request)
+        except Exception as exc:
+            return _local_tool_response(
+                turn_input,
+                capability_id=capability_id,
+                ok=False,
+                status="failed",
+                safe_result={"reason_code": f"memory.tool_failed:{type(exc).__name__}"},
+            )
+        return _local_tool_response(
+            turn_input,
+            capability_id=capability_id,
+            ok=envelope.status == "succeeded",
+            status=envelope.status,
+            safe_result=dict(envelope.safe_result),
+        )
+
+    def _retry_model_after_approved_tool_failure(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+        pending_tool: dict[str, object],
+        tool_response: dict[str, object],
+    ) -> AssistantTurnResult | None:
+        provider_turn_input, provider_instructions = _turn_input_with_prompt(
+            turn_input,
+            cognition,
+            session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+        )
+        failure_prompt = _tool_failure_retry_prompt(turn_input, pending_tool=pending_tool, tool_response=tool_response)
+        provider_turn_input = provider_turn_input.model_copy(update={"user_visible_input": failure_prompt})
+        retry = self._run_agentic_tool_loop(
+            turn_input,
+            provider_turn_input=provider_turn_input,
+            provider_instructions=provider_instructions,
+            cognition=cognition,
+            loop=loop,
+            previous_response_id=str(pending_tool.get("response_id") or "") or None,
+            intent_projection=dict(metadata.get("intent") or {}),
+            intent_response={"backend_name": metadata.get("intent_backend", "intent_worker")},
+            session_projection=dict(metadata.get("session") or {}),
+            selection_projection=dict(metadata.get("provider_selection") or {}),
+            desktop_context=dict(metadata.get("desktop_agent") or {}) if isinstance(metadata.get("desktop_agent"), dict) else None,
+        )
+        if retry is None:
+            return None
+        retry_metadata = {
+            **retry.metadata,
+            "approved_tool_failure_retry": {
+                "attempted": True,
+                "failed_capability_id": str(pending_tool.get("capability_id") or ""),
+                "raw_tool_payload_persisted": False,
+            },
+        }
+        return retry.model_copy(update={"metadata": retry_metadata})
+
     def _run_approval_path(
         self,
         turn_input: AssistantTurnInput,
@@ -2403,9 +2586,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
             if decision == "approve":
                 loop.step("approval")
-                # Model-initiated automation tool call (browser/desktop): execute
-                # the EXACT capability + args the model requested, with the user's
-                # provider creds. Stored when the agentic loop paused for approval.
+                # Model-initiated tool call: execute the EXACT capability + args
+                # the model requested. Stored when the agentic loop paused for
+                # approval; this covers automation, file writes, and memory writes.
                 pending_automation = self._pending_automation.pop(effective_resume_approval, None)
                 _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
                 if pending_automation is not None:
@@ -2415,28 +2598,32 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         detail=str(pending_automation.get("capability_id") or "automation"),
                         trace_id=turn_input.trace_id,
                     )
+                    capability_id = str(pending_automation.get("capability_id") or "browser_use.task")
                     arguments = dict(pending_automation.get("arguments") or {})
-                    arguments.update(
-                        {
-                            "approval_request_id": effective_resume_approval,
-                            "approval_decision": "approve",
-                            "live_execution_enabled": True,
-                            "raw_persistence_enabled": True,
-                            "provider_model": self._automation_model,
-                            "provider_base_url": self._base_url or "",
-                            "provider_api_key": self._provider_secret or "",
-                            "provider_model_supports_vision": self._automation_model_supports_vision,
-                            "automation_vision_required": self._automation_vision_required,
-                        }
-                    )
-                    tool_response = self._tool_executor.execute(
-                        turn_input,
-                        action=turn_input.user_visible_input or "approved automation action",
-                        capability=str(pending_automation.get("capability") or "browser_click_type"),
-                        resource_type=str(pending_automation.get("resource_type") or "browser"),
-                        capability_id=str(pending_automation.get("capability_id") or "browser_use.task"),
-                        arguments=arguments,
-                    )
+                    arguments.update({"approval_request_id": effective_resume_approval, "approval_decision": "approve"})
+                    if _is_automation_capability(capability_id):
+                        arguments.update(
+                            {
+                                "live_execution_enabled": True,
+                                "raw_persistence_enabled": True,
+                                "provider_model": self._automation_model,
+                                "provider_base_url": self._base_url or "",
+                                "provider_api_key": self._provider_secret or "",
+                                "provider_model_supports_vision": self._automation_model_supports_vision,
+                                "automation_vision_required": self._automation_vision_required,
+                            }
+                        )
+                    if capability_id.startswith("memory."):
+                        tool_response = self._execute_approved_memory_tool(turn_input, capability_id=capability_id, arguments=arguments)
+                    else:
+                        tool_response = self._tool_executor.execute(
+                            turn_input,
+                            action=turn_input.user_visible_input or "approved model-authored tool action",
+                            capability=str(pending_automation.get("capability") or "browser_click_type"),
+                            resource_type=str(pending_automation.get("resource_type") or "browser"),
+                            capability_id=capability_id,
+                            arguments=arguments,
+                        )
                     # A destructive desktop action (delete/shutdown/registry/
                     # PowerShell) is gated behind a SECOND, explicit approval. The
                     # ToolWorker reports this instead of executing; re-stash the
@@ -2473,6 +2660,22 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             ),
                             stage_name="destructive_approval_pause",
                         )
+                    if _tool_response_failed(tool_response):
+                        retry = self._retry_model_after_approved_tool_failure(
+                            turn_input,
+                            metadata={
+                                **metadata,
+                                "approval": {"approval_request_id": effective_resume_approval, "decision": "approved"},
+                                "tool_boundary": "tool_worker_process",
+                                "failed_tool": tool_response,
+                            },
+                            cognition=cognition,
+                            loop=loop,
+                            pending_tool=pending_automation,
+                            tool_response=tool_response,
+                        )
+                        if retry is not None:
+                            return retry
                     loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
                     return _entrypoint_text_result(
                         turn_input,
@@ -3123,6 +3326,64 @@ def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str
     return (
         "Approved, but live browser/desktop automation did not complete. "
         f"Reason: {reason}."
+    )
+
+
+def _is_automation_capability(capability_id: str) -> bool:
+    return capability_id in {"browser_use.task", "playwright_mcp.task", "computer_use.action"}
+
+
+def _tool_response_failed(tool_response: dict[str, object]) -> bool:
+    result = dict(tool_response.get("result") or {})
+    status = str(result.get("status") or "")
+    return bool(tool_response.get("ok") is False or (status and status != "succeeded"))
+
+
+def _local_tool_response(
+    turn_input: AssistantTurnInput,
+    *,
+    capability_id: str,
+    ok: bool,
+    status: str,
+    safe_result: dict[str, object],
+) -> dict[str, object]:
+    return {
+        "command": "execute",
+        "ok": ok,
+        "trace_id": turn_input.trace_id,
+        "blocked": status in {"denied", "requires_human_approval"},
+        "result": {
+            "schema_version": turn_input.schema_version,
+            "result_id": f"{turn_input.turn_id}:{capability_id}:result",
+            "trace_id": turn_input.trace_id,
+            "turn_id": turn_input.turn_id,
+            "capability_ref": {"kind": "tool", "identifier": capability_id},
+            "status": status,
+            "safe_result": safe_result,
+            "raw_input_persisted": False,
+            "raw_output_persisted": False,
+        },
+        "metadata": {"raw_arguments_persisted": False},
+    }
+
+
+def _tool_failure_retry_prompt(
+    turn_input: AssistantTurnInput,
+    *,
+    pending_tool: dict[str, object],
+    tool_response: dict[str, object],
+) -> str:
+    result = dict(tool_response.get("result") or {})
+    safe = dict(result.get("safe_result") or {})
+    reason = safe.get("reason_code") or dict(tool_response.get("error") or {}).get("code") or result.get("status") or "tool_failed"
+    capability_id = str(pending_tool.get("capability_id") or "unknown_tool")
+    return (
+        "The approved tool call failed safely and did not complete.\n"
+        f"Original user request: {turn_input.user_visible_input or ''}\n"
+        f"Failed capability: {capability_id}\n"
+        f"Failure reason: {reason}\n"
+        "Try a different available tool call if it can solve the request. "
+        "If no retry can help, explain the limitation without claiming the tool succeeded."
     )
 
 
