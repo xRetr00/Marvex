@@ -126,24 +126,11 @@ export const logsSchema = z.object({
   raw_log_payload_persisted: z.literal(false)
 });
 
-export const agentCatalogSchema = z.object({
+export const providerControlSchema = z.object({
   schema_version: z.string(),
-  active_agent_id: z.string(),
-  agents: z.array(safeRecord),
-  agent_count: z.number(),
-  selectable_count: z.number(),
-  raw_payload_persisted: z.literal(false),
-  execution_started: z.literal(false).optional()
-});
-
-export const personaCatalogSchema = z.object({
-  schema_version: z.string(),
-  active_persona_id: z.string(),
-  personas: z.array(safeRecord),
-  persona_count: z.number(),
-  raw_payload_persisted: z.literal(false),
-  voice_id: z.string().optional(),
-  execution_started: z.literal(false).optional()
+  active_provider_id: z.string(),
+  providers: z.array(safeRecord),
+  raw_secret_persisted: z.literal(false).optional()
 });
 
 export type SafeRecord = z.infer<typeof safeRecord>;
@@ -170,6 +157,5 @@ export type RuntimePolicyAudit = z.infer<typeof runtimePolicyAuditSchema>;
 export type FeedbackEvents = z.infer<typeof feedbackEventsSchema>;
 export type LearningCandidates = z.infer<typeof learningCandidatesSchema>;
 export type VoiceStatus = z.infer<typeof voiceStatusSchema>;
-export type AgentCatalog = z.infer<typeof agentCatalogSchema>;
-export type PersonaCatalog = z.infer<typeof personaCatalogSchema>;
+export type ProviderControl = z.infer<typeof providerControlSchema>;
 export type LogsPayload = z.infer<typeof logsSchema>;

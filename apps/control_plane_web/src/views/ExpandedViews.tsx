@@ -1,11 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useState } from "react";
-import { CheckCircle2, Download, Mic, Search, ShieldAlert, Trash2, UserRound, Users, Volume2 } from "lucide-react";
+import { useEffect, useState } from "react";
+import { CheckCircle2, Download, Mic, Search, ShieldAlert, Trash2, Volume2 } from "lucide-react";
 import {
   applyLearningCandidate,
   downloadVoiceModel,
   enableSkill,
-  fetchAgents,
   fetchVoiceWorkerDevices,
   fetchVoiceWorkerWakewordSupervisor,
   fetchVoiceWorkerStatus,
@@ -24,7 +23,7 @@ import {
   fetchMemoryTreeScoring,
   fetchMemoryTreeSearch,
   fetchPolicies,
-  fetchPersonas,
+  refreshProviderModels,
   fetchRuntimePolicy,
   fetchRuntimePolicyAudit,
   fetchVoiceStatus,
@@ -36,9 +35,13 @@ import {
   installDependency,
   installMcpServer,
   proposeMcpAllowlist,
+  removeProviderCredential,
   removeVoiceModel,
-  selectAgent,
-  selectPersona,
+  setActiveProvider,
+  setProviderActiveModel,
+  setProviderAutomationModel,
+  setProviderConnection,
+  setProviderCredential,
   setRuntimePolicyMode,
   selectVoiceStt,
   selectVoiceTts,
@@ -78,91 +81,132 @@ function InlineState({ message }: { message: string }) {
   return <Card><CardContent className="p-4 text-sm text-muted-foreground">{message}</CardContent></Card>;
 }
 
-export function AgentPersonaControlView() {
-  const [selectedAgentId, setSelectedAgentId] = useState("");
-  const [selectedPersonaId, setSelectedPersonaId] = useState("");
-  const agentsQuery = useQuery({ queryKey: ["agents"], queryFn: fetchAgents, retry: false });
-  const personasQuery = useQuery({ queryKey: ["personas"], queryFn: fetchPersonas, retry: false });
-  const agentMutation = useMutation({ mutationFn: selectAgent });
-  const personaMutation = useMutation({ mutationFn: selectPersona });
-  if (agentsQuery.isLoading || personasQuery.isLoading) return <InlineState message="Loading manual agent and persona controls..." />;
-  if (agentsQuery.isError) return <InlineState message={agentsQuery.error.message} />;
-  if (personasQuery.isError) return <InlineState message={personasQuery.error.message} />;
-  const agentCatalog = agentMutation.data ?? agentsQuery.data;
-  const personaCatalog = personaMutation.data ?? personasQuery.data;
-  const agents = agentCatalog?.agents ?? [];
-  const personas = personaCatalog?.personas ?? [];
-  const activeAgentId = String(agentCatalog?.active_agent_id ?? "");
-  const activePersonaId = String(personaCatalog?.active_persona_id ?? "");
-  const agentValue = selectedAgentId || activeAgentId;
-  const personaValue = selectedPersonaId || activePersonaId;
-  const activeAgentRows = agents.filter((agent) => recordValue(agent, "agent_id") === activeAgentId);
-  const activePersonaRows = personas.filter((persona) => recordValue(persona, "persona_id") === activePersonaId);
-  const selectionRows = [
-    {
-      control: "agent",
-      active_id: activeAgentId,
-      selectable_count: agentCatalog?.selectable_count ?? 0,
-      execution_started: agentCatalog?.execution_started ?? false,
-      raw_payload_persisted: agentCatalog?.raw_payload_persisted ?? false
-    },
-    {
-      control: "persona",
-      active_id: activePersonaId,
-      voice_id: personaCatalog?.voice_id ?? activePersonaRows[0]?.voice_id,
-      execution_started: personaCatalog?.execution_started ?? false,
-      raw_payload_persisted: personaCatalog?.raw_payload_persisted ?? false
-    }
-  ];
+export function ProviderSettingsView({ snapshot }: { snapshot: import("../lib/schemas").ControlSnapshot }) {
+  const queryClient = useQueryClient();
+  const settings = snapshot.settings ?? {};
+  const providerControl = typeof settings.provider_control === "object" && settings.provider_control ? settings.provider_control as Record<string, unknown> : {};
+  const providers = Array.isArray(providerControl.providers) ? providerControl.providers as Record<string, unknown>[] : snapshot.providers;
+  const initialActiveProvider = String(providerControl.active_provider_id ?? settings.active_provider_id ?? providers[0]?.provider_id ?? "");
+  const [providerId, setProviderId] = useState(initialActiveProvider);
+  const activeProvider = providers.find((provider) => String(provider.provider_id) === providerId) ?? providers[0] ?? {};
+  const [activeModel, setActiveModel] = useState("");
+  const [automationModel, setAutomationModel] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [providerMode, setProviderMode] = useState("native");
+  const [supportsVision, setSupportsVision] = useState(false);
+  const [visionRequired, setVisionRequired] = useState(false);
+  const [credential, setCredential] = useState("");
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ["control-snapshot"] });
+  const activate = useMutation({ mutationFn: setActiveProvider, onSuccess: invalidate });
+  const model = useMutation({ mutationFn: setProviderActiveModel, onSuccess: invalidate });
+  const connection = useMutation({ mutationFn: setProviderConnection, onSuccess: invalidate });
+  const automation = useMutation({ mutationFn: setProviderAutomationModel, onSuccess: invalidate });
+  const refresh = useMutation({ mutationFn: refreshProviderModels, onSuccess: invalidate });
+  const saveCredential = useMutation({ mutationFn: setProviderCredential, onSuccess: () => { setCredential(""); invalidate(); } });
+  const clearCredential = useMutation({ mutationFn: removeProviderCredential, onSuccess: invalidate });
+  const models = Array.isArray(activeProvider.models) ? activeProvider.models.map(String) : [];
+  const credentialState = activeProvider.secret_present ? String(activeProvider.secret_display ?? "configured") : "not configured";
+  const providerRows = providers.map((provider) => {
+    const { secret_present, secret_display, secret_value_present, raw_secret_persisted, ...rest } = provider;
+    return {
+      ...rest,
+      credential_configured: Boolean(secret_present),
+      credential_display: secret_display ? "configured" : "not configured",
+      raw_credential_persisted: Boolean(raw_secret_persisted),
+      credential_value_present: Boolean(secret_value_present)
+    };
+  });
+  const settingsRows = [{
+    active_provider_id: settings.active_provider_id,
+    browser_tools_enabled: settings.browser_tools_enabled,
+    computer_use_enabled: settings.computer_use_enabled
+  }];
+
+  useEffect(() => {
+    setProviderId(initialActiveProvider);
+  }, [initialActiveProvider]);
+
+  useEffect(() => {
+    setActiveModel(String(activeProvider.active_model ?? ""));
+    setAutomationModel(String(activeProvider.automation_model ?? activeProvider.active_model ?? ""));
+    setBaseUrl(String(activeProvider.base_url ?? ""));
+    setProviderMode(String(activeProvider.provider_mode ?? "native"));
+    const capabilities = typeof activeProvider.automation_model_capabilities === "object" && activeProvider.automation_model_capabilities ? activeProvider.automation_model_capabilities as Record<string, unknown> : {};
+    const policy = typeof activeProvider.automation_policy === "object" && activeProvider.automation_policy ? activeProvider.automation_policy as Record<string, unknown> : {};
+    setSupportsVision(Boolean(capabilities.vision));
+    setVisionRequired(Boolean(policy.vision_required));
+  }, [activeProvider]);
+
+  if (!providers.length) return <InlineState message="No provider controls are available." />;
+
   return (
     <div className="space-y-4">
       <Card>
-        <CardHeader><CardTitle>Manual Agent / Persona Control</CardTitle></CardHeader>
+        <CardHeader><CardTitle>Runtime Settings</CardTitle></CardHeader>
         <CardContent className="grid gap-4 xl:grid-cols-2">
-          <div className="grid gap-3">
-            <label className="grid gap-1 text-sm font-medium" htmlFor="active-agent">
-              Active agent
-              <select id="active-agent" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={agentValue} onChange={(event) => setSelectedAgentId(event.target.value)}>
-                {agents.map((agent) => {
-                  const agentId = recordValue(agent, "agent_id");
-                  return <option key={agentId} value={agentId}>{recordValue(agent, "display_name") || agentId}</option>;
-                })}
-              </select>
-            </label>
-            <Button variant="outline" onClick={() => agentMutation.mutate(agentValue)} disabled={!agentValue || agentMutation.isPending}><Users className="mr-2" size={16} />Set Active Agent</Button>
-            <p className="text-sm text-muted-foreground">Selection changes the backend-safe active agent projection only; tool calls and subagents still require runtime policy.</p>
+          <label className="grid gap-1 text-sm font-medium" htmlFor="provider-id">
+            Provider
+            <select id="provider-id" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={providerId} onChange={(event) => setProviderId(event.target.value)}>
+              {providers.map((provider) => {
+                const id = String(provider.provider_id);
+                return <option key={id} value={id}>{String(provider.label ?? id)}</option>;
+              })}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium" htmlFor="provider-mode">
+            Provider mode
+            <select id="provider-mode" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={providerMode} onChange={(event) => setProviderMode(event.target.value)}>
+              <option value="native">native</option>
+              <option value="litellm_sdk">litellm_sdk</option>
+              <option value="litellm_proxy">litellm_proxy</option>
+              <option value="openai_compatible">openai_compatible</option>
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-medium" htmlFor="active-model">
+            Active model
+            <input id="active-model" list="provider-models" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={activeModel} onChange={(event) => setActiveModel(event.target.value)} />
+          </label>
+          <label className="grid gap-1 text-sm font-medium" htmlFor="automation-model">
+            Automation model
+            <input id="automation-model" list="provider-models" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={automationModel} onChange={(event) => setAutomationModel(event.target.value)} />
+          </label>
+          <datalist id="provider-models">
+            {models.map((item) => <option key={item} value={item} />)}
+          </datalist>
+          <label className="grid gap-1 text-sm font-medium xl:col-span-2" htmlFor="base-url">
+            Base URL
+            <input id="base-url" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={baseUrl} onChange={(event) => setBaseUrl(event.target.value)} />
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={supportsVision} onChange={(event) => setSupportsVision(event.target.checked)} />
+            Vision capable
+          </label>
+          <label className="flex items-center gap-2 text-sm font-medium">
+            <input type="checkbox" checked={visionRequired} onChange={(event) => setVisionRequired(event.target.checked)} />
+            Require vision for automation
+          </label>
+          <div className="flex flex-wrap gap-2 xl:col-span-2">
+            <Button variant="outline" onClick={() => activate.mutate(providerId)} disabled={!providerId || activate.isPending}>Set Provider</Button>
+            <Button variant="outline" onClick={() => model.mutate({ provider_id: providerId, model: activeModel })} disabled={!providerId || !activeModel || model.isPending}>Set Model</Button>
+            <Button variant="outline" onClick={() => connection.mutate({ provider_id: providerId, base_url: baseUrl, provider_mode: providerMode })} disabled={!providerId || connection.isPending}>Set Endpoint</Button>
+            <Button variant="outline" onClick={() => automation.mutate({ provider_id: providerId, model: automationModel, supports_vision: supportsVision, vision_required: visionRequired })} disabled={!providerId || !automationModel || automation.isPending}>Set Automation</Button>
+            <Button variant="outline" onClick={() => refresh.mutate(providerId)} disabled={!providerId || refresh.isPending}>Refresh Models</Button>
           </div>
-          <div className="grid gap-3">
-            <label className="grid gap-1 text-sm font-medium" htmlFor="active-persona">
-              Active persona
-              <select id="active-persona" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={personaValue} onChange={(event) => setSelectedPersonaId(event.target.value)}>
-                {personas.map((persona) => {
-                  const personaId = recordValue(persona, "persona_id");
-                  const label = recordValue(persona, "display_name") || personaId;
-                  const voiceId = recordValue(persona, "voice_id");
-                  return <option key={personaId} value={personaId}>{voiceId ? `${label} / ${voiceId}` : label}</option>;
-                })}
-              </select>
-            </label>
-            <Button variant="outline" onClick={() => personaMutation.mutate(personaValue)} disabled={!personaValue || personaMutation.isPending}><UserRound className="mr-2" size={16} />Set Active Persona</Button>
-            <p className="text-sm text-muted-foreground">Persona selection controls identity and the female TTS voice profile exposed to prompt compilation.</p>
+          <label className="grid gap-1 text-sm font-medium xl:col-span-2" htmlFor="provider-credential">
+            Provider credential
+            <input id="provider-credential" className="h-9 rounded-md border border-input bg-background px-3 text-sm" value={credential} onChange={(event) => setCredential(event.target.value)} type="password" autoComplete="off" />
+          </label>
+          <div className="flex flex-wrap items-center gap-2 xl:col-span-2">
+            <Button variant="outline" onClick={() => saveCredential.mutate({ provider_id: providerId, credential })} disabled={!providerId || !credential || saveCredential.isPending}>Update Credential</Button>
+            <Button variant="outline" onClick={() => clearCredential.mutate(providerId)} disabled={!providerId || clearCredential.isPending}>Remove Credential</Button>
+            <span className="text-sm text-muted-foreground">Credential: {credentialState}</span>
           </div>
         </CardContent>
       </Card>
-      <SafeTable title="Manual Selection State" rows={selectionRows} empty="No manual selection state available." />
-      <SafeTable title="Active Agent Profile" rows={activeAgentRows} empty="No active agent profile available." />
-      <SafeTable title="Active Persona Profile" rows={activePersonaRows} empty="No active persona profile available." />
-      <SafeTable title="All Agent Profiles" rows={agents} empty="No agent profiles available." />
-      <SafeTable title="All Persona Profiles" rows={personas} empty="No persona profiles available." />
+      <SafeTable title="Provider Configuration" rows={providerRows} empty="No provider configuration." />
+      <SafeTable title="Settings Snapshot" rows={settingsRows} empty="No settings snapshot." />
     </div>
   );
-}
-
-function recordValue(row: Record<string, unknown>, key: string) {
-  const value = row[key];
-  if (value === null || value === undefined) return "";
-  if (Array.isArray(value)) return value.join(", ");
-  return String(value);
 }
 
 export function McpMarketplaceView() {

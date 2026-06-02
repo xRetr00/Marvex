@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, Mic, MonitorCog, Moon, ScrollText, Search, Server, Settings, ShieldAlert, ShieldCheck, Store, Sun, UserRound, Wrench } from "lucide-react";
+import { Activity, Brain, Cable, Clock3, Database, Gauge, GitBranch, History, KeyRound, ListChecks, MessageSquare, Mic, MonitorCog, Moon, ScrollText, Search, Settings, ShieldAlert, ShieldCheck, Store, Sun, Wrench } from "lucide-react";
 import { ControlPlaneApiError, fetchLogs, fetchSnapshot } from "./lib/api";
 import { Dashboard } from "./views/Dashboard";
 import { Approvals } from "./views/Approvals";
 import { SafeTable } from "./views/TableViews";
-import { AgentPersonaControlView, ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, FeedbackLearningView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView, VoiceRuntimeView } from "./views/ExpandedViews";
+import { ApprovalHistoryView, AutoFetchView, ConnectorListView, DiagnosticsView, FeedbackLearningView, McpMarketplaceView, MemoryInspectView, MemorySourcesView, MemoryTreesView, PolicyView, ProviderSettingsView, RuntimePolicyView, SkillsMarketplaceView, TraceSearchView, VoiceRuntimeView } from "./views/ExpandedViews";
 import { TabButton } from "./components/ui/tabs";
 import { Card, CardContent } from "./components/ui/card";
 import { Button } from "./components/ui/button";
@@ -21,8 +21,6 @@ const views = [
   { id: "trace_search", label: "Trace Search", icon: Search },
   { id: "telemetry", label: "Telemetry", icon: MonitorCog },
   { id: "logs", label: "Logs", icon: ScrollText },
-  { id: "providers", label: "Providers", icon: Server },
-  { id: "agent_persona", label: "Agents / Personas", icon: UserRound },
   { id: "capabilities", label: "Capabilities / Tools", icon: Wrench },
   { id: "tool_policy", label: "Tool Risk Policy", icon: ShieldAlert },
   { id: "runtime_policy", label: "Runtime Policy", icon: ShieldCheck },
@@ -125,8 +123,6 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "trace_search") return <TraceSearchView />;
   if (active === "telemetry") return <SafeTable title="Telemetry" rows={[snapshot.telemetry]} empty="No telemetry summary available." />;
   if (active === "logs") return <LogsControlView />;
-  if (active === "providers") return <SafeTable title="Providers" rows={snapshot.providers} empty="No providers registered." />;
-  if (active === "agent_persona") return <AgentPersonaControlView />;
   if (active === "capabilities") return <div className="space-y-4"><SafeTable title="Capability Registry" rows={snapshot.capabilities} empty="No capabilities eligible." /><SafeTable title="Tools" rows={snapshot.tools} empty="No tools available." /></div>;
   if (active === "tool_policy") return <PolicyView />;
   if (active === "runtime_policy") return <RuntimePolicyView />;
@@ -143,7 +139,7 @@ function View({ active, snapshot }: { active: ViewId; snapshot: import("./lib/sc
   if (active === "memory_trees") return <MemoryTreesView />;
   if (active === "feedback_learning") return <FeedbackLearningView />;
   if (active === "diagnostics") return <DiagnosticsView />;
-  return <SafeTable title="Settings" rows={[snapshot.settings]} empty="No settings exposed." />;
+  return <ProviderSettingsView snapshot={snapshot} />;
 }
 
 function LoadingState() {

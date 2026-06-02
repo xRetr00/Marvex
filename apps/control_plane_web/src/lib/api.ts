@@ -1,6 +1,5 @@
 import {
   allowlistProposalSchema,
-  agentCatalogSchema,
   approvalDecisionResponseSchema,
   approvalHistorySchema,
   approvalListSchema,
@@ -26,7 +25,7 @@ import {
   memoryTreeTopicSchema,
   memoryTreeSearchSchema,
   policiesSchema,
-  personaCatalogSchema,
+  providerControlSchema,
   runtimePolicyAuditSchema,
   runtimePolicySchema,
   skillsMarketplaceSchema,
@@ -38,11 +37,10 @@ import {
   type ApprovalDecisionResponse,
   type ApprovalHistory,
   type ApprovalList,
-  type AgentCatalog,
   type ControlSnapshot,
   type McpMarketplace,
   type MemoryInspect,
-  type PersonaCatalog,
+  type ProviderControl,
   type SkillsMarketplace,
   type TraceSearch
 } from "./schemas";
@@ -303,20 +301,36 @@ export async function fetchVoiceWorkerWakewordSupervisor() {
   return voiceActionSchema.parse(await readJson("/voice/worker/wakeword-supervisor"));
 }
 
-export async function fetchAgents(): Promise<AgentCatalog> {
-  return agentCatalogSchema.parse(await readJson("/agents"));
+export async function fetchProviders(): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson("/providers"));
 }
 
-export async function selectAgent(agentId: string): Promise<AgentCatalog> {
-  return agentCatalogSchema.parse(await readJson("/agents/active", { method: "POST", body: JSON.stringify({ agent_id: agentId }) }));
+export async function setActiveProvider(providerId: string): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson("/providers/active", { method: "POST", body: JSON.stringify({ provider_id: providerId }) }));
 }
 
-export async function fetchPersonas(): Promise<PersonaCatalog> {
-  return personaCatalogSchema.parse(await readJson("/personas"));
+export async function setProviderActiveModel(payload: { provider_id: string; model: string }): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(payload.provider_id)}/models/active`, { method: "POST", body: JSON.stringify({ model: payload.model }) }));
 }
 
-export async function selectPersona(personaId: string): Promise<PersonaCatalog> {
-  return personaCatalogSchema.parse(await readJson("/personas/active", { method: "POST", body: JSON.stringify({ persona_id: personaId }) }));
+export async function setProviderConnection(payload: { provider_id: string; base_url: string; provider_mode: string }): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(payload.provider_id)}/connection`, { method: "POST", body: JSON.stringify({ base_url: payload.base_url, provider_mode: payload.provider_mode }) }));
+}
+
+export async function setProviderAutomationModel(payload: { provider_id: string; model: string; supports_vision: boolean; vision_required: boolean }): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(payload.provider_id)}/automation`, { method: "POST", body: JSON.stringify({ model: payload.model, supports_vision: payload.supports_vision, vision_required: payload.vision_required }) }));
+}
+
+export async function refreshProviderModels(providerId: string): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(providerId)}/models/refresh`, { method: "POST" }));
+}
+
+export async function setProviderCredential(payload: { provider_id: string; credential: string }): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(payload.provider_id)}/secret`, { method: "POST", body: JSON.stringify({ secret: payload.credential }) }));
+}
+
+export async function removeProviderCredential(providerId: string): Promise<ProviderControl> {
+  return providerControlSchema.parse(await readJson(`/providers/${encodeURIComponent(providerId)}/secret`, { method: "DELETE" }));
 }
 
 export async function startVoiceWorkerWakewordSupervisor() {
