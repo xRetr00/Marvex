@@ -6,8 +6,9 @@ needs) and, on detection, captures the command from the SAME stream.
 
 from pathlib import Path
 
-from packages.voice_runtime import AudioFrame, TranscriptionResult, WakeWordDetectionResult
+from packages.voice_runtime import AudioFrame, SpeechSynthesisResult, TranscriptionResult, WakeWordDetectionResult
 from packages.voice_worker_runtime import (
+    FakeLocalAudioAdapter,
     VoiceAssetManager,
     VoiceModelInstallRequest,
     VoiceWorkerBackendRuntime,
@@ -101,6 +102,53 @@ def test_wake_detect_then_command_transcript_over_continuous_stream(tmp_path: Pa
     assert VoiceWorkerEventType.WAKEWORD_DETECTED in events
     completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
     assert completed.summary.get("normalized_transcript_text") == "what time is it"
+
+
+def test_wake_detection_speaks_listening_cue_before_command_capture(tmp_path: Path):
+    manager = _install(tmp_path)
+    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    manager.install_local(
+        VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True)
+    )
+    spoken: list[str] = []
+
+    def wakeword_runner(frames, asset, *, phrase, threshold):
+        if any(f.frame_id.startswith("w") for f in frames):
+            return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+        return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=asset.backend_id, reason_code="wakeword.not_detected")
+
+    def stt_runner(request, asset):
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="open dashboard", backend_id=asset.backend_id, duration_ms=request.duration_ms, language="en", segments=())
+
+    def tts_runner(request, asset):
+        spoken.append(request.text)
+        return SpeechSynthesisResult.succeeded(
+            trace_id=request.trace_id,
+            backend_id=asset.backend_id,
+            voice_id=request.voice_id,
+            audio_ref="memory://voice/generated/listening-cue",
+            sample_rate=24_000,
+            duration_ms=120,
+        )
+
+    controller = VoiceWorkerController(
+        config=_enabled_config(),
+        audio=FakeLocalAudioAdapter(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner, stt_runner=stt_runner, tts_runner=tts_runner),
+    )
+    controller._vad_decider = lambda f: f.frame_id.startswith("s")
+    controller.handle(VoiceWorkerCommand(command="start", command_id="c-start"))
+    capture = FakeContinuousCapture([_frame("w", i) for i in range(3)] + [_frame("s", i) for i in range(3)] + [_frame("q", i) for i in range(4)])
+
+    controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    assert spoken and spoken[0] in {"Huh?", "Umm?", "Yes?"}
+    events = controller.status().recent_events
+    wake_index = next(i for i, event in enumerate(events) if event.event_type == VoiceWorkerEventType.WAKEWORD_DETECTED)
+    cue_index = next(i for i, event in enumerate(events) if event.event_type == VoiceWorkerEventType.TTS_STARTED and event.summary.get("listening_cue") is True)
+    vad_index = next(i for i, event in enumerate(events) if event.event_type == VoiceWorkerEventType.VAD_SPEECH_STARTED)
+    assert wake_index < cue_index < vad_index
 
 
 def test_local_wake_references_replace_sherpa_asset_gate(tmp_path: Path):
