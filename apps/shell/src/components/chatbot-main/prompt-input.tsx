@@ -12,6 +12,8 @@ export type ChatbotPromptInputProps = {
   onStop?: () => void;
   onToggleVoice?: () => void;
   placeholder?: string;
+  value?: string;
+  onValueChange?: (value: string) => void;
   modelLabel?: string;
   models?: Array<{ id: string; name: string; provider?: string; active?: boolean }>;
   onSelectModel?: (modelId: string) => void | Promise<void>;
@@ -25,11 +27,13 @@ export function ChatbotPromptInput({
   onStop,
   onToggleVoice,
   placeholder = "Ask anything...",
+  value,
+  onValueChange,
   modelLabel = "Assistant runtime",
   models = [],
   onSelectModel,
 }: ChatbotPromptInputProps) {
-  const [value, setValue] = useState("");
+  const [localValue, setLocalValue] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
   const [hints, setHints] = useState<string[]>([]);
@@ -40,14 +44,22 @@ export function ChatbotPromptInput({
     if (!textarea) return;
     textarea.style.height = "0px";
     textarea.style.height = `${Math.min(180, Math.max(44, textarea.scrollHeight))}px`;
-  }, [value]);
+  }, [value, localValue]);
+
+  const textValue = value ?? localValue;
+  const setTextValue = (next: string) => {
+    if (value === undefined) {
+      setLocalValue(next);
+    }
+    onValueChange?.(next);
+  };
 
   const submit = (event?: FormEvent) => {
     event?.preventDefault();
-    const text = value.trim();
+    const text = textValue.trim();
     if (!text || disabled || generating) return;
     void onSubmit(text);
-    setValue("");
+    setTextValue("");
   };
 
   const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -65,10 +77,10 @@ export function ChatbotPromptInput({
           ref={textareaRef}
           className="relative z-10 block max-h-[180px] min-h-11 w-full resize-none border-0 bg-transparent px-3 py-2 text-sm leading-6 text-foreground outline-none placeholder:text-muted-foreground"
           disabled={disabled}
-          onChange={(event) => setValue(event.target.value)}
+          onChange={(event) => setTextValue(event.target.value)}
           onKeyDown={onKeyDown}
           placeholder={placeholder}
-          value={value}
+          value={textValue}
         />
         {hints.length > 0 ? (
           <div className="relative z-10 flex flex-wrap gap-1.5 px-2 pb-1">
@@ -96,7 +108,7 @@ export function ChatbotPromptInput({
               ) : null}
             </div>
             <Button
-              aria-label={micActive ? "Stop voice capture" : "Start voice capture"}
+              aria-label={micActive ? "Stop dictation" : "Start dictation"}
               className={cn("h-8 w-8 rounded-lg text-muted-foreground", micActive && "bg-primary text-primary-foreground hover:bg-primary/90")}
               onClick={onToggleVoice}
               size="icon"
@@ -130,14 +142,14 @@ export function ChatbotPromptInput({
                 </div>
               ) : null}
             </div>
-            <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">{value.length} / 12000</span>
+            <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">{textValue.length} / 12000</span>
           </div>
           {generating ? (
             <Button aria-label="Stop generation" className="h-8 w-8 rounded-lg" onClick={onStop} size="icon" type="button" variant="outline">
               <Square size={14} />
             </Button>
           ) : (
-            <Button aria-label="Send message" className="h-8 w-8 rounded-lg" disabled={disabled || !value.trim()} size="icon" type="submit">
+            <Button aria-label="Send message" className="h-8 w-8 rounded-lg" disabled={disabled || !textValue.trim()} size="icon" type="submit">
               <SendHorizontal size={16} />
             </Button>
           )}

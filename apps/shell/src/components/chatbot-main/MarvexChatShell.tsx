@@ -48,6 +48,8 @@ export type MarvexChatShellProps = {
   onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
   onClarificationAnswer?: (clarification: MarvexChatClarification, answerText: string) => void | Promise<void>;
   onToggleVoice?: () => void;
+  composerValue?: string;
+  onComposerValueChange?: (value: string) => void;
   renderAssistantOrb: (state?: "thinking" | "listening" | "talking" | null) => ReactNode;
   assistantOrbState?: "thinking" | "listening" | "talking" | null;
   activityLabel?: string;
@@ -65,6 +67,8 @@ export function MarvexChatShell({
   onApprovalDecision,
   onClarificationAnswer,
   onToggleVoice,
+  composerValue,
+  onComposerValueChange,
   renderAssistantOrb,
   assistantOrbState = null,
   activityLabel = "Marvex is thinking",
@@ -185,7 +189,19 @@ export function MarvexChatShell({
       </ChatbotConversation>
       <ChatbotScrollButton targetRef={conversationRef} />
       <div className="border-t border-border/30 bg-background/86 pt-3 backdrop-blur-xl">
-        <ChatbotPromptInput disabled={pending} generating={pending} micActive={micActive} modelLabel={modelLabel} models={models} onSelectModel={onSelectModel} onStop={onStop} onSubmit={onSubmit} onToggleVoice={onToggleVoice} />
+        <ChatbotPromptInput
+          disabled={pending}
+          generating={pending}
+          micActive={micActive}
+          modelLabel={modelLabel}
+          models={models}
+          onSelectModel={onSelectModel}
+          onStop={onStop}
+          onSubmit={onSubmit}
+          onToggleVoice={onToggleVoice}
+          value={composerValue}
+          onValueChange={onComposerValueChange}
+        />
       </div>
     </section>
   );

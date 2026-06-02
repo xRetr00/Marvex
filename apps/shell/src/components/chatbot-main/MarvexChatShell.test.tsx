@@ -46,7 +46,7 @@ describe("MarvexChatShell", () => {
     await userEvent.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(onSubmit).toHaveBeenCalledWith("Search the workspace");
-    await userEvent.click(screen.getByRole("button", { name: "Start voice capture" }));
+    await userEvent.click(screen.getByRole("button", { name: "Start dictation" }));
     expect(onToggleVoice).toHaveBeenCalledTimes(1);
   });
 
