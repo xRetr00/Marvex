@@ -256,9 +256,8 @@ def test_web_search_provider_from_config_multi_no_searxng() -> None:
     provider = _web_search_provider_from_config(config)
 
     assert isinstance(provider, MultiProviderWebSearch)
-    assert len(provider.providers) == 2
+    assert len(provider.providers) == 1
     assert isinstance(provider.providers[0], DDGSWebSearchAdapter)
-    assert isinstance(provider.providers[1], WikipediaWebSearchAdapter)
 
 
 def test_web_search_provider_from_config_multi_with_searxng() -> None:
@@ -268,5 +267,7 @@ def test_web_search_provider_from_config_multi_with_searxng() -> None:
     provider = _web_search_provider_from_config(config)
 
     assert isinstance(provider, MultiProviderWebSearch)
-    assert len(provider.providers) == 3
-    assert isinstance(provider.providers[2], SearXNGWebSearchAdapter)
+    assert len(provider.providers) == 2
+    assert isinstance(provider.providers[0], DDGSWebSearchAdapter)
+    assert isinstance(provider.providers[1], SearXNGWebSearchAdapter)
+    assert not any(isinstance(item, WikipediaWebSearchAdapter) for item in provider.providers)

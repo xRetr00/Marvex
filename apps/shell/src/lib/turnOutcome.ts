@@ -16,6 +16,13 @@ export interface TurnOutcome {
   citations?: CitationRef[];
 }
 
+export function speechTextFromTurnResult(payload: unknown): string {
+  if (!payload || typeof payload !== "object") return "";
+  const final = (payload as { assistant_final_response?: { text?: unknown; safe_for_speech?: unknown } }).assistant_final_response;
+  if (!final || final.safe_for_speech === false || typeof final.text !== "string") return "";
+  return normalizeSpeechText(final.text);
+}
+
 function lower(value: unknown): string {
   return typeof value === "string" ? value.toLowerCase() : "";
 }
@@ -72,4 +79,14 @@ export function outcomeFromTurnResult(payload: unknown): TurnOutcome {
     return { kind: "empty", text: "The assistant returned no response text." };
   }
   return { kind: "error", text: "No displayable response returned." };
+}
+
+function normalizeSpeechText(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, " ")
+    .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
 }

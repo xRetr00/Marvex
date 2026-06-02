@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { outcomeFromTurnResult, outcomeFromError } from "./turnOutcome";
+import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "./turnOutcome";
 
 describe("outcomeFromError", () => {
   it("classifies a backend-unreachable error", () => {
@@ -30,5 +30,17 @@ describe("outcomeFromTurnResult", () => {
   it("maps an empty result distinctly", () => {
     const o = outcomeFromTurnResult({ assistant_final_response: { text: "" } });
     expect(o.kind).toBe("empty");
+  });
+});
+
+describe("speechTextFromTurnResult", () => {
+  it("returns final text only when the response is safe for speech", () => {
+    expect(speechTextFromTurnResult({ assistant_final_response: { text: "Speak this", safe_for_speech: true } })).toBe("Speak this");
+    expect(speechTextFromTurnResult({ assistant_final_response: { text: "Default safe" } })).toBe("Default safe");
+  });
+
+  it("blocks unsafe speech and error fallbacks from TTS", () => {
+    expect(speechTextFromTurnResult({ assistant_final_response: { text: "Display only", safe_for_speech: false } })).toBe("");
+    expect(speechTextFromTurnResult({ error: { message: "Provider failed with stack details" } })).toBe("");
   });
 });
