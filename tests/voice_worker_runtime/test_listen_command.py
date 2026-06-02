@@ -74,7 +74,7 @@ def test_listen_captures_follow_up_and_emits_transcript(tmp_path: Path):
     events = controller.status().recent_events
     completed = next((e for e in reversed(events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED), None)
     assert completed is not None
-    assert completed.summary.get("transcript_text") == "open the report"
+    assert completed.summary.get("normalized_transcript_text") == "open the report"
     assert result.error is None
 
 
@@ -90,6 +90,6 @@ def test_listen_silence_emits_no_transcript(tmp_path: Path):
 
     events = controller.status().recent_events
     assert not any(
-        e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED and e.summary.get("transcript_text")
+        e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED and e.summary.get("normalized_transcript_text")
         for e in events
     )

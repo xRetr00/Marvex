@@ -17,6 +17,7 @@ from packages.voice_worker_runtime import (
 )
 from packages.voice_worker_runtime.continuous_capture import FakeContinuousCapture
 from packages.voice_worker_runtime.models import VoiceWorkerEventType
+from packages.voice_worker_runtime.wake_enrollment import wake_reference_dir, write_wake_reference_wav
 
 
 def _frame(tag: str, i: int) -> AudioFrame:
@@ -33,6 +34,17 @@ def _install(tmp_path: Path) -> VoiceAssetManager:
     manager.install_local(
         VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True)
     )
+    return manager
+
+
+def _install_stt_only_with_local_wake_refs(tmp_path: Path) -> VoiceAssetManager:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
+    manager.install_local(
+        VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True)
+    )
+    ref_dir = wake_reference_dir(manager.asset_root)
+    write_wake_reference_wav(ref_dir / "hey-marvex-01.wav", [b"\x01\x00" * 1600], sample_rate=16_000)
     return manager
 
 
@@ -88,7 +100,43 @@ def test_wake_detect_then_command_transcript_over_continuous_stream(tmp_path: Pa
     events = [e.event_type for e in controller.status().recent_events]
     assert VoiceWorkerEventType.WAKEWORD_DETECTED in events
     completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
-    assert completed.summary.get("transcript_text") == "what time is it"
+    assert completed.summary.get("normalized_transcript_text") == "what time is it"
+
+
+def test_local_wake_references_replace_sherpa_asset_gate(tmp_path: Path):
+    manager = _install_stt_only_with_local_wake_refs(tmp_path)
+    wake_assets = []
+    stt_calls = []
+
+    def wakeword_runner(frames, asset, *, phrase, threshold):
+        wake_assets.append(asset.backend_id)
+        detected = any(f.frame_id.startswith("w") for f in frames)
+        if detected:
+            return WakeWordDetectionResult.detected(phrase=phrase, confidence=threshold, backend_id=asset.backend_id)
+        return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=asset.backend_id, reason_code="wakeword.not_detected")
+
+    def stt_runner(request, asset):
+        stt_calls.append(request.audio_ref_id)
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="local wake works", backend_id=asset.backend_id, duration_ms=request.duration_ms, language="en", segments=())
+
+    controller = VoiceWorkerController(
+        config=_enabled_config(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner, stt_runner=stt_runner),
+    )
+    controller._vad_decider = lambda f: f.frame_id.startswith("s")
+    controller.handle(VoiceWorkerCommand(command="start", command_id="c-start"))
+    script = [_frame("w", i) for i in range(3)] + [_frame("s", i) for i in range(3)] + [_frame("q", i) for i in range(4)]
+    capture = FakeContinuousCapture(script)
+
+    result = controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    assert result["started"] is True
+    assert result["detections"] >= 1
+    assert wake_assets and set(wake_assets) == {"local-wake"}
+    assert stt_calls
+    completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
+    assert completed.summary.get("normalized_transcript_text") == "local wake works"
 
 
 def test_loop_emits_diagnostics_for_field_observability(tmp_path: Path):
@@ -140,13 +188,68 @@ def test_loop_refuses_when_wakeword_disabled(tmp_path: Path):
     assert result["reason_code"] == "wakeword_not_enabled"
 
 
-def test_listen_command_stands_down_while_continuous_active(tmp_path: Path):
+def test_listen_command_queues_manual_capture_while_continuous_active(tmp_path: Path):
     controller, stt_calls = _controller(tmp_path)
     controller._continuous_active = True  # simulate the wake loop owning the mic
     result = controller.handle(VoiceWorkerCommand(command="listen", command_id="c-listen"))
-    # No chunked capture / STT runs (would conflict on the input device).
+    # No chunked capture / STT runs in the command handler; the continuous loop
+    # will consume the queued request from its own stream.
     assert not stt_calls
-    assert result.event.summary.get("reason_code") == "continuous_capture_active"
+    assert result.event.summary.get("manual_listen_queued") is True
+
+
+def test_continuous_loop_services_queued_manual_listen_without_wake(tmp_path: Path):
+    controller, stt_calls = _controller(tmp_path)
+    controller._manual_listen_trace_id = "trace-manual-listen"
+    script = [_frame("s", i) for i in range(4)] + [_frame("q", i) for i in range(4)]
+    capture = FakeContinuousCapture(script)
+
+    result = controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    assert result["detections"] == 0
+    assert stt_calls
+    completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
+    assert completed.trace_id == "trace-manual-listen"
+    assert completed.summary.get("normalized_transcript_text") == "what time is it"
+
+
+def test_record_wake_reference_uses_continuous_capture_when_available(tmp_path: Path):
+    manager = _install(tmp_path)
+    capture = FakeContinuousCapture([_frame("q", 0), _frame("s", 1), _frame("s", 2), _frame("q", 3), _frame("q", 4), _frame("q", 5)])
+
+    class ChunkedAudioMustNotBeUsed:
+        capture_calls = 0
+
+        def capture_frames(self, *, device_id, sample_rate, channel_count, frame_count):
+            self.capture_calls += 1
+            raise AssertionError("wake enrollment must not use chunked capture_frames when continuous capture is available")
+
+        def list_input_devices(self):
+            return ()
+
+        def list_output_devices(self):
+            return ()
+
+        def stop_playback(self):
+            return None
+
+    audio = ChunkedAudioMustNotBeUsed()
+    controller = VoiceWorkerController(
+        config=_enabled_config(),
+        audio=audio,
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager),
+        continuous_capture_factory=lambda: capture,
+    )
+    controller._vad_decider = lambda frame: frame.frame_id.startswith("s")
+
+    result = controller.handle(VoiceWorkerCommand(command="record_wake_reference", command_id="c-ref"))
+
+    assert audio.capture_calls == 0
+    assert capture.active() is False
+    assert result.event.summary.get("record_wake_reference") is True
+    assert result.event.summary.get("capture_mode") == "continuous"
+    assert result.event.summary.get("reference_count") == 1
 
 
 def test_fake_capture_delivers_frames_in_order():

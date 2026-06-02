@@ -106,6 +106,12 @@ def _adaptive_energy_floor(
     return base_floor
 
 
+def _wakeword_public_blocker(blocker: str) -> str:
+    if blocker == "model_asset_missing_manual_install_required":
+        return "wakeword_model_not_installed"
+    return blocker
+
+
 class VoiceWorkerController:
     def __init__(
         self,
@@ -117,6 +123,7 @@ class VoiceWorkerController:
         backend_runtime: VoiceWorkerBackendRuntime | None = None,
         wakeword_supervisor: WakewordWorkerSupervisor | None = None,
         wakeword_supervisor_policy: WakewordSupervisorPolicy | None = None,
+        continuous_capture_factory: Callable[[], Any] | None = None,
     ) -> None:
         self.config = config or VoiceWorkerConfig.default()
         self.audio = audio or FakeLocalAudioAdapter()
@@ -128,6 +135,7 @@ class VoiceWorkerController:
         # play_audio calls receive actual synthesized PCM bytes instead of silence.
         if isinstance(self.audio, SoundDeviceAudioAdapter) and self.audio._pcm_resolver is None:
             self.audio._pcm_resolver = self.backend_runtime.generated_audio.resolve
+        self._continuous_capture_factory = continuous_capture_factory or self._default_continuous_capture_factory()
         self._state = VoiceWorkerLifecycleState.STOPPED
         self._heartbeat: VoiceWorkerHeartbeat | None = None
         self._events: list[VoiceWorkerEvent] = []
@@ -138,6 +146,7 @@ class VoiceWorkerController:
         # handlers that read the mic (listen, speak barge-in) stand down then to
         # avoid a device-busy conflict on the single input device.
         self._continuous_active = False
+        self._manual_listen_trace_id: str | None = None
         self.wakeword_supervisor: WakewordWorkerSupervisor = wakeword_supervisor or WakewordWorkerSupervisor(
             config=self.config,
             asset_manager=self.asset_manager,
@@ -145,6 +154,24 @@ class VoiceWorkerController:
             audio=self.audio,
             policy=wakeword_supervisor_policy,
         )
+
+    def _default_continuous_capture_factory(self) -> Callable[[], Any] | None:
+        if not isinstance(self.audio, SoundDeviceAudioAdapter):
+            return None
+
+        def build() -> Any:
+            from .continuous_capture import SoundDeviceContinuousCapture
+
+            device = self.config.audio.input_device_id
+            resolved_device = int(device) if isinstance(device, str) and device.isdigit() else device
+            return SoundDeviceContinuousCapture(
+                sample_rate=self.config.audio.sample_rate,
+                channels=self.config.audio.channel_count,
+                frame_ms=self.config.audio.frame_duration_ms,
+                device=resolved_device,
+            )
+
+        return build
 
     def status(self) -> VoiceWorkerStatus:
         self.asset_manager.discover_installed()
@@ -203,7 +230,7 @@ class VoiceWorkerController:
 
     def start_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
         self.asset_manager.discover_installed()
-        self.wakeword_supervisor.update_config(self.config)
+        self.wakeword_supervisor.update_config(self._config_for_wake_backend(self._effective_wake_backend_id()))
         return self.wakeword_supervisor.start(explicit_user_triggered=explicit_user_triggered)
 
     def stop_wakeword_supervisor(self, *, explicit_user_triggered: bool = True) -> WakewordSupervisorHealth:
@@ -211,7 +238,7 @@ class VoiceWorkerController:
 
     def tick_wakeword_supervisor(self) -> WakewordSupervisorTickResult:
         self.asset_manager.discover_installed()
-        self.wakeword_supervisor.update_config(self.config)
+        self.wakeword_supervisor.update_config(self._config_for_wake_backend(self._effective_wake_backend_id()))
         tick = self.wakeword_supervisor.tick()
         if tick.detected:
             self._error = None
@@ -464,7 +491,7 @@ class VoiceWorkerController:
                 "endpoint_reason": reason,
             }
             if transcription.status == "succeeded" and transcription.text:
-                summary["transcript_text"] = transcription.text
+                summary["normalized_transcript_text"] = transcription.text
             self._record(
                 VoiceWorkerEventType.TRANSCRIPTION_COMPLETED,
                 trace_id=parent_trace_id,
@@ -512,6 +539,16 @@ class VoiceWorkerController:
             pass
         return self.config.wakeword.backend_id
 
+    def _config_for_wake_backend(self, backend_id: str) -> VoiceWorkerConfig:
+        if backend_id == self.config.wakeword.backend_id:
+            return self.config
+        return self.config.model_copy(update={"wakeword": self.config.wakeword.model_copy(update={"backend_id": backend_id})})
+
+    def _take_manual_listen_trace_id(self) -> str | None:
+        trace_id = self._manual_listen_trace_id
+        self._manual_listen_trace_id = None
+        return trace_id
+
     def run_wake_listen_loop(
         self,
         *,
@@ -554,13 +591,9 @@ class VoiceWorkerController:
                     pass
 
         self.asset_manager.discover_installed()
-        self.wakeword_supervisor.update_config(self.config)
         if not self.config.wakeword.enabled:
             _emit({"event": "wake_listen_refused", "reason_code": "wakeword_not_enabled"})
             return {"started": False, "reason_code": "wakeword_not_enabled"}
-        if not self.wakeword_supervisor._asset_ready():  # noqa: SLF001 - readiness gate
-            _emit({"event": "wake_listen_refused", "reason_code": "wakeword_model_not_installed"})
-            return {"started": False, "reason_code": "wakeword_model_not_installed"}
 
         from contextlib import nullcontext
 
@@ -572,6 +605,12 @@ class VoiceWorkerController:
         # over; otherwise the configured backend (sherpa KWS) is the stopgap.
         wake_backend_id = self._effective_wake_backend_id()
         _emit({"event": "wake_listen_backend", "backend_id": wake_backend_id})
+        blocker = self.backend_runtime.wakeword_readiness_blocker(wake_backend_id)
+        if blocker is not None:
+            reason_code = _wakeword_public_blocker(blocker)
+            _emit({"event": "wake_listen_refused", "reason_code": reason_code, "backend_id": wake_backend_id})
+            return {"started": False, "reason_code": reason_code}
+        self.wakeword_supervisor.update_config(self._config_for_wake_backend(wake_backend_id))
         detections = 0
         frames_read = 0
         decode_count = 0
@@ -603,6 +642,19 @@ class VoiceWorkerController:
             }
         )
         reader = lambda: capture.read(timeout=idle_timeout)  # noqa: E731
+
+        def reader_with_first(first_frame: Any) -> "Callable[[], Any]":
+            used_first = False
+
+            def read() -> Any:
+                nonlocal used_first
+                if not used_first:
+                    used_first = True
+                    return first_frame
+                return reader()
+
+            return read
+
         try:
             batch: list[Any] = []
             while not should_stop():
@@ -612,6 +664,18 @@ class VoiceWorkerController:
                 if frame is None:
                     continue
                 frames_read += 1
+                with _locked():
+                    manual_trace_id = self._take_manual_listen_trace_id()
+                    if manual_trace_id:
+                        _emit({"event": "manual_listen_started", "trace_id": manual_trace_id})
+                        self._run_post_wake_capture(
+                            parent_trace_id=manual_trace_id,
+                            read_frame=reader_with_first(frame),
+                            on_diagnostic=on_diagnostic,
+                            ambient_rms=ambient_ema,
+                        )
+                        batch = []
+                        continue
                 if not dumped:
                     pcm = getattr(frame, "pcm", b"") or b""
                     dump_buffer.append(pcm)
@@ -1016,12 +1080,15 @@ class VoiceWorkerController:
     def _handle_test_wakeword(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         trace_id = self._trace_id_for(command)
         self.asset_manager.discover_installed()
+        wake_backend_id = self._effective_wake_backend_id()
         if not self.config.wakeword.enabled:
             self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="wakeword_not_enabled", message="Wakeword is disabled.")
             return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False})
-        if not self.asset_manager.is_ready(model_id="hey-marvex", backend_id=self.config.wakeword.backend_id, model_kind="wakeword"):
-            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code="wakeword_model_not_installed", message="Hey Marvex wakeword model asset is not installed under the voice asset root.")
-            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False, "exact_blocker": "wakeword_model_not_installed"})
+        blocker = self.backend_runtime.wakeword_readiness_blocker(wake_backend_id)
+        if blocker is not None:
+            reason_code = _wakeword_public_blocker(blocker)
+            self._error = VoiceWorkerErrorEnvelope.safe_error(trace_id=trace_id, reason_code=reason_code, message="Hey Marvex wakeword runtime is not ready.")
+            return self._record(VoiceWorkerEventType.ERROR, trace_id=trace_id, summary={"wakeword_ready": False, "exact_blocker": reason_code, "backend_id": wake_backend_id})
         frames = tuple(
             self.audio.capture_frames(
                 device_id=self.config.audio.input_device_id,
@@ -1032,7 +1099,7 @@ class VoiceWorkerController:
         )
         detection = self.backend_runtime.test_wakeword(
             trace_id=trace_id,
-            backend_id=self.config.wakeword.backend_id,
+            backend_id=wake_backend_id,
             frames=frames,
             phrase=self.config.wakeword.phrase,
             threshold=self.config.wakeword.threshold,
@@ -1198,13 +1265,13 @@ class VoiceWorkerController:
 
         trace_id = self._trace_id_for(command)
         if self._continuous_active:
-            # The continuous wake loop owns the mic; a chunked capture here would
-            # conflict on the single input device. The wake loop already
-            # captures wake-triggered commands, so re-wake drives the next turn.
+            # The continuous wake loop owns the mic. Queue this explicit manual
+            # listen so the loop captures from the same gap-free input stream.
+            self._manual_listen_trace_id = trace_id
             return self._record(
-                VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                VoiceWorkerEventType.VAD_SPEECH_STARTED,
                 trace_id=trace_id,
-                summary={"reason_code": "continuous_capture_active", "listen": True},
+                summary={"manual_listen_queued": True, "listen": True},
             )
         before = len(self._events)
         self._run_post_wake_capture(parent_trace_id=trace_id)
@@ -1241,12 +1308,26 @@ class VoiceWorkerController:
                 summary={"reason_code": "continuous_capture_active", "record_wake_reference": True},
             )
         vad_decider = self._resolve_vad_decider()
-        frames, reason = self._capture_utterance(vad_decider=vad_decider)
+        capture_mode = "chunked"
+        capture_factory = self._continuous_capture_factory
+        if capture_factory is not None:
+            capture = capture_factory()
+            capture.start()
+            capture_mode = "continuous"
+            try:
+                frames, reason = self._capture_utterance(
+                    vad_decider=vad_decider,
+                    read_frame=lambda: capture.read(timeout=1.0),
+                )
+            finally:
+                capture.stop()
+        else:
+            frames, reason = self._capture_utterance(vad_decider=vad_decider)
         if not frames or reason == "no_speech":
             return self._record(
                 VoiceWorkerEventType.VAD_SPEECH_ENDED,
                 trace_id=trace_id,
-                summary={"reason_code": "no_speech", "record_wake_reference": True, "phrase": phrase},
+                summary={"reason_code": "no_speech", "record_wake_reference": True, "phrase": phrase, "capture_mode": capture_mode},
             )
         reference_dir = wake_reference_dir(self.asset_manager.asset_root)
         target = next_reference_path(reference_dir, phrase=phrase)
@@ -1266,6 +1347,7 @@ class VoiceWorkerController:
                 "reference_count": count,
                 "phrase": phrase,
                 "endpoint_reason": reason,
+                "capture_mode": capture_mode,
             },
         )
 

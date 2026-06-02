@@ -461,4 +461,4 @@ def test_wake_detection_triggers_post_wake_stt_capture(tmp_path: Path) -> None:
         if event["event_type"] == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED.value
     )
     assert completed["summary"].get("post_wake_capture") is True
-    assert completed["summary"].get("transcript_text") == "what is the weather"
+    assert completed["summary"].get("normalized_transcript_text") == "what is the weather"

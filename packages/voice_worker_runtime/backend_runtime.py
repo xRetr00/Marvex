@@ -108,6 +108,7 @@ _WAKEWORD_MODELS = {
     # "model" asset is the speech-embedding ONNX local-wake ships/uses.
     "local-wake": ("hey-marvex", "local-wake", "lwake"),
 }
+_LOCAL_WAKE_NO_REFERENCES = "local_wake_references_missing_manual_enrollment_required"
 
 
 class VoiceWorkerBackendRuntime:
@@ -187,9 +188,9 @@ class VoiceWorkerBackendRuntime:
 
     def wakeword_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
-        asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
+        asset = self._wakeword_asset(backend_id=backend_id, model_id=model_id)
         package = _package_status(package_name=package_name, module_name=module_name)
-        blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        blocker = self.wakeword_readiness_blocker(backend_id)
         payload = asset.model_dump(mode="json")
         payload.update(
             {
@@ -202,6 +203,13 @@ class VoiceWorkerBackendRuntime:
             }
         )
         return payload
+
+    def wakeword_readiness_blocker(self, backend_id: str) -> str | None:
+        model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
+        asset = self._wakeword_asset(backend_id=backend_id, model_id=model_id)
+        if self._custom_wakeword_runner and asset.status == "installed":
+            return None
+        return self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
 
     def test_stt(self, *, trace_id: str, backend_id: str, audio_ref_id: str, duration_ms: int = 320) -> TranscriptionResult:
         model_id, package_name, module_name = _resolve(_STT_MODELS, backend_id, default_model=backend_id)
@@ -248,8 +256,8 @@ class VoiceWorkerBackendRuntime:
     def test_wakeword(self, *, trace_id: str, backend_id: str, frames: tuple[AudioFrame, ...], phrase: str, threshold: float) -> WakeWordDetectionResult:
         del trace_id
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
-        asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
-        blocker = None if self._custom_wakeword_runner and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        asset = self._wakeword_asset(backend_id=backend_id, model_id=model_id)
+        blocker = self.wakeword_readiness_blocker(backend_id)
         if blocker is not None:
             return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=backend_id, reason_code=blocker)
         return self._wakeword_runner_for(backend_id)(frames, asset, phrase=phrase, threshold=threshold)  # type: ignore[misc]
@@ -263,14 +271,33 @@ class VoiceWorkerBackendRuntime:
         if not callable(probe):
             return False, ""
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
-        asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
-        blocker = None if self._custom_wakeword_runner and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        asset = self._wakeword_asset(backend_id=backend_id, model_id=model_id)
+        blocker = self.wakeword_readiness_blocker(backend_id)
         if blocker is not None:
             return False, ""
         try:
             return probe(frames, asset, phrase=phrase, threshold=threshold)
         except Exception:
             return False, ""
+
+    def _wakeword_asset(self, *, backend_id: str, model_id: str) -> VoiceModelInstallResult:
+        if backend_id != "local-wake":
+            return self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
+        try:
+            from .wake_enrollment import list_wake_references, wake_reference_dir
+
+            references = list_wake_references(wake_reference_dir(self.asset_manager.asset_root))
+        except Exception:
+            references = []
+        if not references:
+            return VoiceModelInstallResult(
+                model_id=model_id,
+                backend_id=backend_id,
+                model_kind="wakeword",
+                status="not_installed",
+                exact_blocker=_LOCAL_WAKE_NO_REFERENCES,
+            )
+        return VoiceModelInstallResult(model_id=model_id, backend_id=backend_id, model_kind="wakeword", status="installed", local_path_present=True)
 
     def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str) -> dict[str, object]:
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind=model_kind)

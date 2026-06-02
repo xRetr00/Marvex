@@ -113,8 +113,16 @@ class VoiceWorkerControlPlaneFacade:
         if self._tick_thread is not None and self._tick_thread.is_alive():
             return
         self._tick_stop.clear()
+        capture = _build_continuous_capture(self.controller)
 
         def tick_loop() -> None:
+            if capture is not None:
+                self.controller.run_wake_listen_loop(
+                    capture=capture,
+                    should_stop=self._tick_stop.is_set,
+                    lock=self._lock,
+                )
+                return
             while not self._tick_stop.wait(max(0.01, self._tick_interval_seconds)):
                 with self._lock:
                     status = self.controller.status()
@@ -147,3 +155,19 @@ def _default_audio_adapter():
         return adapter
     except Exception:
         return None
+
+
+def _build_continuous_capture(controller: VoiceWorkerController):
+    if not isinstance(getattr(controller, "audio", None), SoundDeviceAudioAdapter):
+        return None
+    from .continuous_capture import SoundDeviceContinuousCapture
+
+    cfg = controller.config
+    device = cfg.audio.input_device_id
+    resolved_device = int(device) if isinstance(device, str) and device.isdigit() else device
+    return SoundDeviceContinuousCapture(
+        sample_rate=cfg.audio.sample_rate,
+        channels=cfg.audio.channel_count,
+        frame_ms=cfg.audio.frame_duration_ms,
+        device=resolved_device,
+    )

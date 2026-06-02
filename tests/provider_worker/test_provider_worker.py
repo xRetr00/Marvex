@@ -180,6 +180,45 @@ def test_provider_worker_maps_timeout_and_unavailable_failures():
     assert "secret" not in serialized
 
 
+def test_provider_worker_treats_model_tool_call_response_as_success():
+    from services.provider_worker.controller import ProviderWorkerController
+
+    class ToolCallProvider:
+        def send(self, request: ProviderRequest) -> ProviderResponse:
+            return ProviderResponse(
+                schema_version=request.schema_version,
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                provider_name="tool-provider",
+                response_id="tool-response",
+                output_text="",
+                finish_reason=FinishReason.STOP,
+                usage={},
+                raw_metadata={},
+                error=None,
+                tool_calls=[
+                    {
+                        "id": "call-1",
+                        "type": "function",
+                        "function": {
+                            "name": "builtin.browser_use",
+                            "arguments": '{"task": "open example.com"}',
+                        },
+                    }
+                ],
+            )
+
+    result = ProviderWorkerController(provider_factory=lambda _config: ToolCallProvider()).send(
+        provider_name="litellm",
+        request=make_request(),
+    )
+
+    assert result.ok is True
+    assert result.response is not None
+    assert result.response.tool_calls is not None
+    assert result.response.tool_calls[0]["function"]["name"] == "builtin.browser_use"
+
+
 def test_provider_worker_executes_retry_and_fallback_with_selection_runtime():
     from services.provider_worker.controller import ProviderWorkerController
     from services.provider_worker.models import ProviderWorkerConfig

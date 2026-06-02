@@ -274,11 +274,7 @@ class WakewordWorkerSupervisor:
         )
 
     def _asset_ready(self) -> bool:
-        return self._asset_manager.is_ready(
-            model_id=WAKEWORD_SUPERVISOR_MODEL_ID,
-            backend_id=self._config.wakeword.backend_id,
-            model_kind="wakeword",
-        )
+        return self._backend_runtime.wakeword_readiness_blocker(self._config.wakeword.backend_id) is None
 
     def _tick_result(self, *, detected: bool, exact_blocker: str | None) -> WakewordSupervisorTickResult:
         return WakewordSupervisorTickResult(
