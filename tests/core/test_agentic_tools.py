@@ -126,6 +126,55 @@ def test_write_local_memory_tools_require_approval_and_do_not_auto_execute():
     assert outcome.pending_tool_calls[0].pending_tool["capability_id"] == "memory.remember"
 
 
+def test_invalid_automation_tool_arguments_report_to_model_instead_of_approval():
+    from packages.adapters.capabilities.tools.automation import BrowserUseTool
+
+    outcome = execute_tool_calls(
+        [_call("builtin.browser_use", '{"action_summary": "Open YouTube", "action_kind": "open_app"}')],
+        registry=ToolRegistry((*default_registry().tools(), BrowserUseTool())),
+        request_builder=_builder(),
+    )
+
+    assert outcome.results[0].status == "error"
+    assert outcome.needs_approval == []
+    assert "arguments are invalid" in outcome.tool_messages[0]["content"]
+
+
+def test_loop_uses_later_valid_automation_call_when_first_call_has_wrong_schema():
+    from packages.adapters.capabilities.tools.automation import BrowserUseTool
+
+    registry = ToolRegistry((*default_registry().tools(), BrowserUseTool()))
+
+    def send(_input_text, _tool_messages, _prev):
+        return ProviderStep(
+            output_text="",
+            tool_calls=[
+                _call(
+                    "builtin.browser_use",
+                    '{"action_summary": "Open YouTube in the browser", "action_kind": "open_app"}',
+                    "bad",
+                ),
+                _call("builtin.browser_use", '{"task": "Navigate to youtube.com"}', "good"),
+            ],
+            response_id="r-browser",
+            error=False,
+        )
+
+    result = run_tool_loop(
+        send=send,
+        registry=registry,
+        request_builder=_builder(),
+        max_steps=3,
+        initial_input="open browser on youtube",
+    )
+
+    assert result.status == "needs_approval"
+    assert result.pending_tool["call_id"] == "good"
+    assert result.pending_tool["capability_id"] == "browser_use.task"
+    assert result.pending_tool["arguments"] == {"task": "Navigate to youtube.com"}
+    assert result.response_id == "r-browser"
+
+
 def test_loop_carries_pending_file_write_payload_for_approval_resume():
     def send(_input_text, _tool_messages, _prev):
         return ProviderStep(

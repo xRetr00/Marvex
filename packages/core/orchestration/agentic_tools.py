@@ -25,6 +25,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from packages.adapters.capabilities.tools import ToolRegistry
+from packages.adapters.capabilities.tools.base import Tool
 from packages.adapters.capabilities.tools.clarify import CLARIFY_TOOL_ID, clarification_payload_from_arguments
 from packages.adapters.capabilities.tools.automation import AUTOMATION_TOOL_CAPABILITIES
 from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel, ToolSideEffectLevel
@@ -95,6 +96,21 @@ def _tool_message(call_id: str, content: str) -> dict[str, Any]:
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
+def _validated_tool_arguments(tool: Tool | None, arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    if tool is None:
+        return dict(arguments), None
+    if tool.tool_id().startswith("file."):
+        # File tools receive the configured sandbox root from Core's request
+        # builder, not from the model. Their adapters validate root/path/content
+        # at execution time after that injection.
+        return dict(arguments), None
+    try:
+        validated = tool.params_model.model_validate(arguments)
+    except Exception as exc:
+        return None, f"invalid_arguments:{type(exc).__name__}"
+    return dict(validated.model_dump(mode="json")), None
+
+
 def execute_tool_calls(
     tool_calls: list[dict[str, Any]],
     *,
@@ -143,6 +159,15 @@ def execute_tool_calls(
             # Model called a browser/desktop automation tool. Do not execute it in
             # the loop: pause for human approval and carry the capability id + the
             # model's arguments so Core executes the real capability on approve.
+            validated_arguments, validation_reason = _validated_tool_arguments(registry.get(name), arguments)
+            if validated_arguments is None:
+                content = (
+                    f"Tool '{name}' arguments are invalid ({validation_reason}). "
+                    "Call the tool again with arguments matching its schema."
+                )
+                results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
+                tool_messages.append(results[-1].message)
+                continue
             capability_id, resource_type, capability_label = AUTOMATION_TOOL_CAPABILITIES[bare_name]
             content = f"Tool '{name}' requires human approval before it can run. Awaiting approval."
             results.append(
@@ -156,14 +181,14 @@ def execute_tool_calls(
                         "capability_id": capability_id,
                         "resource_type": resource_type,
                         "capability": capability_label,
-                        "arguments": arguments,
+                        "arguments": validated_arguments,
                     },
                     pending_tool={
                         "tool_id": name,
                         "capability_id": capability_id,
                         "resource_type": resource_type,
                         "capability": capability_label,
-                        "arguments": arguments,
+                        "arguments": validated_arguments,
                         "call_id": call_id,
                     },
                 )
@@ -180,6 +205,17 @@ def execute_tool_calls(
             results.append(ToolCallResult(call_id, name, "unknown", _tool_message(call_id, content)))
             tool_messages.append(results[-1].message)
             continue
+
+        validated_arguments, validation_reason = _validated_tool_arguments(tool, arguments)
+        if validated_arguments is None:
+            content = (
+                f"Tool '{name}' arguments are invalid ({validation_reason}). "
+                "Call the tool again with arguments matching its schema."
+            )
+            results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
+            tool_messages.append(results[-1].message)
+            continue
+        arguments = validated_arguments
 
         if tool.risk_level is not ToolRiskLevel.SAFE or tool.side_effect_level is not ToolSideEffectLevel.READ_ONLY:
             content = (

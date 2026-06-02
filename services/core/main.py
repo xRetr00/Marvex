@@ -1113,6 +1113,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "agentic_tool_loop": {
                         "needs_approval_tool_ids": loop_result.needs_approval_tool_ids,
                         "executed_tool_ids": loop_result.executed_tool_ids,
+                        "pending_tool": _pending_tool_log_projection(loop_result.pending_tool),
                     },
                 },
                 cognition=cognition,
@@ -2987,6 +2988,28 @@ def _with_loop_metadata(
     model_answer_stage = metadata.get("model_answer_stage")
     if isinstance(model_answer_stage, str) and model_answer_stage:
         completed_data["model_answer_stage"] = model_answer_stage
+    tool_boundary = metadata.get("tool_boundary")
+    if isinstance(tool_boundary, str) and tool_boundary:
+        completed_data["tool_boundary"] = tool_boundary
+    agentic_tool_loop = metadata.get("agentic_tool_loop")
+    if isinstance(agentic_tool_loop, dict):
+        for key in ("reason_code", "model_tool_call_required"):
+            value = agentic_tool_loop.get(key)
+            if isinstance(value, str | int | float | bool):
+                completed_data[key] = value
+        for key in ("needs_approval_tool_ids", "executed_tool_ids"):
+            value = agentic_tool_loop.get(key)
+            if isinstance(value, list | tuple):
+                completed_data[key] = [str(item) for item in value[:12]]
+        pending_tool = agentic_tool_loop.get("pending_tool")
+        if isinstance(pending_tool, dict):
+            for key in ("tool_id", "capability_id", "resource_type", "call_id"):
+                value = pending_tool.get(key)
+                if isinstance(value, str | int | float | bool):
+                    completed_data[f"pending_{key}"] = value
+            argument_keys = pending_tool.get("argument_keys")
+            if isinstance(argument_keys, list | tuple):
+                completed_data["pending_argument_keys"] = [str(item) for item in argument_keys[:12]]
     approval_request = metadata.get("approval_request")
     if isinstance(approval_request, dict):
         approval_request_id = approval_request.get("approval_request_id")
@@ -3001,6 +3024,22 @@ def _with_loop_metadata(
             completed_data["approval_request_id"] = approval_request_id
         if isinstance(decision, str) and decision:
             completed_data["approval_status"] = decision
+    for metadata_key in ("automation", "failed_tool"):
+        tool_projection = metadata.get(metadata_key)
+        if isinstance(tool_projection, dict):
+            result = dict(tool_projection.get("result") or {})
+            safe_result = dict(result.get("safe_result") or {})
+            capability_ref = dict(result.get("capability_ref") or {})
+            prefix = "failed_tool" if metadata_key == "failed_tool" else "automation"
+            for output_key, value in (
+                (f"{prefix}_status", result.get("status")),
+                (f"{prefix}_capability_id", capability_ref.get("identifier")),
+                (f"{prefix}_reason_code", safe_result.get("reason_code")),
+                (f"{prefix}_live_execution", safe_result.get("live_execution")),
+                (f"{prefix}_adapter", safe_result.get("adapter")),
+            ):
+                if isinstance(value, str | int | float | bool):
+                    completed_data[output_key] = value
     # A turn paused for human approval is NOT a failure: it is a normal gate
     # (browser/desktop automation, risky tools). Emitting it as TURN_FAILED at
     # WARNING made every approval-gated op look broken in the logs/UI even though
@@ -3220,9 +3259,38 @@ def _write_operational_event_log(
         writer.append_line("approvals.log", approval_line)
     tool_status = data.get("tool_status")
     if isinstance(tool_status, str | int | float | bool):
+        tool_bits = [
+            f"{timestamp} trace={trace_id} turn={turn_id}",
+            f"tool_status={tool_status}",
+            f"stage={stage}",
+        ]
+        for key in (
+            "tool_boundary",
+            "reason_code",
+            "pending_tool_id",
+            "pending_capability_id",
+            "pending_resource_type",
+            "pending_call_id",
+            "automation_status",
+            "automation_capability_id",
+            "automation_reason_code",
+            "automation_live_execution",
+            "automation_adapter",
+            "failed_tool_status",
+            "failed_tool_capability_id",
+            "failed_tool_reason_code",
+        ):
+            value = data.get(key)
+            if isinstance(value, str | int | float | bool):
+                tool_bits.append(f"{key}={value}")
+        for key in ("needs_approval_tool_ids", "executed_tool_ids", "pending_argument_keys"):
+            value = data.get(key)
+            if isinstance(value, list | tuple):
+                safe_values = [str(item) for item in value[:12]]
+                tool_bits.append(f"{key}={','.join(safe_values) if safe_values else 'none'}")
         writer.append_line(
             "tools.log",
-            f"{timestamp} trace={trace_id} turn={turn_id} tool_status={tool_status} stage={stage}",
+            " ".join(tool_bits),
         )
     followup_status = data.get("followup_status") or data.get("proactive_status")
     if isinstance(followup_status, str | int | float | bool):
@@ -3309,6 +3377,19 @@ def _automation_needs_destructive_approval(tool_response: dict[str, object]) -> 
 
     safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
     return safe_result.get("destructive_action_approval_required") is True
+
+
+def _pending_tool_log_projection(pending_tool: dict[str, object] | None) -> dict[str, object] | None:
+    if not isinstance(pending_tool, dict):
+        return None
+    arguments = pending_tool.get("arguments")
+    argument_keys = sorted(str(key) for key in dict(arguments or {}).keys()) if isinstance(arguments, dict) else []
+    projection: dict[str, object] = {"argument_keys": argument_keys[:12]}
+    for key in ("tool_id", "capability_id", "resource_type", "capability", "call_id", "response_id"):
+        value = pending_tool.get(key)
+        if isinstance(value, str | int | float | bool):
+            projection[key] = value
+    return projection
 
 
 def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str:
