@@ -28,16 +28,13 @@ def _make_request(
     )
 
 
-def _make_completion(*, response_id: str, content: str) -> SimpleNamespace:
+def _make_response(*, response_id: str, content: str) -> SimpleNamespace:
     return SimpleNamespace(
         id=response_id,
-        choices=[
-            SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=content),
-            )
-        ],
-        usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1, total_tokens=2),
+        status="completed",
+        output_text=content,
+        output=[],
+        usage=SimpleNamespace(input_tokens=1, output_tokens=1, total_tokens=2),
     )
 
 
@@ -73,42 +70,46 @@ def test_store_evicts_oldest_when_capacity_exceeded():
     assert store.recall("c") == [{"role": "user", "content": "3"}]
 
 
-def test_provider_without_store_preserves_single_message_behaviour(monkeypatch):
+def test_provider_without_store_sends_responses_input(monkeypatch):
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return _make_completion(response_id="r1", content="ok")
+        return _make_response(response_id="r1", content="ok")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
-    LiteLLMProvider().send(
-        _make_request(previous_response_id="ignored-when-no-store")
-    )
+    LiteLLMProvider().send(_make_request(previous_response_id="prev-1"))
 
-    assert calls[0]["messages"] == [
-        {"role": "system", "content": "Follow system guidance."},
-        {"role": "user", "content": "Hello"},
-    ]
+    assert calls[0]["input"] == "Hello"
+    assert calls[0]["instructions"] == "Follow system guidance."
+    assert calls[0]["previous_response_id"] == "prev-1"
+    assert "messages" not in calls[0]
 
 
-def test_provider_with_store_threads_prior_messages_into_next_turn(monkeypatch):
+def test_provider_with_store_records_turn_but_threads_by_responses_id(monkeypatch):
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return _make_completion(response_id=f"resp-{len(calls)}", content=f"reply-{len(calls)}")
+        return _make_response(
+            response_id=f"resp-{len(calls)}",
+            content=f"reply-{len(calls)}",
+        )
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     store = LiteLLMConversationStore()
     provider = LiteLLMProvider(conversation_store=store)
 
     first = provider.send(_make_request(input_text="hi", previous_response_id=None))
     assert first.response_id == "resp-1"
-    assert calls[0]["messages"] == [
+    assert calls[0]["input"] == "hi"
+    assert "previous_response_id" not in calls[0]
+    assert store.recall("resp-1") == [
         {"role": "system", "content": "Follow system guidance."},
         {"role": "user", "content": "hi"},
+        {"role": "assistant", "content": "reply-1"},
     ]
 
     provider.send(
@@ -119,22 +120,19 @@ def test_provider_with_store_threads_prior_messages_into_next_turn(monkeypatch):
         )
     )
 
-    assert calls[1]["messages"] == [
-        {"role": "system", "content": "Follow system guidance."},
-        {"role": "user", "content": "hi"},
-        {"role": "assistant", "content": "reply-1"},
-        {"role": "user", "content": "and again"},
-    ]
+    assert calls[1]["input"] == "and again"
+    assert calls[1]["previous_response_id"] == "resp-1"
+    assert "messages" not in calls[1]
 
 
-def test_provider_with_store_replaces_system_when_instructions_change(monkeypatch):
+def test_provider_with_store_records_changed_instructions(monkeypatch):
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return _make_completion(response_id=f"resp-{len(calls)}", content="ok")
+        return _make_response(response_id=f"resp-{len(calls)}", content="ok")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     store = LiteLLMConversationStore()
     provider = LiteLLMProvider(conversation_store=store)
@@ -148,20 +146,18 @@ def test_provider_with_store_replaces_system_when_instructions_change(monkeypatc
         )
     )
 
-    assert calls[1]["messages"][0] == {
+    assert calls[1]["instructions"] == "Use a stricter tone."
+    assert store.recall("resp-2")[0] == {
         "role": "system",
         "content": "Use a stricter tone.",
     }
-    # Old system message is dropped; prior user/assistant pair survives.
-    system_count = sum(1 for m in calls[1]["messages"] if m["role"] == "system")
-    assert system_count == 1
 
 
 def test_provider_with_store_skips_recording_on_error(monkeypatch):
     def boom(**kwargs):
         raise RuntimeError("upstream blew up")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", boom)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", boom)
 
     store = LiteLLMConversationStore()
     provider = LiteLLMProvider(conversation_store=store)

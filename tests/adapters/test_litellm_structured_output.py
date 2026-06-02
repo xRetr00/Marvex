@@ -186,21 +186,18 @@ def test_normal_send_response_shape_is_unchanged_for_json_output_text(monkeypatc
     from packages.adapters.providers.litellm import LiteLLMProvider, litellm_provider
 
     raw_output_text = make_assistant_response_json(text="Still raw.")
-    completion = SimpleNamespace(
+    response_payload = SimpleNamespace(
         id="litellm-structured-001",
-        choices=[
-            SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=raw_output_text),
-            )
-        ],
-        usage={"prompt_tokens": 1, "completion_tokens": 2, "total_tokens": 3},
+        status="completed",
+        output_text=raw_output_text,
+        output=[],
+        usage={"input_tokens": 1, "output_tokens": 2, "total_tokens": 3},
     )
 
     monkeypatch.setattr(
         litellm_provider.litellm,
-        "completion",
-        lambda **kwargs: completion,
+        "responses",
+        lambda **kwargs: response_payload,
     )
 
     response = LiteLLMProvider().send(make_request())

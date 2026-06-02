@@ -256,7 +256,7 @@ class ProviderWorkerController:
         return ProviderCandidate(
             provider_id=provider_id,
             model=request.model,
-            supports_tools=False,
+            supports_tools=provider_id in {"litellm", "lmstudio_responses"},
             context_length=128000,
             locality="cloud" if provider_id == "litellm" else "local",
             healthy=provider_id not in self.config.unavailable_provider_ids,
@@ -267,7 +267,7 @@ class ProviderWorkerController:
         return (
             response.error is None
             and response.finish_reason != FinishReason.ERROR
-            and bool(response.output_text.strip())
+            and (bool(response.output_text.strip()) or bool(response.tool_calls))
         )
 
     def _safe_response(self, response: ProviderResponse) -> ProviderResponse:

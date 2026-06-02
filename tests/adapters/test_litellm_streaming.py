@@ -26,42 +26,40 @@ def _request() -> ProviderRequest:
     )
 
 
-def _chunk(text: str | None, *, chunk_id: str = "chat-1", finish: str | None = None) -> object:
-    delta = SimpleNamespace(content=text)
-    choice = SimpleNamespace(delta=delta, finish_reason=finish)
-    return SimpleNamespace(id=chunk_id, choices=[choice])
+def _chunk(text: str | None, *, chunk_id: str = "resp-1", event_type: str = "response.output_text.delta") -> object:
+    return SimpleNamespace(id=chunk_id, delta=text, type=event_type)
 
 
 def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag(monkeypatch):
     captured: dict[str, object] = {}
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         captured.update(kwargs)
-        return iter([_chunk("Hel"), _chunk("lo"), _chunk(None, finish="stop")])
+        return iter([_chunk("Hel"), _chunk("lo"), _chunk(None, event_type="response.completed")])
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     events = list(LiteLLMProvider().stream_send(_request()))
     assert captured["stream"] is True
     assert isinstance(events[0], StreamTextDelta) and events[0].text == "Hel"
     assert isinstance(events[1], StreamTextDelta) and events[1].text == "lo"
     assert isinstance(events[-1], StreamCompleted)
-    assert events[-1].response_id == "chat-1"
+    assert events[-1].response_id == "resp-1"
     assert events[-1].output_text == "Hello"
     assert events[-1].finish_reason == "stop"
 
 
 def test_stream_send_drives_through_run_streaming_turn(monkeypatch):
-    def fake_completion(**_kwargs):
-        return iter([_chunk("Mar"), _chunk("vex"), _chunk(None, finish="stop")])
+    def fake_responses(**_kwargs):
+        return iter([_chunk("Mar"), _chunk("vex"), _chunk(None, event_type="response.completed")])
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     sink: list[str] = []
     result = run_streaming_turn(LiteLLMProvider().stream_send(_request()), on_delta=sink.append)
     assert result.status == "completed"
     assert result.text == "Marvex"
-    assert result.response_id == "chat-1"
+    assert result.response_id == "resp-1"
     assert sink == ["Mar", "vex"]
 
 
@@ -69,7 +67,7 @@ def test_stream_send_maps_failure_to_stream_error(monkeypatch):
     def boom(**_kwargs):
         raise RuntimeError("connection refused")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", boom)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", boom)
 
     events = list(LiteLLMProvider().stream_send(_request()))
     assert len(events) == 1
@@ -82,7 +80,7 @@ def test_stream_error_redacts_api_key(monkeypatch):
     def boom(**_kwargs):
         raise RuntimeError("bad key sk-secret-123")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", boom)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", boom)
 
     provider = LiteLLMProvider(LiteLLMProviderConfig(api_key="sk-secret-123"))
     events = list(provider.stream_send(_request()))

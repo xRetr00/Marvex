@@ -98,9 +98,14 @@ def run_provider_stage_turn(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
             turn_id=turn_input.turn_id,
-            stage=TraceStage.TURN_FAILED,
-            message="Provider stage failed.",
-            data={"status": "provider_error", "error_code": code.value},
+            stage=TraceStage.PROVIDER_RESPONSE_RECEIVED,
+            message="Provider response failed.",
+            data={
+                "stage": PROVIDER_STAGE_NAME,
+                "status": "provider_error",
+                "error_code": code.value,
+                "provider_response_id_present": False,
+            },
             level=TraceLevel.ERROR,
         )
         return _error_result(
@@ -117,19 +122,6 @@ def run_provider_stage_turn(
             telemetry_sink=telemetry_sink,
             response=response,
             status="provider_error",
-            level=TraceLevel.ERROR,
-        )
-        _emit(
-            telemetry_sink=telemetry_sink,
-            schema_version=turn_input.schema_version,
-            trace_id=turn_input.trace_id,
-            turn_id=turn_input.turn_id,
-            stage=TraceStage.TURN_FAILED,
-            message="Provider stage failed.",
-            data={
-                "status": "provider_error",
-                "error_code": response.error.code.value,
-            },
             level=TraceLevel.ERROR,
         )
         return _error_result(

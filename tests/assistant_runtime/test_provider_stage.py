@@ -286,13 +286,15 @@ def test_provider_stage_failure_trace_uses_safe_telemetry_data():
     assert [event.stage for event in sink.events] == [
         TraceStage.PROVIDER_REQUEST_CREATED,
         TraceStage.PROVIDER_REQUEST_SENT,
-        TraceStage.TURN_FAILED,
+        TraceStage.PROVIDER_RESPONSE_RECEIVED,
     ]
     dumped = str([event.model_dump() for event in sink.events])
     assert "raw provider secret" not in dumped
     assert sink.events[-1].data == {
+        "stage": "provider_stage",
         "status": "provider_error",
         "error_code": ErrorCode.PROVIDER_ERROR.value,
+        "provider_response_id_present": False,
     }
 
 

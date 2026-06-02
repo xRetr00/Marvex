@@ -28,16 +28,13 @@ def make_request(
     )
 
 
-def make_completion_response() -> SimpleNamespace:
+def make_responses_response() -> SimpleNamespace:
     return SimpleNamespace(
         id="litellm-response-001",
-        choices=[
-            SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content="LiteLLM output"),
-            )
-        ],
-        usage=SimpleNamespace(prompt_tokens=3, completion_tokens=4, total_tokens=7),
+        status="completed",
+        output_text="LiteLLM output",
+        output=[],
+        usage=SimpleNamespace(input_tokens=3, output_tokens=4, total_tokens=7),
     )
 
 
@@ -47,17 +44,17 @@ def test_adapter_satisfies_provider_port():
     assert isinstance(LiteLLMProvider(), ProviderPort)
 
 
-def test_litellm_called_with_model_and_messages(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
+def test_litellm_called_with_responses_input_and_instructions(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     response = LiteLLMProvider().send(make_request())
 
@@ -65,25 +62,24 @@ def test_litellm_called_with_model_and_messages(monkeypatch):
     assert calls == [
         {
             "model": "openrouter/test-model",
-            "messages": [
-                {"role": "system", "content": "Follow system guidance."},
-                {"role": "user", "content": "Hello"},
-            ],
+            "input": "Hello",
+            "instructions": "Follow system guidance.",
+            "previous_response_id": "prev-001",
         }
     ]
 
 
 def test_litellm_config_base_url_and_timeout_are_forwarded(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider(
         LiteLLMProviderConfig(
@@ -97,16 +93,16 @@ def test_litellm_config_base_url_and_timeout_are_forwarded(monkeypatch):
 
 
 def test_litellm_openai_compatible_mode_prefixes_plain_model_ids(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider(
         LiteLLMProviderConfig(
@@ -120,16 +116,16 @@ def test_litellm_openai_compatible_mode_prefixes_plain_model_ids(monkeypatch):
 
 
 def test_litellm_openai_compatible_mode_preserves_prefixed_model_ids(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider(
         LiteLLMProviderConfig(
@@ -142,16 +138,16 @@ def test_litellm_openai_compatible_mode_preserves_prefixed_model_ids(monkeypatch
 
 
 def test_litellm_request_timeout_overrides_config_timeout(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider(LiteLLMProviderConfig(timeout_seconds=5)).send(
         make_request(provider_options={"timeout": 12})
@@ -160,51 +156,53 @@ def test_litellm_request_timeout_overrides_config_timeout(monkeypatch):
     assert calls[0]["timeout"] == 12
 
 
-def test_input_text_becomes_user_message_without_instructions(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
+def test_input_text_without_instructions_omits_instruction_arg(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider().send(make_request(instructions=None))
 
-    assert calls[0]["messages"] == [{"role": "user", "content": "Hello"}]
+    assert calls[0]["input"] == "Hello"
+    assert "instructions" not in calls[0]
 
 
-def test_previous_response_id_not_sent_and_preserved_only_in_raw_metadata(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
+def test_previous_response_id_is_sent_to_responses_api_and_metadata(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     response = LiteLLMProvider().send(
         make_request(previous_response_id="previous-response")
     )
 
-    assert "previous_response_id" not in calls[0]
+    assert calls[0]["previous_response_id"] == "previous-response"
     assert response.raw_metadata["previous_response_id"] == "previous-response"
+    assert response.raw_metadata["api_surface"] == "responses"
 
 
 def test_output_response_id_finish_reason_and_usage_are_parsed(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     monkeypatch.setattr(
         litellm_provider.litellm,
-        "completion",
-        lambda **kwargs: make_completion_response(),
+        "responses",
+        lambda **kwargs: make_responses_response(),
     )
 
     response = LiteLLMProvider().send(make_request())
@@ -215,20 +213,20 @@ def test_output_response_id_finish_reason_and_usage_are_parsed(monkeypatch):
     assert validated.output_text == "LiteLLM output"
     assert validated.finish_reason == FinishReason.STOP
     assert validated.usage == {
-        "prompt_tokens": 3,
-        "completion_tokens": 4,
+        "input_tokens": 3,
+        "output_tokens": 4,
         "total_tokens": 7,
     }
 
 
 def test_exception_maps_to_error_envelope(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         raise RuntimeError("provider unavailable")
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     response = LiteLLMProvider().send(make_request())
 
@@ -242,16 +240,16 @@ def test_exception_maps_to_error_envelope(monkeypatch):
 
 
 def test_provider_options_allowlist_filters_and_records_ignored(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     response = LiteLLMProvider().send(
         make_request(
@@ -268,35 +266,34 @@ def test_provider_options_allowlist_filters_and_records_ignored(monkeypatch):
     )
 
     assert calls[0]["temperature"] == 0.2
-    assert calls[0]["max_tokens"] == 100
+    assert calls[0]["max_output_tokens"] == 120
     assert calls[0]["timeout"] == 30
-    assert "max_output_tokens" not in calls[0]
+    assert "max_tokens" not in calls[0]
     assert "api_key" not in calls[0]
     assert "tools" not in calls[0]
     assert "unknown" not in calls[0]
     assert response.raw_metadata["ignored_provider_options"] == [
         "api_key",
-        "max_output_tokens",
         "tools",
         "unknown",
     ]
 
 
 def test_no_tools_mcp_or_streaming_fields_sent(monkeypatch):
-    from packages.adapters.providers.litellm import litellm_provider
     from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
 
     calls: list[dict[str, object]] = []
 
-    def fake_completion(**kwargs):
+    def fake_responses(**kwargs):
         calls.append(kwargs)
-        return make_completion_response()
+        return make_responses_response()
 
-    monkeypatch.setattr(litellm_provider.litellm, "completion", fake_completion)
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
     LiteLLMProvider().send(make_request())
 
-    forbidden = {"tools", "mcp", "stream", "streaming"}
+    forbidden = {"tools", "mcp", "stream", "streaming", "messages"}
     assert forbidden.isdisjoint(calls[0])
 
 
