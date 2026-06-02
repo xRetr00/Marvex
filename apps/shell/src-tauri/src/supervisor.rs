@@ -396,7 +396,8 @@ fn runtime_wheel_marker(wheel: &Path) -> Option<String> {
 }
 
 fn record_installed_runtime_wheel(data_dir: &Path, wheel: &Path) -> Result<(), String> {
-    let marker = runtime_wheel_marker(wheel).ok_or_else(|| "runtime wheel unavailable".to_string())?;
+    let marker =
+        runtime_wheel_marker(wheel).ok_or_else(|| "runtime wheel unavailable".to_string())?;
     let marker_path = runtime_wheel_marker_path(data_dir);
     fs::create_dir_all(marker_path.parent().unwrap_or(data_dir))
         .map_err(|err| format!("runtime marker directory unavailable: {err}"))?;
@@ -418,11 +419,21 @@ fn runtime_venv_is_current(data_dir: &Path, venv: &Path, resource_dir: Option<&P
         .unwrap_or(false)
 }
 
+fn console_script_can_be_updated(path: &Path) -> bool {
+    if !path.is_file() {
+        return true;
+    }
+    OpenOptions::new().append(true).open(path).is_ok()
+}
+
 fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(String, String)> {
     let mut env = Vec::new();
     if let Some(uv) = find_uv(resource_dir) {
         if uv.is_absolute() && uv.is_file() {
-            env.push(("MARVEX_UV_PATH".to_string(), uv.to_string_lossy().to_string()));
+            env.push((
+                "MARVEX_UV_PATH".to_string(),
+                uv.to_string_lossy().to_string(),
+            ));
         }
     }
     let web_dist = resource_dir
@@ -525,15 +536,16 @@ fn ensure_runtime(
     if !existing_console_script {
         status.set("runtime", "creating environment");
         let venv_args = venv_create_args(&venv, venv.exists());
-        if !run_tool(
-            &uv,
-            &venv_args,
-            data_dir,
-            &bootstrap_log,
-        ) {
+        if !run_tool(&uv, &venv_args, data_dir, &bootstrap_log) {
             status.set("runtime", "venv_failed");
             return RuntimeOutcome::Failed;
         }
+    }
+
+    let core_script = venv_script(&venv, "marvex-core");
+    if existing_console_script && !console_script_can_be_updated(&core_script) {
+        status.set("runtime", "install_blocked_running_process");
+        return RuntimeOutcome::Failed;
     }
 
     status.set(
@@ -567,7 +579,7 @@ fn ensure_runtime(
         return RuntimeOutcome::Failed;
     }
 
-    if venv_script(&venv, "marvex-core").is_file() {
+    if core_script.is_file() {
         let _ = record_installed_runtime_wheel(data_dir, &wheel);
         status.set("runtime", "ready");
         RuntimeOutcome::Ready(venv)
@@ -752,7 +764,10 @@ fn spawn_service(
     }
     command.env("MARVEX_LOG_DIR", log_dir);
     if matches!(spec.kind, ServiceKind::Core) {
-        command.env("MARVEX_FILE_CAPABILITY_ROOT", default_file_capability_root(data_dir));
+        command.env(
+            "MARVEX_FILE_CAPABILITY_ROOT",
+            default_file_capability_root(data_dir),
+        );
     }
     command
         .stdin(Stdio::piped())
@@ -815,29 +830,45 @@ fn attach_log_pipe(
             Err(_) => return,
         };
         for line in BufReader::new(stream).lines().map_while(Result::ok) {
-            if !line.to_ascii_lowercase().contains("bearer ") {
-                let _ = writeln!(file, "{line}");
-            }
+            let _ = writeln!(file, "{}", sanitize_log_line(&line));
         }
     });
+}
+
+fn sanitize_log_line(line: &str) -> String {
+    let lowered = line.to_ascii_lowercase();
+    if let Some(index) = lowered.find("bearer ") {
+        let token_start = index + "bearer ".len();
+        let token_end = line[token_start..]
+            .find(|character: char| {
+                character.is_whitespace() || character == ',' || character == ';'
+            })
+            .map(|offset| token_start + offset)
+            .unwrap_or(line.len());
+        let mut redacted = String::with_capacity(line.len());
+        redacted.push_str(&line[..token_start]);
+        redacted.push_str("[redacted]");
+        redacted.push_str(&line[token_end..]);
+        return redacted;
+    }
+    line.to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::{
-        default_file_capability_root, default_product_model, default_product_provider, find_uv, record_installed_runtime_wheel,
-        resource_env_paths, runtime_uv_cache_dir, runtime_venv_is_current, service_kind_label, service_specs, sidecar_path, venv_create_args,
-        venv_root, venv_script, write_runtime_manifest, RuntimeConfig, RuntimeOutcome, SupervisorStatus,
-        ServiceKind, Supervisor, PYTHON_RUNTIME_VERSION,
+        console_script_can_be_updated, default_file_capability_root, default_product_model,
+        default_product_provider, find_uv, record_installed_runtime_wheel, resource_env_paths,
+        runtime_uv_cache_dir, runtime_venv_is_current, sanitize_log_line, service_kind_label,
+        service_specs, sidecar_path, venv_create_args, venv_root, venv_script,
+        write_runtime_manifest, RuntimeConfig, RuntimeOutcome, ServiceKind, Supervisor,
+        SupervisorStatus, PYTHON_RUNTIME_VERSION,
     };
     use serde_json::Value;
     use std::{
         fs,
         path::{Path, PathBuf},
-        sync::{
-            atomic::AtomicBool,
-            Arc,
-        },
+        sync::{atomic::AtomicBool, Arc},
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
@@ -858,7 +889,10 @@ mod tests {
         let specs = service_specs("secret-token");
         let core = specs.iter().find(|spec| spec.name == "core").expect("core");
 
-        assert!(core.args.windows(2).any(|pair| pair == ["--provider", "provider_worker"]));
+        assert!(core
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--provider", "provider_worker"]));
         assert!(core
             .args
             .windows(2)
@@ -867,7 +901,10 @@ mod tests {
             .args
             .windows(2)
             .any(|pair| pair[0] == "--model" && pair[1] == default_product_model()));
-        assert!(!core.args.windows(2).any(|pair| pair == ["--model", "fake-model"]));
+        assert!(!core
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--model", "fake-model"]));
     }
 
     #[test]
@@ -875,7 +912,10 @@ mod tests {
         let specs = service_specs("secret-token");
         let core = specs.iter().find(|spec| spec.name == "core").expect("core");
 
-        assert!(core.args.windows(2).any(|pair| pair == ["--web-search", "multi"]));
+        assert!(core
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--web-search", "multi"]));
     }
 
     #[test]
@@ -935,7 +975,8 @@ mod tests {
         let root = default_file_capability_root(Path::new("/data"));
 
         assert!(!root.as_os_str().is_empty());
-        if let Some(profile) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+        if let Some(profile) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME"))
+        {
             assert_eq!(root, PathBuf::from(profile));
         }
     }
@@ -963,20 +1004,54 @@ mod tests {
         let data_dir = root.join("data");
         let resource_dir = root.join("resources");
         let venv = venv_root(&data_dir);
-        fs::create_dir_all(venv_script(&venv, "marvex-core").parent().expect("script dir"))
-            .expect("venv script dir");
+        fs::create_dir_all(
+            venv_script(&venv, "marvex-core")
+                .parent()
+                .expect("script dir"),
+        )
+        .expect("venv script dir");
         fs::create_dir_all(&resource_dir).expect("resource dir");
         fs::write(venv_script(&venv, "marvex-core"), b"old core").expect("core script");
         let wheel = resource_dir.join("marvex-runtime.whl");
         fs::write(&wheel, b"new runtime wheel").expect("wheel");
 
-        assert!(!runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
+        assert!(!runtime_venv_is_current(
+            &data_dir,
+            &venv,
+            Some(&resource_dir)
+        ));
 
         record_installed_runtime_wheel(&data_dir, &wheel).expect("record marker");
-        assert!(runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
+        assert!(runtime_venv_is_current(
+            &data_dir,
+            &venv,
+            Some(&resource_dir)
+        ));
 
         fs::write(&wheel, b"newer runtime wheel").expect("wheel update");
-        assert!(!runtime_venv_is_current(&data_dir, &venv, Some(&resource_dir)));
+        assert!(!runtime_venv_is_current(
+            &data_dir,
+            &venv,
+            Some(&resource_dir)
+        ));
+    }
+
+    #[test]
+    fn console_script_update_probe_accepts_missing_and_writable_files() {
+        let root = unique_temp_dir("runtime-script-update-probe");
+        let script = root.join("marvex-core");
+
+        assert!(console_script_can_be_updated(&script));
+        fs::write(&script, b"console script").expect("script");
+        assert!(console_script_can_be_updated(&script));
+    }
+
+    #[test]
+    fn log_pipe_redacts_bearer_value_without_dropping_context() {
+        assert_eq!(
+            sanitize_log_line("request failed Authorization: Bearer secret-token trace=trace-1"),
+            "request failed Authorization: Bearer [redacted] trace=trace-1"
+        );
     }
 
     #[test]
@@ -1026,8 +1101,8 @@ mod tests {
 
         write_runtime_manifest(&config, &RuntimeOutcome::Dev, &status);
 
-        let manifest_text = fs::read_to_string(data_dir.join("runtime").join("manifest.json"))
-            .expect("manifest");
+        let manifest_text =
+            fs::read_to_string(data_dir.join("runtime").join("manifest.json")).expect("manifest");
         let manifest: Value = serde_json::from_str(&manifest_text).expect("manifest json");
         let services = manifest["services"].as_array().expect("services");
         let names: Vec<_> = services
@@ -1045,14 +1120,18 @@ mod tests {
         let resource_dir = root.join("resources");
         fs::create_dir_all(resource_dir.join("control_plane_web")).expect("control web");
         fs::create_dir_all(resource_dir.join("voice-assets")).expect("voice assets");
-        fs::write(resource_dir.join("voice_models.manifest.json"), b"{\"assets\":[]}").expect("voice manifest");
+        fs::write(
+            resource_dir.join("voice_models.manifest.json"),
+            b"{\"assets\":[]}",
+        )
+        .expect("voice manifest");
         fs::write(resource_dir.join("uv.exe"), b"uv").expect("uv");
 
         let env = resource_env_paths(Some(&resource_dir), &root);
 
-        assert!(env.iter().any(|(name, value)| {
-            name == "MARVEX_UV_PATH" && value.ends_with("uv.exe")
-        }));
+        assert!(env
+            .iter()
+            .any(|(name, value)| { name == "MARVEX_UV_PATH" && value.ends_with("uv.exe") }));
         assert!(env.iter().any(|(name, value)| {
             name == "MARVEX_CONTROL_WEB_DIST" && value.ends_with("control_plane_web")
         }));
