@@ -143,6 +143,16 @@ def test_file_tools_registry_exposes_all_six_schemas():
     assert ids == {"file.read", "file.list", "file.search", "file.rg", "file.write", "file.patch"}
 
 
+def test_file_tool_schemas_hide_core_injected_root_from_model():
+    registry = file_tools_registry()
+    schemas = {s["function"]["name"]: s["function"]["parameters"] for s in registry.tool_schemas()}
+
+    for schema in schemas.values():
+        assert "root" not in schema["properties"]
+        assert "root" not in schema.get("required", [])
+    assert {"path", "content"}.issubset(schemas["file.write"]["required"])
+
+
 def test_write_content_too_large_rejected(tmp_path: Path):
     with pytest.raises(FileCapabilityError) as exc:
         WriteFileTool().execute(

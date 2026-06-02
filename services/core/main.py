@@ -1048,7 +1048,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             return None
         request_builder = self._make_tool_request_builder(turn_input)
         instructions = _with_ui_toolset(provider_instructions, self._provider_name)
-        fell_back = {"value": False}
+        provider_error_count = {"value": 0}
 
         def send(input_text: str, tool_messages: list[dict[str, object]] | None, prev: str | None) -> ProviderStep:
             loop.step("provider")
@@ -1067,10 +1067,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             try:
                 response = self._provider.send(request)
             except Exception:
-                fell_back["value"] = True
+                provider_error_count["value"] += 1
                 return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
             if getattr(response, "error", None) is not None:
-                fell_back["value"] = True
+                provider_error_count["value"] += 1
                 return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
             if response.tool_calls:
                 loop.step("tool")
@@ -1090,6 +1090,66 @@ class _CoreServiceProviderWorkerTurnExecutor:
             initial_input=provider_turn_input.user_visible_input or "",
             previous_response_id=previous_response_id,
         )
+
+        if loop_result.status == "error":
+            if require_tool_call and provider_error_count["value"] > 0:
+                repair_prompt = _required_tool_call_repair_prompt(
+                    original_user_input=provider_turn_input.user_visible_input or "",
+                    required_tool_reason=required_tool_reason,
+                )
+                retry_error_start = provider_error_count["value"]
+                loop_result = run_tool_loop(
+                    send=send,
+                    registry=registry,
+                    request_builder=request_builder,
+                    max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
+                    initial_input=repair_prompt,
+                    previous_response_id=None,
+                )
+                if loop_result.status != "error":
+                    metadata_retry_note = {
+                        "attempted": True,
+                        "provider_error_count_before_retry": retry_error_start,
+                    }
+                else:
+                    loop.step("finalize", stop_reason="blocked")
+                    return _entrypoint_text_result(
+                        turn_input,
+                        text=(
+                            "The provider failed while generating the required tool call. "
+                            "Approval cannot run without a model-authored tool call."
+                        ),
+                        metadata=_with_loop_metadata(
+                            {
+                                "intent_boundary": "intent_worker_process",
+                                "intent": intent_projection,
+                                "intent_backend": intent_response.get("backend_name"),
+                                "assistant_turn_spine": "used",
+                                "cognition": cognition.safe_projection().model_dump(mode="json"),
+                                "intent_plan": _intent_plan_projection(cognition.intent_plan),
+                                "session": session_projection,
+                                "provider_selection": selection_projection,
+                                "tool_boundary": "model_tool_call_required",
+                                "agentic_tool_loop": {
+                                    "enabled": True,
+                                    "executed_tool_ids": [],
+                                    "executed_count": 0,
+                                    "model_tool_call_required": True,
+                                    "reason_code": f"{required_tool_reason}.provider_tool_call_failed",
+                                    "provider_error_retry_attempted": True,
+                                    "provider_error_count": provider_error_count["value"],
+                                },
+                            },
+                            loop,
+                            self._trace_reader,
+                            turn_input,
+                        ),
+                        stage_name="model_tool_call_required",
+                    )
+            else:
+                metadata_retry_note = None
+        else:
+            metadata_retry_note = None
 
         if loop_result.status == "error":
             # Provider failed on the very first/any step -> fall back to the
@@ -1114,6 +1174,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         "needs_approval_tool_ids": loop_result.needs_approval_tool_ids,
                         "executed_tool_ids": loop_result.executed_tool_ids,
                         "pending_tool": _pending_tool_log_projection(loop_result.pending_tool),
+                        "provider_error_retry": metadata_retry_note,
                     },
                 },
                 cognition=cognition,
@@ -2602,6 +2663,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     capability_id = str(pending_automation.get("capability_id") or "browser_use.task")
                     arguments = dict(pending_automation.get("arguments") or {})
                     arguments.update({"approval_request_id": effective_resume_approval, "approval_decision": "approve"})
+                    if capability_id.startswith("file.") and self._file_capability_root and "root" not in arguments:
+                        arguments["root"] = self._file_capability_root
                     if _is_automation_capability(capability_id):
                         arguments.update(
                             {
@@ -2680,7 +2743,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
                     return _entrypoint_text_result(
                         turn_input,
-                        text=_browser_or_computer_use_final_text(tool_response),
+                        text=_approved_tool_final_text(capability_id, tool_response),
                         metadata=_with_loop_metadata(
                             {
                                 **metadata,
@@ -3392,6 +3455,20 @@ def _pending_tool_log_projection(pending_tool: dict[str, object] | None) -> dict
     return projection
 
 
+def _approved_tool_final_text(capability_id: str, tool_response: dict[str, object]) -> str:
+    if _is_automation_capability(capability_id):
+        return _browser_or_computer_use_final_text(tool_response)
+    if capability_id in {"file.write", "file.patch"}:
+        safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
+        path = str(safe_result.get("path") or "").strip()
+        if path:
+            return f"Approved. File update completed for {path}."
+        return "Approved. File update completed."
+    if capability_id.startswith("memory."):
+        return "Approved. Memory tool completed."
+    return _tool_final_text(tool_response)
+
+
 def _browser_or_computer_use_final_text(tool_response: dict[str, object]) -> str:
     safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
     adapter = str(safe_result.get("adapter") or "automation")
@@ -3465,6 +3542,27 @@ def _tool_failure_retry_prompt(
         f"Failure reason: {reason}\n"
         "Try a different available tool call if it can solve the request. "
         "If no retry can help, explain the limitation without claiming the tool succeeded."
+    )
+
+
+def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool_reason: str) -> str:
+    if required_tool_reason == "file_write_tool_required":
+        tool_hint = (
+            "Call the needed tools with valid JSON. If current information is needed, call web.search first; "
+            "then call file.write with path and content. Do not ask for approval yourself."
+        )
+    elif required_tool_reason == "browser_computer_use_tool_required":
+        tool_hint = (
+            "Call browser_use, playwright_browser, or computer_use with valid JSON arguments. "
+            "Do not answer in prose instead of calling a tool."
+        )
+    else:
+        tool_hint = "Call the required available tool with valid JSON arguments."
+    return (
+        "Your previous tool call failed before Marvex received a valid callable payload.\n"
+        f"Original user request: {original_user_input}\n"
+        f"Required tool reason: {required_tool_reason}\n"
+        f"{tool_hint}"
     )
 
 

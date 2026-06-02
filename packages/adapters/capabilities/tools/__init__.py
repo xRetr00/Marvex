@@ -15,6 +15,8 @@ with a ``Tool`` subclass and register it in ``default_registry`` (or pass it to
 
 from __future__ import annotations
 
+import builtins
+
 from packages.capability_runtime import (
     CapabilityExecutionRequest,
     CapabilityManifest,
@@ -68,7 +70,7 @@ class ToolRegistry:
                     "function": {
                         "name": tool.tool_id(),
                         "description": tool.description,
-                        "parameters": tool.json_schema(),
+                        "parameters": _model_facing_schema(tool),
                     },
                 }
             )
@@ -163,6 +165,21 @@ def mcp_tools_registry() -> ToolRegistry:
     """Construct agent-callable MCP tools that are already allowlisted."""
 
     return ToolRegistry((LocalMcpEchoTool(),))
+
+
+def _model_facing_schema(tool: Tool) -> dict[str, object]:
+    schema = dict(tool.json_schema())
+    if not tool.tool_id().startswith("file."):
+        return schema
+    properties = dict(schema.get("properties") or {})
+    if "root" not in properties:
+        return schema
+    properties.pop("root", None)
+    schema["properties"] = properties
+    required = schema.get("required")
+    if isinstance(required, builtins.list):
+        schema["required"] = [item for item in required if item != "root"]
+    return schema
 
 
 __all__ = [

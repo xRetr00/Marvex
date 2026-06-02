@@ -343,7 +343,10 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
             profile_mode="system_chrome_cdp",
             profile_directory=profile,
         )
-    profile_mode = "system_chrome_cdp_reused" if chrome.get("reused") else "system_chrome_cdp_launched"
+    if chrome.get("fallback_profile"):
+        profile_mode = "dedicated_marvex_cdp_launched"
+    else:
+        profile_mode = "system_chrome_cdp_reused" if chrome.get("reused") else "system_chrome_cdp_launched"
     # keep_alive: never close the user's own browser when the task finishes.
     browser = Browser(cdp_url=str(cdp_url), keep_alive=True)
     llm = ChatOpenAILike(

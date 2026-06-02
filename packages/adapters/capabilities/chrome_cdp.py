@@ -88,6 +88,25 @@ def default_user_data_dir() -> str | None:
     return None
 
 
+def fallback_user_data_dir() -> str:
+    """Dedicated Marvex Chrome profile used when the real profile is locked.
+
+    Chrome cannot add ``--remote-debugging-port`` to an already-running process
+    that owns the user's normal profile. This profile keeps automation live
+    instead of failing, while preserving the first-choice path of attaching to
+    the user's real Chrome whenever possible.
+    """
+
+    override = os.environ.get("MARVEX_BROWSER_PROFILE_DIR", "").strip()
+    if override:
+        return override
+    if sys.platform.startswith("win"):
+        base = os.environ.get("LOCALAPPDATA")
+        if base:
+            return str(Path(base) / "com.marvex.shell" / "chrome-cdp-profile")
+    return str(Path.home() / ".marvex-automation" / "chrome-cdp-profile")
+
+
 def cdp_endpoint_alive(port: int, *, timeout: float = 0.5) -> bool:
     """True when a Chrome DevTools endpoint is already listening on ``port``."""
 
@@ -172,11 +191,64 @@ def ensure_debuggable_chrome(
             return {"cdp_url": cdp_url, "port": resolved_port, "launched": True, "reused": False, "reason_code": None}
         time.sleep(0.3)
 
+    fallback_disabled = os.environ.get("MARVEX_CHROME_CDP_NO_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}
+    fallback_dir = fallback_user_data_dir()
+    if not fallback_disabled and fallback_dir and str(Path(fallback_dir)) != str(Path(resolved_user_data_dir or "")):
+        fallback_args = [
+            executable,
+            f"--remote-debugging-port={resolved_port}",
+            "--no-first-run",
+            "--no-default-browser-check",
+            "--restore-last-session",
+        ]
+        try:
+            Path(fallback_dir).mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
+        fallback_args.append(f"--user-data-dir={fallback_dir}")
+        if profile_directory:
+            fallback_args.append(f"--profile-directory={profile_directory}")
+        try:
+            subprocess.Popen(  # noqa: S603 - launching Chrome by absolute path
+                fallback_args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+                close_fds=True,
+            )
+        except Exception as exc:
+            return {
+                "cdp_url": None,
+                "port": resolved_port,
+                "launched": True,
+                "reused": False,
+                "fallback_profile": True,
+                "reason_code": f"chrome_fallback_launch_failed:{type(exc).__name__}",
+            }
+        fallback_deadline = time.monotonic() + max(1.0, wait_seconds)
+        while time.monotonic() < fallback_deadline:
+            if cdp_endpoint_alive(resolved_port):
+                return {
+                    "cdp_url": cdp_url,
+                    "port": resolved_port,
+                    "launched": True,
+                    "reused": False,
+                    "fallback_profile": True,
+                    "reason_code": None,
+                }
+            time.sleep(0.3)
+        return {
+            "cdp_url": None,
+            "port": resolved_port,
+            "launched": True,
+            "reused": False,
+            "fallback_profile": True,
+            "reason_code": "cdp_endpoint_did_not_start_after_fallback_profile",
+        }
+
     # Launched but the debug port never came up. The dominant cause on Windows is
     # that a Chrome was ALREADY running on this user-data-dir without the debug
     # flag, so our invocation just opened a tab in it and exited (Chrome only
-    # enables remote debugging for the first process owning a profile dir). The
-    # user must close that Chrome and retry; surface that precisely.
+    # enables remote debugging for the first process owning a profile dir).
     return {
         "cdp_url": None,
         "port": resolved_port,
@@ -191,6 +263,7 @@ __all__ = [
     "chrome_cdp_port",
     "chrome_executable_path",
     "default_user_data_dir",
+    "fallback_user_data_dir",
     "cdp_endpoint_alive",
     "ensure_debuggable_chrome",
 ]
