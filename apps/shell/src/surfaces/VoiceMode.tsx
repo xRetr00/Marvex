@@ -16,6 +16,8 @@ import {
   type VoiceWorkerStatus
 } from "@/lib/voiceControlClient";
 
+export type VoiceSessionMode = "wake" | "hands_free" | "push_to_talk";
+
 type ModelDownloadState = {
   state: "downloading" | "complete" | "failed";
   completed: number;
@@ -23,7 +25,27 @@ type ModelDownloadState = {
   error?: string;
 };
 
-export function VoiceMode() {
+type VoiceModeProps = {
+  voiceSessionActive?: boolean;
+  voiceSessionMode?: VoiceSessionMode;
+  voiceSessionListening?: boolean;
+  voiceSessionCue?: string;
+  voiceSessionTranscript?: string;
+  onStartVoiceSession?: (mode: VoiceSessionMode) => void | Promise<void>;
+  onStopVoiceSession?: () => void | Promise<void>;
+  onPushToTalk?: () => void | Promise<void>;
+};
+
+export function VoiceMode({
+  voiceSessionActive = false,
+  voiceSessionMode = "wake",
+  voiceSessionListening = false,
+  voiceSessionCue = "",
+  voiceSessionTranscript = "",
+  onStartVoiceSession,
+  onStopVoiceSession,
+  onPushToTalk,
+}: VoiceModeProps = {}) {
   const [status, setStatus] = useState<VoiceWorkerStatus | null>(null);
   const [catalog, setCatalog] = useState<VoiceModelCatalogAsset[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
@@ -125,6 +147,43 @@ export function VoiceMode() {
         </div>
       </section>
 
+      <section style={panelStyle}>
+        <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12, marginBottom: 12 }}>
+          <div>
+            <h3 style={{ margin: 0, fontSize: 13, letterSpacing: 0, color: "var(--foreground)", fontWeight: 750 }}>Conversation session</h3>
+            <div style={{ marginTop: 5, fontSize: 12, color: "var(--muted-foreground)" }}>
+              {voiceSessionActive ? `Active: ${voiceSessionLabel(voiceSessionMode)}` : "Idle. Choose how Marvex should listen."}
+            </div>
+          </div>
+          <div style={{ minWidth: 130, display: "flex", justifyContent: "flex-end" }}>
+            {voiceSessionListening ? <ListeningWave /> : <span style={{ fontSize: 11, color: "var(--muted-foreground)" }}>Not listening</span>}
+          </div>
+        </div>
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+          <TextButton onClick={() => void onStartVoiceSession?.("wake")} aria-label="Wake word voice session">
+            <Radio size={14} /> Wake word
+          </TextButton>
+          <TextButton onClick={() => void onStartVoiceSession?.("hands_free")} aria-label="Hands-free voice session">
+            <Volume2 size={14} /> Hands-free
+          </TextButton>
+          <TextButton disabled={!voiceSessionActive || voiceSessionMode !== "push_to_talk"} onClick={() => void onPushToTalk?.()} aria-label="Hold to talk">
+            <Mic size={14} /> Hold to talk
+          </TextButton>
+          <TextButton onClick={() => void onStartVoiceSession?.("push_to_talk")} aria-label="Push-to-talk voice session">
+            <MicOff size={14} /> Push-to-talk mode
+          </TextButton>
+          <TextButton disabled={!voiceSessionActive} onClick={() => void onStopVoiceSession?.()} aria-label="Stop voice session">
+            Stop
+          </TextButton>
+        </div>
+        <div style={{ marginTop: 12, display: "grid", gridTemplateColumns: "minmax(90px, auto) 1fr", gap: 8, fontSize: 12 }}>
+          <span style={{ color: "var(--muted-foreground)" }}>Cue</span>
+          <strong>{voiceSessionCue || "-"}</strong>
+          <span style={{ color: "var(--muted-foreground)" }}>Heard</span>
+          <span style={{ color: voiceSessionTranscript ? "var(--foreground)" : "var(--muted-foreground)" }}>{voiceSessionTranscript || "No utterance yet."}</span>
+        </div>
+      </section>
+
       <section style={gridStyle}>
         <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
         <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "kokoro-onnx"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
@@ -176,6 +235,32 @@ export function VoiceMode() {
           {required.length === 0 && <span style={{ color: "var(--muted-foreground)", fontSize: 12 }}>No voice assets reported.</span>}
         </div>
       </section>
+    </div>
+  );
+}
+
+function voiceSessionLabel(mode: VoiceSessionMode): string {
+  if (mode === "hands_free") return "hands-free";
+  if (mode === "push_to_talk") return "push-to-talk";
+  return "wake word";
+}
+
+function ListeningWave() {
+  return (
+    <div data-testid="voice-listening-wave" style={{ display: "inline-flex", alignItems: "center", gap: 3, height: 22 }}>
+      {[8, 15, 11, 18, 9].map((height, index) => (
+        <span
+          key={index}
+          className="animate-pulse"
+          style={{
+            width: 4,
+            height,
+            borderRadius: 999,
+            background: "var(--primary)",
+            animationDelay: `${index * 90}ms`,
+          }}
+        />
+      ))}
     </div>
   );
 }
