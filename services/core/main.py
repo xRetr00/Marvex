@@ -899,7 +899,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     ProviderCandidate(
                         provider_id=provider_name,
                         model=model,
-                        supports_tools=False,
+                        supports_tools=provider_name in {"litellm", "lmstudio_responses", "provider_worker"},
                         context_length=4096,
                         locality="local",
                         healthy=True,
@@ -1027,6 +1027,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         session_projection: dict[str, object],
         selection_projection: dict[str, object],
         desktop_context: dict[str, object] | None,
+        require_grounded_validation: bool = False,
     ) -> AssistantTurnResult | None:
         """Drive the model-tool-call loop. Returns None to fall back.
 
@@ -1132,6 +1133,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 ),
                 stage_name="clarification",
             )
+        if require_grounded_validation:
+            # Grounded/search routes must finish through the grounded path so
+            # evidence refs are enforced and citation metadata is emitted.
+            return None
         stop_reason = "finalized" if loop_result.status == "final" else "max_steps_reached"
         loop.step("finalize", stop_reason=stop_reason)
         fallback_text = (
@@ -1667,6 +1672,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     session_projection=session_projection,
                     selection_projection=selection_projection,
                     desktop_context=desktop_context,
+                    require_grounded_validation=True,
                 )
                 if agentic_result is not None:
                     return agentic_result
@@ -1910,6 +1916,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             },
             previous_response_id=previous_response_id,
         )
+        if provider_result.error is not None:
+            return provider_result
         response_text = provider_result.assistant_final_response.text if provider_result.assistant_final_response is not None else ""
         # Second job of the grounded answer: verify it. If the model asserted a
         # current/latest fact without evidence support (how "GPT-4o is the latest,
@@ -1983,6 +1991,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "web_search_executed": cognition.web_search_required,
                     "citation_validation": validation.reason_code,
                     "fabricated": False,
+                    "evidence_ref_count": len(cognition.evidence_refs),
+                    "evidence_refs": [ref.safe_projection() for ref in web_refs],
                 },
             }
             return _entrypoint_text_result(
@@ -2480,108 +2490,27 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         ),
                         stage_name="automation",
                     )
-                file_write_request = _file_write_request_from_input(turn_input.user_visible_input)
-                if file_write_request is not None:
-                    if not self._file_capability_root:
-                        loop.step("tool", stop_reason="blocked")
-                        return _entrypoint_error_result(
-                            turn_input,
-                            reason="file_capability_root_required",
-                            message="Approved file write requires a configured local user root.",
-                            metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
-                        )
-                    # "that file"/"it" resolution (docs/TODO/01): if the user
-                    # back-references a prior file without naming one, target the
-                    # most recent file produced this session instead of the
-                    # default output.txt.
-                    resolved = resolve_file_reference(
-                        turn_input.user_visible_input, self._entity_store, self._session_id_of(turn_input)
-                    )
-                    if resolved:
-                        file_write_request["path"] = resolved
-                    # When the user asked the assistant to *compose* the body
-                    # (e.g. "write what the open source means"), generate it via
-                    # the configured provider before writing, instead of
-                    # silently writing an empty file.
-                    content_prompt = file_write_request.pop("content_prompt", None)
-                    if not str(file_write_request.get("content") or "").strip() and content_prompt:
-                        generated = self._generate_file_body(turn_input, str(content_prompt))
-                        if generated:
-                            file_write_request["content"] = generated
-                    loop.step("tool")
-                    tool_response = self._tool_executor.execute(
-                        turn_input,
-                        action="approved file write",
-                        capability="file_write",
-                        resource_type="file",
-                        capability_id="file.write",
-                        arguments={
-                            "root": self._file_capability_root,
-                            **file_write_request,
-                            "approval_request_id": effective_resume_approval,
-                            "approval_decision": "approve",
-                        },
-                    )
-                    write_safe_result = dict(dict(tool_response.get("result") or {}).get("safe_result") or {})
-                    if tool_response.get("ok") is True or write_safe_result.get("operation") == "write":
-                        self._remember_file_entity(turn_input, write_safe_result.get("path") or file_write_request.get("path"))
-                    final_text = _file_write_final_text(write_safe_result)
-                elif _browser_use_requested(turn_input.user_visible_input) or _computer_use_requested(turn_input.user_visible_input):
-                    # Route an approved browser/desktop request to its REAL
-                    # capability (not the fake.status stub) and report the
-                    # outcome honestly. The prior stub claimed "Action executed"
-                    # for a request that never touched a browser or the desktop.
-                    is_computer = _computer_use_requested(turn_input.user_visible_input) and not _browser_use_requested(
-                        turn_input.user_visible_input
-                    )
-                    capability_id = "computer_use.action" if is_computer else "browser_use.task"
-                    loop.step("tool")
-                    self._publish(AssistantStatusKind.USING_TOOLS, detail=capability_id, trace_id=turn_input.trace_id)
-                    tool_response = self._tool_executor.execute(
-                        turn_input,
-                        action=turn_input.user_visible_input or "approved automation action",
-                        capability="browser_click_type",
-                        resource_type="browser" if not is_computer else "desktop",
-                        capability_id=capability_id,
-                        arguments={
-                            "task": turn_input.user_visible_input or "approved automation action",
-                            "approval_request_id": effective_resume_approval,
-                            "approval_decision": "approve",
-                            "live_execution_enabled": True,
-                            "raw_persistence_enabled": True,
-                            "provider_model": self._automation_model,
-                            "provider_base_url": self._base_url or "",
-                            "provider_api_key": self._provider_secret or "",
-                            "provider_model_supports_vision": self._automation_model_supports_vision,
-                            "automation_vision_required": self._automation_vision_required,
-                        },
-                    )
-                    final_text = _browser_or_computer_use_final_text(tool_response)
-                else:
-                    loop.step("tool")
-                    self._publish(AssistantStatusKind.USING_TOOLS, detail="approval_resume", trace_id=turn_input.trace_id)
-                    tool_response = self._tool_executor.execute(
-                        turn_input,
-                        action="approved risky action confirmation",
-                        capability="read",
-                        resource_type="approval_resume",
-                        capability_id="fake.status",
-                        arguments={"approved": True},
-                    )
-                    final_text = "Action executed after approval through the policy-controlled worker boundary."
-                loop.step("finalize", stop_reason="finalized", executed=True)
-                metadata = {
-                    **metadata,
-                    "approval": {"approval_request_id": effective_resume_approval, "decision": "approved"},
-                    "tool_boundary": "tool_worker_process",
-                    "tool": tool_response,
-                }
-                return _entrypoint_text_result(
+                loop.step("approval", stop_reason="blocked")
+                return _entrypoint_error_result(
                     turn_input,
-                    text=final_text,
-                    metadata=_with_loop_metadata(metadata, loop, self._trace_reader, turn_input),
-                    stage_name="approval_resume",
-                    tool_result_refs=[ToolResultRef(ref_type="tool_result", ref_id=f"{turn_input.turn_id}:approval-resume:result")],
+                    reason="approval_resume_missing_model_tool_call",
+                    message=(
+                        "Approved action was not executed because Core has no model-authored "
+                        "tool call to resume."
+                    ),
+                    metadata=_with_loop_metadata(
+                        {
+                            **metadata,
+                            "approval": {
+                                "approval_request_id": effective_resume_approval,
+                                "decision": "approved",
+                            },
+                            "tool_boundary": "model_tool_call_required",
+                        },
+                        loop,
+                        self._trace_reader,
+                        turn_input,
+                    ),
                 )
             reason = "approval_cancelled" if decision == "cancel" else "approval_denied"
             loop.step("approval", stop_reason="blocked")
@@ -3171,22 +3100,6 @@ def _time_date_requested(text: str | None) -> bool:
     return any(part in lowered for part in keywords)
 
 
-def _computer_use_requested(text: str | None) -> bool:
-    # Detect desktop/computer-control phrasing so the approval-resume path runs
-    # the computer_use.action capability instead of routing it to the generic
-    # "Action executed" stub.
-    lowered = (text or "").lower()
-    return any(part in lowered for part in ("computer use", "desktop", "click on", "type into", "control my", "screen"))
-
-
-def _browser_use_requested(text: str | None) -> bool:
-    # Detect web-browser phrasing (mirrors the intent keyword features) so the
-    # approval-resume path runs the real browser_use.task capability instead of
-    # the generic "Action executed" stub.
-    lowered = (text or "").lower()
-    return any(part in lowered for part in ("browser", "youtube", "navigate", "webpage", "web page", "open yt", "go to ", "open http"))
-
-
 def _automation_needs_destructive_approval(tool_response: dict[str, object]) -> bool:
     """True when the ToolWorker paused a desktop action for a SECOND, explicit
     destructive-action approval (delete/shutdown/registry/PowerShell)."""
@@ -3383,8 +3296,10 @@ def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> obj
     if config.web_search == "wikipedia":
         return WikipediaWebSearchAdapter()
     if config.web_search == "multi":
-        # Ordered fallback: ddgs then wikipedia then searxng (if configured)
-        ordered: list[object] = [DDGSWebSearchAdapter(), WikipediaWebSearchAdapter()]
+        # Ordered fallback for general web search. Wikipedia is intentionally
+        # excluded here; it is only used when explicitly selected as its own
+        # provider so encyclopedic lookup does not mask broader search failures.
+        ordered: list[object] = [DDGSWebSearchAdapter()]
         if config.web_base_url:
             ordered.append(SearXNGWebSearchAdapter(base_url=config.web_base_url))
         return MultiProviderWebSearch(providers=tuple(ordered))
@@ -3944,7 +3859,7 @@ def _create_turn_executor(
             ProviderCandidate(
                 provider_id=effective_name,
                 model=config.foundation_model,
-                supports_tools=False,
+                supports_tools=effective_name in {"litellm", "lmstudio_responses", "provider_worker"},
                 context_length=4096,
                 locality="local",
                 healthy=True,
@@ -4511,7 +4426,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "--web-search",
         choices=("fake", "none", "ddgs", "searxng", "wikipedia", "multi"),
         default="fake",
-        help="Web search provider for grounded runtime turns. Defaults to deterministic fake. 'wikipedia' uses the free MediaWiki API (no key). 'multi' tries ddgs then wikipedia then searxng-if-configured.",
+        help="Web search provider for grounded runtime turns. Defaults to deterministic fake. 'wikipedia' uses the free MediaWiki API (no key). 'multi' tries ddgs then searxng-if-configured.",
     )
     parser.add_argument(
         "--web-base-url",
