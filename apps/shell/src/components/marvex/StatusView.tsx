@@ -3,29 +3,23 @@ import { controlRequest } from "@/lib/shellCommands";
 import { serviceOk, type BackendStatus } from "@/lib/backendStatus";
 
 /** Read-only "quick info" status board: Marvex, workers/daemons, voice, deps,
- * provider/LLM, persona/agent. Purely informational — no controls (those live in
+ * and provider/LLM state. Purely informational — no controls (those live in
  * the Control Plane window). */
 export function StatusView({ backend }: { backend: BackendStatus | null }) {
   const [snapshot, setSnapshot] = useState<Record<string, unknown> | null>(null);
-  const [agents, setAgents] = useState<Record<string, unknown> | null>(null);
-  const [personas, setPersonas] = useState<Record<string, unknown> | null>(null);
   const [voice, setVoice] = useState<Record<string, unknown> | null>(null);
   const [deps, setDeps] = useState<Record<string, unknown> | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const load = async () => {
-      const [snap, ag, pe, vo, de] = await Promise.allSettled([
+      const [snap, vo, de] = await Promise.allSettled([
         controlRequest("/snapshot", "GET"),
-        controlRequest("/agents", "GET"),
-        controlRequest("/personas", "GET"),
         controlRequest("/voice/worker", "GET"),
         controlRequest("/deps", "GET"),
       ]);
       if (cancelled) return;
       if (snap.status === "fulfilled") setSnapshot(snap.value as Record<string, unknown>);
-      if (ag.status === "fulfilled") setAgents(ag.value as Record<string, unknown>);
-      if (pe.status === "fulfilled") setPersonas(pe.value as Record<string, unknown>);
       if (vo.status === "fulfilled") setVoice(vo.value as Record<string, unknown>);
       if (de.status === "fulfilled") setDeps(de.value as Record<string, unknown>);
     };
@@ -40,8 +34,6 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
   const providers = Array.isArray((snapshot as { providers?: unknown[] } | null)?.providers) ? (snapshot as { providers: Record<string, unknown>[] }).providers : [];
   const settings = (snapshot as { settings?: Record<string, unknown> } | null)?.settings ?? {};
   const telemetry = (snapshot as { telemetry?: Record<string, unknown> } | null)?.telemetry ?? {};
-  const activeAgent = (agents as { active_agent_id?: string } | null)?.active_agent_id ?? "—";
-  const activePersona = (personas as { active_persona_id?: string } | null)?.active_persona_id ?? "—";
   const depsList = Array.isArray((deps as { deps?: unknown[] } | null)?.deps) ? (deps as { deps: Record<string, unknown>[] }).deps : [];
   const features = (deps as { features?: Record<string, boolean> } | null)?.features ?? {};
 
@@ -74,11 +66,6 @@ export function StatusView({ backend }: { backend: BackendStatus | null }) {
           <Row key={i} label={String(p.provider_id ?? p.id ?? `provider ${i + 1}`)} value={String(p.active_model ?? p.model ?? p.status ?? "—")} ok={Boolean(p.healthy)} />
         ))}
         <Row label="Default model" value={String((settings as { default_model?: string }).default_model ?? "—")} />
-      </Card>
-
-      <Card title="Persona / Agent">
-        <Row label="Active agent" value={activeAgent} />
-        <Row label="Active persona" value={activePersona} />
       </Card>
 
       <Card title="Dependencies">

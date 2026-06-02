@@ -6,12 +6,12 @@ import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localT
 import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
-import { outcomeFromTurnResult, outcomeFromError } from "@/lib/turnOutcome";
+import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { startVoiceWorker, stopVoiceWorker, fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -30,6 +30,7 @@ type ChatApproval = { approvalId: string; traceId: string; turnId: string; text:
 type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
+type SendResult = { text: string; speechText: string };
 
 const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
 
@@ -121,8 +122,10 @@ export function ChatApp() {
     });
   }, []);
 
-  const send = useCallback(async (text: string, options: { appendUser?: boolean } = {}): Promise<string> => {
-    if (!text.trim() || pending) return "";
+  const lastVoiceEventRef = useRef<string>("");
+
+  const send = useCallback(async (text: string, options: { appendUser?: boolean } = {}): Promise<SendResult> => {
+    if (!text.trim() || pending) return { text: "", speechText: "" };
     const appendUser = options.appendUser ?? true;
     setPending(true);
     // Append a user message only for direct user turns. Follow-up UI controls
@@ -134,6 +137,7 @@ export function ChatApp() {
       updateLastAssistant({ role: "assistant", text: "", streaming: true });
     }
     let replyText = "";
+    let speechText = "";
     let streamed = "";
     try {
       const sessionId = sessionIdRef.current;
@@ -160,6 +164,7 @@ export function ChatApp() {
       }
       const outcome = outcomeFromTurnResult(result);
       replyText = outcome.text;
+      speechText = speechTextFromTurnResult(result);
       // Reconcile with the authoritative final result (text + stages + refs).
       updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) });
     } catch (error) {
@@ -169,7 +174,7 @@ export function ChatApp() {
     } finally {
       setPending(false);
     }
-    return replyText;
+    return { text: replyText, speechText };
   }, [pending, updateLastAssistant]);
 
   const answerClarification = useCallback((clarification: MarvexChatClarification, answerText: string) => {
@@ -228,15 +233,30 @@ export function ChatApp() {
     }
   }, []);
 
+  const handleVoiceTranscript = useCallback(async (text: string) => {
+    const reply = await send(text);
+    if (reply.speechText.trim()) {
+      await speakVoiceWorker(reply.speechText, { bargeIn: true }).catch(() => undefined);
+    }
+  }, [send]);
+
   const toggleVoiceCapture = useCallback(() => {
-    const next = !micActive;
-    setMicActive(next);
-    void (next ? startVoiceWorker() : stopVoiceWorker()).catch(() => setMicActive(!next));
-  }, [micActive]);
+    if (micActive || pending) return;
+    setMicActive(true);
+    void listenVoiceWorker()
+      .then(async (status) => {
+        const transcript = transcriptFromStatus(status);
+        if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
+        lastVoiceEventRef.current = transcript.eventId;
+        await handleVoiceTranscript(transcript.text);
+      })
+      .catch(() => undefined)
+      .finally(() => setMicActive(false));
+  }, [handleVoiceTranscript, micActive, pending]);
 
   // Voice loop bridge (docs/TODO/04): poll the worker for a freshly recognized
   // transcript, run it as a chat turn, and speak the reply back through the
-  // worker. The worker handles wake -> capture -> STT and emits transcript_text;
+  // worker. The worker handles wake -> capture -> STT and emits normalized text;
   // the shell mediates turn + speak because the worker is loopback-isolated from
   // Core. This must run for HANDS-FREE wake word too (not only the manual mic
   // button): the wake word fires in the worker independently, so if we only
@@ -244,7 +264,6 @@ export function ChatApp() {
   // reach the UI.
   const wakewordActive = backend?.wakeword === "enabled" || backend?.wakeword === "running";
   const voiceBridgeActive = micActive || wakewordActive;
-  const lastVoiceEventRef = useRef<string>("");
   useEffect(() => {
     if (!voiceBridgeActive) return;
     let cancelled = false;
@@ -258,14 +277,7 @@ export function ChatApp() {
           const transcript = transcriptFromStatus(status);
           if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
           lastVoiceEventRef.current = transcript.eventId;
-          const reply = await send(transcript.text);
-          if (reply.trim()) {
-            await speakVoiceWorker(reply, { bargeIn: true }).catch(() => undefined);
-            // Hands-free multi-turn: after speaking, capture a follow-up without
-            // requiring another wake word. If the user stays silent the worker
-            // bails and we fall back to wake-word listening on the next poll.
-            await listenVoiceWorker().catch(() => undefined);
-          }
+          await handleVoiceTranscript(transcript.text);
         })
         .catch(() => undefined)
         .finally(() => {
@@ -276,7 +288,7 @@ export function ChatApp() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [voiceBridgeActive, send]);
+  }, [handleVoiceTranscript, voiceBridgeActive]);
 
   const navItems = useMemo(() => [
     { id: "chat" as TabId, icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },
