@@ -1,6 +1,8 @@
 import { useEffect, useRef, type ReactNode } from "react";
 import type { CitationRef, TurnStage, UiDirective } from "@/lib/localTurn";
 import { RichMessage } from "@/components/marvex/RichMessage";
+import { stripReasoning } from "@/lib/reasoning";
+import { type ActivityStep } from "@/lib/activityLabels";
 import { Confirmation, ConfirmationAction, ConfirmationActions, ConfirmationRequest, ConfirmationTitle } from "@/components/confirmation";
 import { QuestionTool } from "@/components/question-tool";
 import {
@@ -37,6 +39,8 @@ export type MarvexChatMessage = {
   directives?: UiDirective[];
   approval?: { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
   clarification?: MarvexChatClarification;
+  streaming?: boolean;
+  activity?: ActivityStep[];
 };
 
 export type MarvexChatShellProps = {
@@ -107,6 +111,7 @@ export function MarvexChatShell({
               !message.text.trim() &&
               !message.stages?.length &&
               !message.directives?.length &&
+              !message.activity?.length &&
               !message.approval &&
               !message.clarification
             ) {
@@ -118,7 +123,7 @@ export function MarvexChatShell({
               {message.role === "assistant" ? (
                 <ChatbotAssistantFrame orb={renderAssistantOrb(assistantOrbState)}>
                   <ChatbotMessageContent from="assistant">
-                    <RichMessage text={visibleAssistantText} stages={message.stages} citations={message.citations} directives={message.directives} />
+                    <RichMessage text={visibleAssistantText} stages={message.stages} citations={message.citations} directives={message.directives} streaming={message.streaming} activity={message.activity} />
                     {message.approval ? (
                       <Confirmation
                         approval={message.approval.status === "pending" ? { id: message.approval.approvalId } : { id: message.approval.approvalId, approved: message.approval.status === "approved" }}
@@ -176,7 +181,7 @@ export function MarvexChatShell({
                     ) : null}
                   </ChatbotMessageContent>
                   <ChatbotMessageActions className="mt-2">
-                    {message.text.trim() ? <ChatbotCopyAction text={message.text} /> : null}
+                    {stripReasoning(message.text).trim() ? <ChatbotCopyAction text={stripReasoning(message.text)} /> : null}
                   </ChatbotMessageActions>
                 </ChatbotAssistantFrame>
               ) : (

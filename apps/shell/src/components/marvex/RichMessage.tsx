@@ -8,7 +8,11 @@ import {
   ChainOfThoughtStep,
 } from "@/components/chain-of-thought";
 import { ShimmerText } from "@/components/chatbot-main/activity";
+import { Reasoning, ReasoningContent, ReasoningTrigger } from "@/components/ui/reasoning";
+import { splitReasoning } from "@/lib/reasoning";
+import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
 import { InlineCitation } from "@/components/chatbot-main/inline-citation";
+import { Calculator, Clock, FilePen, FileText, Globe, ListTree, MonitorCog, Search, Wrench, type LucideIcon } from "lucide-react";
 import ProductCard from "@/components/product-card";
 import { ExpandableCard } from "@/components/expandable-card";
 import AgentPlan from "@/components/agent-plan";
@@ -29,6 +33,21 @@ function prettyStage(name: string): string {
 
 function citationNumber(id: string): string {
   return id.replace(/^web\.evidence\./i, "").replace(/^memory\.evidence\./i, "");
+}
+
+function iconForTool(name: string): LucideIcon {
+  const n = name.toLowerCase();
+  if (n.includes("search") && n.includes("web")) return Globe;
+  if (n.includes("rg") || n.includes("search")) return Search;
+  if (n.includes("read")) return FileText;
+  if (n.includes("list")) return ListTree;
+  if (n.includes("write") || n.includes("patch")) return FilePen;
+  if (n.includes("web")) return Globe;
+  if (n.includes("browser") || n.includes("playwright") || n.includes("browse")) return Globe;
+  if (n.includes("computer")) return MonitorCog;
+  if (n.includes("calc")) return Calculator;
+  if (n.includes("time") || n.includes("date")) return Clock;
+  return Wrench;
 }
 
 function citationByMarker(citations: CitationRef[]): Map<string, CitationRef> {
@@ -142,12 +161,17 @@ export interface RichMessageProps {
   citations?: CitationRef[];
   /** Backend model-driven directives; when present they drive rendering (not keyword heuristics). */
   directives?: UiDirective[];
+  /** True while the assistant turn is still streaming (drives live thinking). */
+  streaming?: boolean;
+  /** Live tool-call steps for the unified Chain-of-Thought feed. */
+  activity?: ActivityStep[];
 }
 
 /** Renders an assistant response as rich blocks. Backend directives are
  *  authoritative; the text heuristic is only a fallback when none are present. */
-export function RichMessage({ text, stages, citations = [], directives }: RichMessageProps) {
-  const safeText = sanitizeAssistantText(text);
+export function RichMessage({ text, stages, citations = [], directives, streaming = false, activity = [] }: RichMessageProps) {
+  const { thinking, answer, thinkingStreaming } = splitReasoning(text);
+  const safeText = sanitizeAssistantText(answer);
   const blocks = useMemo(() => {
     if (directives && directives.length > 0) {
       const fromDirectives = directivesToBlocks(directives as Array<Record<string, unknown>>);
@@ -157,9 +181,33 @@ export function RichMessage({ text, stages, citations = [], directives }: RichMe
     return parseRichResponse(safeText);
   }, [safeText, directives]);
 
+  // Unified Chain of Thought: the expandable reasoning ("Thinking…"/"Thought Ns")
+  // and the live tool steps ("Grepped…", "Read …", "Searching") live in ONE feed.
+  const hasChain = Boolean(thinking) || activity.length > 0;
+
   return (
     <div className="flex flex-col gap-3">
-      {stages && stages.length > 0 && (
+      {hasChain ? (
+        <ChainOfThought className="max-w-[min(100%,72ch)] space-y-2">
+          {thinking ? (
+            <Reasoning
+              isStreaming={streaming && thinkingStreaming}
+              defaultOpen={streaming && thinkingStreaming}
+            >
+              <ReasoningTrigger />
+              <ReasoningContent>{thinking}</ReasoningContent>
+            </Reasoning>
+          ) : null}
+          {activity.map((step) => (
+            <ChainOfThoughtStep
+              key={step.id}
+              icon={iconForTool(step.name)}
+              status={step.active ? "active" : "complete"}
+              label={step.active ? <ShimmerText>{activityLabel(step)}</ShimmerText> : activityLabel(step)}
+            />
+          ))}
+        </ChainOfThought>
+      ) : stages && stages.length > 0 ? (
         <ChainOfThought className="max-w-[min(100%,72ch)] space-y-2">
           <ChainOfThoughtHeader className="px-0 py-1">Activity</ChainOfThoughtHeader>
           <ChainOfThoughtContent className="rounded-lg border border-border/45 bg-card/35 p-3 shadow-[var(--shadow-card)]">
@@ -176,7 +224,7 @@ export function RichMessage({ text, stages, citations = [], directives }: RichMe
             })}
           </ChainOfThoughtContent>
         </ChainOfThought>
-      )}
+      ) : null}
 
       {blocks.map((block, i) => (
         <BlockView key={i} block={block} citations={citations} />

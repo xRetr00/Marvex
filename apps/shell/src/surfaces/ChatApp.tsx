@@ -13,6 +13,7 @@ import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
+import { type ActivityStep } from "@/lib/activityLabels";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -28,7 +29,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[] };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
@@ -177,6 +178,7 @@ export function ChatApp() {
     let replyText = "";
     let speechText = "";
     let streamed = "";
+    let activity: ActivityStep[] = [];
     try {
       const sessionId = sessionIdRef.current;
       if (!sessionId) throw new Error("backend session unavailable");
@@ -184,9 +186,20 @@ export function ChatApp() {
         text,
         { session_id: sessionId },
         previousResponseIdsRef.current[sessionId],
-        (chunk) => {
-          streamed += chunk;
-          updateLastAssistant({ role: "assistant", text: streamed, streaming: true });
+        {
+          onDelta: (chunk) => {
+            streamed += chunk;
+            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity });
+          },
+          onTool: (event) => {
+            const id = event.id || event.name || String(activity.length);
+            if (event.phase === "end") {
+              activity = activity.map((step) => (step.id === id || step.name === event.name) && step.active ? { ...step, active: false } : step);
+            } else {
+              activity = [...activity, { id, name: event.name ?? "", arguments: event.arguments, active: true }];
+            }
+            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity });
+          },
         },
       );
       const nextProviderResponseId = providerResponseIdFromTurnResult(result);
@@ -204,7 +217,9 @@ export function ChatApp() {
       replyText = outcome.text;
       speechText = speechTextFromTurnResult(result);
       // Reconcile with the authoritative final result (text + stages + refs).
-      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text) });
+      // Settle any still-active tool steps so the chain-of-thought stops shimmering.
+      const settledActivity = activity.map((step) => (step.active ? { ...step, active: false } : step));
+      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined });
     } catch (error) {
       const outcome = outcomeFromError(error);
       replyText = outcome.text;

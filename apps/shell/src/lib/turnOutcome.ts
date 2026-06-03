@@ -83,6 +83,10 @@ export function outcomeFromTurnResult(payload: unknown): TurnOutcome {
 
 function normalizeSpeechText(text: string): string {
   return text
+    // Drop private reasoning (<think>...</think>, or an unterminated block) so
+    // the assistant never speaks its chain-of-thought aloud.
+    .replace(/<think>[\s\S]*?<\/think>/gi, " ")
+    .replace(/<think>[\s\S]*$/gi, " ")
     .replace(/```[\s\S]*?```/g, " ")
     .replace(/!\[([^\]]*)\]\([^)]+\)/g, "$1")
     .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")

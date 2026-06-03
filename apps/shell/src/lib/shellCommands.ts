@@ -82,28 +82,54 @@ export async function submitChatTurn(
   return invoke("submit_chat_turn", { text, metadata, previousResponseId });
 }
 
+/** A live tool-activity frame from the core's streaming turn (chain-of-thought). */
+export type ChatToolEvent = {
+  type: "tool";
+  phase?: "start" | "end";
+  id?: string;
+  name?: string;
+  arguments?: string;
+  state?: string;
+};
+
 type ChatStreamEvent = {
   turn_id: string;
-  event: { type: "delta" | "final" | "error"; text?: string; result?: unknown; message?: string };
+  event:
+    | { type: "delta"; text?: string }
+    | { type: "final"; result?: unknown }
+    | { type: "error"; message?: string; reason?: string }
+    | ChatToolEvent;
 };
+
+export interface ChatStreamHandlers {
+  onDelta: (chunk: string) => void;
+  /** Live tool-activity steps for the unified Chain-of-Thought UI. */
+  onTool?: (event: ChatToolEvent) => void;
+}
 
 /**
  * Streaming chat turn (docs/TODO/06). Subscribes to the `chat-stream` Tauri
- * event, forwards each text delta to `onDelta`, and resolves with the terminal
- * AssistantTurnResult. Falls back semantics: callers can use `submitChatTurn`
- * for the non-streaming path. Single in-flight turn is assumed (the UI gates on
- * `pending`), so the global `chat-stream` listener needs no per-turn filtering.
+ * event, forwards each text delta to `onDelta` and each tool frame to `onTool`,
+ * and resolves with the terminal AssistantTurnResult. Single in-flight turn is
+ * assumed (the UI gates on `pending`), so the global `chat-stream` listener
+ * needs no per-turn filtering. Accepts a bare `onDelta` callback for backward
+ * compatibility, or a handlers object to also receive tool events.
  */
 export async function submitChatTurnStream(
   text: string,
   metadata: ChatTurnMetadata | undefined,
   previousResponseId: string | undefined,
-  onDelta: (chunk: string) => void,
+  handlers: ((chunk: string) => void) | ChatStreamHandlers,
 ): Promise<unknown> {
+  const resolved: ChatStreamHandlers =
+    typeof handlers === "function" ? { onDelta: handlers } : handlers;
   const unlisten = await listen<ChatStreamEvent>("chat-stream", (message) => {
     const event = message.payload?.event;
-    if (event && event.type === "delta" && typeof event.text === "string") {
-      onDelta(event.text);
+    if (!event) return;
+    if (event.type === "delta" && typeof event.text === "string") {
+      resolved.onDelta(event.text);
+    } else if (event.type === "tool") {
+      resolved.onTool?.(event);
     }
   });
   try {
