@@ -64,3 +64,12 @@ def test_grounding_prefers_browser_use_for_browser_automation():
 
     assert "'browser_use'" in grounding
     assert "'playwright_browser'" not in grounding
+
+
+def test_grounding_tells_model_to_chain_discovery_before_file_actions():
+    grounding = available_tools_grounding()
+
+    assert "file.rg" in grounding
+    assert "file.list" in grounding
+    assert "before file.read" in grounding
+    assert "chain tool calls" in grounding
