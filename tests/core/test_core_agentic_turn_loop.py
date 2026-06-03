@@ -17,7 +17,11 @@ def run_core_turn(
     trace_id: str,
     turn_id: str,
     extra: list[str] | None = None,
+    env: dict[str, str] | None = None,
 ) -> AssistantTurnResult:
+    import os
+
+    subprocess_env = {**os.environ, **(env or {})}
     completed = subprocess.run(
         [
             sys.executable,
@@ -41,6 +45,7 @@ def run_core_turn(
         text=True,
         capture_output=True,
         timeout=30,
+        env=subprocess_env,
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -135,11 +140,15 @@ def test_core_file_read_turn_executes_intent_plan_step_through_tool_worker(tmp_p
     root.mkdir()
     (root / "notes.txt").write_text("Marvex file executor evidence", encoding="utf-8")
 
+    # Exercise the deterministic single-shot file path (the agentic-off
+    # fallback). With agentic tools ON the model drives file.rg/read itself,
+    # which the fake provider can't simulate.
     result = run_core_turn(
         "read file notes.txt",
         trace_id="trace-core-file-read",
         turn_id="turn-core-file-read",
         extra=["--file-capability-root", str(root)],
+        env={"MARVEX_AGENTIC_TOOLS": "0"},
     )
 
     assert result.error is None
@@ -164,6 +173,7 @@ def test_core_file_list_turn_for_desktop_pdfs_uses_tool_worker(tmp_path: Path) -
         trace_id="trace-core-file-list-desktop",
         turn_id="turn-core-file-list-desktop",
         extra=["--file-capability-root", str(root)],
+        env={"MARVEX_AGENTIC_TOOLS": "0"},
     )
 
     assert result.error is None
@@ -185,6 +195,7 @@ def test_core_file_report_lookup_on_desktop_uses_rg_tool_without_approval(tmp_pa
         trace_id="trace-core-file-rg-desktop",
         turn_id="turn-core-file-rg-desktop",
         extra=["--file-capability-root", str(root)],
+        env={"MARVEX_AGENTIC_TOOLS": "0"},
     )
 
     assert result.error is None

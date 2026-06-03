@@ -2040,6 +2040,35 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if "file_read_list_search" in route_intents:
             self._publish(AssistantStatusKind.WORKING, detail="file_read", trace_id=turn_input.trace_id)
             loop.step("tool")
+            # Let the MODEL drive read/list/search/grep: it can call file.rg to
+            # locate the file the user named (e.g. "MAR.TXT" -> "MAR.TXT.txt")
+            # and then file.read it, chaining tools as needed. These are SAFE,
+            # read-only tools auto-approved in the loop, so nothing here pauses
+            # for approval. Intent is only a routing hint, not a gate. The
+            # deterministic single-shot file path remains a fallback for when the
+            # agentic loop is disabled or the provider can't drive tools.
+            if _agentic_tools_enabled():
+                provider_turn_input, provider_instructions = _turn_input_with_prompt(
+                    turn_input,
+                    cognition,
+                    desktop_context=desktop_context,
+                    session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+                )
+                agentic_result = self._run_agentic_tool_loop(
+                    turn_input,
+                    provider_turn_input=provider_turn_input,
+                    provider_instructions=provider_instructions,
+                    cognition=cognition,
+                    loop=loop,
+                    previous_response_id=previous_response_id,
+                    intent_projection=intent_projection,
+                    intent_response=intent_response,
+                    session_projection=session_projection,
+                    selection_projection=selection_projection,
+                    desktop_context=desktop_context,
+                )
+                if agentic_result is not None:
+                    return agentic_result
             return self._run_file_path(turn_input, metadata=metadata, cognition=cognition, loop=loop)
         if "mcp_needed" in route_intents or "mcp_skill" in route_intents:
             self._publish(AssistantStatusKind.MCP, detail="mcp_tool", trace_id=turn_input.trace_id)
