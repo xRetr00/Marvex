@@ -124,6 +124,7 @@ def execute_tool_calls(
     *,
     registry: ToolRegistry,
     request_builder: RequestBuilder,
+    prior_tool_messages: list[dict[str, Any]] | None = None,
 ) -> ToolStepOutcome:
     """Execute a batch of model tool calls and build continuation messages.
 
@@ -225,6 +226,12 @@ def execute_tool_calls(
             continue
         arguments = validated_arguments
 
+        grounding_retry = _web_grounded_write_retry_message(name, arguments, prior_tool_messages)
+        if grounding_retry is not None:
+            results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, grounding_retry)))
+            tool_messages.append(results[-1].message)
+            continue
+
         if _tool_requires_approval(tool):
             content = (
                 f"Tool '{name}' requires human approval before it can run. "
@@ -282,6 +289,59 @@ def _tool_requires_approval(tool: Tool) -> bool:
     if tool.risk_level is not ToolRiskLevel.SAFE:
         return True
     return tool.side_effect_level in _APPROVAL_SIDE_EFFECTS
+
+
+def _web_grounded_write_retry_message(
+    tool_id: str,
+    arguments: dict[str, Any],
+    prior_tool_messages: list[dict[str, Any]] | None,
+) -> str | None:
+    if tool_id not in {"file.write", "file.patch"}:
+        return None
+    content = str(arguments.get("content") or "")
+    if not content.strip():
+        return None
+    source_urls = _web_source_urls_from_messages(prior_tool_messages)
+    if not source_urls:
+        return None
+    if any(url and url in content for url in source_urls):
+        return None
+    return (
+        "This file write follows a successful web.search result, but the file "
+        "content does not include at least one source URL from the search "
+        "results. Call file.write again with grounded content that includes at "
+        "least one source URL, or say plainly that the search evidence was not "
+        "usable."
+    )
+
+
+def _web_source_urls_from_messages(messages: list[dict[str, Any]] | None) -> list[str]:
+    urls: list[str] = []
+    for message in messages or []:
+        if message.get("role") != "tool":
+            continue
+        raw_content = message.get("content")
+        if not isinstance(raw_content, str) or "web_search" not in raw_content:
+            continue
+        try:
+            payload = json.loads(raw_content)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(payload, dict) or payload.get("operation") != "web_search":
+            continue
+        if int(payload.get("result_count") or 0) <= 0:
+            continue
+        for result in payload.get("results") or []:
+            if isinstance(result, dict):
+                url = str(result.get("url") or "").strip()
+                if url:
+                    urls.append(url)
+        for evidence in payload.get("evidence_refs") or []:
+            if isinstance(evidence, dict):
+                url = str(evidence.get("url") or "").strip()
+                if url:
+                    urls.append(url)
+    return list(dict.fromkeys(urls))
 
 
 def _resource_type_for_tool(tool_id: str) -> str:
@@ -376,7 +436,10 @@ def run_tool_loop(
         if not step.tool_calls:
             return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed, response_id=prev)
         outcome = execute_tool_calls(
-            step.tool_calls, registry=registry, request_builder=request_builder
+            step.tool_calls,
+            registry=registry,
+            request_builder=request_builder,
+            prior_tool_messages=tool_messages,
         )
         if debug_callback is not None:
             try:

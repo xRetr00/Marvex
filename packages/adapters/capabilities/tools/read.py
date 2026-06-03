@@ -78,15 +78,17 @@ def _resolve_read_target(arguments: dict[str, object]) -> tuple[Path, Path, str,
             raise
         missing = exc
 
-    root, _target, _relative = _resolve(arguments, default_path=".")
-    query = str(arguments.get("path") or "").strip()
-    if not query:
+    root, target, _relative = _resolve(arguments, default_path=".")
+    path_query = str(arguments.get("path") or "").strip()
+    natural_query = str(arguments.get("natural_query") or "").strip()
+    query = natural_query or path_query
+    if not path_query and not query:
         raise missing
-    path_value = query.replace("\\", "/")
+    path_value = path_query.replace("\\", "/")
     parent_value = str(Path(path_value).parent)
-    file_query = Path(path_value).name or path_value
-    search_dir = root
-    if parent_value not in {"", "."}:
+    file_query = query
+    search_dir = target if target.is_dir() else root
+    if parent_value not in {"", "."} and not target.is_dir():
         candidate_dir = (root / parent_value).resolve()
         try:
             candidate_dir.relative_to(root)

@@ -153,6 +153,49 @@ def test_read_bare_filename_resolves_by_filename_search_under_root(tmp_path: Pat
     assert "Marvex local file evidence" in read.safe_result["preview"]
 
 
+def test_read_known_folder_uses_natural_query_to_resolve_named_file(tmp_path: Path):
+    desktop = tmp_path / "Desktop"
+    downloads = tmp_path / "Downloads"
+    desktop.mkdir()
+    downloads.mkdir()
+    (desktop / "OpenAI_Latest_Model.md").write_text("official model evidence", encoding="utf-8")
+    (downloads / "Desktop Notes.md").write_text("wrong folder", encoding="utf-8")
+
+    read = ReadOnlyFileExecutor().execute(
+        _request(
+            "file.read",
+            {
+                "root": str(tmp_path),
+                "path": "Desktop",
+                "natural_query": "Read OpenAI_Latest_Model.md from Desktop",
+            },
+        )
+    )
+
+    assert read.status == "succeeded"
+    assert read.safe_result["path"] == "Desktop/OpenAI_Latest_Model.md"
+    assert read.safe_result["resolved_by_search"] is True
+    assert "official model evidence" in read.safe_result["preview"]
+
+
+def test_known_folder_aliases_resolve_dynamically_under_root(tmp_path: Path):
+    documents = tmp_path / "Documents"
+    documents.mkdir()
+    (documents / "brief.txt").write_text("document evidence", encoding="utf-8")
+
+    listing = ReadOnlyFileExecutor().execute(
+        _request("file.list", {"root": str(tmp_path), "path": "Docs"})
+    )
+    read = ReadOnlyFileExecutor().execute(
+        _request("file.read", {"root": str(tmp_path), "path": "Docs/brief.txt"})
+    )
+
+    assert listing.safe_result["path"] == "Documents"
+    assert "brief.txt" in listing.safe_result["entries"]
+    assert read.safe_result["path"] == "Documents/brief.txt"
+    assert "document evidence" in read.safe_result["preview"]
+
+
 def test_file_tools_registry_exposes_all_six_schemas():
     registry = file_tools_registry()
     ids = {s["function"]["name"] for s in registry.tool_schemas()}

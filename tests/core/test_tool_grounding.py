@@ -57,3 +57,10 @@ def test_grounding_does_not_list_phantom_tools():
     grounding = available_tools_grounding()
     for forbidden in ("- agent.deep_search", "- rag", "- browser"):
         assert forbidden not in grounding.lower()
+
+
+def test_grounding_prefers_browser_use_for_browser_automation():
+    grounding = available_tools_grounding()
+
+    assert "'browser_use'" in grounding
+    assert "'playwright_browser'" not in grounding

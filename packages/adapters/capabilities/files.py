@@ -156,7 +156,7 @@ def _resolve(
     relative_value = str(arguments.get("path") or default_path or "").strip()
     if not relative_value:
         raise FileCapabilityError("file.path_required")
-    target = (root / relative_value).resolve()
+    target = _resolve_known_folder_alias(root, relative_value) or (root / relative_value).resolve()
     try:
         target.relative_to(root)
     except ValueError as exc:
@@ -166,6 +166,36 @@ def _resolve(
     if require_dir and not target.is_dir():
         raise FileCapabilityError("file.not_directory")
     return root, target, _relative_to(root, target)
+
+
+_KNOWN_FOLDER_ALIASES = {
+    "desktop": "Desktop",
+    "download": "Downloads",
+    "downloads": "Downloads",
+    "document": "Documents",
+    "documents": "Documents",
+    "doc": "Documents",
+    "docs": "Documents",
+}
+
+
+def _resolve_known_folder_alias(root: Path, relative_value: str) -> Path | None:
+    parts = [
+        part
+        for part in relative_value.replace("\\", "/").split("/")
+        if part and part != "."
+    ]
+    if not parts:
+        return None
+    folder = _KNOWN_FOLDER_ALIASES.get(parts[0].lower())
+    if folder is None:
+        return None
+    candidate = (root / folder).joinpath(*parts[1:]).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return None
+    return candidate
 
 
 def _relative_to(root: Path, target: Path) -> str:
