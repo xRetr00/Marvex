@@ -357,6 +357,7 @@ class _JsonlWorkerProcessClient:
         self._python_executable = python_executable
         self._process_factory = process_factory or subprocess.Popen
         self._process: Any | None = None
+        self._stderr_log: Any | None = None
         self._lock = threading.Lock()
         self._reader_thread: threading.Thread | None = None
         self._reader_queue: queue.Queue[Any] = queue.Queue()
@@ -421,16 +422,41 @@ class _JsonlWorkerProcessClient:
                 self._kill_locked()
             finally:
                 self._process = None
+                if self._stderr_log is not None:
+                    try:
+                        self._stderr_log.close()
+                    except Exception:
+                        pass
+                    self._stderr_log = None
 
     def _ensure_started_locked(self) -> None:
         process = self._process
         if process is not None and process.poll() is None:
             return
+        # Capture the worker's stderr to a per-module log so provider/stream/tool
+        # failures (e.g. a streaming send falling back to a synchronous call) are
+        # diagnosable instead of vanishing into DEVNULL. Falls back to DEVNULL if
+        # no log dir is configured or the file can't be opened.
+        stderr_target: Any = subprocess.DEVNULL
+        log_dir = os.environ.get("MARVEX_LOG_DIR", "").strip()
+        if log_dir:
+            try:
+                os.makedirs(log_dir, exist_ok=True)
+                safe_name = self._module.replace(".", "_")
+                self._stderr_log = open(  # noqa: SIM115 - lifetime tied to the process
+                    os.path.join(log_dir, f"{safe_name}.stderr.log"),
+                    "a",
+                    encoding="utf-8",
+                )
+                stderr_target = self._stderr_log
+            except OSError:
+                self._stderr_log = None
+                stderr_target = subprocess.DEVNULL
         self._process = self._process_factory(
             (self._python_executable, "-m", self._module, "--jsonl"),
             stdin=subprocess.PIPE,
             stdout=subprocess.PIPE,
-            stderr=subprocess.DEVNULL,
+            stderr=stderr_target,
             shell=False,
             text=True,
         )
@@ -525,6 +551,12 @@ class _JsonlWorkerProcessClient:
             process.wait(timeout=5)
         except Exception:
             pass
+        if self._stderr_log is not None:
+            try:
+                self._stderr_log.close()
+            except Exception:
+                pass
+            self._stderr_log = None
 
 
 class _CoreServiceFoundationTurnExecutor:
@@ -2305,16 +2337,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
             loop.step("finalize", stop_reason="waiting_for_human_approval")
             # Surface the tool worker's actual reason in the user-visible
             # message rather than a blanket "blocked by policy", so reading a
-            # PDF on a directory path doesn't look like a permission error.
-            reason_code = str(
-                tool_response.get("reason_code")
-                or dict(tool_response.get("result", {})).get("reason_code")
-                or "tool_execution_blocked"
-            )
+            # PDF on a directory path doesn't look like a permission error. The
+            # reason code is nested under result.safe_result.reason_code (or the
+            # error envelope), not at the top level.
             requested_capability = capability_id or capability or resource_type
-            detail_message = (
-                f"Capability '{requested_capability}' was not executed: {reason_code}."
-            )
+            reason_code = _tool_reason_code(tool_response)
+            detail_message = _tool_block_message(requested_capability, reason_code)
             return _entrypoint_error_result(
                 turn_input,
                 reason="tool_execution_blocked",
@@ -3840,6 +3868,76 @@ def _tool_final_text(tool_response: dict[str, object]) -> str:
             f"{safe_result.get('eligible_count')} eligible for this local runtime."
         )
     return "Capability completed with a safe result."
+
+
+# Human-readable copy for the reason codes the tool worker surfaces when a
+# capability is blocked or fails. Keys are matched exactly first, then by prefix
+# (so dynamic codes like ``playwright_mcp_execution_failed:OSError`` still map).
+_TOOL_REASON_FRIENDLY: dict[str, str] = {
+    "file.not_found": "I couldn't find that file.",
+    "file.not_directory": "That path is a file, not a folder.",
+    "file.root_required": "I couldn't tell which folder to look in.",
+    "file.root_unavailable": "That folder isn't available on this machine.",
+    "file.path_required": "I need a file or folder path to do that.",
+    "file.sandbox_violation": "That path is outside the folders I'm allowed to access.",
+    "file.query_required": "I need something to search for.",
+    "file.unsupported_capability": "That file operation isn't supported.",
+    "playwright_mcp_dependency_unavailable": (
+        "Browser automation needs Node.js (npx) installed and on PATH."
+    ),
+    "playwright_mcp_live_execution_not_enabled": (
+        "Live browser control isn't enabled in the current mode."
+    ),
+    "playwright_mcp_tool_not_available": "That browser action isn't available.",
+    "playwright_mcp_execution_failed": (
+        "I couldn't drive the browser — the automation runtime failed to start."
+    ),
+    "browser_use_unavailable": "The browser automation runtime isn't available.",
+    "not_allowlisted": "That capability isn't allowed in the current mode.",
+}
+
+
+def _tool_reason_code(tool_response: dict[str, object]) -> str:
+    """Extract the most specific reason code from a tool worker response.
+
+    The actual code lives under ``result.safe_result.reason_code`` (or the error
+    envelope's ``code``); the older lookups checked only the top level and so
+    always fell back to the generic ``tool_execution_blocked``.
+    """
+
+    error = tool_response.get("error")
+    if isinstance(error, dict):
+        code = error.get("code")
+        if isinstance(code, str) and code.strip():
+            return code.strip()
+    result = tool_response.get("result")
+    if isinstance(result, dict):
+        safe_result = result.get("safe_result")
+        if isinstance(safe_result, dict):
+            code = safe_result.get("reason_code")
+            if isinstance(code, str) and code.strip():
+                return code.strip()
+        code = result.get("reason_code")
+        if isinstance(code, str) and code.strip():
+            return code.strip()
+    code = tool_response.get("reason_code")
+    if isinstance(code, str) and code.strip():
+        return code.strip()
+    return "tool_execution_blocked"
+
+
+def _tool_block_message(capability: str, reason_code: str) -> str:
+    """Friendly, user-facing copy for a blocked/failed capability."""
+
+    friendly = _TOOL_REASON_FRIENDLY.get(reason_code)
+    if friendly is None:
+        # Match a dynamic code by its prefix before the ``:detail`` suffix.
+        prefix = reason_code.split(":", 1)[0]
+        friendly = _TOOL_REASON_FRIENDLY.get(prefix)
+    if friendly is not None:
+        return friendly
+    pretty = capability.replace("_", " ").replace(".", " ").strip() or "that action"
+    return f"I couldn't complete {pretty} ({reason_code})."
 
 
 def _calculator_expression(text: str | None) -> str:

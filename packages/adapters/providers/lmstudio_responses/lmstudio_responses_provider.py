@@ -145,23 +145,53 @@ class LMStudioResponsesProvider:
 
         response_id: str | None = None
         final_text_parts: list[str] = []
+        # Track whether a <think> reasoning block is currently open so native
+        # reasoning deltas (a separate Responses channel) are wrapped in the same
+        # <think>...</think> markup the shell already understands. Models that
+        # surface reasoning in the message channel are unaffected (no reasoning
+        # events fire), and models with a real reasoning channel now stream their
+        # chain-of-thought live and keep it in the final stored text.
+        reasoning_open = False
         try:
             for event in stream:
                 event_type = str(getattr(event, "type", "") or "")
-                if event_type.endswith("output_text.delta"):
-                    delta = getattr(event, "delta", "")
-                    if isinstance(delta, str) and delta:
+                if _is_reasoning_delta(event_type):
+                    delta = _event_text_delta(event)
+                    if delta:
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(delta)
+                        yield StreamTextDelta(delta)
+                elif event_type.endswith("output_text.delta"):
+                    delta = _event_text_delta(event)
+                    if delta:
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
                         final_text_parts.append(delta)
                         yield StreamTextDelta(delta)
                 elif event_type.endswith("response.completed") or event_type == "response.completed":
+                    if reasoning_open:
+                        reasoning_open = False
+                        final_text_parts.append("</think>")
+                        yield StreamTextDelta("</think>")
                     response_obj = getattr(event, "response", None)
                     response_id = self._read_optional_string(response_obj, "id") if response_obj is not None else response_id
                     authoritative = self._read_output_text(response_obj) if response_obj is not None else ""
                     tool_calls = self._read_tool_calls(response_obj) if response_obj is not None else []
+                    # The accumulated stream (with the <think> block) is the
+                    # authoritative full text whenever it is at least as long as
+                    # the provider's message-only output_text, so reasoning is
+                    # never dropped from the persisted turn.
+                    joined = "".join(final_text_parts)
+                    output_text = joined if len(joined) >= len(authoritative) else authoritative
                     yield StreamCompleted(
                         response_id=response_id,
                         finish_reason="stop",
-                        output_text=authoritative or "".join(final_text_parts),
+                        output_text=output_text,
                         tool_calls=tool_calls or None,
                     )
                     return
@@ -172,6 +202,9 @@ class LMStudioResponsesProvider:
             yield StreamError(self._safe_exception_message(exc))
             return
         # Stream ended without an explicit completed event.
+        if reasoning_open:
+            final_text_parts.append("</think>")
+            yield StreamTextDelta("</think>")
         yield StreamCompleted(response_id=response_id, finish_reason="stop", output_text="".join(final_text_parts))
 
     def map_raw_output_to_structured_result(
@@ -311,6 +344,32 @@ class LMStudioResponsesProvider:
         if value in {"error", "failed"}:
             return FinishReason.ERROR
         return FinishReason.UNKNOWN
+
+
+def _is_reasoning_delta(event_type: str) -> bool:
+    """True for Responses streaming events that carry incremental reasoning text.
+
+    Covers both the summarized (``response.reasoning_summary_text.delta``) and
+    raw (``response.reasoning_text.delta``) reasoning channels emitted by
+    reasoning-capable models, without matching the ordinary
+    ``output_text.delta`` answer channel.
+    """
+
+    return "reasoning" in event_type and event_type.endswith(".delta")
+
+
+def _event_text_delta(event: object) -> str:
+    """Read the incremental text from a Responses streaming delta event."""
+
+    delta = getattr(event, "delta", "")
+    if isinstance(delta, str):
+        return delta
+    # Some SDK builds wrap the chunk as {"text": "..."} on the delta attribute.
+    if isinstance(delta, dict):
+        text = delta.get("text")
+        if isinstance(text, str):
+            return text
+    return ""
 
 
 def _responses_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

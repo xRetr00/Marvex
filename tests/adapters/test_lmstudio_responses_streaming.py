@@ -131,6 +131,48 @@ def test_stream_send_captures_tool_calls_on_completed():
     assert completed.tool_calls[0]["id"] == "call-1"
 
 
+def _reasoning_delta(text: str) -> object:
+    return SimpleNamespace(type="response.reasoning_text.delta", delta=text)
+
+
+def _reasoning_summary_delta(text: str) -> object:
+    return SimpleNamespace(type="response.reasoning_summary_text.delta", delta=text)
+
+
+def test_stream_send_wraps_native_reasoning_in_think_tags():
+    provider, _ = _provider(
+        [
+            _reasoning_delta("Plan"),
+            _reasoning_delta(" it"),
+            _delta("Answer"),
+            _completed("r-think", "Answer"),
+        ]
+    )
+    events = list(provider.stream_send(_request()))
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    # Reasoning is opened, streamed, and closed before the answer begins.
+    assert deltas == ["<think>", "Plan", " it", "</think>", "Answer"]
+    completed = events[-1]
+    assert isinstance(completed, StreamCompleted)
+    # The accumulated text (with the think block) is the authoritative output so
+    # reasoning is never dropped from the persisted turn.
+    assert completed.output_text == "<think>Plan it</think>Answer"
+
+
+def test_stream_send_closes_reasoning_when_summary_channel_used():
+    provider, _ = _provider(
+        [
+            _reasoning_summary_delta("thinking"),
+            _completed("r-sum", ""),
+        ]
+    )
+    events = list(provider.stream_send(_request()))
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["<think>", "thinking", "</think>"]
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].output_text == "<think>thinking</think>"
+
+
 def test_send_remains_non_streaming_and_unchanged():
     # The non-streaming path must not set stream=True.
     captured: dict[str, object] = {}
