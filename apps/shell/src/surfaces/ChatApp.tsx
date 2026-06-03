@@ -12,6 +12,7 @@ import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameC
 import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -35,6 +36,7 @@ type VoiceCaptureTarget = "dictation" | "voice";
 type WorkerTranscript = { text: string; eventId: string };
 
 const LISTENING_CUES = ["Yes", "Here"] as const;
+const NOISE_TRANSCRIPTS = new Set(["ah", "eh", "er", "huh", "hm", "hmm", "mm", "oh", "uh", "um", "umm"]);
 
 function randomListeningCue(): string {
   return LISTENING_CUES[Math.floor(Math.random() * LISTENING_CUES.length)];
@@ -46,6 +48,16 @@ function manualListenQueued(status: unknown): boolean {
   const event = events[events.length - 1];
   const summary = event && typeof event === "object" ? (event as { summary?: Record<string, unknown> }).summary : undefined;
   return Boolean(summary?.manual_listen_queued);
+}
+
+function voiceTranscriptRejectReason(text: string): string | null {
+  const stripped = text.replace(/\s+/g, " ").trim();
+  if (!stripped) return "empty_transcript";
+  const compact = stripped.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  if (NOISE_TRANSCRIPTS.has(compact)) return "short_filler_or_noise";
+  const words = stripped.replace(/[?!.,]+/g, " ").split(/\s+/).filter(Boolean);
+  if (stripped.length <= 3 || (words.length === 1 && compact.length <= 3)) return "short_filler_or_noise";
+  return null;
 }
 
 const LazyOrb = lazy(() => import("@/components/chat-messages-for-ui/agent-simple-orb").then((module) => ({ default: module.Orb })));
@@ -81,7 +93,8 @@ export function ChatApp() {
   const voiceListenPendingRef = useRef(false);
   const voiceCaptureTargetRef = useRef<VoiceCaptureTarget | null>(null);
   const manualVoiceCuePlayedRef = useRef(false);
-  const requestVoiceListenRef = useRef<(withCue?: boolean) => void>(() => undefined);
+  const voiceSessionGenerationRef = useRef(0);
+  const requestVoiceListenRef = useRef<(withCue?: boolean, generation?: number) => void>(() => undefined);
 
   const activateBackendSession = useCallback((session: BackendSession) => {
     const id = session.session_ref.ref_id;
@@ -258,39 +271,66 @@ export function ChatApp() {
     }
   }, []);
 
-  const handleVoiceTranscript = useCallback(async (text: string) => {
-    const reply = await send(text);
-    if (reply.speechText.trim()) {
-      await speakVoiceWorker(reply.speechText, { bargeIn: true }).catch(() => undefined);
-    }
+  const stopManualVoiceSession = useCallback(() => {
+    voiceSessionGenerationRef.current += 1;
+    voiceSessionActiveRef.current = false;
+    voiceListenPendingRef.current = false;
+    manualVoiceCuePlayedRef.current = false;
+    if (voiceCaptureTargetRef.current === "voice") voiceCaptureTargetRef.current = null;
+    setVoiceSessionActive(false);
+    setVoiceSessionListening(false);
+    setVoiceSessionCue("");
+  }, []);
+
+  const handleVoiceTranscript = useCallback(async (text: string, options: { shouldSpeak?: () => boolean } = {}) => {
+    await runVoiceTurnWithSpeech({
+      runTurn: () => send(text),
+      speechText: (reply) => reply.speechText,
+      speak: speakVoiceWorker,
+      shouldSpeak: options.shouldSpeak,
+    });
   }, [send]);
 
   const consumeVoiceTranscript = useCallback(async (transcript: WorkerTranscript): Promise<boolean> => {
     if (transcript.eventId === lastVoiceEventRef.current) return false;
     lastVoiceEventRef.current = transcript.eventId;
     const target = voiceCaptureTargetRef.current;
+    const rejectReason = voiceTranscriptRejectReason(transcript.text);
     if (target === "dictation") {
+      if (rejectReason) {
+        setDictationActive(false);
+        voiceCaptureTargetRef.current = null;
+        return false;
+      }
       setComposerText((current) => [current.trim(), transcript.text].filter(Boolean).join(" "));
       setDictationActive(false);
       voiceCaptureTargetRef.current = null;
       return true;
     }
     if (target === "voice") {
+      const generation = voiceSessionGenerationRef.current;
+      const stillCurrent = () => voiceSessionActiveRef.current && voiceSessionGenerationRef.current === generation;
       setVoiceSessionListening(false);
       voiceListenPendingRef.current = false;
       voiceCaptureTargetRef.current = null;
-      await handleVoiceTranscript(transcript.text);
-      if (voiceSessionActiveRef.current) {
-        window.setTimeout(() => requestVoiceListenRef.current(false), 250);
+      if (rejectReason) {
+        stopManualVoiceSession();
+        return false;
+      }
+      await handleVoiceTranscript(transcript.text, { shouldSpeak: stillCurrent });
+      if (stillCurrent()) {
+        window.setTimeout(() => requestVoiceListenRef.current(false, generation), 250);
       }
       return true;
     }
+    if (rejectReason) return false;
     await handleVoiceTranscript(transcript.text);
     return true;
-  }, [handleVoiceTranscript]);
+  }, [handleVoiceTranscript, stopManualVoiceSession]);
 
-  const requestVoiceListen = useCallback(async (withCue = false) => {
-    if (voiceListenPendingRef.current || pending || !voiceSessionActiveRef.current) return;
+  const requestVoiceListen = useCallback(async (withCue = false, generation = voiceSessionGenerationRef.current) => {
+    const stillCurrent = () => voiceSessionActiveRef.current && voiceSessionGenerationRef.current === generation;
+    if (voiceListenPendingRef.current || pending || !stillCurrent()) return;
     voiceListenPendingRef.current = true;
     voiceCaptureTargetRef.current = "voice";
     setVoiceSessionListening(true);
@@ -299,9 +339,11 @@ export function ChatApp() {
       manualVoiceCuePlayedRef.current = true;
       setVoiceSessionCue(cue);
       await speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
+      if (!stillCurrent()) return;
     }
     try {
       const status = await listenVoiceWorker();
+      if (!stillCurrent()) return;
       const transcript = transcriptFromStatus(status);
       if (transcript) {
         await consumeVoiceTranscript(transcript);
@@ -319,8 +361,8 @@ export function ChatApp() {
   }, [consumeVoiceTranscript, pending]);
 
   useEffect(() => {
-    requestVoiceListenRef.current = (withCue = false) => {
-      void requestVoiceListen(withCue);
+    requestVoiceListenRef.current = (withCue = false, generation = voiceSessionGenerationRef.current) => {
+      void requestVoiceListen(withCue, generation);
     };
   }, [requestVoiceListen]);
 
@@ -347,13 +389,11 @@ export function ChatApp() {
 
   const toggleVoiceSession = useCallback(() => {
     if (voiceSessionActiveRef.current) {
-      voiceSessionActiveRef.current = false;
-      voiceListenPendingRef.current = false;
-      if (voiceCaptureTargetRef.current === "voice") voiceCaptureTargetRef.current = null;
-      setVoiceSessionActive(false);
-      setVoiceSessionListening(false);
+      stopManualVoiceSession();
       return;
     }
+    const generation = voiceSessionGenerationRef.current + 1;
+    voiceSessionGenerationRef.current = generation;
     voiceSessionActiveRef.current = true;
     voiceListenPendingRef.current = false;
     manualVoiceCuePlayedRef.current = false;
@@ -361,8 +401,8 @@ export function ChatApp() {
     setVoiceSessionActive(true);
     void startVoiceWorker()
       .catch(() => undefined)
-      .finally(() => requestVoiceListenRef.current(true));
-  }, []);
+      .finally(() => requestVoiceListenRef.current(true, generation));
+  }, [stopManualVoiceSession]);
 
   // Voice loop bridge (docs/TODO/04): poll the worker for a freshly recognized
   // transcript, run it as a chat turn, and speak the reply back through the
