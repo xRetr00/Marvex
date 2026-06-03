@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { ModernLogViewer } from "@/components/marvex/ModernLogViewer";
 import { controlRequest, openControlPlane, type LogTail } from "@/lib/shellCommands";
 import { fetchDeps, installDep, type Dep } from "@/lib/depsClient";
+import { fetchRuntimePolicy, setRuntimePolicyMode, type RuntimePolicy, type RuntimePolicyMode } from "@/lib/runtimePolicyClient";
 import {
   fetchProviders,
   refreshProviderModels,
@@ -37,6 +38,8 @@ export function ControlPlaneSettings() {
   const [features, setFeatures] = useState<Record<string, boolean>>({});
   const [snapshot, setSnapshot] = useState<Snapshot>({});
   const [logs, setLogs] = useState<LogTail[]>([]);
+  const [runtimePolicy, setRuntimePolicy] = useState<RuntimePolicy | null>(null);
+  const [runtimeModeDraft, setRuntimeModeDraft] = useState<RuntimePolicyMode>("auto_marvex");
   const [mcp, setMcp] = useState<Record<string, unknown>[]>([]);
   const [skills, setSkills] = useState<Record<string, unknown>[]>([]);
   const [keyDraft, setKeyDraft] = useState("");
@@ -58,11 +61,12 @@ export function ControlPlaneSettings() {
 
   const load = useCallback(async () => {
     setError(null);
-    const [providerResult, depsResult, snapshotResult, logsResult, mcpResult, skillsResult] = await Promise.allSettled([
+    const [providerResult, depsResult, snapshotResult, logsResult, runtimePolicyResult, mcpResult, skillsResult] = await Promise.allSettled([
       fetchProviders(),
       fetchDeps(),
       controlRequest("/snapshot", "GET") as Promise<Snapshot>,
       controlRequest("/logs", "GET") as Promise<LogsPayload>,
+      fetchRuntimePolicy(),
       controlRequest("/marketplace/mcp", "GET") as Promise<RegistryPayload>,
       controlRequest("/marketplace/skills", "GET") as Promise<RegistryPayload>,
     ]);
@@ -74,6 +78,10 @@ export function ControlPlaneSettings() {
     }
     if (snapshotResult.status === "fulfilled") setSnapshot(snapshotResult.value);
     if (logsResult.status === "fulfilled") setLogs(logsResult.value.logs ?? []);
+    if (runtimePolicyResult.status === "fulfilled") {
+      setRuntimePolicy(runtimePolicyResult.value);
+      setRuntimeModeDraft(runtimePolicyResult.value.mode);
+    }
     if (mcpResult.status === "fulfilled") setMcp(mcpResult.value.entries ?? []);
     if (skillsResult.status === "fulfilled") setSkills(skillsResult.value.entries ?? []);
   }, []);
@@ -135,6 +143,9 @@ export function ControlPlaneSettings() {
       supportsVision: automationSupportsVision,
       visionRequired: automationVisionRequired,
     }));
+  };
+  const onSaveRuntimePolicy = () => {
+    void run("runtime policy", () => setRuntimePolicyMode(runtimeModeDraft));
   };
   const onAddMultiModel = () => {
     if (!activeProvider || !multiModelDraft) return;
@@ -270,6 +281,25 @@ export function ControlPlaneSettings() {
           />
         </Panel>
 
+        <Panel icon={<Wrench size={16} />} title="Runtime policy">
+          <label style={field}>
+            <span>Tool approval mode</span>
+            <select aria-label="Tool approval mode" value={runtimeModeDraft} onChange={(event) => setRuntimeModeDraft(event.target.value as RuntimePolicyMode)} style={select}>
+              <option value="auto_marvex">Auto Marvex</option>
+              <option value="ask_before_risky">Ask before risky</option>
+              <option value="owner_safe">Owner safe</option>
+              <option value="locked_down">Locked down</option>
+            </select>
+          </label>
+          <div style={actions}>
+            <Button size="sm" onClick={onSaveRuntimePolicy} disabled={Boolean(busy) || runtimeModeDraft === runtimePolicy?.mode}><Save size={14} />Save mode</Button>
+            <Chip label={runtimePolicy?.mode === "auto_marvex" ? "no approval prompts" : `active: ${runtimePolicy?.mode ?? "unknown"}`} ok={runtimePolicy?.mode === "auto_marvex"} />
+          </div>
+          <Muted>Auto Marvex runs model-authored tools without approval prompts for local debugging.</Muted>
+        </Panel>
+      </section>
+
+      <section style={grid2}>
         <Panel icon={<KeyRound size={16} />} title="Credentials">
           <div style={secretState}>
             <span>Current key</span>

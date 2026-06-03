@@ -15,9 +15,19 @@ const mockedOpenControlPlane = vi.mocked(openControlPlane);
 describe("ControlPlaneSettings", () => {
   beforeEach(() => {
     let secretPresent = false;
+    let runtimeMode = "ask_before_risky";
     mockedControlRequest.mockReset();
     mockedOpenControlPlane.mockReset();
     mockedControlRequest.mockImplementation(async (path: string, method = "GET", body?: unknown) => {
+      if (path === "/runtime-policy") {
+        if (method === "POST") runtimeMode = String((body as { mode: string }).mode);
+        return {
+          schema_version: "1",
+          mode: runtimeMode,
+          matrix: { file_delete: runtimeMode === "auto_marvex" ? "allow" : "ask" },
+          raw_payload_persisted: false,
+        };
+      }
       if (path === "/providers" || path.startsWith("/providers/")) {
         if (path.endsWith("/secret") && method === "POST") secretPresent = true;
         if (path.endsWith("/secret") && method === "DELETE") secretPresent = false;
@@ -66,6 +76,7 @@ describe("ControlPlaneSettings", () => {
     expect(await screen.findByText("Provider stack")).toBeInTheDocument();
     expect(await screen.findByText("Model routing")).toBeInTheDocument();
     expect(await screen.findByText("Automation readiness")).toBeInTheDocument();
+    expect(await screen.findByText("Runtime policy")).toBeInTheDocument();
     expect(await screen.findByLabelText("Multi-model candidate")).toBeInTheDocument();
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
@@ -85,6 +96,8 @@ describe("ControlPlaneSettings", () => {
     await userEvent.click(screen.getByLabelText("Selected automation model supports vision"));
     await userEvent.click(screen.getByLabelText("Require vision for browser/computer tasks"));
     await userEvent.click(screen.getByRole("button", { name: /Save automation model/i }));
+    await userEvent.selectOptions(screen.getByLabelText("Tool approval mode"), "auto_marvex");
+    await userEvent.click(screen.getByRole("button", { name: /Save mode/i }));
     await userEvent.type(screen.getByLabelText("Provider API key"), "sk-plain-text-secret");
     await userEvent.click(screen.getByRole("button", { name: /Save key/i }));
     await userEvent.click(screen.getByRole("button", { name: /Install Browser automation/i }));
@@ -94,6 +107,7 @@ describe("ControlPlaneSettings", () => {
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/connection", "POST", { base_url: "http://localhost:20128/v1", provider_mode: "openai_compatible" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/models/multi", "POST", { models: ["qwen2.5-coder-7b", "llama-3.1-8b"] });
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/automation", "POST", { model: "gpt-4o", supports_vision: true, vision_required: true });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/runtime-policy", "POST", { mode: "auto_marvex" });
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "mcp" });

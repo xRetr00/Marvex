@@ -43,4 +43,15 @@ describe("speechTextFromTurnResult", () => {
     expect(speechTextFromTurnResult({ assistant_final_response: { text: "Display only", safe_for_speech: false } })).toBe("");
     expect(speechTextFromTurnResult({ error: { message: "Provider failed with stack details" } })).toBe("");
   });
+
+  it("removes markdown, citations, evidence labels, and links before TTS", () => {
+    const text = [
+      "**Answer:** see [docs](https://example.com/docs) [web.evidence.1]",
+      "Raw source: https://example.com/source?q=1",
+      "- `code` and _emphasis_ should not read symbols.",
+    ].join("\n");
+    expect(speechTextFromTurnResult({ assistant_final_response: { text } })).toBe(
+      "Answer: see docs Raw source: code and emphasis should not read symbols.",
+    );
+  });
 });
