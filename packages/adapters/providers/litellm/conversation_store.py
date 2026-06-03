@@ -1,8 +1,9 @@
 """In-process conversation history store for the LiteLLM provider.
 
-LiteLLM is a thin wrapper over OpenAI-compatible chat completions, which has no
-server-side conversation state. To honour ``ProviderRequest.previous_response_id``
-the adapter must rebuild the full ``messages`` array client-side. This module
+LiteLLM is used here through the Responses API surface. Some configured upstream
+providers still lack durable server-side conversation state, so to honour
+``ProviderRequest.previous_response_id`` the adapter must rebuild the prior turn
+context client-side when needed. This module
 provides a tiny in-memory store keyed by the response id we hand back to the
 caller, so subsequent turns can look up prior ``(user, assistant)`` pairs and
 prepend them to the next request.
