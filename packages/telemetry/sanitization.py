@@ -51,6 +51,12 @@ _SAFE_USAGE_COUNT_KEYS = {
 }
 _ERROR_CODE_PATTERN = re.compile(r"^[A-Z][A-Z0-9_]*$")
 _FORBIDDEN_ERROR_CODE_PARTS = {"SECRET", "PASSWORD", "TOKEN", "API_KEY", "BEARER"}
+# Structured diagnostic-code fields. Their values are machine reason codes
+# (e.g. ``JSONDecodeError``, ``playwright_mcp_execution_failed:OSError``), not
+# free-form text, so they are validated as codes instead of being redacted on a
+# substring match against exception-like terms.
+_SAFE_CODE_PARENT_KEYS = {"reasoncode", "automationreasoncode", "toolresultreasoncode"}
+_SAFE_CODE_PATTERN = re.compile(r"^[A-Za-z0-9_.:\-]+$")
 _UNSAFE_STRING_TERMS = (
     "api key",
     "api_key",
@@ -112,6 +118,8 @@ def _string_is_unsafe(value: str, *, parent_key: str | None) -> bool:
     normalized_parent = _normalize_key(parent_key) if parent_key is not None else ""
     if normalized_parent == "sanitizederrorcode":
         return _error_code_is_unsafe(value)
+    if normalized_parent in _SAFE_CODE_PARENT_KEYS:
+        return _reason_code_is_unsafe(value)
     lowered = value.lower()
     return _looks_like_full_json(value) or any(term in lowered for term in _UNSAFE_STRING_TERMS)
 
@@ -120,6 +128,13 @@ def _error_code_is_unsafe(value: str) -> bool:
     return _ERROR_CODE_PATTERN.fullmatch(value) is None or any(
         part in value for part in _FORBIDDEN_ERROR_CODE_PARTS
     )
+
+
+def _reason_code_is_unsafe(value: str) -> bool:
+    if _SAFE_CODE_PATTERN.fullmatch(value) is None:
+        return True
+    upper = value.upper()
+    return any(part in upper for part in _FORBIDDEN_ERROR_CODE_PARTS)
 
 
 def _normalize_key(value: object) -> str:
