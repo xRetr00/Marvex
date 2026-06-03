@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
 import { listen } from "../lib/tauriBridge";
+import { useBackendStatus, type WakewordState } from "../lib/backendStatus";
 import {
   displayDetail,
   idleAssistantState,
@@ -10,10 +11,14 @@ import {
   waveformLevel,
   type AssistantStateEvent,
 } from "../lib/assistantState";
-import { setOverlaySize, showChat, type OverlayWindowSize } from "../lib/shellCommands";
+import { createChatSession, listChatSessions, setOverlaySize, showChat, submitChatTurnStream, type OverlayWindowSize } from "../lib/shellCommands";
 import { persistMode } from "../lib/modeStore";
 import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
 import { fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
+import { speechTextFromTurnResult } from "../lib/turnOutcome";
+import { providerResponseIdFromTurnResult } from "../lib/turnResultHelpers";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, transcriptFromStatus } from "../lib/voiceControlClient";
+import { runVoiceTurnWithSpeech } from "../lib/voiceTurnSpeech";
 import DynamicIsland from "@/components/dynamic-island/DynamicIsland";
 import { IslandWaveform } from "@/components/dynamic-island/IslandWaveform";
 import { ApprovalCard } from "@/components/dynamic-island/cards/ApprovalCard";
@@ -65,6 +70,13 @@ function TextShimmer({ text }: { text: string }) {
   );
 }
 
+function wakewordStatusText(status: WakewordState | undefined): string {
+  if (status === "running" || status === "enabled") return "Hey Marvex on";
+  if (status === "not_ready") return "Wake setup";
+  if (status === "disabled") return "Wake off";
+  return "Wake checking";
+}
+
 function approvalCard(approval: ApprovalSummary): IslandCard {
   return {
     id: `approval-${approval.approval_request_id}`,
@@ -78,6 +90,7 @@ function approvalCard(approval: ApprovalSummary): IslandCard {
 
 export function OverlaySurface() {
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
+  const backend = useBackendStatus();
   const [cardState, setCardState] = useState<IslandQueueSnapshot>({ active: null, queued: [] });
   const [manualExpand, setManualExpand] = useState(false);
   const phaseRef = useRef(0);
@@ -85,6 +98,9 @@ export function OverlaySurface() {
   const islandRef = useRef<HTMLDivElement | null>(null);
   const lastOverlaySizeRef = useRef<OverlayWindowSize | null>(null);
   const prevStatusRef = useRef<string>("idle");
+  const overlaySessionIdRef = useRef<string | null>(null);
+  const previousResponseIdsRef = useRef<Record<string, string>>({});
+  const lastVoiceEventRef = useRef("");
 
   const queueRef = useRef<ReturnType<typeof createIslandQueue> | null>(null);
   if (!queueRef.current) {
@@ -138,9 +154,65 @@ export function OverlaySurface() {
     return () => cleanup?.();
   }, [queue]);
 
+  const ensureOverlaySession = async (): Promise<string> => {
+    if (overlaySessionIdRef.current) return overlaySessionIdRef.current;
+    const existing = await listChatSessions().catch(() => ({ sessions: [] }));
+    const session = existing.sessions[0] ?? (await createChatSession("Overlay voice")).session;
+    const sessionId = session.session_ref.ref_id;
+    overlaySessionIdRef.current = sessionId;
+    return sessionId;
+  };
+
+  const runOverlayVoiceTurn = async (text: string) => {
+    await runVoiceTurnWithSpeech({
+      runTurn: async () => {
+        const sessionId = await ensureOverlaySession();
+        const result = await submitChatTurnStream(
+          text,
+          { session_id: sessionId },
+          previousResponseIdsRef.current[sessionId],
+          () => undefined,
+        );
+        const nextProviderResponseId = providerResponseIdFromTurnResult(result);
+        if (nextProviderResponseId) previousResponseIdsRef.current[sessionId] = nextProviderResponseId;
+        return result;
+      },
+      speechText: speechTextFromTurnResult,
+      speak: speakVoiceWorker,
+    });
+  };
+
+  const wakewordActive = backend?.wakeword === "enabled" || backend?.wakeword === "running";
+  useEffect(() => {
+    if (!wakewordActive) return;
+    let cancelled = false;
+    let busy = false;
+    const timer = window.setInterval(() => {
+      if (busy) return;
+      busy = true;
+      void Promise.resolve(fetchVoiceWorkerStatus())
+        .then(async (status) => {
+          if (cancelled) return;
+          const transcript = transcriptFromStatus(status);
+          if (!transcript || transcript.eventId === lastVoiceEventRef.current) return;
+          lastVoiceEventRef.current = transcript.eventId;
+          await runOverlayVoiceTurn(transcript.text);
+        })
+        .catch(() => undefined)
+        .finally(() => {
+          busy = false;
+        });
+    }, 1500);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [wakewordActive]);
+
   const audioLevel = waveformLevel(state, phase);
   const isActive = shouldShowOverlay(state);
   const statusText = displayDetail(state);
+  const wakeText = wakewordStatusText(backend?.wakeword);
   const activeCard = cardState.active;
   const expanded = Boolean(activeCard) || isActive || manualExpand;
   const view = expanded ? "expanded" : "idle";
@@ -200,7 +272,10 @@ export function OverlaySurface() {
                 transition={{ duration: 2.2, repeat: Infinity, ease: "easeInOut" }}
                 style={{ width: 7, height: 7, borderRadius: "50%", background: "#ffe0c2", display: "block", flex: "0 0 auto" }}
               />
-              <span style={idleLabelStyle}>{statusLabel(state.status)}</span>
+              <span style={{ display: "flex", flexDirection: "column", gap: 1, minWidth: 0 }}>
+                <span style={idleLabelStyle}>{statusLabel(state.status)}</span>
+                <span style={wakeLabelStyle}>{wakeText}</span>
+              </span>
               <IslandWaveform variant="compact" audioLevel={audioLevel} active={isActive} />
             </div>
           }
@@ -223,6 +298,7 @@ export function OverlaySurface() {
                   </button>
                 </div>
                 <IslandWaveform variant="expanded" audioLevel={audioLevel} active={isActive || manualExpand} />
+                <div style={wakeRowStyle}>{wakeText}</div>
               </div>
             )
           }
@@ -244,6 +320,21 @@ const idleLabelStyle: React.CSSProperties = {
   fontWeight: 600,
   letterSpacing: "0.01em",
   color: "rgba(255,224,194,0.9)",
+  whiteSpace: "nowrap",
+};
+
+const wakeLabelStyle: React.CSSProperties = {
+  fontSize: 9,
+  fontWeight: 600,
+  letterSpacing: "0.01em",
+  color: "rgba(255,224,194,0.58)",
+  whiteSpace: "nowrap",
+};
+
+const wakeRowStyle: React.CSSProperties = {
+  fontSize: 10,
+  fontWeight: 600,
+  color: "rgba(255,224,194,0.62)",
   whiteSpace: "nowrap",
 };
 
