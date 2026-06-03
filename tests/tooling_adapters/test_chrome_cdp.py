@@ -86,22 +86,23 @@ def test_launched_but_port_never_comes_up(monkeypatch, tmp_path):
     fake_exe.write_text("", encoding="utf-8")
     monkeypatch.setattr(chrome_cdp, "chrome_executable_path", lambda: str(fake_exe))
     monkeypatch.setattr(chrome_cdp, "default_user_data_dir", lambda: str(tmp_path / "udd"))
-    monkeypatch.setenv("MARVEX_CHROME_CDP_NO_FALLBACK", "1")
+    monkeypatch.delenv("MARVEX_CHROME_CDP_ALLOW_FALLBACK", raising=False)
     monkeypatch.setattr(chrome_cdp, "cdp_endpoint_alive", lambda port, **_: False)
     monkeypatch.setattr(chrome_cdp.subprocess, "Popen", lambda args, **kwargs: object())
 
     result = chrome_cdp.ensure_debuggable_chrome(port=9222, wait_seconds=1.0)
     assert result["cdp_url"] is None
     assert result["launched"] is True
+    assert "fallback_profile" not in result
     assert result["reason_code"] == "cdp_endpoint_did_not_start_chrome_already_running"
 
 
-def test_falls_back_to_dedicated_profile_when_real_profile_is_locked(monkeypatch, tmp_path):
+def test_falls_back_to_dedicated_profile_only_when_explicitly_allowed(monkeypatch, tmp_path):
     fake_exe = tmp_path / "chrome.exe"
     fake_exe.write_text("", encoding="utf-8")
     primary_dir = tmp_path / "real-profile"
     fallback_dir = tmp_path / "fallback-profile"
-    monkeypatch.delenv("MARVEX_CHROME_CDP_NO_FALLBACK", raising=False)
+    monkeypatch.setenv("MARVEX_CHROME_CDP_ALLOW_FALLBACK", "1")
     monkeypatch.setattr(chrome_cdp, "chrome_executable_path", lambda: str(fake_exe))
     monkeypatch.setattr(chrome_cdp, "default_user_data_dir", lambda: str(primary_dir))
     monkeypatch.setattr(chrome_cdp, "fallback_user_data_dir", lambda: str(fallback_dir))

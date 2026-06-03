@@ -74,6 +74,24 @@ def test_core_worker_turn_uses_bounded_agentic_loop_and_spine_projection() -> No
     assert loop["trace_id"] == "trace-core-agentic-simple"
 
 
+def test_agentic_tools_env_cannot_disable_model_tool_loop(monkeypatch) -> None:
+    from services.core.main import _agentic_tools_enabled
+
+    monkeypatch.setenv("MARVEX_AGENTIC_TOOLS", "0")
+
+    assert _agentic_tools_enabled() is True
+
+
+def test_llm_intent_is_opt_in_not_default(monkeypatch) -> None:
+    from services.core.main import _llm_intent_enabled
+
+    monkeypatch.delenv("MARVEX_LLM_INTENT", raising=False)
+    assert _llm_intent_enabled() is False
+
+    monkeypatch.setenv("MARVEX_LLM_INTENT", "1")
+    assert _llm_intent_enabled() is True
+
+
 def test_core_grounded_fresh_turn_searches_without_asking_and_returns_valid_citation() -> None:
     result = run_core_turn(
         "Give a grounded answer with current web evidence about browser-use",
@@ -140,9 +158,9 @@ def test_core_file_read_turn_executes_intent_plan_step_through_tool_worker(tmp_p
     root.mkdir()
     (root / "notes.txt").write_text("Marvex file executor evidence", encoding="utf-8")
 
-    # Exercise the deterministic single-shot file path (the agentic-off
-    # fallback). With agentic tools ON the model drives file.rg/read itself,
-    # which the fake provider can't simulate.
+    # The fake provider does not author file tool calls. Core should fall back
+    # to the deterministic read path rather than treating a generic provider
+    # answer as completion for a file-read route.
     result = run_core_turn(
         "read file notes.txt",
         trace_id="trace-core-file-read",

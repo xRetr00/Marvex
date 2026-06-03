@@ -191,9 +191,21 @@ def ensure_debuggable_chrome(
             return {"cdp_url": cdp_url, "port": resolved_port, "launched": True, "reused": False, "reason_code": None}
         time.sleep(0.3)
 
-    fallback_disabled = os.environ.get("MARVEX_CHROME_CDP_NO_FALLBACK", "").strip().lower() in {"1", "true", "yes", "on"}
+    fallback_enabled = (
+        os.environ.get("MARVEX_CHROME_CDP_ALLOW_FALLBACK", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
+    fallback_disabled = (
+        os.environ.get("MARVEX_CHROME_CDP_NO_FALLBACK", "").strip().lower()
+        in {"1", "true", "yes", "on"}
+    )
     fallback_dir = fallback_user_data_dir()
-    if not fallback_disabled and fallback_dir and str(Path(fallback_dir)) != str(Path(resolved_user_data_dir or "")):
+    if (
+        fallback_enabled
+        and not fallback_disabled
+        and fallback_dir
+        and str(Path(fallback_dir)) != str(Path(resolved_user_data_dir or ""))
+    ):
         fallback_args = [
             executable,
             f"--remote-debugging-port={resolved_port}",
