@@ -79,6 +79,7 @@ class InMemoryProviderControl:
         model_discovery: ProviderModelDiscovery | None = None,
         persistence_path: str | None = None,
     ) -> None:
+        litellm_base_url = _first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL") or ""
         rows = providers or (
             ProviderControlState(
                 provider_id="lmstudio_responses",
@@ -103,8 +104,8 @@ class InMemoryProviderControl:
                 automation_model="",
                 models=[],
                 multi_models=[],
-                base_url=_first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL") or "",
-                provider_mode="litellm_sdk",
+                base_url=litellm_base_url,
+                provider_mode="litellm_proxy" if litellm_base_url else "litellm_sdk",
                 supports_custom_base_url=True,
                 secret_present=False,
             ),
@@ -174,6 +175,8 @@ class InMemoryProviderControl:
             if not cleaned_mode:
                 raise ValueError("invalid_provider_mode")
             row.provider_mode = cleaned_mode
+        elif provider_id == "litellm" and cleaned_base_url:
+            row.provider_mode = "litellm_proxy"
         row.supports_custom_base_url = True
         row.configured = True
         return self._changed()
@@ -296,6 +299,8 @@ class InMemoryProviderControl:
                 cleaned_mode = _clean_provider_mode(provider_mode)
                 if cleaned_mode:
                     row.provider_mode = cleaned_mode
+            if provider_id == "litellm" and row.base_url and row.provider_mode == "litellm_sdk":
+                row.provider_mode = "litellm_proxy"
             models = row_data.get("models")
             if isinstance(models, list):
                 row.models = [str(m) for m in models if isinstance(m, str) and m.strip()]

@@ -205,6 +205,19 @@ def test_provider_connection_base_url_round_trips_without_secret_echo() -> None:
     assert "api_key" not in json.dumps(payload).lower()
 
 
+def test_litellm_connection_with_base_url_defaults_to_proxy_responses_mode() -> None:
+    control = InMemoryProviderControl()
+
+    payload = control.set_connection(
+        "litellm",
+        base_url="http://localhost:4000/v1",
+    )
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["base_url"] == "http://localhost:4000/v1"
+    assert provider["provider_mode"] == "litellm_proxy"
+
+
 def test_provider_automation_model_keeps_browser_computer_choice_separate() -> None:
     control = InMemoryProviderControl()
     control.set_active_model("litellm", "openai/gpt-4.1-mini")

@@ -226,6 +226,7 @@ def test_provider_options_allowlist_and_ignored_options_are_recorded():
                 "max_output_tokens": 64,
                 "top_p": 0.9,
                 "timeout": 30,
+                "parallel_tool_calls": False,
                 "api_key": "secret",
                 "unknown": True,
             }
@@ -236,6 +237,7 @@ def test_provider_options_allowlist_and_ignored_options_are_recorded():
     assert client.responses.calls[0]["max_output_tokens"] == 64
     assert client.responses.calls[0]["top_p"] == 0.9
     assert client.responses.calls[0]["timeout"] == 30
+    assert client.responses.calls[0]["parallel_tool_calls"] is False
     assert "api_key" not in client.responses.calls[0]
     assert "unknown" not in client.responses.calls[0]
     assert response.raw_metadata["ignored_provider_options"] == ["api_key", "unknown"]

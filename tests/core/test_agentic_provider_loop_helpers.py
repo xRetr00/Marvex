@@ -77,8 +77,8 @@ def test_resolve_agentic_max_steps_uses_planner_default(monkeypatch):
 
 
 def test_resolve_agentic_max_steps_env_override(monkeypatch):
-    monkeypatch.setenv(AGENTIC_MAX_STEPS_ENV, "4")
-    assert resolve_agentic_max_steps(2) == 4
+    monkeypatch.setenv(AGENTIC_MAX_STEPS_ENV, "12")
+    assert resolve_agentic_max_steps(2) == 12
     monkeypatch.setenv(AGENTIC_MAX_STEPS_ENV, "99")
     assert resolve_agentic_max_steps(2) == AGENTIC_LOOP_HARD_CEILING
     monkeypatch.setenv(AGENTIC_MAX_STEPS_ENV, "garbage")

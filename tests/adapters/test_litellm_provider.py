@@ -356,6 +356,7 @@ def test_provider_options_allowlist_filters_and_records_ignored(monkeypatch):
                 "max_tokens": 100,
                 "max_output_tokens": 120,
                 "timeout": 30,
+                "parallel_tool_calls": False,
                 "api_key": "secret",
                 "tools": [{"name": "forbidden"}],
                 "unknown": True,
@@ -366,6 +367,7 @@ def test_provider_options_allowlist_filters_and_records_ignored(monkeypatch):
     assert calls[0]["temperature"] == 0.2
     assert calls[0]["max_output_tokens"] == 120
     assert calls[0]["timeout"] == 30
+    assert calls[0]["parallel_tool_calls"] is False
     assert "max_tokens" not in calls[0]
     assert "api_key" not in calls[0]
     assert "tools" not in calls[0]

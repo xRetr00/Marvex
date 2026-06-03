@@ -7,6 +7,7 @@ without ever writing secrets.
 """
 
 from pathlib import Path
+import json
 
 import pytest
 
@@ -91,3 +92,29 @@ def test_persistence_preserves_model_list(tmp_path: Path) -> None:
         "openrouter/anthropic/claude-3.5-sonnet",
         "openrouter/openai/gpt-4o",
     ]
+
+
+def test_persistence_migrates_litellm_proxy_base_url_from_sdk_mode(tmp_path: Path) -> None:
+    state = tmp_path / "providers.json"
+    state.write_text(
+        json.dumps(
+            {
+                "active_provider_id": "litellm",
+                "providers": [
+                    {
+                        "provider_id": "litellm",
+                        "base_url": "http://localhost:4000/v1",
+                        "provider_mode": "litellm_sdk",
+                        "configured": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    control = InMemoryProviderControl(persistence_path=str(state))
+    row = next(item for item in control.provider_catalog()["providers"] if item["provider_id"] == "litellm")
+
+    assert row["base_url"] == "http://localhost:4000/v1"
+    assert row["provider_mode"] == "litellm_proxy"
