@@ -7,6 +7,7 @@ named report on the Desktop returned nothing because the reader was text-only.
 
 from __future__ import annotations
 
+import shutil
 from pathlib import Path
 from typing import ClassVar
 
@@ -19,7 +20,7 @@ from packages.capability_runtime import (
     ToolSideEffectLevel,
 )
 
-from ..files import FileCapabilityError, _bounded_int, _resolve
+from ..files import FileCapabilityError, _bounded_int, _relative_to, _resolve, _rg_file_matches
 from .base import Tool, succeeded_result
 
 
@@ -40,7 +41,7 @@ class ReadFileTool(Tool):
     ref_prefix: ClassVar[str] = "file."
 
     def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
-        root, target, relative = _resolve(request.arguments, require_file=True)
+        root, target, relative, resolution = _resolve_read_target(request.arguments)
         limit = _bounded_int(
             request.arguments.get("max_preview_chars"), default=1200, lower=1, upper=4000
         )
@@ -59,8 +60,55 @@ class ReadFileTool(Tool):
                 "preview": preview,
                 "truncated": len(text) > len(preview),
                 "byte_length": target.stat().st_size,
+                **resolution,
             },
         )
+
+
+def _resolve_read_target(arguments: dict[str, object]) -> tuple[Path, Path, str, dict[str, object]]:
+    try:
+        root, target, relative = _resolve(arguments, require_file=True)
+        return root, target, relative, {
+            "resolved_by_search": False,
+            "resolution_match_count": 0,
+            "resolution_candidates": [],
+        }
+    except FileCapabilityError as exc:
+        if exc.code != "file.not_found":
+            raise
+        missing = exc
+
+    root, _target, _relative = _resolve(arguments, default_path=".")
+    query = str(arguments.get("path") or "").strip()
+    if not query:
+        raise missing
+    path_value = query.replace("\\", "/")
+    parent_value = str(Path(path_value).parent)
+    file_query = Path(path_value).name or path_value
+    search_dir = root
+    if parent_value not in {"", "."}:
+        candidate_dir = (root / parent_value).resolve()
+        try:
+            candidate_dir.relative_to(root)
+        except ValueError as exc:
+            raise FileCapabilityError("file.sandbox_violation") from exc
+        if candidate_dir.is_dir():
+            search_dir = candidate_dir
+    matches = _rg_file_matches(root, search_dir, query=file_query, limit=5, rg=shutil.which("rg"))
+    for match in matches:
+        candidate_path = str(match.get("path") or "")
+        candidate = (root / candidate_path).resolve()
+        try:
+            candidate.relative_to(root)
+        except ValueError:
+            continue
+        if candidate.is_file():
+            return root, candidate, _relative_to(root, candidate), {
+                "resolved_by_search": True,
+                "resolution_match_count": len(matches),
+                "resolution_candidates": [str(item.get("path") or "") for item in matches[:5]],
+            }
+    raise missing
 
 
 def _read_pdf_text(target: Path) -> str:

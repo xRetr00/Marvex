@@ -137,6 +137,22 @@ def test_read_and_list_roundtrip(tmp_path: Path):
     assert "note.txt" in listing.safe_result["entries"]
 
 
+def test_read_bare_filename_resolves_by_filename_search_under_root(tmp_path: Path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    (desktop / "MAR.txt").write_text("Marvex local file evidence", encoding="utf-8")
+
+    read = ReadOnlyFileExecutor().execute(
+        _request("file.read", {"root": str(tmp_path), "path": "MAR.txt"})
+    )
+
+    assert read.status == "succeeded"
+    assert read.safe_result["path"] == "Desktop/MAR.txt"
+    assert read.safe_result["resolved_by_search"] is True
+    assert read.safe_result["resolution_match_count"] == 1
+    assert "Marvex local file evidence" in read.safe_result["preview"]
+
+
 def test_file_tools_registry_exposes_all_six_schemas():
     registry = file_tools_registry()
     ids = {s["function"]["name"] for s in registry.tool_schemas()}

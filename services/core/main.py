@@ -1302,6 +1302,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         require_tool_call: bool = False,
         required_tool_reason: str = "model_tool_call_required",
         allowed_tool_ids: set[str] | None = None,
+        fallback_without_tool_calls: bool = False,
     ) -> AssistantTurnResult | None:
         """Drive the model-tool-call loop. Returns None to fall back.
 
@@ -1560,6 +1561,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
         if require_grounded_validation:
             # Grounded/search routes must finish through the grounded path so
             # evidence refs are enforced and citation metadata is emitted.
+            return None
+        if (
+            loop_result.status == "final"
+            and not loop_result.executed_tool_ids
+            and (fallback_without_tool_calls or not (loop_result.text or "").strip())
+        ):
+            # A route that expects tool work should not be swallowed by a
+            # generic provider answer, and a blank final should not complete a
+            # normal chat turn. Let the caller use the next route-specific path.
             return None
         if require_tool_call and loop_result.status == "final" and not loop_result.executed_tool_ids:
             loop.step("finalize", stop_reason="blocked")
@@ -2066,6 +2076,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     session_projection=session_projection,
                     selection_projection=selection_projection,
                     desktop_context=desktop_context,
+                    fallback_without_tool_calls=True,
                 )
                 if agentic_result is not None:
                     return agentic_result
@@ -4253,17 +4264,12 @@ _COMBINED_TOOL_REGISTRY = None
 
 
 def _agentic_tools_enabled() -> bool:
-    """Whether the model-driven tool-calling loop is enabled (default ON).
+    """Whether the model-driven tool-calling loop is enabled.
 
-    Marvex ships with agentic tool-calling on by default - users should not
-    have to set an env var in production. MARVEX_AGENTIC_TOOLS can still be set
-    to 0/false/off as an escape hatch (e.g. for debugging the deterministic
-    router). See docs/TODO/02.
+    Marvex keeps this loop on. The env name is retained for compatibility with
+    existing diagnostics, but it no longer disables the assistant turn model.
     """
 
-    value = os.environ.get(_AGENTIC_TOOLS_ENV, "").strip().lower()
-    if value in {"0", "false", "off", "no"}:
-        return False
     return True
 
 
@@ -4271,17 +4277,10 @@ _LLM_INTENT_ENV = "MARVEX_LLM_INTENT"
 
 
 def _llm_intent_enabled() -> bool:
-    """Whether LLM-based intent classification is enabled (default ON).
-
-    Escape hatch: MARVEX_LLM_INTENT=0/false/off/no forces the deterministic
-    intent worker. Either way the LLM path falls back to deterministic on any
-    failure. See docs/TODO/03.
-    """
+    """Whether LLM-based intent classification is enabled (default OFF)."""
 
     value = os.environ.get(_LLM_INTENT_ENV, "").strip().lower()
-    if value in {"0", "false", "off", "no"}:
-        return False
-    return True
+    return value in {"1", "true", "yes", "on"}
 
 
 def _combined_tool_registry():
@@ -4307,7 +4306,7 @@ def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalReque
         schema_version=turn_input.schema_version,
         prompt_id=f"approval-prompt-{turn_input.turn_id}",
         capability_ref=capability_ref,
-        user_visible_summary="Approval required for a risky local action.",
+        user_visible_summary="Approval required for a local action.",
         risk_level=ToolRiskLevel.HIGH,
         side_effect_level=ToolSideEffectLevel.DESTRUCTIVE,
     )
