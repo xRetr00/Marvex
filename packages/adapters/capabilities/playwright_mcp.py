@@ -5,6 +5,7 @@ import importlib.util
 import os
 import re
 import shutil
+import sys
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -103,8 +104,17 @@ def execute_playwright_mcp_task(request: CapabilityExecutionRequest) -> Playwrig
             missing_dependencies=(config.command,),
         )
     try:
-        return asyncio.run(_run_playwright_mcp(config, tool_name=tool_name, tool_args=tool_args))
+        return _run_playwright_mcp_sync(config, tool_name=tool_name, tool_args=tool_args)
     except Exception as exc:  # pragma: no cover - local MCP failures vary by machine
+        # The concrete failure (e.g. a Windows spawn OSError) is otherwise lost,
+        # so write the traceback to stderr where the worker log captures it.
+        import traceback
+
+        print(
+            f"playwright_mcp execution failed: {exc!r}\n{traceback.format_exc()}",
+            file=sys.stderr,
+            flush=True,
+        )
         return PlaywrightMcpExecutionReport(
             status="failed",
             tool_name=tool_name,
@@ -151,6 +161,35 @@ def playwright_mcp_safe_result(
         },
         bool(records),
     )
+
+
+def _run_playwright_mcp_sync(
+    config: PlaywrightMcpServerConfig,
+    *,
+    tool_name: str,
+    tool_args: dict[str, Any],
+) -> PlaywrightMcpExecutionReport:
+    """Run the async MCP driver, forcing a subprocess-capable loop on Windows.
+
+    ``asyncio`` subprocess transports on Windows only work on the Proactor event
+    loop. If any imported library has switched the process default to the
+    Selector loop, ``asyncio.run`` spawns ``npx`` on a loop that can't create
+    subprocess pipes, which surfaces as an ``OSError``/``NotImplementedError``.
+    Drive the coroutine on an explicit Proactor loop to avoid that.
+    """
+
+    coro = _run_playwright_mcp(config, tool_name=tool_name, tool_args=tool_args)
+    if os.name == "nt":
+        loop = asyncio.ProactorEventLoop()
+        try:
+            asyncio.set_event_loop(loop)
+            return loop.run_until_complete(coro)
+        finally:
+            try:
+                loop.close()
+            finally:
+                asyncio.set_event_loop(None)
+    return asyncio.run(coro)
 
 
 async def _run_playwright_mcp(
