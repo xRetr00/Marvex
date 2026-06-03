@@ -36,7 +36,7 @@ type SendResult = { text: string; speechText: string };
 type VoiceCaptureTarget = "dictation" | "voice";
 type WorkerTranscript = { text: string; eventId: string };
 
-const LISTENING_CUES = ["Yes", "Here"] as const;
+const LISTENING_CUES = ["Yes", "I'm Here"] as const;
 const NOISE_TRANSCRIPTS = new Set(["ah", "eh", "er", "huh", "hm", "hmm", "mm", "oh", "uh", "um", "umm"]);
 
 function randomListeningCue(): string {
