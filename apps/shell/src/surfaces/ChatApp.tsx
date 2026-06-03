@@ -105,6 +105,7 @@ export function ChatApp() {
   const voiceCaptureTargetRef = useRef<VoiceCaptureTarget | null>(null);
   const manualVoiceCuePlayedRef = useRef(false);
   const voiceSessionGenerationRef = useRef(0);
+  const ignoreNextVoiceTranscriptRef = useRef(false);
   const requestVoiceListenRef = useRef<(withCue?: boolean, generation?: number) => void>(() => undefined);
 
   const activateBackendSession = useCallback((session: BackendSession) => {
@@ -300,6 +301,7 @@ export function ChatApp() {
 
   const stopManualVoiceSession = useCallback(() => {
     voiceSessionGenerationRef.current += 1;
+    ignoreNextVoiceTranscriptRef.current = true;
     voiceSessionActiveRef.current = false;
     voiceListenPendingRef.current = false;
     manualVoiceCuePlayedRef.current = false;
@@ -350,6 +352,10 @@ export function ChatApp() {
       }
       return true;
     }
+    if (ignoreNextVoiceTranscriptRef.current) {
+      ignoreNextVoiceTranscriptRef.current = false;
+      return false;
+    }
     if (rejectReason) return false;
     await handleVoiceTranscript(transcript.text);
     return true;
@@ -366,11 +372,21 @@ export function ChatApp() {
       manualVoiceCuePlayedRef.current = true;
       setVoiceSessionCue(cue);
       await speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
-      if (!stillCurrent()) return;
+      if (!stillCurrent()) {
+        voiceListenPendingRef.current = false;
+        if (voiceCaptureTargetRef.current === "voice") voiceCaptureTargetRef.current = null;
+        setVoiceSessionListening(false);
+        return;
+      }
     }
     try {
       const status = await listenVoiceWorker();
-      if (!stillCurrent()) return;
+      if (!stillCurrent()) {
+        voiceListenPendingRef.current = false;
+        if (voiceCaptureTargetRef.current === "voice") voiceCaptureTargetRef.current = null;
+        setVoiceSessionListening(false);
+        return;
+      }
       const transcript = transcriptFromStatus(status);
       if (transcript) {
         await consumeVoiceTranscript(transcript);

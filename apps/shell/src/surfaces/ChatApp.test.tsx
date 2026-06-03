@@ -356,7 +356,7 @@ describe("ChatApp module boundary", () => {
     await waitFor(() => expect(listenVoiceWorker).toHaveBeenCalled());
     expect(speakVoiceWorker).toHaveBeenCalledTimes(1);
     const cueText = (speakVoiceWorker.mock.calls[0] as unknown[])[0];
-    expect(["Yes", "Here"]).toContain(cueText);
+    expect(["Yes", "I'm Here"]).toContain(cueText);
     expect(screen.getByRole("button", { name: "Stop voice mode" })).toBeInTheDocument();
   });
 
@@ -428,6 +428,8 @@ describe("ChatApp module boundary", () => {
 
     expect(screen.getByRole("button", { name: "Start voice mode" })).toBeInTheDocument();
     expect(speakVoiceWorker).toHaveBeenCalledTimes(1);
+    const shell = await import("@/lib/shellCommands");
+    expect(shell.submitChatTurnStream).not.toHaveBeenCalled();
   });
 
   it("rejects filler transcripts from manual voice mode without submitting a turn", async () => {
