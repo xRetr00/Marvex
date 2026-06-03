@@ -157,6 +157,43 @@ def test_unsafe_sanitized_error_codes_are_redacted(code):
     assert sanitized == {"sanitized_error_code": REDACTED}
 
 
+@pytest.mark.parametrize(
+    "code",
+    [
+        "JSONDecodeError",
+        "TimeoutError",
+        "ConnectionError",
+        "playwright_mcp_execution_failed:OSError",
+        "browser_computer_use_tool_required.provider_tool_call_failed",
+        "needs_approval",
+    ],
+)
+def test_diagnostic_reason_codes_are_preserved(code):
+    sanitized = sanitize_trace_data(
+        {
+            "reason_code": code,
+            "automation_reason_code": code,
+            "tool_result_reason_code": code,
+        }
+    )
+
+    assert sanitized == {
+        "reason_code": code,
+        "automation_reason_code": code,
+        "tool_result_reason_code": code,
+    }
+
+
+@pytest.mark.parametrize(
+    "code",
+    ["leaked secret token", "api_key=abc123", '{"raw":"x"}', "bearer xyz"],
+)
+def test_unsafe_reason_codes_are_still_redacted(code):
+    sanitized = sanitize_trace_data({"reason_code": code})
+
+    assert sanitized == {"reason_code": REDACTED}
+
+
 def test_usage_aggregate_values_are_preserved_when_safe():
     data = {"usage": {"input_count": 10, "output_count": 7, "total_count": 17}}
 

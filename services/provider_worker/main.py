@@ -28,11 +28,57 @@ def run_jsonl() -> int:
     for line in sys.stdin:
         if not line.strip():
             continue
+        if _is_stream_command(line):
+            for frame in handle_stream_command(controller, line):
+                print(json.dumps(frame, sort_keys=True), flush=True)
+            continue
         result = handle_jsonl_command(controller, line)
         print(json.dumps(result.model_dump(mode="json"), sort_keys=True), flush=True)
         if result.command == "stop" and result.ok:
             break
     return 0
+
+
+def _is_stream_command(line: str) -> bool:
+    try:
+        payload = json.loads(line)
+    except Exception:
+        return False
+    return isinstance(payload, dict) and payload.get("command") == "stream"
+
+
+def handle_stream_command(controller: ProviderWorkerController, line: str):
+    """Yield JSONL frames for a streaming turn, each echoing trace_id+command.
+
+    The frames produced by the controller ({type:delta|final|error}) are wrapped
+    with the request's trace_id so the core IPC client can match them and the
+    multi-frame reader can route them to the in-flight stream request.
+    """
+
+    try:
+        payload = json.loads(line)
+        if not isinstance(payload, dict):
+            raise ValueError("command must be a JSON object")
+        trace_id = _trace_id(payload)
+        request = ProviderRequest.model_validate(payload.get("request"))
+        frames = controller.stream(
+            provider_name=_provider_name(payload),
+            request=request,
+            base_url=_optional_string(payload.get("base_url")),
+            provider_mode=_optional_string(payload.get("provider_mode")),
+            timeout_seconds=_optional_float(payload.get("timeout_seconds")),
+            lmstudio_responses_api_key=_optional_string(payload.get("lmstudio_responses_api_key")),
+            litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+        )
+        for frame in frames:
+            yield {"command": "stream", "trace_id": trace_id, **frame}
+    except Exception:
+        yield {
+            "command": "stream",
+            "trace_id": "trace-provider-worker-validation",
+            "type": "error",
+            "message": "ProviderWorker stream command failed.",
+        }
 
 
 def handle_jsonl_command(

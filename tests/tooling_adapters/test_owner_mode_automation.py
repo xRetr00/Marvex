@@ -213,6 +213,82 @@ def test_playwright_mcp_unsafe_code_tool_requires_extra_approval(monkeypatch) ->
     assert report.reason_code == "playwright_mcp_unsafe_code_requires_approval"
 
 
+def test_playwright_mcp_windows_routes_npx_through_cmd(monkeypatch) -> None:
+    monkeypatch.setattr(playwright_mcp.os, "name", "nt")
+    monkeypatch.setattr(playwright_mcp.shutil, "which", lambda name: r"C:\\Program Files\\nodejs\\npx.cmd")
+    config = PlaywrightMcpServerConfig.builtin()
+
+    command, args = playwright_mcp._resolve_stdio_command(config)
+
+    assert command == "cmd"
+    assert args[:2] == ["/c", "npx"]
+    assert args[2:] == list(config.args)
+
+
+def test_playwright_mcp_posix_leaves_command_unchanged(monkeypatch) -> None:
+    monkeypatch.setattr(playwright_mcp.os, "name", "posix")
+    config = PlaywrightMcpServerConfig.builtin()
+
+    command, args = playwright_mcp._resolve_stdio_command(config)
+
+    assert command == "npx"
+    assert args == list(config.args)
+
+
+def test_playwright_mcp_missing_npx_reports_dependency_unavailable(monkeypatch) -> None:
+    from packages.capability_runtime import (
+        CapabilityCallProposal,
+        CapabilityExecutionMode,
+        CapabilityExecutionRequest,
+        CapabilityKind,
+        CapabilityPermissionDecision,
+        CapabilityRef,
+        HumanApprovalRequirement,
+    )
+
+    monkeypatch.setattr(playwright_mcp.importlib.util, "find_spec", lambda name: object())
+    monkeypatch.setattr(playwright_mcp.shutil, "which", lambda name: None)
+
+    capability_ref = CapabilityRef(kind=CapabilityKind.TOOL, identifier="playwright_mcp.task")
+    request = CapabilityExecutionRequest(
+        schema_version="1",
+        request_id="request-playwright-npx",
+        trace_id="trace-playwright-npx",
+        turn_id="turn-playwright-npx",
+        proposal=CapabilityCallProposal(
+            schema_version="1",
+            proposal_id="proposal-playwright-npx",
+            trace_id="trace-playwright-npx",
+            turn_id="turn-playwright-npx",
+            capability_ref=capability_ref,
+            proposed_action="playwright_mcp_task",
+            risk_level="high",
+            arguments_schema={"type": "object"},
+        ),
+        permission_decision=CapabilityPermissionDecision(
+            schema_version="1",
+            decision_id="decision-playwright-npx",
+            capability_ref=capability_ref,
+            decision="approved",
+            reason_code="owner_mode",
+            human_approval=HumanApprovalRequirement(
+                required=False,
+                reason_code="owner_mode",
+                prompt_user_visible=False,
+            ),
+        ),
+        arguments={"live_execution_enabled": True, "url": "https://www.youtube.com"},
+        execution_mode=CapabilityExecutionMode.APPROVED_EXECUTE,
+    )
+
+    report = execute_playwright_mcp_task(request)
+
+    assert report.status == "denied"
+    assert report.reason_code == "playwright_mcp_dependency_unavailable"
+    assert report.install_dep_id == "node"
+    assert report.missing_dependencies == ("npx",)
+
+
 def test_computer_use_missing_dependency_safe_result_points_to_runtime_install() -> None:
     report = computer_use.ComputerUseExecutionReport(
         status="denied",

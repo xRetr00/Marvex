@@ -97,6 +97,40 @@ def test_stream_send_maps_client_failure_to_stream_error():
     assert isinstance(events[0], StreamError)
 
 
+def _completed_with_tool_call(response_id: str, call_id: str, name: str, args: str) -> object:
+    return SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            id=response_id,
+            output_text="",
+            output=[
+                SimpleNamespace(
+                    type="function_call",
+                    name=name,
+                    arguments=args,
+                    call_id=call_id,
+                )
+            ],
+        ),
+    )
+
+
+def test_stream_send_captures_tool_calls_on_completed():
+    provider, _ = _provider(
+        [
+            _delta("<think>navigate</think>"),
+            _completed_with_tool_call("resp-tool", "call-1", "builtin.playwright_browser", '{"url":"https://x"}'),
+        ]
+    )
+    events = list(provider.stream_send(_request()))
+    completed = events[-1]
+    assert isinstance(completed, StreamCompleted)
+    assert completed.tool_calls is not None
+    assert completed.tool_calls[0]["function"]["name"] == "builtin.playwright_browser"
+    assert completed.tool_calls[0]["function"]["arguments"] == '{"url":"https://x"}'
+    assert completed.tool_calls[0]["id"] == "call-1"
+
+
 def test_send_remains_non_streaming_and_unchanged():
     # The non-streaming path must not set stream=True.
     captured: dict[str, object] = {}

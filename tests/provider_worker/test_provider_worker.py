@@ -38,6 +38,62 @@ def run_worker_jsonl(commands: list[dict[str, object]]) -> list[dict[str, object
     return [json.loads(line) for line in completed.stdout.splitlines()]
 
 
+def test_stream_command_emits_delta_frames_then_final_with_tool_calls():
+    from packages.contracts.streaming_models import StreamCompleted, StreamTextDelta
+    from services.provider_worker.controller import ProviderWorkerController
+    from services.provider_worker.main import handle_stream_command
+
+    class _FakeStreamingProvider:
+        def stream_send(self, request):
+            yield StreamTextDelta("<think>go</think>")
+            yield StreamTextDelta("Done")
+            yield StreamCompleted(
+                response_id="resp-stream",
+                finish_reason="stop",
+                output_text="<think>go</think>Done",
+                tool_calls=[{"id": "c1", "type": "function", "function": {"name": "builtin.calculator", "arguments": "{}"}}],
+            )
+
+    controller = ProviderWorkerController(provider_factory=lambda _config: _FakeStreamingProvider())
+    command = {
+        "command": "stream",
+        "trace_id": "trace-stream-cmd",
+        "provider_name": "lmstudio_responses",
+        "request": make_request(trace_id="trace-stream-cmd").model_dump(mode="json"),
+    }
+
+    frames = list(handle_stream_command(controller, json.dumps(command)))
+
+    assert all(frame["command"] == "stream" for frame in frames)
+    assert all(frame["trace_id"] == "trace-stream-cmd" for frame in frames)
+    deltas = [frame["text"] for frame in frames if frame["type"] == "delta"]
+    assert deltas == ["<think>go</think>", "Done"]
+    final = frames[-1]
+    assert final["type"] == "final"
+    assert final["response"]["output_text"] == "<think>go</think>Done"
+    assert final["response"]["response_id"] == "resp-stream"
+    assert final["response"]["tool_calls"][0]["function"]["name"] == "builtin.calculator"
+
+
+def test_stream_command_provider_without_streaming_yields_error():
+    from services.provider_worker.controller import ProviderWorkerController
+    from services.provider_worker.main import handle_stream_command
+
+    controller = ProviderWorkerController(provider_factory=lambda _config: object())
+    command = {
+        "command": "stream",
+        "trace_id": "trace-stream-nostream",
+        "provider_name": "fake",
+        "request": make_request(trace_id="trace-stream-nostream").model_dump(mode="json"),
+    }
+
+    frames = list(handle_stream_command(controller, json.dumps(command)))
+
+    assert len(frames) == 1
+    assert frames[0]["type"] == "error"
+    assert frames[0]["trace_id"] == "trace-stream-nostream"
+
+
 def test_provider_worker_is_no_longer_readme_only():
     entries = {path.name for path in (ROOT / "services" / "provider_worker").iterdir()}
 

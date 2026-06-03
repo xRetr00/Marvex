@@ -198,6 +198,95 @@ class ProviderWorkerController:
             selection=decision_projection,
         )
 
+    def stream(
+        self,
+        *,
+        provider_name: str,
+        request: ProviderRequest,
+        base_url: str | None = None,
+        provider_mode: str | None = None,
+        timeout_seconds: float | None = None,
+        lmstudio_responses_api_key: str | None = None,
+        litellm_api_key: str | None = None,
+    ):
+        """Drive a provider stream, yielding frame dicts for the JSONL transport.
+
+        Yields ``{"type":"delta","text":...}`` per token, then a terminal
+        ``{"type":"final","response":<ProviderResponse json>}`` (carrying the
+        authoritative text + any tool calls) or ``{"type":"error","message":...}``.
+        Best-effort: any failure yields an error frame so the caller falls back
+        to the non-streaming ``send`` path.
+        """
+
+        from packages.contracts.streaming_models import (
+            StreamCompleted,
+            StreamError,
+            StreamTextDelta,
+        )
+
+        try:
+            provider = self.provider_factory(
+                _provider_runtime_config(
+                    provider_name=provider_name,
+                    base_url=base_url,
+                    provider_mode=provider_mode,
+                    timeout_seconds=timeout_seconds,
+                    lmstudio_responses_api_key=lmstudio_responses_api_key,
+                    litellm_api_key=litellm_api_key,
+                )
+            )
+            stream_send = getattr(provider, "stream_send", None)
+            if stream_send is None:
+                yield {"type": "error", "message": "Provider does not support streaming."}
+                return
+            accumulated: list[str] = []
+            for event in stream_send(request):
+                if isinstance(event, StreamTextDelta):
+                    if event.text:
+                        accumulated.append(event.text)
+                        yield {"type": "delta", "text": event.text}
+                elif isinstance(event, StreamCompleted):
+                    joined = "".join(accumulated)
+                    text = event.output_text if len(event.output_text) >= len(joined) else joined
+                    response = self._safe_response(
+                        ProviderResponse(
+                            schema_version=request.schema_version,
+                            trace_id=request.trace_id,
+                            turn_id=request.turn_id,
+                            provider_name=provider_name,
+                            response_id=event.response_id,
+                            output_text=text,
+                            finish_reason=_stream_finish_reason(event.finish_reason),
+                            usage={},
+                            raw_metadata={},
+                            error=None,
+                            tool_calls=event.tool_calls,
+                        )
+                    )
+                    yield {"type": "final", "response": response.model_dump(mode="json")}
+                    return
+                elif isinstance(event, StreamError):
+                    yield {"type": "error", "message": "Provider stream failed."}
+                    return
+            # Stream ended without a terminal event: treat accumulated as final.
+            response = self._safe_response(
+                ProviderResponse(
+                    schema_version=request.schema_version,
+                    trace_id=request.trace_id,
+                    turn_id=request.turn_id,
+                    provider_name=provider_name,
+                    response_id=None,
+                    output_text="".join(accumulated),
+                    finish_reason=FinishReason.STOP,
+                    usage={},
+                    raw_metadata={},
+                    error=None,
+                )
+            )
+            yield {"type": "final", "response": response.model_dump(mode="json")}
+        except Exception:
+            yield {"type": "error", "message": "Provider stream failed."}
+
     def _selected_provider_ids(
         self,
         *,
@@ -469,6 +558,18 @@ class ProviderWorkerController:
                 details={"reason": reason},
             ),
         )
+
+
+def _stream_finish_reason(value: str | None) -> FinishReason:
+    mapping = {
+        "stop": FinishReason.STOP,
+        "completed": FinishReason.STOP,
+        "length": FinishReason.LENGTH,
+        "incomplete": FinishReason.LENGTH,
+        "error": FinishReason.ERROR,
+        "failed": FinishReason.ERROR,
+    }
+    return mapping.get(str(value or "stop"), FinishReason.STOP)
 
 
 def _provider_runtime_config(

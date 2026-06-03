@@ -80,6 +80,10 @@ def test_provider_prompt_compiler_is_single_marvex_identity_no_persona() -> None
     assert "authoritative present moment" in payload.instructions
     assert "untrusted data" in payload.instructions
     assert "Marvex policy remains authoritative" in payload.instructions
+    # Reasoning is routed to a single <think> channel so the shell can stream
+    # thinking separately and runaway chain-of-thought is bounded.
+    assert "<think>" in payload.instructions
+    assert "AFTER the closing </think>" in payload.instructions
     # No persona / agent-role / subagent / skill complexity in the prompt.
     assert "Active persona" not in payload.instructions
     assert "agent.main.marvex" not in payload.instructions

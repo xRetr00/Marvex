@@ -7,6 +7,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import queue
 import re
 import subprocess
 import sys
@@ -229,6 +230,115 @@ class _CoreTurnExecutorRequest:
     provider_options: dict[str, object]
 
 
+# Idle/stall timeouts for the worker IPC boundary. These are *activity* windows
+# (reset whenever the worker emits a line), not a wall-clock cap on the whole
+# request, so a slow-but-progressing local model is never cut off. They scale
+# per model because cold local CPU inference can take a long time to first token.
+_CONTROL_IDLE_TIMEOUT_SECONDS = 10.0
+_DEFAULT_MODEL_IDLE_TIMEOUT_SECONDS = 120.0
+_MIN_MODEL_IDLE_TIMEOUT_SECONDS = 30.0
+_READER_EOF = object()
+
+_MODEL_SIZE_PATTERN = re.compile(r"(\d+(?:\.\d+)?)\s*b\b", re.IGNORECASE)
+
+
+# Per-thread "live token sink": when set (only by the streaming turn handler on
+# its worker thread), the assistant provider's ``send`` streams its text live to
+# this callback instead of blocking. Thread-local so non-streaming callers and
+# the intent classifier are completely unaffected.
+_LIVE_STREAM = threading.local()
+
+
+def _active_live_token_sink() -> Callable[[str], None] | None:
+    return getattr(_LIVE_STREAM, "on_delta", None)
+
+
+def _set_live_token_sink(on_delta: Callable[[str], None] | None) -> None:
+    _LIVE_STREAM.on_delta = on_delta
+
+
+def _active_live_event_sink() -> Callable[[dict[str, object]], None] | None:
+    return getattr(_LIVE_STREAM, "on_event", None)
+
+
+def _set_live_event_sink(on_event: Callable[[dict[str, object]], None] | None) -> None:
+    _LIVE_STREAM.on_event = on_event
+
+
+def _emit_live_tool_events(tool_calls: list[dict[str, object]] | None, *, phase: str) -> None:
+    """Push live ``{type:"tool"}`` frames for the chain-of-thought UI, if streaming."""
+
+    sink = _active_live_event_sink()
+    if sink is None or not tool_calls:
+        return
+    for call in tool_calls:
+        if not isinstance(call, dict):
+            continue
+        function = call.get("function") if isinstance(call.get("function"), dict) else {}
+        name = function.get("name") if isinstance(function, dict) else None
+        arguments = function.get("arguments") if isinstance(function, dict) else None
+        try:
+            sink(
+                {
+                    "type": "tool",
+                    "phase": phase,
+                    "id": str(call.get("id") or name or ""),
+                    "name": str(name or ""),
+                    "arguments": arguments if isinstance(arguments, str) else "",
+                }
+            )
+        except Exception:
+            # A failing UI sink must never abort the turn.
+            pass
+
+
+def _command_model(command: dict[str, object]) -> str | None:
+    request = command.get("request")
+    if isinstance(request, dict):
+        model = request.get("model")
+        if isinstance(model, str) and model.strip():
+            return model
+    model = command.get("model")
+    return model if isinstance(model, str) and model.strip() else None
+
+
+def _model_param_billions(model: str | None) -> float | None:
+    if not model:
+        return None
+    matches = _MODEL_SIZE_PATTERN.findall(model.replace("_", "-"))
+    if not matches:
+        return None
+    try:
+        # Use the largest plausible size token in the name (e.g. "e2b" -> 2).
+        return max(float(value) for value in matches)
+    except ValueError:
+        return None
+
+
+def _model_aware_idle_timeout(*, configured: float | None, model: str | None) -> float:
+    """Idle/stall window for a model turn, scaled by model size.
+
+    An explicit ``configured`` timeout (CLI ``--timeout``) always wins. Otherwise
+    pick a generous default so slow local generation is never killed for being
+    slow; only a genuine stall (no output at all within the window) trips it.
+    """
+
+    if configured is not None and configured > 0:
+        return configured
+    base = _DEFAULT_MODEL_IDLE_TIMEOUT_SECONDS
+    size = _model_param_billions(model)
+    if size is not None:
+        if size >= 30:
+            base = 360.0
+        elif size >= 13:
+            base = 300.0
+        elif size >= 7:
+            base = 240.0
+        else:
+            base = 120.0
+    return max(_MIN_MODEL_IDLE_TIMEOUT_SECONDS, base)
+
+
 class _JsonlWorkerProcessClient:
     def __init__(
         self,
@@ -248,14 +358,52 @@ class _JsonlWorkerProcessClient:
         self._process_factory = process_factory or subprocess.Popen
         self._process: Any | None = None
         self._lock = threading.Lock()
+        self._reader_thread: threading.Thread | None = None
+        self._reader_queue: queue.Queue[Any] = queue.Queue()
 
     def request(self, command: dict[str, object], *, timeout_seconds: float | None = None) -> dict[str, object]:
         with self._lock:
             self._ensure_started_locked()
-            return self._send_locked(
-                command,
-                timeout_seconds=self._effective_timeout(timeout_seconds),
+            idle_timeout = _model_aware_idle_timeout(
+                configured=timeout_seconds if timeout_seconds is not None else self._timeout_seconds,
+                model=_command_model(command),
             )
+            return self._send_locked(command, idle_timeout=idle_timeout)
+
+    def stream(
+        self,
+        command: dict[str, object],
+        *,
+        on_frame: Callable[[dict[str, object]], None],
+        timeout_seconds: float | None = None,
+    ) -> None:
+        """Drive a multi-frame streaming command, invoking ``on_frame`` per frame.
+
+        Consumes matching-trace_id frames from the reader queue (idle-reset, never
+        kills the worker) until a terminal ``final``/``error`` frame. Reuses the
+        same trace_id matching as ``request`` so stale frames are discarded.
+        """
+
+        with self._lock:
+            self._ensure_started_locked()
+            idle_timeout = _model_aware_idle_timeout(
+                configured=timeout_seconds if timeout_seconds is not None else self._timeout_seconds,
+                model=_command_model(command),
+            )
+            process = self._process
+            if process is None or process.poll() is not None:
+                raise ConnectionError(f"{self._module} process unavailable.")
+            if process.stdin is None:
+                raise ConnectionError(f"{self._module} process pipes unavailable.")
+            process.stdin.write(json.dumps(command) + "\n")
+            process.stdin.flush()
+            trace = command.get("trace_id")
+            trace_id = trace if isinstance(trace, str) else None
+            while True:
+                frame = self._await_response_locked(trace_id, idle_timeout=idle_timeout)
+                on_frame(frame)
+                if frame.get("type") in {"final", "error"}:
+                    return
 
     def shutdown(self) -> None:
         with self._lock:
@@ -266,7 +414,7 @@ class _JsonlWorkerProcessClient:
             try:
                 self._send_locked(
                     {"command": "stop", "trace_id": self._stop_trace_id},
-                    timeout_seconds=5,
+                    idle_timeout=_CONTROL_IDLE_TIMEOUT_SECONDS,
                 )
                 process.wait(timeout=5)
             except Exception:
@@ -286,54 +434,81 @@ class _JsonlWorkerProcessClient:
             shell=False,
             text=True,
         )
+        self._start_reader_locked()
         started = self._send_locked(
             {"command": "start", "trace_id": self._start_trace_id},
-            timeout_seconds=5,
+            idle_timeout=_CONTROL_IDLE_TIMEOUT_SECONDS,
         )
         if started.get("ok") is False:
             self._kill_locked()
             raise ConnectionError(f"{self._module} failed to start.")
 
-    def _send_locked(self, command: dict[str, object], *, timeout_seconds: float) -> dict[str, object]:
+    def _start_reader_locked(self) -> None:
+        process = self._process
+        if process is None or process.stdout is None:
+            return
+        # Fresh queue per process so stale frames from a dead worker never leak
+        # into the next one.
+        self._reader_queue = queue.Queue()
+        stdout = process.stdout
+        out_queue = self._reader_queue
+
+        def _reader_loop() -> None:
+            try:
+                for line in iter(stdout.readline, ""):
+                    stripped = line.strip()
+                    if not stripped:
+                        continue
+                    try:
+                        payload = json.loads(stripped)
+                    except Exception:
+                        continue
+                    if isinstance(payload, dict):
+                        out_queue.put(payload)
+            except Exception:
+                pass
+            finally:
+                out_queue.put(_READER_EOF)
+
+        self._reader_thread = threading.Thread(target=_reader_loop, daemon=True)
+        self._reader_thread.start()
+
+    def _send_locked(self, command: dict[str, object], *, idle_timeout: float) -> dict[str, object]:
         process = self._process
         if process is None or process.poll() is not None:
             raise ConnectionError(f"{self._module} process unavailable.")
-        if process.stdin is None or process.stdout is None:
+        if process.stdin is None:
             raise ConnectionError(f"{self._module} process pipes unavailable.")
         process.stdin.write(json.dumps(command) + "\n")
         process.stdin.flush()
-        line = self._readline_with_timeout(process.stdout, timeout_seconds=timeout_seconds)
-        if not line.strip():
-            raise ConnectionError(f"{self._module} returned no response.")
-        payload = json.loads(line)
-        if not isinstance(payload, dict):
-            raise RuntimeError(f"{self._module} response was invalid.")
-        return payload
+        trace_id = command.get("trace_id")
+        return self._await_response_locked(
+            trace_id if isinstance(trace_id, str) else None,
+            idle_timeout=idle_timeout,
+        )
 
-    def _readline_with_timeout(self, stdout: Any, *, timeout_seconds: float) -> str:
-        completed = threading.Event()
-        result: list[str] = []
-        errors: list[BaseException] = []
-
-        def read_line() -> None:
+    def _await_response_locked(self, trace_id: str | None, *, idle_timeout: float) -> dict[str, object]:
+        # Wait for the response that matches this request's trace_id. The idle
+        # window resets on every received frame (activity), so the worker is
+        # never killed for being slow -- only a true stall (no frame at all
+        # within the window) raises. Frames from an earlier timed-out request
+        # (different trace_id) are discarded so the worker stays reusable.
+        while True:
             try:
-                result.append(stdout.readline())
-            except BaseException as exc:
-                errors.append(exc)
-            finally:
-                completed.set()
-
-        thread = threading.Thread(target=read_line, daemon=True)
-        thread.start()
-        if not completed.wait(timeout=max(0.1, timeout_seconds)):
-            self._kill_locked()
-            raise TimeoutError(f"{self._module} response timed out.")
-        if errors:
-            raise RuntimeError(f"{self._module} response read failed.") from errors[0]
-        return result[0] if result else ""
-
-    def _effective_timeout(self, timeout_seconds: float | None) -> float:
-        return (timeout_seconds if timeout_seconds is not None else self._timeout_seconds or 15) + 5
+                payload = self._reader_queue.get(timeout=max(0.1, idle_timeout))
+            except queue.Empty as exc:
+                raise TimeoutError(f"{self._module} response timed out.") from exc
+            if payload is _READER_EOF:
+                raise ConnectionError(f"{self._module} process closed.")
+            payload_trace = payload.get("trace_id")
+            if (
+                trace_id is None
+                or not isinstance(payload_trace, str)
+                or payload_trace == trace_id
+            ):
+                return payload
+            # Stale frame from a prior request: discard and keep waiting with a
+            # fresh idle window.
 
     def _kill_locked(self) -> None:
         process = self._process
@@ -431,26 +606,39 @@ class _ProviderWorkerProcessProvider:
             python_executable=python_executable,
         )
 
-    def send(self, request: ProviderRequest) -> ProviderResponse:
-        send_command: dict[str, object] = {
-            "command": "send",
+    def _base_command(self, request: ProviderRequest, *, command: str) -> dict[str, object]:
+        out: dict[str, object] = {
+            "command": command,
             "trace_id": request.trace_id,
             "provider_name": self._provider_name,
             "request": request.model_dump(mode="json"),
         }
         if self._base_url is not None:
-            send_command["base_url"] = self._base_url
+            out["base_url"] = self._base_url
         if self._provider_mode is not None:
-            send_command["provider_mode"] = self._provider_mode
+            out["provider_mode"] = self._provider_mode
         if self._timeout_seconds is not None:
-            send_command["timeout_seconds"] = self._timeout_seconds
+            out["timeout_seconds"] = self._timeout_seconds
         if self._provider_secret:
             if self._provider_name == "lmstudio_responses":
-                send_command["lmstudio_responses_api_key"] = self._provider_secret
+                out["lmstudio_responses_api_key"] = self._provider_secret
             elif self._provider_name == "litellm":
-                send_command["litellm_api_key"] = self._provider_secret
+                out["litellm_api_key"] = self._provider_secret
+        return out
+
+    def send(self, request: ProviderRequest) -> ProviderResponse:
+        # When a live token sink is active (streaming turn), stream the answer
+        # token-by-token through the worker and forward each delta to the sink,
+        # then return the assembled response (with any tool calls) so the agentic
+        # loop is unchanged. Any streaming failure falls back to non-streaming.
+        sink = _active_live_token_sink()
+        if sink is not None:
+            try:
+                return self.stream_send(request, on_delta=sink)
+            except Exception:
+                pass
         payload = self._worker_client.request(
-            send_command,
+            self._base_command(request, command="send"),
             timeout_seconds=self._timeout_seconds,
         )
         if isinstance(payload, dict) and payload.get("response") is not None:
@@ -470,6 +658,44 @@ class _ProviderWorkerProcessProvider:
                 error=error,
             )
         raise RuntimeError("ProviderWorker response was invalid.")
+
+    def stream_send(
+        self,
+        request: ProviderRequest,
+        *,
+        on_delta: Callable[[str], None],
+    ) -> ProviderResponse:
+        """Stream the turn through the worker, forwarding deltas to ``on_delta``.
+
+        Returns the assembled ``ProviderResponse`` from the terminal ``final``
+        frame (output_text + tool_calls). Raises on a missing/``error`` terminal
+        so the caller can fall back to the non-streaming ``send`` path.
+        """
+
+        final: dict[str, object] = {}
+        error: dict[str, object] = {}
+
+        def _on_frame(frame: dict[str, object]) -> None:
+            kind = frame.get("type")
+            if kind == "delta":
+                text = frame.get("text")
+                if isinstance(text, str) and text:
+                    on_delta(text)
+            elif kind == "final":
+                response = frame.get("response")
+                if isinstance(response, dict):
+                    final["response"] = response
+            elif kind == "error":
+                error["message"] = frame.get("message")
+
+        self._worker_client.stream(
+            self._base_command(request, command="stream"),
+            on_frame=_on_frame,
+            timeout_seconds=self._timeout_seconds,
+        )
+        if final.get("response") is not None:
+            return ProviderResponse.model_validate(final["response"])
+        raise RuntimeError(str(error.get("message") or "ProviderWorker stream produced no final frame."))
 
     def map_raw_output_to_structured_result(
         self,
@@ -993,7 +1219,15 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 previous_response_id=None,
                 provider_options={},
             )
-            response = self._provider.send(request)
+            # Intent classification is an internal JSON call, never user-facing,
+            # so it must not stream its tokens into the chat bubble. Suppress the
+            # live token sink just for this call, then restore it.
+            saved_sink = _active_live_token_sink()
+            _set_live_token_sink(None)
+            try:
+                response = self._provider.send(request)
+            finally:
+                _set_live_token_sink(saved_sink)
             if getattr(response, "error", None) is not None:
                 raise RuntimeError("intent provider error")
             return response.output_text or ""
@@ -1109,6 +1343,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             if response.tool_calls:
                 loop.step("tool")
                 self._publish(AssistantStatusKind.USING_TOOLS, detail="agentic_tool", trace_id=turn_input.trace_id)
+                _emit_live_tool_events(response.tool_calls, phase="start")
                 _emit_core_event(
                     self._trace_reader,
                     turn_input,
@@ -4700,39 +4935,97 @@ def _stream_text_chunks(text: str, *, max_chars: int = 24) -> list[str]:
     return chunks
 
 
-def _stream_turn_events(service: Any, request: Any):
-    """Streaming turn handler (docs/TODO/06).
+_STREAM_ERROR_MESSAGES = {
+    "provider_timeout": (
+        "The model took too long to respond and the request timed out. "
+        "If you're running a local model, it may just be slow — please try again."
+    ),
+    "provider_unavailable": (
+        "Couldn't reach the model backend. Make sure your local model server "
+        "(e.g. LM Studio) is running, then try again."
+    ),
+    "handler_failure": "The turn failed before a response could be generated. Please try again.",
+}
 
-    Runs the full turn through the unchanged ``submit_turn`` pipeline (so tools,
-    approval, clarification, refs, and persistence behave identically), then
-    streams the reconciled final assistant text as incremental ``delta`` events
-    followed by a single terminal ``final`` event carrying the full
-    ``AssistantTurnResult``. This preserves the request/response contract while
-    giving the shell incremental render and the voice path sentence-by-sentence
-    speech. Provider-level token streaming (``stream_send``) is available on the
-    adapters for a future low-latency path.
+
+def _stream_turn_events(service: Any, request: Any):
+    """Streaming turn handler (docs/TODO/06) — genuine token-by-token streaming.
+
+    Runs the unchanged ``submit_turn`` pipeline on a background thread (so tools,
+    approval, clarification, refs, and persistence behave identically) while two
+    per-thread live sinks push events into a queue as they happen:
+    ``delta`` (assistant/answer tokens, including ``<think>`` reasoning) and
+    ``tool`` (chain-of-thought tool steps). This generator drains the queue and
+    yields each event live, then a terminal ``final`` carrying the full
+    ``AssistantTurnResult``. If the provider can't stream, no ``delta`` is emitted
+    live and the reconciled final text is chunk-streamed as a fallback so the
+    bubble still fills — no turn is ever broken by streaming.
     """
 
-    try:
-        result = _apply_ui_directives(
-            service.submit_turn(
-                request.assistant_turn_input,
-                previous_response_id=request.previous_response_id,
-                resume_approval_id=request.resume_approval_id,
-                approval_decision=request.approval_decision,
+    event_queue: queue.Queue[Any] = queue.Queue()
+    done = object()
+    holder: dict[str, Any] = {}
+
+    def _run_turn() -> None:
+        _set_live_token_sink(lambda text: event_queue.put({"type": "delta", "text": text}))
+        _set_live_event_sink(lambda frame: event_queue.put(frame))
+        try:
+            holder["result"] = _apply_ui_directives(
+                service.submit_turn(
+                    request.assistant_turn_input,
+                    previous_response_id=request.previous_response_id,
+                    resume_approval_id=request.resume_approval_id,
+                    approval_decision=request.approval_decision,
+                )
             )
-        )
-    except Exception:
-        yield {"type": "error", "message": "Streaming turn failed.", "reason": "handler_failure"}
+        except TimeoutError:
+            holder["error"] = "provider_timeout"
+        except ConnectionError:
+            holder["error"] = "provider_unavailable"
+        except Exception:
+            holder["error"] = "handler_failure"
+        finally:
+            _set_live_token_sink(None)
+            _set_live_event_sink(None)
+            event_queue.put(done)
+
+    thread = threading.Thread(target=_run_turn, daemon=True)
+    thread.start()
+
+    streamed_any_delta = False
+    while True:
+        frame = event_queue.get()
+        if frame is done:
+            break
+        if isinstance(frame, dict) and frame.get("type") == "delta":
+            streamed_any_delta = True
+        yield frame
+    thread.join(timeout=1.0)
+
+    if "error" in holder:
+        reason = holder["error"]
+        yield {"type": "error", "message": _STREAM_ERROR_MESSAGES[reason], "reason": reason}
         return
+    result = holder.get("result")
+    if result is None:
+        yield {
+            "type": "error",
+            "message": _STREAM_ERROR_MESSAGES["handler_failure"],
+            "reason": "handler_failure",
+        }
+        return
+
     final = result.assistant_final_response
     text = (
         final.text
         if (final is not None and final.response_type == AssistantResponseType.TEXT and final.text)
         else ""
     )
-    for chunk in _stream_text_chunks(text):
-        yield {"type": "delta", "text": chunk}
+    # Fallback only when genuine streaming did not happen (non-streaming provider
+    # or a streaming failure that fell back to a blocking send).
+    if not streamed_any_delta and text:
+        for chunk in _stream_text_chunks(text):
+            yield {"type": "delta", "text": chunk}
     yield {"type": "final", "result": result.model_dump(mode="json")}
 
 
