@@ -4,6 +4,7 @@ import asyncio
 import importlib.util
 import os
 import re
+import shutil
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -87,6 +88,20 @@ def execute_playwright_mcp_task(request: CapabilityExecutionRequest) -> Playwrig
             install_dep_id="mcp",
             missing_dependencies=("mcp",),
         )
+    # Preflight the launcher binary (npx/uvx). The MCP stdio client spawns it
+    # without a shell, so a missing Node/npx surfaces as a raw OSError mid-run.
+    # Detect it up front and report a clean, actionable dependency error.
+    if shutil.which(config.command) is None:
+        return PlaywrightMcpExecutionReport(
+            status="denied",
+            tool_name=tool_name,
+            browser=config.browser,
+            extension_mode=config.extension_mode,
+            cdp_endpoint_present=bool(config.cdp_endpoint),
+            reason_code="playwright_mcp_dependency_unavailable",
+            install_dep_id="node" if config.command in {"npx", "node"} else config.command,
+            missing_dependencies=(config.command,),
+        )
     try:
         return asyncio.run(_run_playwright_mcp(config, tool_name=tool_name, tool_args=tool_args))
     except Exception as exc:  # pragma: no cover - local MCP failures vary by machine
@@ -148,7 +163,8 @@ async def _run_playwright_mcp(
     from mcp import ClientSession, StdioServerParameters
     from mcp.client.stdio import stdio_client
 
-    server = StdioServerParameters(command=config.command, args=list(config.args))
+    command, args = _resolve_stdio_command(config)
+    server = StdioServerParameters(command=command, args=args)
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
@@ -175,6 +191,23 @@ async def _run_playwright_mcp(
                 reason_code="playwright_mcp_tool_error" if result.isError else None,
                 artifact_payloads={"tool_result": _safe_tool_result(result)},
             )
+
+
+def _resolve_stdio_command(config: PlaywrightMcpServerConfig) -> tuple[str, list[str]]:
+    """Resolve the stdio launch command for the current platform.
+
+    On Windows, ``npx`` (and ``uvx``) are ``.cmd`` shims that the shell-less MCP
+    stdio client cannot exec directly -- doing so raises ``OSError``/``WinError
+    193``. Route those through ``cmd /c`` so the shim is interpreted correctly.
+    """
+
+    command = config.command
+    args = list(config.args)
+    if os.name == "nt":
+        resolved = shutil.which(command)
+        if resolved is None or resolved.lower().endswith((".cmd", ".bat")):
+            return "cmd", ["/c", command, *args]
+    return command, args
 
 
 def _config_from_arguments(arguments: dict[str, object]) -> PlaywrightMcpServerConfig:
