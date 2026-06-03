@@ -78,6 +78,7 @@ from packages.contracts import (
     OutputChannelIntent,
     ProviderRequest,
     ProviderResponse,
+    ProviderTurnRef,
     StageStatus,
     StageSummary,
     ToolResultRef,
@@ -1553,6 +1554,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     turn_input,
                 ),
                 stage_name="clarification",
+                provider_response_id=loop_result.response_id,
+                provider_name=self._provider_name,
             )
         if require_grounded_validation:
             # Grounded/search routes must finish through the grounded path so
@@ -1619,6 +1622,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             desktop_context=desktop_context,
             cognition=cognition,
             executed_tool_ids=loop_result.executed_tool_ids,
+            provider_response_id=loop_result.response_id,
         )
 
     def _finalize_agentic_turn(
@@ -1634,6 +1638,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         desktop_context: dict[str, object] | None,
         cognition: CognitionTurnAssembly,
         executed_tool_ids: list[str],
+        provider_response_id: str | None = None,
     ) -> AssistantTurnResult:
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         learning_projection = _run_learning_hook(
@@ -1687,6 +1692,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             text=text,
             metadata=metadata,
             stage_name="agentic_tool_loop",
+            provider_response_id=provider_response_id,
+            provider_name=self._provider_name,
         )
 
     def _agentic_tool_registry(self, *, allowed_tool_ids: set[str] | None = None):
@@ -3240,7 +3247,26 @@ def _entrypoint_text_result(
     metadata: dict[str, object],
     stage_name: str,
     tool_result_refs: list[ToolResultRef] | None = None,
+    provider_response_id: str | None = None,
+    provider_name: str = "lmstudio_responses",
 ) -> AssistantTurnResult:
+    # Surface the provider's response id as a chainable ProviderTurnRef so the
+    # shell can pass it back as previous_response_id on the next turn. Without
+    # this the agentic/clarification/approval paths returned no refs and every
+    # follow-up turn was sent to the model with no conversation context.
+    provider_turn_refs: list[ProviderTurnRef] = []
+    chainable_id = (provider_response_id or "").strip()
+    if chainable_id:
+        provider_turn_refs.append(
+            ProviderTurnRef(
+                ref_type="provider_turn",
+                ref_id=chainable_id,
+                stage_name=stage_name or "agentic_tool_loop",
+                provider_name=provider_name or "lmstudio_responses",
+                status=StageStatus.COMPLETED,
+                trace_id=turn_input.trace_id,
+            )
+        )
     return AssistantTurnResult(
         schema_version=turn_input.schema_version,
         trace_id=turn_input.trace_id,
@@ -3263,7 +3289,7 @@ def _entrypoint_text_result(
             _stage_summary(stage_name, StageStatus.COMPLETED),
             _stage_summary("final_response_assembly", StageStatus.COMPLETED),
         ],
-        provider_turn_refs=[],
+        provider_turn_refs=provider_turn_refs,
         tool_result_refs=list(tool_result_refs or []),
         memory_result_refs=[],
         session_result_ref=None,

@@ -374,7 +374,7 @@ def run_tool_loop(
         if step.response_id:
             prev = step.response_id
         if not step.tool_calls:
-            return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed)
+            return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed, response_id=prev)
         outcome = execute_tool_calls(
             step.tool_calls, registry=registry, request_builder=request_builder
         )
@@ -409,7 +409,7 @@ def run_tool_loop(
         tool_messages = outcome.all_messages
         input_text = ""  # continuation: provider uses tool_messages
 
-    return LoopResult(status="max_steps", text=last_text, steps=steps, executed_tool_ids=executed)
+    return LoopResult(status="max_steps", text=last_text, steps=steps, executed_tool_ids=executed, response_id=prev)
 
 
 __all__ = [

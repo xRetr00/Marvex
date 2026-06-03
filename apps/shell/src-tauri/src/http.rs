@@ -24,6 +24,18 @@ fn client(timeout: Duration) -> Result<reqwest::Client, String> {
         .map_err(|err| format!("http client init failed: {err}"))
 }
 
+/// Client for SSE streaming turns. Uses no overall request timeout: a reasoning
+/// model can stream for minutes, and a whole-request deadline would abort a
+/// healthy stream mid-flight (surfacing as "error decoding response body").
+/// Liveness is handled at the call site via the cancel channel; the connect
+/// timeout still guards a dead server.
+fn streaming_client() -> Result<reqwest::Client, String> {
+    reqwest::Client::builder()
+        .connect_timeout(Duration::from_secs(5))
+        .build()
+        .map_err(|err| format!("http client init failed: {err}"))
+}
+
 pub struct LoopbackHttpClient {
     host: String,
     port: u16,
@@ -132,13 +144,20 @@ pub async fn open_post_stream(
     path: &str,
     token: Option<&str>,
     body: &Value,
-    timeout: Duration,
+    _timeout: Duration,
 ) -> Result<reqwest::Response, String> {
-    let local = LoopbackHttpClient::new(host, port, timeout)?;
-    let mut req = local
-        .client
-        .post(local.url(path)?)
+    if !loopback_ok(host) {
+        return Err("loopback host required".to_string());
+    }
+    let client = streaming_client()?;
+    let url = reqwest::Url::parse(&format!("http://{host}:{port}{path}"))
+        .map_err(|err| format!("invalid local URL: {err}"))?;
+    let mut req = client
+        .post(url)
         .header("Accept", "text/event-stream")
+        // Read the SSE bytes verbatim; auto-decompression of a chunked stream
+        // can fail to decode at a flush boundary.
+        .header("Accept-Encoding", "identity")
         .json(body);
     if let Some(token) = token {
         req = req.bearer_auth(token);

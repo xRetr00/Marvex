@@ -296,7 +296,20 @@ async fn submit_chat_turn_stream(
     let mut final_result: Option<Value> = None;
     loop {
         let chunk = tokio::select! {
-            result = response.chunk() => result.map_err(|err| format!("stream read failed: {err}"))?,
+            result = response.chunk() => match result {
+                Ok(chunk) => chunk,
+                Err(err) => {
+                    // An unclean EOF (the loopback server closing the socket right
+                    // after the terminal frame) surfaces as a body-decode error.
+                    // If we already captured the `final` result, that's a complete
+                    // turn — don't discard it. Only a mid-stream failure with no
+                    // result is a real error.
+                    if final_result.is_some() {
+                        break;
+                    }
+                    return Err(format!("stream read failed: {err}"));
+                }
+            },
             _ = &mut cancel_rx => {
                 clear_active_chat_cancel(&state);
                 let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
