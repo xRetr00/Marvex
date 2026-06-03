@@ -214,6 +214,9 @@ class BrowserUseExecutionReport(BrowserUseModel):
     reason_code: str | None = None
     install_dep_id: str | None = None
     missing_dependencies: tuple[str, ...] = ()
+    llm_adapter: str | None = None
+    use_vision: bool = False
+    cdp_endpoint_present: bool = False
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
 
     def final_url_host(self) -> str | None:
@@ -308,6 +311,9 @@ def browser_use_safe_result(
             "reason_code": report.reason_code,
             "install_dep_id": report.install_dep_id,
             "missing_dependencies": report.missing_dependencies,
+            "llm_adapter": report.llm_adapter,
+            "use_vision": report.use_vision,
+            "cdp_endpoint_present": report.cdp_endpoint_present,
             "approval_required": True,
             "approved_execution": request.approval_decision is not None,
             "raw_browser_payload_persisted": bool(records),
@@ -325,7 +331,6 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
     import asyncio
 
     from browser_use import Agent, Browser
-    from browser_use.llm.openai.like import ChatOpenAILike
 
     profile = str(request.arguments.get("chrome_profile") or request.arguments.get("profile_directory") or "Default")
     # Drive the user's REAL Chrome (their profile + logins) by attaching over the
@@ -349,11 +354,13 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
         profile_mode = "system_chrome_cdp_reused" if chrome.get("reused") else "system_chrome_cdp_launched"
     # keep_alive: never close the user's own browser when the task finishes.
     browser = Browser(cdp_url=str(cdp_url), keep_alive=True)
-    llm = ChatOpenAILike(
+    llm_class = _browser_use_openai_llm_class()
+    llm = llm_class(
         model=str(request.arguments.get("provider_model") or os.environ.get("MARVEX_AUTOMATION_MODEL") or "local-model"),
         base_url=request.arguments.get("provider_base_url") or os.environ.get("MARVEX_AUTOMATION_BASE_URL"),
         api_key=str(request.arguments.get("provider_api_key") or os.environ.get("MARVEX_AUTOMATION_API_KEY") or "marvex-local"),
     )
+    use_vision = _browser_use_vision_enabled(request.arguments)
     step_payloads: list[dict[str, Any]] = []
 
     def record_step(state: Any, output: Any, step: int) -> None:
@@ -370,7 +377,7 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
         llm=llm,
         browser=browser,
         register_new_step_callback=record_step,
-        use_vision=request.arguments.get("use_vision", True),
+        use_vision=use_vision,
         max_actions_per_step=int(request.arguments.get("max_actions_per_step") or 5),
         generate_gif=False,
         save_conversation_path=None,
@@ -381,6 +388,9 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
         history,
         profile_mode=profile_mode,
         profile_directory=profile,
+        llm_adapter=llm_class.__name__,
+        use_vision=use_vision,
+        cdp_endpoint_present=True,
         step_payloads=step_payloads,
     )
 
@@ -390,6 +400,9 @@ def _report_from_history(
     *,
     profile_mode: str,
     profile_directory: str,
+    llm_adapter: str | None = None,
+    use_vision: bool = False,
+    cdp_endpoint_present: bool = False,
     step_payloads: list[dict[str, Any]] | None = None,
 ) -> BrowserUseExecutionReport:
     items = list(getattr(history, "history", []) or [])
@@ -406,8 +419,29 @@ def _report_from_history(
         action_count=len(items),
         final_url=str(final_url) if final_url else None,
         final_title=str(final_title) if final_title else None,
+        llm_adapter=llm_adapter,
+        use_vision=use_vision,
+        cdp_endpoint_present=cdp_endpoint_present,
         artifact_payloads=payloads,
     )
+
+
+def _browser_use_openai_llm_class() -> type[Any]:
+    try:
+        from browser_use import ChatOpenAI
+
+        return ChatOpenAI
+    except (ImportError, AttributeError):
+        from browser_use.llm.openai.like import ChatOpenAILike
+
+        return ChatOpenAILike
+
+
+def _browser_use_vision_enabled(arguments: dict[str, object]) -> bool:
+    explicit = arguments.get("use_vision")
+    if isinstance(explicit, bool):
+        return explicit
+    return arguments.get("provider_model_supports_vision") is True
 
 
 def _history_payload(history: Any) -> object:

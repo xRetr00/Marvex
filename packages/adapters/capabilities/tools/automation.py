@@ -67,7 +67,7 @@ class ComputerUseTool(Tool):
     name: ClassVar[str] = "Control the desktop"
     description: ClassVar[str] = (
         "Perform a Windows desktop action (inspect screen, click, type, open an app). Requires human "
-        "approval; destructive actions (delete/shutdown/registry/PowerShell) need an extra approval."
+        "approval outside Auto Marvex; destructive actions may need an extra approval in gated modes."
     )
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.HIGH
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.DESKTOP_ACTION

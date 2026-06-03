@@ -5,7 +5,7 @@ import json
 from services.tool_worker.controller import ToolWorkerController
 
 
-def test_browser_use_task_requires_approval_before_execution() -> None:
+def test_auto_marvex_browser_use_task_does_not_require_approval_before_execution() -> None:
     result = ToolWorkerController().execute(
         trace_id="trace-browser",
         turn_id="turn-browser",
@@ -16,10 +16,8 @@ def test_browser_use_task_requires_approval_before_execution() -> None:
         arguments={"task": "open example.com"},
     )
 
-    assert result.ok is False
-    assert result.blocked is True
     assert result.result is not None
-    assert result.result.status == "requires_human_approval"
+    assert result.result.status != "requires_human_approval"
     assert result.result.raw_input_persisted is False
     assert result.result.raw_output_persisted is False
 
@@ -230,7 +228,7 @@ def test_approved_playwright_mcp_task_uses_builtin_backend(monkeypatch, tmp_path
     assert result.result.raw_output_persisted is True
 
 
-def test_destructive_computer_actions_still_require_explicit_action_approval() -> None:
+def test_ask_before_risky_destructive_computer_actions_still_require_explicit_action_approval() -> None:
     result = ToolWorkerController().execute(
         trace_id="trace-computer-destroy",
         turn_id="turn-computer-destroy",
@@ -238,6 +236,7 @@ def test_destructive_computer_actions_still_require_explicit_action_approval() -
         action="shutdown this computer",
         capability="computer_actions",
         resource_type="desktop",
+        autonomy_mode="ask_before_risky",
         arguments={
             "action_kind": "shutdown",
             "approval_request_id": "approval-turn-computer-destroy",
@@ -251,3 +250,39 @@ def test_destructive_computer_actions_still_require_explicit_action_approval() -
     assert result.result.status == "requires_human_approval"
     assert result.error is not None
     assert result.error.code == "destructive_action_approval_required"
+
+
+def test_auto_marvex_yolo_does_not_second_gate_destructive_computer_actions(monkeypatch) -> None:
+    import services.tool_worker.controller as controller
+
+    def fake_windows_backend(request):
+        from packages.adapters.capabilities.computer_use import ComputerUseExecutionReport
+
+        return ComputerUseExecutionReport(
+            status="succeeded",
+            backend="windows-mcp",
+            tool_name="Shutdown",
+            action_count=1,
+        )
+
+    monkeypatch.setattr(controller, "execute_windows_computer_action", fake_windows_backend)
+
+    result = ToolWorkerController().execute(
+        trace_id="trace-computer-destroy-yolo",
+        turn_id="turn-computer-destroy-yolo",
+        capability_id="computer_use.action",
+        action="shutdown this computer",
+        capability="computer_actions",
+        resource_type="desktop",
+        autonomy_mode="auto_marvex",
+        arguments={
+            "action_kind": "shutdown",
+            "approval_request_id": "approval-turn-computer-destroy-yolo",
+            "approval_decision": "approve",
+        },
+    )
+
+    assert result.ok is True
+    assert result.blocked is False
+    assert result.result is not None
+    assert result.result.status == "succeeded"

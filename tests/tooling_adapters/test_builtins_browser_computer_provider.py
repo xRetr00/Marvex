@@ -340,6 +340,8 @@ def test_openai_computer_use_seam_requires_approval_and_treats_screen_as_untrust
     assert action.requires_approval is True
     assert action.harness_config.screen_content_untrusted is True
     assert action.to_capability_proposal().side_effect_level is ToolSideEffectLevel.DESKTOP_ACTION
+    assert config.safe_projection()["responses_api_tool_type"] == "computer"
+    assert config.safe_projection()["legacy_responses_api_tool_type"] == "computer_use_preview"
 
     result = ComputerUseResultEnvelope.from_proposal(
         action,

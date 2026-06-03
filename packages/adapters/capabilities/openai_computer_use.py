@@ -14,7 +14,8 @@ class OpenAIComputerUseModel(BaseModel):
 class OpenAIComputerUseHarnessConfig(OpenAIComputerUseModel):
     schema_version: str = Field(..., min_length=1)
     adapter_id: str = Field(..., min_length=1)
-    responses_api_tool_type: Literal["computer_use_preview"] = "computer_use_preview"
+    responses_api_tool_type: Literal["computer", "computer_use_preview"] = "computer"
+    legacy_responses_api_tool_type: Literal["computer_use_preview"] = "computer_use_preview"
     isolated_environment_required: Literal[True] = True
     screen_content_untrusted: Literal[True] = True
     openai_policy_transferred: Literal[False] = False
@@ -27,6 +28,7 @@ class OpenAIComputerUseHarnessConfig(OpenAIComputerUseModel):
         return {
             "adapter_id": self.adapter_id,
             "responses_api_tool_type": self.responses_api_tool_type,
+            "legacy_responses_api_tool_type": self.legacy_responses_api_tool_type,
             "isolated_environment_required": True,
             "screen_content_untrusted": True,
             "openai_policy_transferred": False,
