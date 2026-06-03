@@ -8,7 +8,8 @@ versa. Plain frozen dataclasses - no provider/fastapi imports.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass(frozen=True)
@@ -20,11 +21,17 @@ class StreamTextDelta:
 
 @dataclass(frozen=True)
 class StreamCompleted:
-    """Terminal event. ``output_text`` is the provider's authoritative full text."""
+    """Terminal event. ``output_text`` is the provider's authoritative full text.
+
+    ``tool_calls`` carries any model-authored function calls captured from the
+    completed response, in the same engine shape ``send`` returns, so streaming
+    is a drop-in for the non-streaming path in the agentic tool loop.
+    """
 
     response_id: str | None
     finish_reason: str
     output_text: str
+    tool_calls: list[dict[str, Any]] | None = field(default=None)
 
 
 @dataclass(frozen=True)

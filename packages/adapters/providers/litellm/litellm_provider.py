@@ -193,11 +193,11 @@ class LiteLLMProvider:
         response_id: str | None = None
         finish_reason = "stop"
         final_text_parts: list[str] = []
+        completed_response: object | None = None
         try:
             for event in stream:
-                chunk_id = self._read_attr(event, "id") or self._read_attr(
-                    self._read_attr(event, "response"), "id"
-                )
+                response_obj = self._read_attr(event, "response")
+                chunk_id = self._read_attr(event, "id") or self._read_attr(response_obj, "id")
                 if isinstance(chunk_id, str) and chunk_id:
                     response_id = chunk_id
                 content = self._read_attr(event, "delta") or self._read_attr(event, "text")
@@ -209,16 +209,24 @@ class LiteLLMProvider:
                     finish_reason = "length"
                 elif event_type == "response.failed":
                     finish_reason = "error"
+                # Capture the authoritative completed response so streaming can
+                # surface model-authored tool calls (drop-in for ``send``).
+                if response_obj is not None and (
+                    event_type is None or str(event_type).endswith("completed")
+                ):
+                    completed_response = response_obj
         except Exception as exc:
             yield StreamError(self._safe_exception_message(exc))
             return
 
         output_text = "".join(final_text_parts)
+        tool_calls = self._read_tool_calls(completed_response) if completed_response is not None else []
         self._record_turn(response_id, request, output_text)
         yield StreamCompleted(
             response_id=response_id,
             finish_reason=finish_reason,
             output_text=output_text,
+            tool_calls=tool_calls or None,
         )
 
     def _safe_exception_message(self, exc: Exception) -> str:

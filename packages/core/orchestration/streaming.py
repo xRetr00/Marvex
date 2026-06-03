@@ -21,7 +21,7 @@ opt-in, so the existing request/response path is unchanged.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Callable, Iterable, Protocol
+from typing import Any, Callable, Iterable, Protocol
 
 # Event types live in packages.contracts so provider adapters and this driver
 # share them without crossing the adapter<->core boundary.
@@ -47,6 +47,7 @@ class StreamedTurn:
     delta_count: int = 0
     error_message: str = ""
     deltas: list[str] = field(default_factory=list)
+    tool_calls: list[dict[str, Any]] | None = None
 
 
 # on_delta(text_chunk) -> None. Called for each text delta as it arrives.
@@ -96,6 +97,7 @@ def run_streaming_turn(
                 finish_reason=finish_reason,
                 delta_count=len(accumulated),
                 deltas=list(accumulated),
+                tool_calls=event.tool_calls,
             )
         elif isinstance(event, StreamError):
             return StreamedTurn(

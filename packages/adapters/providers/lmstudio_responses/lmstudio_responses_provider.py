@@ -157,10 +157,12 @@ class LMStudioResponsesProvider:
                     response_obj = getattr(event, "response", None)
                     response_id = self._read_optional_string(response_obj, "id") if response_obj is not None else response_id
                     authoritative = self._read_output_text(response_obj) if response_obj is not None else ""
+                    tool_calls = self._read_tool_calls(response_obj) if response_obj is not None else []
                     yield StreamCompleted(
                         response_id=response_id,
                         finish_reason="stop",
                         output_text=authoritative or "".join(final_text_parts),
+                        tool_calls=tool_calls or None,
                     )
                     return
                 elif event_type.endswith("failed") or event_type.endswith("error"):
