@@ -8,7 +8,7 @@ from packages.assistant_runtime.input_normalization import build_text_input_even
 from packages.capability_runtime import AutonomyMode, AutonomyPolicy
 from packages.contracts import ErrorCode, ErrorEnvelope, FinishReason, ProviderRequest, ProviderResponse
 from packages.telemetry import InMemoryTraceReader
-from services.core.main import _CoreServiceProviderWorkerTurnExecutor
+from services.core.main import _CoreServiceProviderWorkerTurnExecutor, _required_tool_call_repair_prompt
 
 
 class _RiskyIntentClassifier:
@@ -25,6 +25,27 @@ class _RiskyIntentClassifier:
                 },
                 "confidence_bucket": "high",
                 "risk_signal": "risky_action_requested",
+                "clarification_needed": "not_needed",
+                "route_reason_code": "test.fixed",
+                "raw_input_persisted": False,
+            },
+        }
+
+
+class _BrowserIntentClassifier:
+    def classify(self, turn_input: Any) -> dict[str, Any]:
+        return {
+            "backend_name": "test.fixed",
+            "classification": {
+                "schema_version": turn_input.schema_version,
+                "trace_id": turn_input.trace_id,
+                "turn_id": turn_input.turn_id,
+                "selected_intent": {
+                    "intent_id": "intent.browser_computer_use",
+                    "intent_kind": "browser_computer_use",
+                },
+                "confidence_bucket": "high",
+                "risk_signal": "none",
                 "clarification_needed": "not_needed",
                 "route_reason_code": "test.fixed",
                 "raw_input_persisted": False,
@@ -101,6 +122,26 @@ class _ProviderErrorThenFileWrite:
                     },
                 }
             ],
+        )
+
+
+class _RecordingPlainProvider:
+    def __init__(self) -> None:
+        self.requests: list[ProviderRequest] = []
+
+    def send(self, request: ProviderRequest) -> ProviderResponse:
+        self.requests.append(request)
+        return ProviderResponse(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            provider_name="fake",
+            response_id="resp-plain",
+            output_text="plain provider response",
+            finish_reason=FinishReason.STOP,
+            usage={},
+            raw_metadata={},
+            error=None,
         )
 
 
@@ -211,3 +252,43 @@ def test_auto_marvex_auto_approves_model_file_write_and_executes(tmp_path: Path)
     assert result.metadata["auto_approval"]["enabled"] is True
     assert result.metadata["approval"]["decision"] == "approved"
     assert "approval-turn-auto-marvex-file-write" not in executor._pending_automation
+
+
+def test_browser_intent_tool_catalog_prefers_browser_use_not_playwright_mcp(tmp_path: Path) -> None:
+    provider = _RecordingPlainProvider()
+    executor = _CoreServiceProviderWorkerTurnExecutor(
+        provider_name="fake",
+        model="fake-model",
+        trace_reader=InMemoryTraceReader(),
+        file_capability_root=str(tmp_path),
+    )
+    executor._provider = provider
+    executor._intent_classifier = _BrowserIntentClassifier()
+
+    executor.submit_turn(
+        _turn_input(
+            "Open YouTube",
+            trace_id="trace-browser-tool-catalog",
+            turn_id="turn-browser-tool-catalog",
+        )
+    )
+
+    tool_names = {
+        str(tool.get("function", {}).get("name") if isinstance(tool.get("function"), dict) else "")
+        for request in provider.requests
+        for tool in request.tools
+        if isinstance(tool, dict)
+    }
+    assert "builtin.browser_use" in tool_names
+    assert "builtin.playwright_browser" not in tool_names
+
+
+def test_browser_tool_repair_prompt_does_not_nudge_playwright_mcp() -> None:
+    prompt = _required_tool_call_repair_prompt(
+        original_user_input="Open YouTube",
+        required_tool_reason="browser_computer_use_tool_required",
+    )
+
+    assert "browser_use" in prompt
+    assert "computer_use" in prompt
+    assert "playwright_browser" not in prompt

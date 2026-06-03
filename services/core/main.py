@@ -1789,6 +1789,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 if not file_root:
                     return None
                 merged.setdefault("root", file_root)
+                merged.setdefault("natural_query", turn_input.user_visible_input or "")
             ref_kind = CapabilityKind.MCP_TOOL if tool_id.startswith("mcp.") else CapabilityKind.TOOL
             ref = CapabilityRef(kind=ref_kind, identifier=tool_id)
             proposal = CapabilityCallProposal(
@@ -2153,7 +2154,6 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 allowed_tool_ids={
                     "builtin.clarify",
                     "builtin.browser_use",
-                    "builtin.playwright_browser",
                     "builtin.computer_use",
                 },
             )
@@ -4183,7 +4183,7 @@ def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool
         )
     elif required_tool_reason == "browser_computer_use_tool_required":
         tool_hint = (
-            "Call browser_use, playwright_browser, or computer_use with valid JSON arguments. "
+            "Call browser_use or computer_use with valid JSON arguments. "
             "Do not answer in prose instead of calling a tool."
         )
     else:

@@ -45,6 +45,17 @@ def _builder(root: str | None = None):
     return build
 
 
+def _builder_with_query(root: str, natural_query: str):
+    def build(tool_id: str, arguments: dict) -> CapabilityExecutionRequest:
+        args = dict(arguments)
+        if tool_id.startswith("file."):
+            args.setdefault("root", root)
+            args.setdefault("natural_query", natural_query)
+        return _builder()(tool_id, args)
+
+    return build
+
+
 def _fc(name: str, arguments: str, call_id: str = "c1") -> dict:
     return {"id": call_id, "type": "function", "function": {"name": name, "arguments": arguments}}
 
@@ -118,6 +129,47 @@ def test_max_steps_exhausted_when_model_keeps_calling_tools():
     assert result.executed_tool_ids == ["builtin.time_date", "builtin.time_date", "builtin.time_date"]
 
 
+def test_long_dependent_tool_chain_can_continue_past_six_steps(tmp_path: Path):
+    (tmp_path / "Desktop").mkdir()
+    (tmp_path / "Desktop" / "MAR.txt").write_text("chain evidence", encoding="utf-8")
+    steps = [
+        ProviderStep(output_text="", tool_calls=[_fc("file.rg", '{"path": ".", "query": "MAR"}', "c1")], response_id="r1", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.read", '{"path": "Desktop/MAR.txt"}', "c2")], response_id="r2", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.list", '{"path": "Desktop"}', "c3")], response_id="r3", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("builtin.time_date", "{}", "c4")], response_id="r4", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.rg", '{"path": ".", "query": "chain"}', "c5")], response_id="r5", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.read", '{"path": "Desktop/MAR.txt"}', "c6")], response_id="r6", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.list", '{"path": "."}', "c7")], response_id="r7", error=False),
+        ProviderStep(output_text="Completed the dependent chain.", tool_calls=[], response_id="r8", error=False),
+    ]
+    seen_previous_ids = []
+
+    def send(input_text, tool_messages, prev):
+        seen_previous_ids.append(prev)
+        return steps.pop(0)
+
+    result = run_tool_loop(
+        send=send,
+        registry=_combined_registry(),
+        request_builder=_builder(root=str(tmp_path)),
+        max_steps=12,
+        initial_input="rg then read then list then continue",
+    )
+
+    assert result.status == "final"
+    assert result.steps == 8
+    assert result.executed_tool_ids == [
+        "file.rg",
+        "file.read",
+        "file.list",
+        "builtin.time_date",
+        "file.rg",
+        "file.read",
+        "file.list",
+    ]
+    assert seen_previous_ids[1:] == ["r1", "r2", "r3", "r4", "r5", "r6", "r7"]
+
+
 def test_web_search_through_loop_answers_latest_question():
     """Item 05 end-to-end: a 'latest model by Anthropic' style question -> the
     model calls web.search, gets fresh results, then answers with them, instead
@@ -161,6 +213,72 @@ def test_web_search_through_loop_answers_latest_question():
     assert "4.6" in result.text
 
 
+def test_web_search_then_file_write_requires_source_in_written_content(tmp_path: Path):
+    from packages.adapters.capabilities.tools import WebSearchTool
+    from packages.web_search_runtime import (
+        WebSearchEvidenceRef,
+        WebSearchGroundingBundle,
+        WebSearchResult,
+    )
+
+    class _FakeWeb:
+        provider_name = "fake"
+
+        def search(self, query):
+            result = WebSearchResult(
+                title="OpenAI API models",
+                url="https://developers.openai.com/api/docs/models/gpt-5.5",
+                domain="developers.openai.com",
+                snippet="GPT-5.5 is OpenAI's newest frontier model.",
+            )
+            evidence = WebSearchEvidenceRef(
+                evidence_id="web.evidence.1",
+                source_url="https://developers.openai.com/api/docs/models/gpt-5.5",
+                domain="developers.openai.com",
+                title="GPT-5.5 Model",
+                snippet="newest frontier model",
+            )
+            return WebSearchGroundingBundle(query=query, provider="fake", results=(result,), evidence_refs=(evidence,))
+
+    registry = ToolRegistry((*default_registry().tools(), *file_tools_registry().tools(), WebSearchTool(provider=_FakeWeb())))
+    steps = [
+        ProviderStep(output_text="", tool_calls=[_fc("web.search", '{"query": "latest OpenAI model"}', "c-search")], response_id="r1", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("file.write", '{"path": "latest.md", "content": "The latest OpenAI model is GPT-5.5."}', "c-write-bad")], response_id="r2", error=False),
+        ProviderStep(
+            output_text="",
+            tool_calls=[
+                _fc(
+                    "file.write",
+                    '{"path": "latest.md", "content": "The latest OpenAI model is GPT-5.5. Source: https://developers.openai.com/api/docs/models/gpt-5.5"}',
+                    "c-write-good",
+                )
+            ],
+            response_id="r3",
+            error=False,
+        ),
+    ]
+    seen_tool_messages = []
+
+    def send(input_text, tool_messages, prev):
+        if tool_messages:
+            seen_tool_messages.append(tool_messages)
+        return steps.pop(0)
+
+    result = run_tool_loop(
+        send=send,
+        registry=registry,
+        request_builder=_builder(root=str(tmp_path)),
+        max_steps=5,
+        initial_input="search web for the latest OpenAI model and write the result to a file",
+    )
+
+    assert result.status == "needs_approval"
+    assert result.needs_approval_tool_ids == ["file.write"]
+    assert result.pending_tool is not None
+    assert result.pending_tool["arguments"]["content"].endswith("/gpt-5.5")
+    assert "include at least one source URL" in str(seen_tool_messages)
+
+
 def test_real_file_read_through_loop(tmp_path: Path):
     (tmp_path / "note.txt").write_text("project alpha status: green", encoding="utf-8")
     steps = [
@@ -175,3 +293,31 @@ def test_real_file_read_through_loop(tmp_path: Path):
     assert result.status == "final"
     assert result.executed_tool_ids == ["file.read"]
     assert "green" in result.text
+
+
+def test_file_read_directory_call_can_resolve_from_original_user_query(tmp_path: Path):
+    desktop = tmp_path / "Desktop"
+    desktop.mkdir()
+    (desktop / "MAR.txt").write_text("Marvex desktop note", encoding="utf-8")
+    steps = [
+        ProviderStep(output_text="", tool_calls=[_fc("file.read", '{"path": "Desktop"}')], response_id="r1", error=False),
+        ProviderStep(output_text="The desktop file says Marvex desktop note.", tool_calls=[], response_id="r2", error=False),
+    ]
+    seen_tool_messages = []
+
+    def send(input_text, tool_messages, prev):
+        if tool_messages:
+            seen_tool_messages.append(tool_messages)
+        return steps.pop(0)
+
+    result = run_tool_loop(
+        send=send,
+        registry=_combined_registry(),
+        request_builder=_builder_with_query(str(tmp_path), "read MAR.txt from Desktop"),
+        max_steps=5,
+        initial_input="read MAR.txt from Desktop",
+    )
+
+    assert result.status == "final"
+    assert result.executed_tool_ids == ["file.read"]
+    assert "Marvex desktop note" in str(seen_tool_messages)

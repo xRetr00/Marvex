@@ -215,14 +215,26 @@ def test_playwright_mcp_unsafe_code_tool_requires_extra_approval(monkeypatch) ->
 
 def test_playwright_mcp_windows_routes_npx_through_cmd(monkeypatch) -> None:
     monkeypatch.setattr(playwright_mcp.os, "name", "nt")
-    monkeypatch.setattr(playwright_mcp.shutil, "which", lambda name: r"C:\\Program Files\\nodejs\\npx.cmd")
+    monkeypatch.setattr(playwright_mcp.shutil, "which", lambda name: r"C:\\Program Files\\nodejs\\npx.cmd" if name == "npx" else None)
+    monkeypatch.setenv("COMSPEC", r"C:\\Windows\\System32\\cmd.exe")
     config = PlaywrightMcpServerConfig.builtin()
 
     command, args = playwright_mcp._resolve_stdio_command(config)
 
-    assert command == "cmd"
-    assert args[:2] == ["/c", "npx"]
-    assert args[2:] == list(config.args)
+    assert command == r"C:\\Windows\\System32\\cmd.exe"
+    assert args[:3] == ["/d", "/c", r"C:\\Program Files\\nodejs\\npx.cmd"]
+    assert args[3:] == list(config.args)
+
+
+def test_playwright_mcp_windows_runs_real_exe_directly(monkeypatch) -> None:
+    monkeypatch.setattr(playwright_mcp.os, "name", "nt")
+    monkeypatch.setattr(playwright_mcp.shutil, "which", lambda name: r"C:\\Program Files\\nodejs\\npx.exe")
+    config = PlaywrightMcpServerConfig.builtin()
+
+    command, args = playwright_mcp._resolve_stdio_command(config)
+
+    assert command == r"C:\\Program Files\\nodejs\\npx.exe"
+    assert args == list(config.args)
 
 
 def test_playwright_mcp_posix_leaves_command_unchanged(monkeypatch) -> None:
