@@ -935,6 +935,16 @@ class VoiceWorkerController:
     def _trace_id_for(self, command: VoiceWorkerCommand) -> str:
         return command.trace_id or command.command_id
 
+    def warm_models(self) -> dict[str, str]:
+        """Pre-load the active STT/TTS models so the first listen/speak after a
+        wake is responsive instead of paying the cold model-load cost."""
+
+        return self.backend_runtime.warm(
+            stt_backend_id=self.config.active_stt_backend_id,
+            tts_backend_id=self.config.active_tts_backend_id,
+            voice_id=self.config.active_voice_id,
+        )
+
     def run_manual_turn(self, *, trace_id: str, assistant_turn_runner: Callable[[str], Any], policy_decider: Callable[[str], Any]) -> VoiceWorkerTurnRunResult:
         frames = tuple(self.audio.capture_frames(device_id=self.config.audio.input_device_id, sample_rate=self.config.audio.sample_rate, channel_count=self.config.audio.channel_count, frame_count=4))
         ring = AudioRingBuffer(max_frames=4, pre_roll_ms=sum(frame.duration_ms for frame in frames))

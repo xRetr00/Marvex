@@ -164,6 +164,52 @@ class VoiceWorkerBackendRuntime:
             )
         return self._local_wake_runner
 
+    def warm(self, *, stt_backend_id: str, tts_backend_id: str, voice_id: str) -> dict[str, str]:
+        """Eagerly load the STT and TTS model objects (best-effort).
+
+        Both runners cache their underlying model on first call, so without this
+        the first listen after a wake — and the first spoken reply — pay the full
+        model-load cost (hundreds of ms to seconds). Running one throwaway
+        transcription on silence and one short synthesis at worker startup moves
+        that cost off the interactive path. Never raises: warm-up failures fall
+        back to lazy loading on first real use.
+        """
+
+        outcome: dict[str, str] = {"stt": "skipped", "tts": "skipped"}
+        try:
+            sample_rate = 16_000
+            duration_ms = 320
+            # 320ms of 16-bit mono silence — enough for the model to load and
+            # run a no-op transcription pass.
+            silent_pcm = b"\x00\x00" * (sample_rate * duration_ms // 1000)
+            frame = AudioFrame(
+                pcm=silent_pcm,
+                sample_rate=sample_rate,
+                duration_ms=duration_ms,
+                channel_count=1,
+            )
+            ref = self.remember_audio_frames(trace_id="voice-warm-stt", frames=(frame,))
+            result = self.test_stt(
+                trace_id="voice-warm-stt",
+                backend_id=stt_backend_id,
+                audio_ref_id=ref.audio_ref_id,
+                duration_ms=duration_ms,
+            )
+            outcome["stt"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
+        except Exception:
+            outcome["stt"] = "error"
+        try:
+            result = self.test_tts(
+                trace_id="voice-warm-tts",
+                backend_id=tts_backend_id,
+                voice_id=voice_id,
+                text="Ready.",
+            )
+            outcome["tts"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
+        except Exception:
+            outcome["tts"] = "error"
+        return outcome
+
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
         return self.audio_refs.remember_frames(trace_id=trace_id, frames=frames)
 
