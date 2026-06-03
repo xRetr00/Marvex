@@ -469,6 +469,8 @@ def _configured_semantic_encoder() -> DeterministicLocalIntentEncoder | FastEmbe
             model=os.environ.get("MARVEX_INTENT_EMBEDDING_MODEL", "text-embedding-nomic-embed-text-v1.5"),
             timeout_seconds=float(os.environ.get("MARVEX_INTENT_EMBEDDING_TIMEOUT", "10")),
         )
+    if not backend and importlib.util.find_spec("fastembed") is not None:
+        return FastEmbedIntentEncoder(model_name=os.environ.get("MARVEX_INTENT_FASTEMBED_MODEL"))
     return DeterministicLocalIntentEncoder()
 
 
