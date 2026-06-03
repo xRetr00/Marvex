@@ -26,6 +26,8 @@ def test_control_plane_runtime_policy_exposes_mode_matrix_and_audit() -> None:
     assert payload["matrix"]["web_search"] == "allow"
     assert payload["matrix"]["auto_fetch"] == "allow"
     assert payload["matrix"]["mcp_execute"] == "allow"
+    assert payload["matrix"]["file_delete"] == "allow"
+    assert payload["matrix"]["shell_command_execution"] == "allow"
     assert payload["hard_block_blacklist_only"] is True
     assert payload["raw_payload_persisted"] is False
     assert audit_status == "200 OK"

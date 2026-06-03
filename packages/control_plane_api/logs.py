@@ -183,14 +183,63 @@ def _field_lines(events: list[dict[str, Any]], *, field: str) -> list[str]:
         value = event.get(field)
         if not _safe_scalar(value):
             continue
-        lines.append(
-            (
-                f"{_event_text(event, 'timestamp')} trace={_event_text(event, 'trace_id')} "
-                f"turn={_event_text(event, 'turn_id')} {field}={_safe_scalar_text(value)} "
-                f"stage={_event_text(event, 'stage')}"
-            )
-        )
+        line_bits = [
+            f"{_event_text(event, 'timestamp')} trace={_event_text(event, 'trace_id')}",
+            f"turn={_event_text(event, 'turn_id')}",
+            f"{field}={_safe_scalar_text(value)}",
+            f"stage={_event_text(event, 'stage')}",
+        ]
+        if field == "tool_status":
+            line_bits.extend(_tool_debug_bits(event))
+        lines.append(" ".join(line_bits))
     return lines
+
+
+def _tool_debug_bits(event: dict[str, Any]) -> list[str]:
+    bits: list[str] = []
+    for key in (
+        "tool_boundary",
+        "tool_call_count",
+        "tool_loop_step",
+        "tool_result_count",
+        "tool_response_status",
+        "tool_response_error_code",
+        "tool_response_blocked",
+        "tool_result_ok",
+        "tool_result_reason_code",
+        "tool_failure_retry_attempted",
+        "reason_code",
+        "pending_tool_id",
+        "pending_capability_id",
+        "pending_resource_type",
+        "pending_call_id",
+        "automation_status",
+        "automation_capability_id",
+        "automation_reason_code",
+        "automation_live_execution",
+        "automation_adapter",
+        "failed_tool_status",
+        "failed_tool_capability_id",
+        "failed_tool_reason_code",
+    ):
+        value = event.get(key)
+        if _safe_scalar(value):
+            bits.append(f"{key}={_safe_scalar_text(value)}")
+    for key in (
+        "tool_call_names",
+        "tool_call_ids",
+        "tool_argument_keys",
+        "tool_argument_value_lengths",
+        "tool_result_statuses",
+        "tool_result_reason_codes",
+        "needs_approval_tool_ids",
+        "executed_tool_ids",
+        "pending_argument_keys",
+    ):
+        value = _safe_scalar_list_text(event.get(key))
+        if value:
+            bits.append(f"{key}={value}")
+    return bits
 
 
 def _reader_trace_ids(trace_reader: Any, *, limit: int) -> tuple[str, ...]:
@@ -216,6 +265,13 @@ def _safe_scalar_text(value: Any, *, default: str = "unknown") -> str:
     if not _safe_scalar(value):
         return default
     return sanitize_log_text(str(value))
+
+
+def _safe_scalar_list_text(value: Any) -> str | None:
+    if not isinstance(value, list | tuple):
+        return None
+    safe_values = [sanitize_log_text(str(item)) for item in value[:24] if _safe_scalar(item)]
+    return ",".join(safe_values) if safe_values else None
 
 
 def _safe_log_name(name: str) -> str:

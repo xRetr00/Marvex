@@ -135,6 +135,36 @@ def test_in_memory_trace_reader_projects_safe_session_conversation_refs():
     assert "full transcript" not in serialized
 
 
+def test_in_memory_trace_reader_projects_low_level_tool_debug_fields():
+    from packages.telemetry import InMemoryTraceReader
+
+    reader = InMemoryTraceReader()
+    reader.emit(
+        make_event(
+            tool_status="provider_tool_calls_received",
+            tool_boundary="provider_worker_process",
+            tool_call_count=2,
+            tool_call_names=["builtin.browser_use", "file.write"],
+            tool_call_ids=["call-browser", "call-file"],
+            tool_argument_keys=["builtin.browser_use.task", "file.write.path"],
+            tool_argument_value_lengths=["builtin.browser_use.task:18", "file.write.path:12"],
+            raw_tool_payload={"arguments": "must not project"},
+        )
+    )
+
+    envelope = reader.read_trace("trace-reader-test")
+
+    event = envelope["events"][0]
+    serialized = str(envelope).lower()
+    assert event["tool_status"] == "provider_tool_calls_received"
+    assert event["tool_boundary"] == "provider_worker_process"
+    assert event["tool_call_count"] == 2
+    assert event["tool_call_names"] == ["builtin.browser_use", "file.write"]
+    assert event["tool_argument_keys"] == ["builtin.browser_use.task", "file.write.path"]
+    assert "raw_tool_payload" not in serialized
+    assert "must not project" not in serialized
+
+
 def test_in_memory_trace_reader_is_instance_owned_not_module_global():
     from packages.telemetry import InMemoryTraceReader
 

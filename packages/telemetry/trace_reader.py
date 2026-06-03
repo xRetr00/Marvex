@@ -31,9 +31,44 @@ _EVENT_PROJECTION_KEYS = {
     "provider_tool_proposal_count",
     "provider_continuation_input_ready",
     "provider_final_response_status",
+    "provider_error",
     "web_search_executed",
     "evidence_ref_count",
     "citation_validation",
+    "tool_boundary",
+    "tool_call_count",
+    "tool_loop_step",
+    "tool_result_count",
+    "tool_response_blocked",
+    "tool_result_ok",
+    "tool_response_status",
+    "tool_response_error_code",
+    "tool_result_reason_code",
+    "tool_failure_retry_attempted",
+    "reason_code",
+    "pending_tool_id",
+    "pending_capability_id",
+    "pending_resource_type",
+    "pending_call_id",
+    "automation_status",
+    "automation_capability_id",
+    "automation_reason_code",
+    "automation_live_execution",
+    "automation_adapter",
+    "failed_tool_status",
+    "failed_tool_capability_id",
+    "failed_tool_reason_code",
+}
+_SAFE_SCALAR_LIST_EVENT_KEYS = {
+    "tool_call_names",
+    "tool_call_ids",
+    "tool_argument_keys",
+    "tool_argument_value_lengths",
+    "tool_result_statuses",
+    "tool_result_reason_codes",
+    "needs_approval_tool_ids",
+    "executed_tool_ids",
+    "pending_argument_keys",
 }
 _USAGE_KEY_PARTS = (
     "count",
@@ -109,6 +144,12 @@ def _safe_event_fields(data: dict[str, Any]) -> dict[str, Any]:
         if _is_safe_scalar(value):
             output_key = "error_code" if key == "sanitized_error_code" else key
             fields[output_key] = value
+    for key in _SAFE_SCALAR_LIST_EVENT_KEYS:
+        if key not in data:
+            continue
+        value = _safe_scalar_list(data.get(key))
+        if value:
+            fields[key] = value
     if "usage" in data:
         usage = _safe_usage(data["usage"])
         if usage:
@@ -174,6 +215,16 @@ def _bounded_message(message: str, *, max_length: int) -> str:
 
 def _is_safe_scalar(value: Any) -> bool:
     return value is None or isinstance(value, str | int | float | bool)
+
+
+def _safe_scalar_list(value: Any) -> list[str | int | float | bool] | None:
+    if not isinstance(value, list | tuple):
+        return None
+    safe_items: list[str | int | float | bool] = []
+    for item in value[:24]:
+        if isinstance(item, str | int | float | bool):
+            safe_items.append(item)
+    return safe_items or None
 
 
 def _normalize_key(value: object) -> str:
