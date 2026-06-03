@@ -29,7 +29,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[] };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
@@ -41,6 +41,16 @@ const NOISE_TRANSCRIPTS = new Set(["ah", "eh", "er", "huh", "hm", "hmm", "mm", "
 
 function randomListeningCue(): string {
   return LISTENING_CUES[Math.floor(Math.random() * LISTENING_CUES.length)];
+}
+
+// Restored sessions must never resume in a live "Working…" state: a turn that
+// was interrupted mid-stream persists streaming=true, so settle it on load.
+function restoreMessages(stored: StoredMessage[]): ChatMessage[] {
+  return (stored as ChatMessage[]).map((message) =>
+    message.role === "assistant" && message.streaming
+      ? { ...message, streaming: false, activityEndedAt: message.activityEndedAt ?? message.activityStartedAt ?? Date.now() }
+      : message,
+  );
 }
 
 function manualListenQueued(status: unknown): boolean {
@@ -103,7 +113,7 @@ export function ChatApp() {
     const cached = listCachedSessions().find((item) => item.id === id);
     if (cached?.lastProviderResponseId) previousResponseIdsRef.current[id] = cached.lastProviderResponseId;
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
-    const restored = loadCachedMessages(id) as ChatMessage[];
+    const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
     setSessions(listCachedSessions());
   }, []);
@@ -167,13 +177,15 @@ export function ChatApp() {
     if (!text.trim() || pending) return { text: "", speechText: "" };
     const appendUser = options.appendUser ?? true;
     setPending(true);
+    // Timer anchor for the "Working…/Worked for …" trace.
+    const startedAt = Date.now();
     // Append a user message only for direct user turns. Follow-up UI controls
     // such as clarification answers and approvals update the active assistant
     // turn instead of creating transcript noise.
     if (appendUser) {
-      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true }]);
+      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true, activityStartedAt: startedAt }]);
     } else {
-      updateLastAssistant({ role: "assistant", text: "", streaming: true });
+      updateLastAssistant({ role: "assistant", text: "", streaming: true, activityStartedAt: startedAt });
     }
     let replyText = "";
     let speechText = "";
@@ -189,7 +201,7 @@ export function ChatApp() {
         {
           onDelta: (chunk) => {
             streamed += chunk;
-            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity });
+            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity, activityStartedAt: startedAt });
           },
           onTool: (event) => {
             const id = event.id || event.name || String(activity.length);
@@ -198,7 +210,7 @@ export function ChatApp() {
             } else {
               activity = [...activity, { id, name: event.name ?? "", arguments: event.arguments, active: true }];
             }
-            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity });
+            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity, activityStartedAt: startedAt });
           },
         },
       );
@@ -219,11 +231,11 @@ export function ChatApp() {
       // Reconcile with the authoritative final result (text + stages + refs).
       // Settle any still-active tool steps so the chain-of-thought stops shimmering.
       const settledActivity = activity.map((step) => (step.active ? { ...step, active: false } : step));
-      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined });
+      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } catch (error) {
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
-      updateLastAssistant({ role: "assistant", text: outcome.text });
+      updateLastAssistant({ role: "assistant", text: outcome.text, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } finally {
       setPending(false);
     }
@@ -517,7 +529,7 @@ export function ChatApp() {
     } else {
       delete previousResponseIdsRef.current[id];
     }
-    const restored = loadCachedMessages(id) as ChatMessage[];
+    const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
     setSidebarOpen(false);
     setActiveTab("chat");
@@ -616,7 +628,6 @@ export function ChatApp() {
                 onClarificationAnswer={answerClarification}
                 onStop={stopChatTurn}
                 pending={pending}
-                activityLabel={state.status === "idle" ? "Marvex is thinking" : displayDetail(state)}
                 modelLabel={modelOptions.find((model) => model.active)?.name ?? (config ? "Select model" : "Connecting runtime")}
                 models={modelOptions}
                 onSelectModel={selectModel}

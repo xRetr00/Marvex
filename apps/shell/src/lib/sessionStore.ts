@@ -3,6 +3,10 @@ export interface StoredMessage {
   text: string;
   stages?: unknown;
   directives?: unknown;
+  activity?: unknown;
+  streaming?: boolean;
+  activityStartedAt?: number;
+  activityEndedAt?: number;
 }
 
 export interface SessionMeta {
