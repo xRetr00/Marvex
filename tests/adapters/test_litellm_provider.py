@@ -38,6 +38,19 @@ def make_responses_response() -> SimpleNamespace:
     )
 
 
+class _FakeResponsesClient:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    @property
+    def responses(self) -> "_FakeResponsesClient":
+        return self
+
+    def create(self, **kwargs: object) -> SimpleNamespace:
+        self.calls.append(kwargs)
+        return make_responses_response()
+
+
 def test_adapter_satisfies_provider_port():
     from packages.adapters.providers.litellm import LiteLLMProvider
 
@@ -90,6 +103,91 @@ def test_litellm_config_base_url_and_timeout_are_forwarded(monkeypatch):
 
     assert calls[0]["api_base"] == "http://127.0.0.1:4000"
     assert calls[0]["timeout"] == 5
+
+
+def test_litellm_proxy_mode_uses_openai_responses_client_and_preserves_model(monkeypatch):
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+    from packages.adapters.providers.litellm import litellm_provider
+
+    sdk_calls: list[dict[str, object]] = []
+    client_kwargs: list[dict[str, object]] = []
+    client = _FakeResponsesClient()
+
+    monkeypatch.setattr(
+        litellm_provider.litellm,
+        "responses",
+        lambda **kwargs: sdk_calls.append(kwargs),
+    )
+
+    def fake_client_factory(**kwargs: object) -> _FakeResponsesClient:
+        client_kwargs.append(kwargs)
+        return client
+
+    response = LiteLLMProvider(
+        LiteLLMProviderConfig(
+            base_url="http://127.0.0.1:4000/v1",
+            api_key="litellm-key",
+            provider_mode="litellm_proxy",
+            timeout_seconds=5,
+        ),
+        client_factory=fake_client_factory,
+    ).send(make_request().model_copy(update={"model": "chatgpt-web/gpt-5.5-thinking"}))
+
+    assert response.output_text == "LiteLLM output"
+    assert sdk_calls == []
+    assert client_kwargs == [
+        {
+            "base_url": "http://127.0.0.1:4000/v1",
+            "api_key": "litellm-key",
+            "timeout": 5,
+        }
+    ]
+    assert client.calls[0]["model"] == "chatgpt-web/gpt-5.5-thinking"
+    assert client.calls[0]["input"] == "Hello"
+    assert client.calls[0]["instructions"] == "Follow system guidance."
+    assert client.calls[0]["previous_response_id"] == "prev-001"
+    assert "api_base" not in client.calls[0]
+    assert "messages" not in client.calls[0]
+
+
+def test_litellm_proxy_stream_uses_responses_streaming_client():
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    class StreamClient(_FakeResponsesClient):
+        def create(self, **kwargs: object) -> list[SimpleNamespace]:
+            self.calls.append(kwargs)
+            return [
+                SimpleNamespace(type="response.output_text.delta", delta="Hi"),
+                SimpleNamespace(
+                    type="response.completed",
+                    response=SimpleNamespace(
+                        id="resp-stream",
+                        output_text="Hi",
+                        output=[],
+                        status="completed",
+                    ),
+                ),
+            ]
+
+    client = StreamClient()
+
+    def fake_client_factory(**kwargs: object) -> StreamClient:
+        return client
+
+    events = list(
+        LiteLLMProvider(
+            LiteLLMProviderConfig(
+                base_url="http://127.0.0.1:4000/v1",
+                provider_mode="litellm_proxy",
+            ),
+            client_factory=fake_client_factory,
+        ).stream_send(make_request())
+    )
+
+    assert client.calls[0]["stream"] is True
+    assert client.calls[0]["previous_response_id"] == "prev-001"
+    assert events[-1].response_id == "resp-stream"
+    assert events[-1].output_text == "Hi"
 
 
 def test_litellm_openai_compatible_mode_prefixes_plain_model_ids(monkeypatch):

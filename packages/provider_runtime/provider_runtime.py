@@ -51,6 +51,8 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
             "provider_mode": _clean_optional_string(config.provider_mode),
             "timeout_seconds": config.timeout_seconds,
         }
+        if provider_config_kwargs["base_url"] is not None and provider_config_kwargs["provider_mode"] is None:
+            provider_config_kwargs["provider_mode"] = "litellm_proxy"
         provider_config_kwargs = {
             key: value for key, value in provider_config_kwargs.items() if value is not None
         }
