@@ -62,7 +62,7 @@ class CognitionRuntime:
         self._web_search_provider = web_search_provider
         self._skill_manifests = skill_manifests
         self._skill_loader = skill_loader
-        self._max_steps = min(max(1, max_steps), 6)
+        self._max_steps = min(max(1, max_steps), 16)
 
     def assemble_turn(self, turn_input: Any) -> CognitionTurnAssembly:
         request = IntentClassificationRequest(

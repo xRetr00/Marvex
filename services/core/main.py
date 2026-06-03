@@ -1333,7 +1333,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 input_text=input_text,
                 instructions=instructions,
                 previous_response_id=prev,
-                provider_options={},
+                provider_options={"parallel_tool_calls": False},
                 tools=tool_schemas,
                 tool_messages=tool_messages,
             )

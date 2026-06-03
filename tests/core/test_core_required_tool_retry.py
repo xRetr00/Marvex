@@ -281,6 +281,8 @@ def test_browser_intent_tool_catalog_prefers_browser_use_not_playwright_mcp(tmp_
     }
     assert "builtin.browser_use" in tool_names
     assert "builtin.playwright_browser" not in tool_names
+    assert provider.requests
+    assert provider.requests[0].provider_options["parallel_tool_calls"] is False
 
 
 def test_browser_tool_repair_prompt_does_not_nudge_playwright_mcp() -> None:

@@ -26,7 +26,7 @@ from packages.contracts import AssistantTurnInput, AssistantTurnResult
 
 
 AGENTIC_MAX_STEPS_ENV = "MARVEX_AGENTIC_MAX_STEPS"
-AGENTIC_LOOP_HARD_CEILING = 6
+AGENTIC_LOOP_HARD_CEILING = 16
 
 
 def resolve_agentic_max_steps(planner_max_steps: int) -> int:

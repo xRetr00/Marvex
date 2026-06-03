@@ -34,7 +34,7 @@ class CognitionStepPlan(CapabilityRuntimeModel):
     trace_id: str
     turn_id: str
     steps: tuple[CognitionStep, ...]
-    max_steps: int = Field(default=5, ge=1, le=6)
+    max_steps: int = Field(default=5, ge=1, le=16)
     raw_payload_persisted: Literal[False] = False
 
     def safe_projection(self) -> dict[str, object]:

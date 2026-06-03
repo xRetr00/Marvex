@@ -502,6 +502,8 @@ class LiteLLMProvider:
                 allowed["max_output_tokens"] = value
             elif name == "timeout":
                 allowed["timeout"] = value
+            elif name == "parallel_tool_calls":
+                allowed["parallel_tool_calls"] = value
             else:
                 ignored.append(name)
 

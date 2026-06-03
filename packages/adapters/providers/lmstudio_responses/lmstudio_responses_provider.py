@@ -248,7 +248,7 @@ class LMStudioResponsesProvider:
         allowed: dict[str, object] = {}
         ignored: list[str] = []
         for name, value in provider_options.items():
-            if name in {"temperature", "max_output_tokens", "top_p", "timeout"}:
+            if name in {"temperature", "max_output_tokens", "top_p", "timeout", "parallel_tool_calls"}:
                 allowed[name] = value
             else:
                 ignored.append(name)
