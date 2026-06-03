@@ -30,6 +30,7 @@ dependencies = [
   "stream2sentence==0.3.2",
   "silero-vad==6.2.1",
   "webrtcvad-wheels==2.0.14",
+  "aec-audio-processing==1.0.1",
   "sherpa-onnx-core==1.13.2",
   "sounddevice==0.5.5",
   "pywinauto>=0.6; sys_platform == \"win32\"",
