@@ -126,6 +126,39 @@ def test_write_local_memory_tools_require_approval_and_do_not_auto_execute():
     assert outcome.pending_tool_calls[0].pending_tool["capability_id"] == "memory.remember"
 
 
+def test_safe_network_web_search_executes_without_approval():
+    from packages.adapters.capabilities.tools import WebSearchTool
+    from packages.web_search_runtime import WebSearchGroundingBundle, WebSearchResult
+
+    class _FakeWeb:
+        provider_name = "fake"
+
+        def search(self, query):
+            return WebSearchGroundingBundle(
+                query=query,
+                provider="fake",
+                results=(
+                    WebSearchResult(
+                        title="Open source software",
+                        url="https://example.test/open-source",
+                        domain="example.test",
+                        snippet="Open source software makes source code available.",
+                    ),
+                ),
+                evidence_refs=(),
+            )
+
+    outcome = execute_tool_calls(
+        [_call("web.search", '{"query": "what is open source"}')],
+        registry=ToolRegistry((WebSearchTool(provider=_FakeWeb()),)),
+        request_builder=_builder(),
+    )
+
+    assert outcome.executed_tool_ids == ["web.search"]
+    assert outcome.needs_approval == []
+    assert "Open source software" in outcome.tool_messages[0]["content"]
+
+
 def test_invalid_automation_tool_arguments_report_to_model_instead_of_approval():
     from packages.adapters.capabilities.tools.automation import BrowserUseTool
 

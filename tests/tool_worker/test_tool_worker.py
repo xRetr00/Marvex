@@ -176,6 +176,7 @@ def test_tool_worker_blocks_unapproved_write_execution() -> None:
                 "action": "write generated file",
                 "capability": "file_write",
                 "resource_type": "file",
+                "autonomy_mode": "ask_before_risky",
                 "arguments": {"path": "secret.txt", "contents": "must-not-leak"},
             }
         ]
@@ -206,6 +207,7 @@ def test_tool_worker_file_write_requires_approval_then_writes_inside_sandbox(tmp
                 "action": "write file",
                 "capability": "file_write",
                 "resource_type": "file",
+                "autonomy_mode": "ask_before_risky",
                 "arguments": {"root": str(root), "path": "note.txt", "content": "must-not-leak"},
             },
             {
@@ -265,7 +267,7 @@ def test_tool_worker_file_write_requires_approval_then_writes_inside_sandbox(tmp
 
 
 def test_tool_worker_shell_command_is_approval_gated_and_sandboxed() -> None:
-    # 1) Without approval the seam still requires human approval (never auto-runs).
+    # 1) ask_before_risky still requires human approval.
     paused = run_worker_jsonl(
         [
             {
@@ -276,6 +278,7 @@ def test_tool_worker_shell_command_is_approval_gated_and_sandboxed() -> None:
                 "action": "run command",
                 "capability": "shell_command_execution",
                 "resource_type": "shell",
+                "autonomy_mode": "ask_before_risky",
                 "arguments": {"command": "echo marvex_ok"},
             }
         ]
@@ -326,6 +329,29 @@ def test_tool_worker_shell_command_is_approval_gated_and_sandboxed() -> None:
     assert approved_safe["result"]["safe_result"]["raw_command_persisted"] is False
     assert denied["result"]["status"] == "denied"
     assert denied["result"]["safe_result"]["reason_code"] == "sandbox.command_denied"
+
+
+def test_tool_worker_default_auto_marvex_runs_shell_without_approval() -> None:
+    response = run_worker_jsonl(
+        [
+            {
+                "command": "execute",
+                "trace_id": "trace-shell-yolo",
+                "turn_id": "turn-shell-yolo",
+                "capability_id": "shell.command",
+                "action": "run command",
+                "capability": "shell_command_execution",
+                "resource_type": "shell",
+                "arguments": {"command": "echo marvex_yolo"},
+            }
+        ]
+    )[0]
+
+    assert response["ok"] is True
+    assert response["blocked"] is False
+    assert response["result"]["status"] == "succeeded"
+    assert response["result"]["safe_result"]["exit_code"] == 0
+    assert "marvex_yolo" in response["result"]["safe_result"]["stdout_preview"]
 
 
 def test_tool_worker_file_read_list_search_are_real_bounded_and_sandboxed(tmp_path: Path) -> None:

@@ -663,6 +663,38 @@ def test_core_service_turn_writes_safe_operational_logs_when_log_dir_is_configur
     assert "trace-core-entrypoint" in traces_jsonl.read_text(encoding="utf-8")
 
 
+def test_operational_tool_log_includes_low_level_debug_fields(tmp_path, monkeypatch):
+    from services.core.main import _write_operational_event_log
+
+    monkeypatch.setenv("MARVEX_LOG_DIR", str(tmp_path))
+
+    _write_operational_event_log(
+        trace_id="trace-tool-debug",
+        turn_id="turn-tool-debug",
+        timestamp="2026-06-03T10:00:00Z",
+        stage="provider_response_received",
+        level="debug",
+        message="Provider returned model-authored tool calls.",
+        data={
+            "status": "completed",
+            "tool_status": "provider_tool_calls_received",
+            "tool_boundary": "provider_worker_process",
+            "tool_call_count": 1,
+            "tool_call_names": ["file.write"],
+            "tool_call_ids": ["call-write"],
+            "tool_argument_keys": ["file.write.path", "file.write.content"],
+            "tool_argument_value_lengths": ["file.write.path:16", "file.write.content:24"],
+        },
+    )
+
+    tools_text = (tmp_path / "tools.log").read_text(encoding="utf-8")
+    assert "tool_status=provider_tool_calls_received" in tools_text
+    assert "tool_boundary=provider_worker_process" in tools_text
+    assert "tool_call_count=1" in tools_text
+    assert "tool_call_names=file.write" in tools_text
+    assert "tool_argument_keys=file.write.path,file.write.content" in tools_text
+
+
 def test_core_service_defaults_trace_persistence_to_log_dir(tmp_path, monkeypatch):
     from services.core.main import CoreServiceEntrypointConfig, _persistent_store_from_config
 

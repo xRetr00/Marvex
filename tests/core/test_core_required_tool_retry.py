@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any
 
 from packages.assistant_runtime.input_normalization import build_text_input_event, build_turn_input_from_event
+from packages.capability_runtime import AutonomyMode, AutonomyPolicy
 from packages.contracts import ErrorCode, ErrorEnvelope, FinishReason, ProviderRequest, ProviderResponse
 from packages.telemetry import InMemoryTraceReader
 from services.core.main import _CoreServiceProviderWorkerTurnExecutor
@@ -187,3 +188,26 @@ def test_approved_model_file_write_injects_root_and_executes(tmp_path: Path) -> 
     assert "File update completed" in result.assistant_final_response.text
     assert (tmp_path / "Desktop" / "Zebra.md").read_text(encoding="utf-8") == "Zebra notes"
     assert result.metadata["automation"]["result"]["capability_ref"]["identifier"] == "file.write"
+
+
+def test_auto_marvex_auto_approves_model_file_write_and_executes(tmp_path: Path) -> None:
+    provider = _ProviderErrorThenFileWrite()
+    executor = _executor(tmp_path, provider)
+    executor._autonomy_policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
+    (tmp_path / "Desktop").mkdir(parents=True)
+
+    result = executor.submit_turn(
+        _turn_input(
+            "Create Desktop/Zebra.md with content Zebra notes",
+            trace_id="trace-auto-marvex-file-write",
+            turn_id="turn-auto-marvex-file-write",
+        )
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "File update completed" in result.assistant_final_response.text
+    assert (tmp_path / "Desktop" / "Zebra.md").read_text(encoding="utf-8") == "Zebra notes"
+    assert result.metadata["auto_approval"]["enabled"] is True
+    assert result.metadata["approval"]["decision"] == "approved"
+    assert "approval-turn-auto-marvex-file-write" not in executor._pending_automation

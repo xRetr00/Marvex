@@ -174,11 +174,18 @@ class ToolWorkerController:
             ),
         )
 
-        blocking_decision = _blocking_decision(governance.decision, audit.decision)
+        blocking_decision = _blocking_decision(governance.decision, audit.decision, policy.mode)
         approval_resume = _approved_resume(arguments, turn_id=turn_id)
+        policy_auto_approval = policy.mode is AutonomyMode.AUTO_MARVEX
         if blocking_decision == PolicyDecision.APPROVAL_REQUIRED and approval_resume:
             blocking_decision = PolicyDecision.ALLOW
-        if capability_id == "computer_use.action" and approval_resume and destructive_action_requested(arguments, action=action) and not destructive_action_approved(arguments):
+        if (
+            capability_id == "computer_use.action"
+            and not policy_auto_approval
+            and approval_resume
+            and destructive_action_requested(arguments, action=action)
+            and not destructive_action_approved(arguments)
+        ):
             result = CapabilityResultEnvelope(
                 schema_version=SCHEMA_VERSION,
                 result_id=f"{turn_id}:capability:result",
@@ -299,7 +306,7 @@ class ToolWorkerController:
             turn_id=turn_id,
             proposal=proposal,
             permission_decision=permission,
-            approval_decision=approval if approval_resume else None,
+            approval_decision=approval if (approval_resume or policy_auto_approval) else None,
             arguments=self._execution_arguments(capability_id, arguments),
             raw_arguments_persisted=False,
         )
@@ -629,7 +636,11 @@ def _granular_permission(capability: str, *, action: str, resource_type: str) ->
     return GranularPermission.PUBLIC_READ
 
 
-def _blocking_decision(governance_decision: GovernanceDecisionType, autonomy_decision: PolicyDecision) -> PolicyDecision:
+def _blocking_decision(governance_decision: GovernanceDecisionType, autonomy_decision: PolicyDecision, autonomy_mode: AutonomyMode) -> PolicyDecision:
+    if autonomy_mode is AutonomyMode.AUTO_MARVEX and autonomy_decision == PolicyDecision.ALLOW:
+        if governance_decision in {GovernanceDecisionType.HARD_BLOCK, GovernanceDecisionType.QUARANTINE}:
+            return PolicyDecision.HARD_BLOCK if governance_decision == GovernanceDecisionType.HARD_BLOCK else PolicyDecision.QUARANTINE
+        return PolicyDecision.ALLOW
     if governance_decision == GovernanceDecisionType.HARD_BLOCK:
         return PolicyDecision.HARD_BLOCK
     if governance_decision == GovernanceDecisionType.QUARANTINE:

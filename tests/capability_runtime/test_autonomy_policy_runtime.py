@@ -89,19 +89,52 @@ def test_locked_down_still_allows_read_list_search_by_default() -> None:
 def test_named_policy_objects_match_auto_marvex_matrix() -> None:
     policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
 
+    assert set(policy.matrix.as_projection().values()) == {ActionPermission.ALLOW}
     assert policy.auto_fetch_binding.global_auto_fetch == policy.matrix.auto_fetch == ActionPermission.ALLOW
+    assert policy.connector_sync.oauth_connect == policy.matrix.connectors_oauth == ActionPermission.ALLOW
     assert policy.connector_sync.live_sync == policy.matrix.live_oauth_sync == ActionPermission.ALLOW
     assert policy.connector_sync.auto_fetch == policy.matrix.auto_fetch == ActionPermission.ALLOW
     assert policy.memory_auto_write.memory_auto_write == policy.matrix.memory_auto_write == ActionPermission.ALLOW
     assert policy.profile_write.profile_write == policy.matrix.profile_write == ActionPermission.ALLOW
     assert policy.mcp_execution.execute_tool == policy.matrix.mcp_execute == ActionPermission.ALLOW
+    assert policy.mcp_execution.install_or_launch == policy.matrix.mcp_install_launch == ActionPermission.ALLOW
     assert policy.skill_execution.update_or_create_skill == policy.matrix.skills_update_create == ActionPermission.ALLOW
-    assert policy.browser_computer.click_type == policy.matrix.browser_click_type == ActionPermission.ASK
-    assert policy.file_operations.delete_file == policy.matrix.file_delete == ActionPermission.ASK
+    assert policy.browser_computer.click_type == policy.matrix.browser_click_type == ActionPermission.ALLOW
+    assert policy.browser_computer.computer_actions == policy.matrix.computer_actions == ActionPermission.ALLOW
+    assert policy.file_operations.write_file == policy.matrix.file_write == ActionPermission.ALLOW
+    assert policy.file_operations.delete_file == policy.matrix.file_delete == ActionPermission.ALLOW
+    assert policy.file_operations.external_upload_send == policy.matrix.external_upload_send == ActionPermission.ALLOW
     assert policy.provider_fallback.provider_retry == policy.matrix.provider_retry_fallback == ActionPermission.ALLOW
     assert policy.learning_mutation.candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
     assert policy.learning_mutation.skill_candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
     assert policy.learning_mutation.preference_candidate_apply == policy.matrix.learning_mutation_candidates == ActionPermission.ALLOW
+
+
+def test_auto_marvex_yolo_does_not_ask_for_normal_side_effects() -> None:
+    policy = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
+
+    for capability in (
+        "browser_click_type",
+        "computer_actions",
+        "mcp_execute",
+        "mcp_install_launch",
+        "connectors_oauth",
+        "live_oauth_sync",
+        "external_upload_send",
+        "shell_command_execution",
+        "file_write",
+        "file_delete",
+        "memory_auto_write",
+        "profile_write",
+        "learning_mutation_candidates",
+    ):
+        audit = evaluate_autonomy_action(
+            policy,
+            AutonomyAction(action=capability, resource_type="side_effect", capability=capability),
+        )
+
+        assert audit.decision == PolicyDecision.ALLOW
+        assert audit.required_permission == ActionPermission.ALLOW
 
 
 def test_owner_safe_policy_auto_allows_safe_agent_tools_but_keeps_side_effects_gated() -> None:

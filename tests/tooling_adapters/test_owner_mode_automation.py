@@ -99,6 +99,51 @@ def test_browser_use_denies_vision_required_when_model_lacks_vision(monkeypatch)
     assert report.reason_code == "vision_model_required"
 
 
+def test_browser_use_vision_defaults_to_model_capability() -> None:
+    assert browser_use._browser_use_vision_enabled({}) is False
+    assert browser_use._browser_use_vision_enabled({"provider_model_supports_vision": False}) is False
+    assert browser_use._browser_use_vision_enabled({"provider_model_supports_vision": True}) is True
+    assert browser_use._browser_use_vision_enabled({"provider_model_supports_vision": False, "use_vision": True}) is True
+    assert browser_use._browser_use_vision_enabled({"provider_model_supports_vision": True, "use_vision": False}) is False
+
+
+def test_browser_use_safe_result_reports_runtime_mode_metadata() -> None:
+    report = browser_use.BrowserUseExecutionReport(
+        status="succeeded",
+        llm_adapter="ChatOpenAI",
+        use_vision=False,
+        cdp_endpoint_present=True,
+    )
+    request = SimpleNamespace(
+        arguments={},
+        trace_id="trace-browser-mode",
+        turn_id="turn-browser-mode",
+        approval_decision=object(),
+        proposal=SimpleNamespace(
+            capability_ref=SimpleNamespace(identifier="browser_use.task"),
+        ),
+    )
+
+    safe, raw_persisted = browser_use.browser_use_safe_result(request=request, report=report)
+
+    assert safe["llm_adapter"] == "ChatOpenAI"
+    assert safe["use_vision"] is False
+    assert safe["cdp_endpoint_present"] is True
+    assert raw_persisted is False
+
+
+def test_browser_use_prefers_current_chatopenai_export(monkeypatch) -> None:
+    import sys
+    import types
+
+    current = type("CurrentChatOpenAI", (), {})
+    module = types.ModuleType("browser_use")
+    module.ChatOpenAI = current
+    monkeypatch.setitem(sys.modules, "browser_use", module)
+
+    assert browser_use._browser_use_openai_llm_class() is current
+
+
 def test_playwright_mcp_builtin_server_config_is_headed_chrome_by_default() -> None:
     config = PlaywrightMcpServerConfig.builtin()
 

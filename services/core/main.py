@@ -46,6 +46,7 @@ from packages.assistant_turn_integration.models import EndToEndAssistantTurnProj
 from packages.ui_directives import parse_ui_directives
 from packages.capability_runtime import (
     ApprovalPrompt,
+    AutonomyMode,
     AutonomyPolicy,
     CapabilityApprovalRequest,
     CapabilityKind,
@@ -166,7 +167,7 @@ LOCAL_AUTH_TOKEN_ENV = "MARVEX_LOCAL_AUTH_TOKEN"
 STARTUP_MESSAGE_PREFIX = "Core service startup metadata: "
 
 DEFAULT_TELEMETRY_STORE_PATH = ".marvex-telemetry/traces.jsonl"
-_TURN_AUTONOMY_POLICY = AutonomyPolicy.for_mode("ask_before_risky")
+_TURN_AUTONOMY_POLICY = AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX)
 
 
 @dataclass(frozen=True)
@@ -198,6 +199,7 @@ class CoreServiceEntrypointConfig:
     agentmemory_namespace: str = "marvex"
     agentmemory_bearer_token: str | None = None
     desktop_agent_enabled: bool = False
+    autonomy_mode: str = AutonomyMode.AUTO_MARVEX.value
 
     def local_api_config(self) -> LocalApiConfig:
         return LocalApiConfig(
@@ -777,6 +779,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         connector_autofetch_runtime: _CoreConnectorAutofetchRuntime | None = None,
         structured_output_required: bool = False,
         desktop_agent_enabled: bool = False,
+        autonomy_policy: AutonomyPolicy | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -825,6 +828,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._connector_autofetch_runtime = connector_autofetch_runtime
         self._structured_output_required = structured_output_required
         self._desktop_agent_enabled = desktop_agent_enabled
+        self._autonomy_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
         self._desktop_agent = _DesktopAgentProcessClient(timeout_seconds=timeout_seconds)
         self._state_bus: AssistantStateBus | None = None
         # Conversation-scoped working memory (docs/TODO/01): remembers files the
@@ -1030,6 +1034,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         require_grounded_validation: bool = False,
         require_tool_call: bool = False,
         required_tool_reason: str = "model_tool_call_required",
+        allowed_tool_ids: set[str] | None = None,
     ) -> AssistantTurnResult | None:
         """Drive the model-tool-call loop. Returns None to fall back.
 
@@ -1042,7 +1047,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
         from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop
 
-        registry = self._agentic_tool_registry()
+        registry = self._agentic_tool_registry(allowed_tool_ids=allowed_tool_ids)
         tool_schemas = list(registry.tool_schemas())
         if not tool_schemas:
             return None
@@ -1066,20 +1071,80 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
             try:
                 response = self._provider.send(request)
-            except Exception:
+            except Exception as exc:
                 provider_error_count["value"] += 1
+                _emit_core_event(
+                    self._trace_reader,
+                    turn_input,
+                    TraceStage.PROVIDER_RESPONSE_RECEIVED,
+                    "Provider failed before tool-call handling.",
+                    {
+                        "status": "failed",
+                        "tool_status": "provider_tool_call_error",
+                        "tool_boundary": "provider_worker_process",
+                        "provider_error": True,
+                        "reason_code": type(exc).__name__,
+                    },
+                    level=TraceLevel.DEBUG,
+                )
                 return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
             if getattr(response, "error", None) is not None:
                 provider_error_count["value"] += 1
+                error = getattr(response, "error", None)
+                _emit_core_event(
+                    self._trace_reader,
+                    turn_input,
+                    TraceStage.PROVIDER_RESPONSE_RECEIVED,
+                    "Provider returned an error before tool-call handling.",
+                    {
+                        "status": "failed",
+                        "tool_status": "provider_tool_call_error",
+                        "tool_boundary": "provider_worker_process",
+                        "provider_error": True,
+                        "reason_code": str(getattr(error, "code", "") or "provider_error"),
+                    },
+                    level=TraceLevel.DEBUG,
+                )
                 return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
             if response.tool_calls:
                 loop.step("tool")
                 self._publish(AssistantStatusKind.USING_TOOLS, detail="agentic_tool", trace_id=turn_input.trace_id)
+                _emit_core_event(
+                    self._trace_reader,
+                    turn_input,
+                    TraceStage.PROVIDER_RESPONSE_RECEIVED,
+                    "Provider returned model-authored tool calls.",
+                    {
+                        "status": "completed",
+                        "tool_status": "provider_tool_calls_received",
+                        "tool_boundary": "provider_worker_process",
+                        "previous_response_id_present": bool(prev),
+                        "provider_response_id_present": bool(response.response_id),
+                        **_tool_call_debug_fields(response.tool_calls),
+                    },
+                    level=TraceLevel.DEBUG,
+                )
             return ProviderStep(
                 output_text=response.output_text or "",
                 tool_calls=list(response.tool_calls or []),
                 response_id=response.response_id,
                 error=False,
+            )
+
+        def debug_tool_outcome(step_index: int, outcome: object) -> None:
+            _emit_core_event(
+                self._trace_reader,
+                turn_input,
+                TraceStage.PROVIDER_RESPONSE_RECEIVED,
+                "Agentic tool loop processed model-authored tool calls.",
+                {
+                    "status": "completed",
+                    "tool_status": "tool_call_results",
+                    "tool_boundary": "agentic_tool_loop",
+                    "tool_loop_step": step_index,
+                    **_tool_outcome_debug_fields(outcome),
+                },
+                level=TraceLevel.DEBUG,
             )
 
         loop_result = run_tool_loop(
@@ -1089,6 +1154,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
             initial_input=provider_turn_input.user_visible_input or "",
             previous_response_id=previous_response_id,
+            debug_callback=debug_tool_outcome,
         )
 
         if loop_result.status == "error":
@@ -1105,6 +1171,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
                     initial_input=repair_prompt,
                     previous_response_id=None,
+                    debug_callback=debug_tool_outcome,
                 )
                 if loop_result.status != "error":
                     metadata_retry_note = {
@@ -1156,7 +1223,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             # historical non-agentic path so the turn still gets a chance.
             return None
         if loop_result.status == "needs_approval":
-            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="agentic_tool_approval", trace_id=turn_input.trace_id)
+            approval_id = f"approval-{turn_input.turn_id}"
             if loop_result.pending_tool is not None:
                 # Stash the exact model-authored tool call keyed by the approval
                 # id this turn will create, so approval-resume executes the
@@ -1164,19 +1231,40 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 pending_tool = dict(loop_result.pending_tool)
                 if loop_result.response_id:
                     pending_tool["response_id"] = loop_result.response_id
-                self._pending_automation[f"approval-{turn_input.turn_id}"] = pending_tool
+                self._pending_automation[approval_id] = pending_tool
                 _save_pending_automation_state(self._pending_automation_path, self._pending_automation)
+            approval_metadata: dict[str, object] = {
+                "intent": intent_projection,
+                "agentic_tool_loop": {
+                    "needs_approval_tool_ids": loop_result.needs_approval_tool_ids,
+                    "executed_tool_ids": loop_result.executed_tool_ids,
+                    "pending_tool": _pending_tool_log_projection(loop_result.pending_tool),
+                    "provider_error_retry": metadata_retry_note,
+                },
+            }
+            if _auto_approve_pending_tool(self._autonomy_policy, loop_result.pending_tool):
+                self._publish(AssistantStatusKind.USING_TOOLS, detail="agentic_tool_auto_approval", trace_id=turn_input.trace_id)
+                return self._run_approval_path(
+                    turn_input,
+                    metadata={
+                        **approval_metadata,
+                        "auto_approval": {
+                            "enabled": True,
+                            "approval_request_id": approval_id,
+                            "decision": "approved",
+                            "policy_mode": self._autonomy_policy.mode.value,
+                            "pending_tool": _pending_tool_log_projection(loop_result.pending_tool),
+                        },
+                    },
+                    cognition=cognition,
+                    loop=loop,
+                    resume_approval=approval_id,
+                    approval_decision="approve",
+                )
+            self._publish(AssistantStatusKind.NEEDS_APPROVAL, detail="agentic_tool_approval", trace_id=turn_input.trace_id)
             return self._run_approval_path(
                 turn_input,
-                metadata={
-                    "intent": intent_projection,
-                    "agentic_tool_loop": {
-                        "needs_approval_tool_ids": loop_result.needs_approval_tool_ids,
-                        "executed_tool_ids": loop_result.executed_tool_ids,
-                        "pending_tool": _pending_tool_log_projection(loop_result.pending_tool),
-                        "provider_error_retry": metadata_retry_note,
-                    },
-                },
+                metadata=approval_metadata,
                 cognition=cognition,
                 loop=loop,
             )
@@ -1281,6 +1369,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
         executed_tool_ids: list[str],
     ) -> AssistantTurnResult:
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        learning_projection = _run_learning_hook(
+            self._learning_pipeline,
+            turn_input,
+            succeeded=True,
+            intent_kind=str(intent_projection.get("intent_kind") or "unknown"),
+        )
         metadata: dict[str, object] = {
             "intent_boundary": "intent_worker_process",
             "intent": intent_projection,
@@ -1288,6 +1382,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "assistant_turn_spine": "used",
             "cognition": cognition.safe_projection().model_dump(mode="json"),
             "memory_loop": _memory_write_projection(memory_write),
+            "learning": learning_projection,
             "session": session_projection,
             "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
             "provider_selection": selection_projection,
@@ -1327,7 +1422,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             stage_name="agentic_tool_loop",
         )
 
-    def _agentic_tool_registry(self):
+    def _agentic_tool_registry(self, *, allowed_tool_ids: set[str] | None = None):
         """Registry the agentic loop calls: built-in + file tools, plus the
         web.search tool when a web search provider is configured. Built per
         executor (not module-cached) because the web tool needs the injected
@@ -1380,6 +1475,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         if self._web_search_provider is not None:
             tools.append(WebSearchTool(provider=self._web_search_provider))
+        if allowed_tool_ids is not None:
+            allowed = {str(tool_id).strip() for tool_id in allowed_tool_ids if str(tool_id).strip()}
+            tools = [tool for tool in tools if tool.tool_id() in allowed]
         return ToolRegistry(tuple(tools))
 
     def _make_tool_request_builder(self, turn_input: AssistantTurnInput):
@@ -1488,6 +1586,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             turn_input,
             default_provider=self._provider_name,
             default_model=self._model,
+            autonomy_policy=self._autonomy_policy,
         )
         if selected_provider_name != self._provider_name:
             self._provider.shutdown()
@@ -1737,6 +1836,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 desktop_context=desktop_context,
                 require_tool_call=True,
                 required_tool_reason="browser_computer_use_tool_required",
+                allowed_tool_ids={
+                    "builtin.clarify",
+                    "builtin.browser_use",
+                    "builtin.playwright_browser",
+                    "builtin.computer_use",
+                },
             )
             if agentic_result is not None:
                 return agentic_result
@@ -2688,6 +2793,24 @@ class _CoreServiceProviderWorkerTurnExecutor:
                             capability_id=capability_id,
                             arguments=arguments,
                         )
+                    _emit_core_event(
+                        self._trace_reader,
+                        turn_input,
+                        TraceStage.PROVIDER_RESPONSE_RECEIVED,
+                        "Approved model-authored tool returned a worker response.",
+                        {
+                            "status": "completed" if tool_response.get("ok") is True else "failed",
+                            "tool_status": "tool_worker_response",
+                            "tool_boundary": "memory_tool_local" if capability_id.startswith("memory.") else "tool_worker_process",
+                            "pending_tool_id": str(pending_automation.get("tool_id") or ""),
+                            "pending_capability_id": capability_id,
+                            "pending_resource_type": str(pending_automation.get("resource_type") or ""),
+                            "pending_call_id": str(pending_automation.get("call_id") or ""),
+                            "pending_argument_keys": sorted(str(key) for key in arguments.keys())[:24],
+                            **_tool_response_debug_fields(tool_response),
+                        },
+                        level=TraceLevel.DEBUG,
+                    )
                     # A destructive desktop action (delete/shutdown/registry/
                     # PowerShell) is gated behind a SECOND, explicit approval. The
                     # ToolWorker reports this instead of executing; re-stash the
@@ -3196,6 +3319,87 @@ def _emit_core_event(
     )
 
 
+def _tool_call_debug_fields(tool_calls: Sequence[object] | None) -> dict[str, object]:
+    calls = [call for call in list(tool_calls or []) if isinstance(call, dict)]
+    call_names: list[str] = []
+    call_ids: list[str] = []
+    argument_keys: list[str] = []
+    argument_value_lengths: list[str] = []
+    for index, call in enumerate(calls[:24]):
+        call_id = str(call.get("id") or f"call_{index}")
+        function = call.get("function") if isinstance(call.get("function"), dict) else {}
+        name = str(function.get("name") or "").strip() or "unknown_tool"
+        call_ids.append(call_id)
+        call_names.append(name)
+        arguments = _debug_tool_arguments(function.get("arguments"))
+        for key in sorted(arguments)[:24]:
+            value = arguments.get(key)
+            argument_keys.append(f"{name}.{key}")
+            argument_value_lengths.append(f"{name}.{key}:{len(str(value))}")
+    return {
+        "tool_call_count": len(calls),
+        "tool_call_names": call_names,
+        "tool_call_ids": call_ids,
+        "tool_argument_keys": argument_keys[:48],
+        "tool_argument_value_lengths": argument_value_lengths[:48],
+    }
+
+
+def _tool_outcome_debug_fields(outcome: object) -> dict[str, object]:
+    results = list(getattr(outcome, "results", []) or [])
+    executed = list(getattr(outcome, "executed_tool_ids", []) or [])
+    needs_approval = list(getattr(outcome, "needs_approval", []) or [])
+    return {
+        "tool_result_count": len(results),
+        "executed_tool_ids": [str(item) for item in executed[:24]],
+        "needs_approval_tool_ids": [str(getattr(item, "tool_id", "")) for item in needs_approval[:24]],
+        "tool_result_statuses": [str(getattr(item, "status", "unknown")) for item in results[:24]],
+        "tool_result_reason_codes": [_tool_call_result_reason_code(item) for item in results[:24]],
+    }
+
+
+def _tool_response_debug_fields(tool_response: dict[str, object]) -> dict[str, object]:
+    result = dict(tool_response.get("result") or {})
+    safe_result = dict(result.get("safe_result") or {})
+    error = tool_response.get("error")
+    error_code = dict(error).get("code") if isinstance(error, dict) else None
+    return {
+        "tool_result_ok": tool_response.get("ok") is True,
+        "tool_response_status": str(result.get("status") or tool_response.get("status") or "unknown"),
+        "tool_response_blocked": tool_response.get("blocked") is True,
+        "tool_response_error_code": str(error_code or ""),
+        "tool_result_reason_code": str(safe_result.get("reason_code") or ""),
+    }
+
+
+def _debug_tool_arguments(raw: object) -> dict[str, object]:
+    if isinstance(raw, dict):
+        return dict(raw)
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {}
+        return dict(parsed) if isinstance(parsed, dict) else {}
+    return {}
+
+
+def _tool_call_result_reason_code(result: object) -> str:
+    status = str(getattr(result, "status", "") or "")
+    message = getattr(result, "message", {})
+    content = message.get("content") if isinstance(message, dict) else None
+    if isinstance(content, str) and content.strip().startswith("{"):
+        try:
+            parsed = json.loads(content)
+        except json.JSONDecodeError:
+            parsed = None
+        if isinstance(parsed, dict) and isinstance(parsed.get("reason_code"), str):
+            return str(parsed["reason_code"])[:120]
+    if status in {"unknown", "needs_approval", "needs_clarification", "error"}:
+        return status
+    return ""
+
+
 class _OperationalTelemetrySink:
     def __init__(self, trace_reader: InMemoryTraceReader) -> None:
         self._trace_reader = trace_reader
@@ -3329,6 +3533,15 @@ def _write_operational_event_log(
         ]
         for key in (
             "tool_boundary",
+            "tool_call_count",
+            "tool_loop_step",
+            "tool_result_count",
+            "tool_response_status",
+            "tool_response_error_code",
+            "tool_response_blocked",
+            "tool_result_ok",
+            "tool_result_reason_code",
+            "tool_failure_retry_attempted",
             "reason_code",
             "pending_tool_id",
             "pending_capability_id",
@@ -3346,10 +3559,20 @@ def _write_operational_event_log(
             value = data.get(key)
             if isinstance(value, str | int | float | bool):
                 tool_bits.append(f"{key}={value}")
-        for key in ("needs_approval_tool_ids", "executed_tool_ids", "pending_argument_keys"):
+        for key in (
+            "tool_call_names",
+            "tool_call_ids",
+            "tool_argument_keys",
+            "tool_argument_value_lengths",
+            "tool_result_statuses",
+            "tool_result_reason_codes",
+            "needs_approval_tool_ids",
+            "executed_tool_ids",
+            "pending_argument_keys",
+        ):
             value = data.get(key)
             if isinstance(value, list | tuple):
-                safe_values = [str(item) for item in value[:12]]
+                safe_values = [str(item) for item in value[:24] if isinstance(item, str | int | float | bool)]
                 tool_bits.append(f"{key}={','.join(safe_values) if safe_values else 'none'}")
         writer.append_line(
             "tools.log",
@@ -3453,6 +3676,14 @@ def _pending_tool_log_projection(pending_tool: dict[str, object] | None) -> dict
         if isinstance(value, str | int | float | bool):
             projection[key] = value
     return projection
+
+
+def _auto_approve_pending_tool(policy: AutonomyPolicy, pending_tool: dict[str, object] | None) -> bool:
+    if policy.mode is not AutonomyMode.AUTO_MARVEX or not isinstance(pending_tool, dict):
+        return False
+    # Auto Marvex is the local YOLO mode: once the model authored a tool call,
+    # Core must not pause for a human approval prompt.
+    return True
 
 
 def _approved_tool_final_text(capability_id: str, tool_response: dict[str, object]) -> str:
@@ -4143,6 +4374,7 @@ def _run_provider_selection(
     *,
     default_provider: str,
     default_model: str,
+    autonomy_policy: AutonomyPolicy | None = None,
 ) -> tuple[str, str, dict[str, object]]:
     """Run provider selection; fall back to defaults if disabled or error."""
     if runtime is None:
@@ -4157,7 +4389,7 @@ def _run_provider_selection(
                 local_preferred=True,
                 cost_preference="balanced",
             ),
-            autonomy_policy=_TURN_AUTONOMY_POLICY,
+            autonomy_policy=autonomy_policy or _TURN_AUTONOMY_POLICY,
             fallback_policy=ProviderFallbackPolicy(
                 provider_fallback_enabled=True,
                 side_effect_retry_requires_policy=True,
@@ -4307,10 +4539,11 @@ def _create_turn_executor(
             ),
         )
     )
+    autonomy_policy = _autonomy_policy_from_config(config)
     learning_store = LearningCandidateStore()
     learning_pipeline = LearningPipelineRunner(
         store=learning_store,
-        autonomy_policy=_TURN_AUTONOMY_POLICY,
+        autonomy_policy=autonomy_policy,
         loop=LearningLoop.default(),
     )
     persistent_store = _persistent_store_from_config(config)
@@ -4337,6 +4570,7 @@ def _create_turn_executor(
         mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
         connector_autofetch_runtime=_connector_autofetch_runtime_from_config(config),
         desktop_agent_enabled=config.desktop_agent_enabled,
+        autonomy_policy=autonomy_policy,
     )
     executor._state_bus = get_default_bus()
     return executor
@@ -4364,6 +4598,15 @@ def _effective_file_capability_root(config: CoreServiceEntrypointConfig) -> str 
         return configured
     env_root = os.environ.get("MARVEX_FILE_CAPABILITY_ROOT", "").strip()
     return env_root or None
+
+
+def _autonomy_policy_from_config(config: CoreServiceEntrypointConfig) -> AutonomyPolicy:
+    raw = (config.autonomy_mode or "").strip() or AutonomyMode.AUTO_MARVEX.value
+    try:
+        mode = AutonomyMode(raw)
+    except ValueError:
+        mode = AutonomyMode.AUTO_MARVEX
+    return AutonomyPolicy.for_mode(mode)
 
 
 def _mcp_runtime_registry_from_config(config: CoreServiceEntrypointConfig) -> object:
@@ -4517,6 +4760,7 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
+        autonomy_policy=_autonomy_policy_from_config(config),
         mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
         skills_root=str(_skills_root_from_config(config)),
         voice_worker_control=VoiceWorkerControlPlaneFacade(),
@@ -4910,6 +5154,12 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Opt in to local-only DesktopAgent safe focused-window content projections for this turn.",
     )
     parser.add_argument(
+        "--autonomy-mode",
+        choices=tuple(mode.value for mode in AutonomyMode),
+        default=AutonomyMode.AUTO_MARVEX.value,
+        help="Runtime policy mode for model-authored tool calls. Defaults to auto_marvex for local testing.",
+    )
+    parser.add_argument(
         "--file-capability-root",
         default=None,
         help="Explicit local root for read-only file read/list/search capabilities.",
@@ -5016,6 +5266,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         connector_kind=args.connector_kind,
         connector_oauth_token=args.connector_oauth_token,
         desktop_agent_enabled=args.desktop_agent,
+        autonomy_mode=args.autonomy_mode,
     )
     if args.turn_once is not None:
         return run_turn_once(

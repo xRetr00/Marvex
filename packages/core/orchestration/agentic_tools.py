@@ -7,10 +7,9 @@ provider for continuation.
 
 Design constraints honored here:
 
-* **Approval boundary intact.** Only ``SAFE`` tools auto-execute inside the
-  loop. A risky tool call (write/patch/etc.) is *not* executed; it is reported
-  as ``needs_approval`` so the caller can route it through the existing human
-  approval path instead of silently performing a side effect.
+* **Approval boundary intact.** Safe read/network tools auto-execute inside the
+  loop. A risky or local/browser/desktop side-effect tool call is reported as
+  ``needs_approval`` so the caller can route it through policy/human approval.
 * **No fabrication of capabilities.** Unknown tool names produce a tool-result
   message saying the tool does not exist, rather than guessing.
 * **Pure + testable.** This module does not import the provider, fastapi, or the
@@ -29,6 +28,15 @@ from packages.adapters.capabilities.tools.base import Tool
 from packages.adapters.capabilities.tools.clarify import CLARIFY_TOOL_ID, clarification_payload_from_arguments
 from packages.adapters.capabilities.tools.automation import AUTOMATION_TOOL_CAPABILITIES
 from packages.capability_runtime import CapabilityExecutionRequest, ToolRiskLevel, ToolSideEffectLevel
+
+_APPROVAL_SIDE_EFFECTS = {
+    ToolSideEffectLevel.WRITE_LOCAL,
+    ToolSideEffectLevel.BROWSER_ACTION,
+    ToolSideEffectLevel.DESKTOP_ACTION,
+    ToolSideEffectLevel.CREDENTIAL_ACTION,
+    ToolSideEffectLevel.PURCHASE_OR_PAYMENT,
+    ToolSideEffectLevel.DESTRUCTIVE,
+}
 
 # Builds an execution request for a resolved tool id + parsed arguments. The
 # caller injects sandbox root, trace/turn ids, and an approved permission for
@@ -217,7 +225,7 @@ def execute_tool_calls(
             continue
         arguments = validated_arguments
 
-        if tool.risk_level is not ToolRiskLevel.SAFE or tool.side_effect_level is not ToolSideEffectLevel.READ_ONLY:
+        if _tool_requires_approval(tool):
             content = (
                 f"Tool '{name}' requires human approval before it can run. "
                 "It was not executed automatically."
@@ -270,6 +278,12 @@ def execute_tool_calls(
     )
 
 
+def _tool_requires_approval(tool: Tool) -> bool:
+    if tool.risk_level is not ToolRiskLevel.SAFE:
+        return True
+    return tool.side_effect_level in _APPROVAL_SIDE_EFFECTS
+
+
 def _resource_type_for_tool(tool_id: str) -> str:
     if tool_id.startswith("file."):
         return "file"
@@ -319,6 +333,7 @@ class LoopResult:
 
 # send(input_text, tool_messages, previous_response_id) -> ProviderStep
 SendFn = Callable[[str, list[dict[str, Any]] | None, str | None], ProviderStep]
+ToolDebugCallback = Callable[[int, ToolStepOutcome], None]
 
 
 def run_tool_loop(
@@ -329,6 +344,7 @@ def run_tool_loop(
     max_steps: int,
     initial_input: str,
     previous_response_id: str | None = None,
+    debug_callback: ToolDebugCallback | None = None,
 ) -> LoopResult:
     """Drive the model<->tools loop until a text answer, approval, or limit.
 
@@ -362,6 +378,11 @@ def run_tool_loop(
         outcome = execute_tool_calls(
             step.tool_calls, registry=registry, request_builder=request_builder
         )
+        if debug_callback is not None:
+            try:
+                debug_callback(index + 1, outcome)
+            except Exception:
+                pass
         executed.extend(outcome.executed_tool_ids)
         if outcome.needs_clarification:
             return LoopResult(
@@ -398,6 +419,7 @@ __all__ = [
     "ProviderStep",
     "LoopResult",
     "SendFn",
+    "ToolDebugCallback",
     "execute_tool_calls",
     "parse_tool_arguments",
     "run_tool_loop",
