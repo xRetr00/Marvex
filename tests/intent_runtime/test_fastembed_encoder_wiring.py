@@ -94,6 +94,19 @@ def test_configured_encoder_selects_fastembed_via_env_var(monkeypatch: pytest.Mo
     assert isinstance(encoder, FastEmbedIntentEncoder)
 
 
+def test_configured_encoder_prefers_local_fastembed_when_available(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Default intent routing should use local embeddings when fastembed exists."""
+
+    monkeypatch.delenv("MARVEX_INTENT_ENCODER", raising=False)
+    monkeypatch.setattr("packages.intent_runtime.hybrid.importlib.util.find_spec", lambda name: object() if name == "fastembed" else None)
+    with patch("packages.intent_runtime.hybrid.FastEmbedIntentEncoder.__init__") as mock_init:
+        mock_init.return_value = None
+        encoder = _configured_semantic_encoder()
+
+    assert isinstance(encoder, FastEmbedIntentEncoder)
+    mock_init.assert_called_once_with(model_name=os.environ.get("MARVEX_INTENT_FASTEMBED_MODEL"))
+
+
 def test_configured_encoder_selects_fastembed_with_model_env_var(monkeypatch: pytest.MonkeyPatch) -> None:
     """MARVEX_INTENT_FASTEMBED_MODEL is forwarded to FastEmbedIntentEncoder."""
     pytest.importorskip("fastembed")

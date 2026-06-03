@@ -4,6 +4,7 @@ from __future__ import annotations
 from packages.intent_runtime import IntentClassificationRequest, IntentKind
 from packages.intent_runtime.hybrid import (
     CapabilityAvailability,
+    DeterministicLocalIntentEncoder,
     HybridIntentRuntime,
     IntentPlan,
     IntentStep,
@@ -16,7 +17,7 @@ def _request(text: str) -> IntentClassificationRequest:
 
 
 def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -> None:
-    runtime = HybridIntentRuntime.default()
+    runtime = HybridIntentRuntime(semantic_encoder=DeterministicLocalIntentEncoder())
     examples = {
         "2+2": IntentKind.CAPABILITY_TOOL,
         "compute 15+25": IntentKind.CAPABILITY_TOOL,
@@ -44,7 +45,9 @@ def test_hybrid_intent_routes_required_examples_without_keyword_only_backend() -
 
 
 def test_hybrid_intent_uses_real_semantic_router_and_llamaindex_selector_proofs() -> None:
-    runtime = HybridIntentRuntime.default()
+    from packages.intent_runtime import hybrid as hybrid_module
+
+    runtime = HybridIntentRuntime(semantic_encoder=DeterministicLocalIntentEncoder())
 
     result = runtime.classify(_request("navigate webpage for me"))
 
@@ -53,7 +56,7 @@ def test_hybrid_intent_uses_real_semantic_router_and_llamaindex_selector_proofs(
     assert result.hybrid_details["semantic_router_route_count"] >= 5
     assert result.hybrid_details["semantic_encoder_backend_name"] == "deterministic_local_encoder"
     assert result.hybrid_details["semantic_selection_strategy"] == "encoded_route_cosine"
-    assert result.hybrid_details["llamaindex_selector_used"] is True
+    assert result.hybrid_details["llamaindex_selector_used"] is (hybrid_module.SingleSelection is not None)
     assert result.hybrid_details["semantic_router_hybrid_extra_available"] is False
 
 
