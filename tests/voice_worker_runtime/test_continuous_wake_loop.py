@@ -250,6 +250,46 @@ def test_continuous_loop_services_queued_manual_listen_without_wake(tmp_path: Pa
     assert completed.summary.get("normalized_transcript_text") == "what time is it"
 
 
+def test_queued_manual_listen_rejects_short_vad_blip_before_stt(tmp_path: Path):
+    controller, stt_calls = _controller(tmp_path)
+    controller.config = controller.config.model_copy(update={"vad": controller.config.vad.model_copy(update={"min_speech_ms": 300})})
+    controller._manual_listen_trace_id = "trace-short-noise"
+    script = [_frame("s", 0)] + [_frame("q", i) for i in range(4)]
+    capture = FakeContinuousCapture(script)
+
+    controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    assert not stt_calls
+    ended = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.VAD_SPEECH_ENDED)
+    assert ended.summary.get("reason_code") == "speech_too_short"
+
+
+def test_queued_manual_listen_does_not_expose_filler_transcript(tmp_path: Path):
+    manager = _install(tmp_path)
+
+    def wakeword_runner(frames, asset, *, phrase, threshold):
+        return WakeWordDetectionResult(detected=False, phrase=phrase, confidence=0.0, backend_id=asset.backend_id, reason_code="wakeword.not_detected")
+
+    def stt_runner(request, asset):
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="Eh?", backend_id=asset.backend_id, duration_ms=request.duration_ms, language="en", segments=())
+
+    controller = VoiceWorkerController(
+        config=_enabled_config(),
+        asset_manager=manager,
+        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, wakeword_runner=wakeword_runner, stt_runner=stt_runner),
+    )
+    controller._vad_decider = lambda frame: frame.frame_id.startswith("s")
+    controller.handle(VoiceWorkerCommand(command="start", command_id="c-start"))
+    controller._manual_listen_trace_id = "trace-filler"
+    capture = FakeContinuousCapture([_frame("s", i) for i in range(3)] + [_frame("q", i) for i in range(4)])
+
+    controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
+    assert completed.summary.get("transcript_rejected_reason") == "short_filler_or_noise"
+    assert "normalized_transcript_text" not in completed.summary
+
+
 def test_record_wake_reference_uses_continuous_capture_when_available(tmp_path: Path):
     manager = _install(tmp_path)
     capture = FakeContinuousCapture([_frame("q", 0), _frame("s", 1), _frame("s", 2), _frame("q", 3), _frame("q", 4), _frame("q", 5)])

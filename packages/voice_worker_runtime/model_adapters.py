@@ -19,6 +19,8 @@ class MoonshineSttRunner:
         self.asset_manager = asset_manager
         self.audio_refs = audio_refs
         self.transcriber_factory = transcriber_factory
+        self._transcriber_key: tuple[str, str] | None = None
+        self._transcriber: Any | None = None
 
     def __call__(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
@@ -48,16 +50,18 @@ class MoonshineSttRunner:
                     path_str = path_str[4:]
             else:
                 path_str = str(path)
-            try:
-                transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
-            except TypeError:
-                transcriber = factory(path_str)
-            try:
-                transcript = transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
-            finally:
-                close = getattr(transcriber, "close", None)
-                if callable(close):
-                    close()
+            key = (path_str, str(model_arch or ""))
+            if self._transcriber is None or self._transcriber_key != key:
+                if self._transcriber is not None:
+                    close = getattr(self._transcriber, "close", None)
+                    if callable(close):
+                        close()
+                try:
+                    self._transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
+                except TypeError:
+                    self._transcriber = factory(path_str)
+                self._transcriber_key = key
+            transcript = self._transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
             text, segments = _transcript_text_and_segments(transcript)
             return TranscriptionResult.succeeded(trace_id=request.trace_id, text=text, backend_id=asset.backend_id, duration_ms=_duration_ms(frames, request.duration_ms), language=request.language_hint or "en", segments=segments)
         except Exception as exc:
@@ -71,6 +75,8 @@ class SenseVoiceSttRunner:
         self.asset_manager = asset_manager
         self.audio_refs = audio_refs
         self.automodel_factory = automodel_factory
+        self._model_key: str | None = None
+        self._model: Any | None = None
 
     def __call__(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
@@ -80,8 +86,11 @@ class SenseVoiceSttRunner:
             return _stt_failed(request, asset.backend_id, blocker)
         try:
             factory = self.automodel_factory or import_module("funasr").AutoModel
-            model = factory(model=str(path), disable_update=True)
-            output = model.generate(input=_frames_to_float_samples(frames), fs=frames[0].sample_rate, language=request.language_hint or "auto")
+            model_key = str(path)
+            if self._model is None or self._model_key != model_key:
+                self._model = factory(model=model_key, disable_update=True)
+                self._model_key = model_key
+            output = self._model.generate(input=_frames_to_float_samples(frames), fs=frames[0].sample_rate, language=request.language_hint or "auto")
             text, segments = _funasr_text_and_segments(output)
             return TranscriptionResult.succeeded(trace_id=request.trace_id, text=text, backend_id=asset.backend_id, duration_ms=_duration_ms(frames, request.duration_ms), language=request.language_hint, segments=segments)
         except Exception:
@@ -93,6 +102,8 @@ class KokoroOnnxTtsRunner:
         self.asset_manager = asset_manager
         self.generated_audio = generated_audio
         self.kokoro_factory = kokoro_factory
+        self._kokoro_key: tuple[str, str] | None = None
+        self._kokoro: Any | None = None
 
     def __call__(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
@@ -105,11 +116,14 @@ class KokoroOnnxTtsRunner:
             return _tts_failed(request, asset.backend_id, "kokoro_model_or_voice_file_missing")
         try:
             factory = self.kokoro_factory or import_module("kokoro_onnx").Kokoro
-            kokoro = factory(str(model_path), str(voices_path))
+            key = (str(model_path), str(voices_path))
+            if self._kokoro is None or self._kokoro_key != key:
+                self._kokoro = factory(str(model_path), str(voices_path))
+                self._kokoro_key = key
             try:
-                samples, sample_rate = kokoro.create(_normalize_text(request.text), voice=request.voice_id)
+                samples, sample_rate = self._kokoro.create(_normalize_text(request.text), voice=request.voice_id)
             except TypeError:
-                samples, sample_rate = kokoro.create(_normalize_text(request.text), request.voice_id)
+                samples, sample_rate = self._kokoro.create(_normalize_text(request.text), request.voice_id)
             pcm = _float_samples_to_pcm_bytes(samples)
             ref = self.generated_audio.remember_audio(trace_id=request.trace_id, voice_id=request.voice_id, pcm=pcm, sample_rate=int(sample_rate))
             return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref=ref.audio_ref_id, backend_id=asset.backend_id, voice_id=request.voice_id, sample_rate=int(sample_rate), duration_ms=_audio_duration_ms(byte_count=len(pcm), sample_rate=int(sample_rate)))
@@ -122,6 +136,8 @@ class PiperTtsRunner:
         self.asset_manager = asset_manager
         self.generated_audio = generated_audio
         self.voice_loader = voice_loader
+        self._voice_key: tuple[str, str] | None = None
+        self._voice: Any | None = None
 
     def __call__(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
@@ -135,8 +151,11 @@ class PiperTtsRunner:
             config_path = None
         try:
             loader = self.voice_loader or import_module("piper").PiperVoice.load
-            voice = loader(str(model_path), config_path=str(config_path) if config_path else None)
-            chunks = tuple(voice.synthesize(_normalize_text(request.text)))
+            key = (str(model_path), str(config_path) if config_path else "")
+            if self._voice is None or self._voice_key != key:
+                self._voice = loader(str(model_path), config_path=str(config_path) if config_path else None)
+                self._voice_key = key
+            chunks = tuple(self._voice.synthesize(_normalize_text(request.text)))
             pcm = b"".join(_chunk_bytes(chunk) for chunk in chunks)
             sample_rate = int(getattr(chunks[0], "sample_rate", 22050)) if chunks else 22050
             ref = self.generated_audio.remember_audio(trace_id=request.trace_id, voice_id=request.voice_id, pcm=pcm, sample_rate=sample_rate)

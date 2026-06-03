@@ -78,6 +78,8 @@ class VoiceWorkerVADConfig(VoiceRuntimeModel):
     silence_timeout_ms: int = Field(default=800, ge=0)
     tail_padding_ms: int = Field(default=240, ge=0)
     max_utterance_ms: int = Field(default=30_000, gt=0)
+    min_speech_ms: int = Field(default=300, ge=0)
+    min_capture_rms: float = Field(default=0.0, ge=0)
 
 
 class VoiceWorkerConfig(VoiceRuntimeModel):

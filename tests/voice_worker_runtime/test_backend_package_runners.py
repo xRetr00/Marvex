@@ -54,11 +54,14 @@ def test_default_moonshine_runner_invokes_transcriber_with_in_memory_frames(tmp_
     audio_ref = runtime.remember_captured_frames(trace_id="trace-moonshine", frames=(AudioFrame(frame_id="f1", pcm=b"\x00\x00\xff\x7f", sample_rate=16_000, channel_count=1, duration_ms=100),))
 
     result = runtime.test_stt(trace_id="trace-moonshine", backend_id="moonshine-v2", audio_ref_id=audio_ref)
+    result2 = runtime.test_stt(trace_id="trace-moonshine-2", backend_id="moonshine-v2", audio_ref_id=audio_ref)
 
     assert result.status == "succeeded"
+    assert result2.status == "succeeded"
     assert result.text == "hello marvex"
     assert calls[0] == (str((root / "stt" / "moonshine-v2").resolve()), 2, 16_000)
-    assert calls[-1][0] == "closed"
+    assert [call[0] for call in calls].count("closed") == 0
+    assert len(calls) == 2
     assert "hello marvex" not in json.dumps(result.safe_projection()).lower()
 
 

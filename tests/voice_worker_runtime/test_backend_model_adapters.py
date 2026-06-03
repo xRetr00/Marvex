@@ -24,6 +24,7 @@ def test_moonshine_runner_transcribes_resolved_audio_ref_without_rendering_pcm_o
 
     class FakeTranscriber:
         def __init__(self, model_path: str) -> None:
+            observed["init_count"] = int(observed.get("init_count", 0)) + 1
             observed["model_path"] = model_path
 
         def transcribe_without_streaming(self, audio_data, sample_rate: int = 16000):
@@ -36,14 +37,17 @@ def test_moonshine_runner_transcribes_resolved_audio_ref_without_rendering_pcm_o
 
     runner = MoonshineSttRunner(asset_manager=manager, audio_refs=audio_refs, transcriber_factory=FakeTranscriber)
     result = runner(TranscriptionRequest(trace_id="trace-moonshine", audio_ref_id=audio_ref.audio_ref_id, duration_ms=100, backend_id="moonshine-v2"), asset)
+    result2 = runner(TranscriptionRequest(trace_id="trace-moonshine-2", audio_ref_id=audio_ref.audio_ref_id, duration_ms=100, backend_id="moonshine-v2"), asset)
     serialized = json.dumps(result.safe_projection()).lower()
 
     assert result.status == "succeeded"
+    assert result2.status == "succeeded"
     assert result.text == "private moonshine transcript"
     assert str(observed["model_path"]).endswith("stt\\moonshine-v2") or str(observed["model_path"]).endswith("stt/moonshine-v2")
     assert observed["sample_rate"] == 16000
     assert observed["audio_count"] == 2
-    assert observed["closed"] is True
+    assert observed["init_count"] == 1
+    assert observed.get("closed") is None
     assert "private moonshine transcript" not in serialized
     assert "\\x00" not in serialized
 

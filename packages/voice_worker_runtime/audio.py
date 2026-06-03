@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Callable, Iterable
+from math import floor
 from typing import Literal, Protocol
 
 from pydantic import Field
@@ -122,6 +123,9 @@ class SoundDeviceAudioAdapter:
     def __init__(self, *, pcm_resolver: Callable[[str], bytes] | None = None) -> None:
         self._sd = None
         self._pcm_resolver = pcm_resolver
+        self._last_playback_pcm = b""
+        self._last_playback_sample_rate = 0
+        self._aec: _WebRtcAecProcessor | None = None
 
     def _sounddevice(self):
         if self._sd is None:
@@ -190,9 +194,19 @@ class SoundDeviceAudioAdapter:
             )
         return tuple(frames)
 
+    def capture_echo_cancelled_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int) -> Iterable[AudioFrame]:
+        frames = tuple(self.capture_frames(device_id=device_id, sample_rate=sample_rate, channel_count=channel_count, frame_count=frame_count))
+        if not frames:
+            return ()
+        aec = self._ensure_aec(sample_rate=sample_rate, channel_count=channel_count)
+        if aec is None:
+            return frames
+        return tuple(aec.process_frame(frame) for frame in frames)
+
     def play_audio(self, *, device_id: str | None, audio_ref: str, sample_rate: int) -> PlaybackAdapterResult:
         sd = self._sounddevice()
         pcm = self._pcm_resolver(audio_ref) if self._pcm_resolver else b""
+        self._remember_far_end(pcm=pcm, sample_rate=sample_rate)
         samples = _pcm_to_float_array(pcm) if pcm else [0.0] * max(1, int(sample_rate * 0.05))
         sd.play(samples, samplerate=sample_rate, device=_device_arg(device_id))
         sd.wait()
@@ -203,6 +217,7 @@ class SoundDeviceAudioAdapter:
         # barge-in while audio plays.
         sd = self._sounddevice()
         pcm = self._pcm_resolver(audio_ref) if self._pcm_resolver else b""
+        self._remember_far_end(pcm=pcm, sample_rate=sample_rate)
         samples = _pcm_to_float_array(pcm) if pcm else [0.0] * max(1, int(sample_rate * 0.05))
         sd.play(samples, samplerate=sample_rate, device=_device_arg(device_id))
         return PlaybackAdapterResult(device_id=device_id, audio_ref=audio_ref, status="playing", reason_code="sounddevice.playback_started")
@@ -221,6 +236,81 @@ class SoundDeviceAudioAdapter:
     def interrupt_playback(self, *, reason_code: str) -> PlaybackAdapterResult:
         self._sounddevice().stop()
         return PlaybackAdapterResult(status="interrupted", reason_code=reason_code)
+
+    def _remember_far_end(self, *, pcm: bytes, sample_rate: int) -> None:
+        self._last_playback_pcm = pcm or b""
+        self._last_playback_sample_rate = int(sample_rate or 0)
+        self._aec = None
+
+    def _ensure_aec(self, *, sample_rate: int, channel_count: int) -> "_WebRtcAecProcessor | None":
+        if not self._last_playback_pcm:
+            return None
+        if self._aec is None or self._aec.sample_rate != sample_rate or self._aec.channel_count != channel_count:
+            try:
+                self._aec = _WebRtcAecProcessor(sample_rate=sample_rate, channel_count=channel_count)
+                far_end = _resample_pcm_int16(self._last_playback_pcm, source_rate=self._last_playback_sample_rate, target_rate=sample_rate)
+                self._aec.set_far_end(far_end)
+            except Exception:
+                self._aec = None
+        return self._aec
+
+
+class _WebRtcAecProcessor:
+    """Small adapter over ``aec-audio-processing`` WebRTC APM.
+
+    The library operates on 10 ms int16 PCM frames and needs the far-end
+    playback signal as a reverse stream. We keep that detail inside the local
+    audio adapter so barge-in/VAD only sees cleaned mic frames.
+    """
+
+    def __init__(self, *, sample_rate: int, channel_count: int) -> None:
+        from aec_audio_processing import AudioProcessor  # type: ignore[import-not-found]
+
+        self.sample_rate = int(sample_rate)
+        self.channel_count = int(channel_count)
+        self.chunk_bytes = max(1, self.sample_rate // 100) * max(1, self.channel_count) * 2
+        self._far_end = b""
+        self._far_offset = 0
+        self._processor = AudioProcessor(enable_aec=True, enable_ns=True, enable_agc=False, enable_vad=False)
+        self._processor.set_stream_format(self.sample_rate, self.channel_count, self.sample_rate, self.channel_count)
+        self._processor.set_reverse_stream_format(self.sample_rate, self.channel_count)
+        self._processor.set_stream_delay(50)
+
+    def set_far_end(self, pcm: bytes) -> None:
+        self._far_end = pcm[: len(pcm) - (len(pcm) % 2)]
+        self._far_offset = 0
+
+    def process_frame(self, frame: AudioFrame) -> VoiceWorkerAudioFrame:
+        cleaned = bytearray()
+        pcm = frame.pcm[: len(frame.pcm) - (len(frame.pcm) % 2)]
+        for start in range(0, len(pcm), self.chunk_bytes):
+            chunk = pcm[start:start + self.chunk_bytes]
+            if len(chunk) < self.chunk_bytes:
+                cleaned.extend(chunk)
+                continue
+            reverse = self._next_far_end_chunk(len(chunk))
+            try:
+                self._processor.process_reverse_stream(reverse)
+                out = self._processor.process_stream(chunk)
+                cleaned.extend(bytes(out))
+            except Exception:
+                cleaned.extend(chunk)
+        return VoiceWorkerAudioFrame(
+            frame_id=frame.frame_id,
+            pcm=bytes(cleaned) or frame.pcm,
+            sample_rate=frame.sample_rate,
+            channel_count=frame.channel_count,
+            duration_ms=frame.duration_ms,
+        )
+
+    def _next_far_end_chunk(self, size: int) -> bytes:
+        if self._far_offset >= len(self._far_end):
+            return b"\x00" * size
+        chunk = self._far_end[self._far_offset:self._far_offset + size]
+        self._far_offset += size
+        if len(chunk) < size:
+            chunk += b"\x00" * (size - len(chunk))
+        return chunk
 
 
 def _device_arg(device_id: str | None) -> int | str | None:
@@ -244,6 +334,36 @@ def _pcm_to_float_array(pcm: bytes) -> list[float]:
     buf = array("h")
     buf.frombytes(safe)
     return [max(-1.0, min(1.0, s / 32768.0)) for s in buf]
+
+
+def _resample_pcm_int16(pcm: bytes, *, source_rate: int, target_rate: int) -> bytes:
+    if not pcm or source_rate <= 0 or target_rate <= 0 or source_rate == target_rate:
+        return pcm
+    safe = pcm[: len(pcm) - (len(pcm) % 2)]
+    if not safe:
+        return b""
+    try:
+        import numpy as np
+
+        samples = np.frombuffer(safe, dtype=np.int16).astype(np.float32)
+        if samples.size == 0:
+            return b""
+        target_count = max(1, int(round(samples.size * target_rate / source_rate)))
+        old_x = np.linspace(0.0, 1.0, num=samples.size, endpoint=False)
+        new_x = np.linspace(0.0, 1.0, num=target_count, endpoint=False)
+        return np.interp(new_x, old_x, samples).astype(np.int16).tobytes()
+    except Exception:
+        pass
+    src = array("h")
+    src.frombytes(safe)
+    if not src:
+        return b""
+    target_count = max(1, int(round(len(src) * target_rate / source_rate)))
+    out = array("h")
+    for index in range(target_count):
+        src_index = min(len(src) - 1, int(floor(index * source_rate / target_rate)))
+        out.append(src[src_index])
+    return out.tobytes()
 
 
 def _bounded_level(value: object) -> float:

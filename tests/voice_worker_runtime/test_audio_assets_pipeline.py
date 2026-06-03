@@ -530,6 +530,60 @@ def test_sounddevice_adapter_play_audio_resolves_real_pcm_via_resolver(monkeypat
     assert abs(samples[1] - (-32767 / 32768.0)) < 0.01
 
 
+def test_sounddevice_adapter_echo_cancelled_capture_uses_far_end_reference(monkeypatch) -> None:
+    import sys
+    from types import SimpleNamespace
+
+    reverse_chunks: list[bytes] = []
+    stream_chunks: list[bytes] = []
+
+    class FakeAudioProcessor:
+        def __init__(self, **kwargs) -> None:
+            self.kwargs = kwargs
+
+        def set_stream_format(self, *args) -> None:
+            self.stream_format = args
+
+        def set_reverse_stream_format(self, *args) -> None:
+            self.reverse_format = args
+
+        def set_stream_delay(self, delay_ms: int) -> None:
+            self.delay_ms = delay_ms
+
+        def process_reverse_stream(self, chunk: bytes) -> bytes:
+            reverse_chunks.append(bytes(chunk))
+            return chunk
+
+        def process_stream(self, chunk: bytes) -> bytes:
+            stream_chunks.append(bytes(chunk))
+            return b"\x03\x00" * (len(chunk) // 2)
+
+    class FakeRecording:
+        def tobytes(self) -> bytes:
+            return b"\x01\x00" * 1600
+
+    fake_sd = SimpleNamespace(
+        query_devices=lambda: (),
+        rec=lambda frames, samplerate, channels, dtype, device=None: FakeRecording(),
+        wait=lambda: None,
+        play=lambda data, samplerate, device=None: None,
+        stop=lambda: None,
+    )
+    monkeypatch.setitem(sys.modules, "sounddevice", fake_sd)
+    monkeypatch.setitem(sys.modules, "aec_audio_processing", SimpleNamespace(AudioProcessor=FakeAudioProcessor))
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    adapter = SoundDeviceAudioAdapter(pcm_resolver=lambda _ref: b"\x02\x00" * 2400)
+    adapter.begin_playback(device_id=None, audio_ref="memory://voice/generated/reply", sample_rate=24_000)
+    frames = tuple(adapter.capture_echo_cancelled_frames(device_id=None, sample_rate=16_000, channel_count=1, frame_count=1))
+
+    assert frames[0].pcm == b"\x03\x00" * 1600
+    assert len(stream_chunks) == 10
+    assert len(reverse_chunks) == 10
+    assert all(len(chunk) == 320 for chunk in reverse_chunks)
+
+
 def test_sounddevice_adapter_plays_silence_fallback_when_no_resolver(monkeypatch) -> None:
     played_data: list[object] = []
     fake_sd = __import__("types").SimpleNamespace(

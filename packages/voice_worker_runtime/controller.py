@@ -112,6 +112,34 @@ def _wakeword_public_blocker(blocker: str) -> str:
     return blocker
 
 
+_NOISE_TRANSCRIPTS = {
+    "ah",
+    "eh",
+    "er",
+    "huh",
+    "hm",
+    "hmm",
+    "mm",
+    "oh",
+    "uh",
+    "um",
+    "umm",
+}
+
+
+def _normalized_transcript_or_reject_reason(text: str) -> tuple[str, str | None]:
+    stripped = " ".join(text.split()).strip()
+    if not stripped:
+        return "", "empty_transcript"
+    compact = "".join(character.lower() for character in stripped if character.isalnum())
+    if compact in _NOISE_TRANSCRIPTS:
+        return "", "short_filler_or_noise"
+    words = [part for part in stripped.replace("?", " ").replace("!", " ").replace(".", " ").split() if part]
+    if len(stripped) <= 3 or (len(words) == 1 and len(compact) <= 3):
+        return "", "short_filler_or_noise"
+    return stripped, None
+
+
 class VoiceWorkerController:
     def __init__(
         self,
@@ -358,6 +386,7 @@ class VoiceWorkerController:
         *,
         vad_decider: "Callable[[Any], bool]",
         read_frame: "Callable[[], Any] | None" = None,
+        capture_stats: "dict[str, float] | None" = None,
     ) -> tuple[tuple[Any, ...], str]:
         """VAD-endpointed incremental capture of a single user utterance.
 
@@ -383,6 +412,7 @@ class VoiceWorkerController:
         speech_started = False
         trailing_silence = 0
         leading_silence = 0
+        speech_frame_count = 0
         for _ in range(max_frames):
             frame = reader()
             if frame is None:
@@ -391,6 +421,7 @@ class VoiceWorkerController:
             if not speech_started:
                 if is_speech:
                     speech_started = True
+                    speech_frame_count += 1
                     captured.extend(pre_roll)
                     captured.append(frame)
                     trailing_silence = 0
@@ -402,13 +433,22 @@ class VoiceWorkerController:
                 continue
             captured.append(frame)
             if is_speech:
+                speech_frame_count += 1
                 trailing_silence = 0
             else:
                 trailing_silence += 1
                 if trailing_silence >= silence_to_end:
+                    if capture_stats is not None:
+                        capture_stats["speech_frame_count"] = float(speech_frame_count)
+                        capture_stats["speech_ms"] = float(speech_frame_count * frame_ms)
+                        capture_stats["capture_rms"] = round(_frames_rms(tuple(captured)), 1)
                     return tuple(captured), "silence_endpoint"
         if not speech_started:
             return tuple(captured), "no_speech"
+        if capture_stats is not None:
+            capture_stats["speech_frame_count"] = float(speech_frame_count)
+            capture_stats["speech_ms"] = float(speech_frame_count * frame_ms)
+            capture_stats["capture_rms"] = round(_frames_rms(tuple(captured)), 1)
         return tuple(captured), "max_utterance"
 
     def _run_post_wake_capture(
@@ -443,18 +483,39 @@ class VoiceWorkerController:
             _diag({"event": "post_wake_capture", "stage": "listening", "ambient_rms": round(float(ambient_rms or 0.0), 1)})
             vad_stats: dict[str, float] = {}
             vad_decider = self._resolve_vad_decider(ambient_rms=ambient_rms, stats=vad_stats)
-            frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame)
+            capture_stats: dict[str, float] = {}
+            frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame, capture_stats=capture_stats)
             # Decisive endpoint diagnostic: the captured frame count, the reason,
             # the energy floor used, the max RMS the VAD actually saw, and which
             # path (silero vs energy) carried detection. With this, a no_speech on
             # a clearly-spoken utterance tells us exactly where the gate failed.
-            _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames), **vad_stats})
+            _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames), **vad_stats, **capture_stats})
             if not frames or reason == "no_speech":
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
                     trace_id=parent_trace_id,
                     summary={"reason_code": "no_speech", "post_wake_capture": True},
                 )
+                return
+            min_speech_ms = int(getattr(self.config.vad, "min_speech_ms", 0) or 0)
+            min_capture_rms = float(getattr(self.config.vad, "min_capture_rms", 0.0) or 0.0)
+            speech_ms = float(capture_stats.get("speech_ms", 0.0))
+            capture_rms = float(capture_stats.get("capture_rms", 0.0))
+            if speech_ms < min_speech_ms or capture_rms < min_capture_rms:
+                reject_reason = "speech_too_short" if speech_ms < min_speech_ms else "speech_energy_too_low"
+                self._record(
+                    VoiceWorkerEventType.VAD_SPEECH_ENDED,
+                    trace_id=parent_trace_id,
+                    summary={
+                        "reason_code": reject_reason,
+                        "post_wake_capture": True,
+                        "speech_ms": speech_ms,
+                        "capture_rms": capture_rms,
+                        "min_speech_ms": min_speech_ms,
+                        "min_capture_rms": min_capture_rms,
+                    },
+                )
+                _diag({"event": "post_wake_capture", "stage": "rejected", "reason_code": reject_reason, "speech_ms": speech_ms, "capture_rms": capture_rms})
                 return
             self._record(
                 VoiceWorkerEventType.VAD_SPEECH_STARTED,
@@ -491,7 +552,14 @@ class VoiceWorkerController:
                 "endpoint_reason": reason,
             }
             if transcription.status == "succeeded" and transcription.text:
-                summary["normalized_transcript_text"] = transcription.text
+                normalized_text, reject_reason = _normalized_transcript_or_reject_reason(transcription.text)
+                if normalized_text:
+                    summary["normalized_transcript_text"] = normalized_text
+                    summary["accepted_transcript_present"] = True
+                else:
+                    summary["text_present"] = False
+                    summary["accepted_transcript_present"] = False
+                    summary["transcript_rejected_reason"] = reject_reason
             self._record(
                 VoiceWorkerEventType.TRANSCRIPTION_COMPLETED,
                 trace_id=parent_trace_id,
@@ -502,8 +570,9 @@ class VoiceWorkerController:
                     "event": "post_wake_stt",
                     "status": str(transcription.status),
                     "backend": self.config.active_stt_backend_id,
-                    "text_present": bool(transcription.status == "succeeded" and transcription.text),
+                    "text_present": bool(summary.get("normalized_transcript_text")),
                     "text_len": len(transcription.text or ""),
+                    "transcript_rejected_reason": summary.get("transcript_rejected_reason", ""),
                 }
             )
         except Exception as exc:
@@ -1207,11 +1276,10 @@ class VoiceWorkerController:
         """Play a reply non-blocking while monitoring the mic; interrupt on speech.
 
         Starts playback without blocking, then polls ~100ms mic frames through
-        the VAD decider. If the user starts talking, playback is interrupted
-        (BARGE_IN_DETECTED) so they can take over the conversation. If no
-        barge-in occurs, playback runs to completion. NOTE: real deployments
-        need acoustic echo cancellation so the assistant's own audio doesn't
-        self-trigger; that's a hardware/driver concern outside this loop.
+        the VAD decider. Real audio adapters can provide echo-cancelled capture
+        so Marvex's own TTS is treated as far-end audio and does not self-
+        trigger barge-in. If the user starts talking, playback is interrupted
+        (BARGE_IN_DETECTED) so they can take over the conversation.
         """
 
         begin = getattr(self.audio, "begin_playback", None)
@@ -1234,8 +1302,11 @@ class VoiceWorkerController:
         interrupted = False
         while active() and guard < max_poll:
             guard += 1
+            capture = getattr(self.audio, "capture_echo_cancelled_frames", None)
+            if not callable(capture):
+                capture = self.audio.capture_frames
             batch = tuple(
-                self.audio.capture_frames(
+                capture(
                     device_id=self.config.audio.input_device_id,
                     sample_rate=self.config.audio.sample_rate,
                     channel_count=self.config.audio.channel_count,

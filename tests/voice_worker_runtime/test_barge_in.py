@@ -70,6 +70,33 @@ def test_barge_in_interrupts_playback_on_user_speech(tmp_path: Path):
     assert result.error is None
 
 
+def test_barge_in_prefers_echo_cancelled_capture_when_available(tmp_path: Path):
+    controller, audio = _controller(tmp_path)
+    audio.active_ticks = 1
+    calls = {"aec": 0, "raw": 0}
+
+    original_capture = audio.capture_frames
+
+    def capture_echo_cancelled_frames(**kwargs):
+        calls["aec"] += 1
+        return original_capture(**kwargs)
+
+    def capture_frames(**kwargs):
+        calls["raw"] += 1
+        return original_capture(**kwargs)
+
+    audio.capture_echo_cancelled_frames = capture_echo_cancelled_frames  # type: ignore[attr-defined]
+    audio.capture_frames = capture_frames  # type: ignore[method-assign]
+    controller._vad_decider = lambda _frame: False
+
+    controller.handle(
+        VoiceWorkerCommand(command="speak", command_id="c-speak", payload={"text": "Echo-cancelled barge-in.", "barge_in": True})
+    )
+
+    assert calls["aec"] == 1
+    assert calls["raw"] == 0
+
+
 def test_no_barge_in_plays_to_completion(tmp_path: Path):
     controller, audio = _controller(tmp_path)
     audio.active_ticks = 3  # finishes after 3 polls
