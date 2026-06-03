@@ -244,9 +244,11 @@ def _resolve_stdio_command(config: PlaywrightMcpServerConfig) -> tuple[str, list
     args = list(config.args)
     if os.name == "nt":
         resolved = shutil.which(command)
+        if resolved and resolved.lower().endswith(".exe"):
+            return resolved, args
         if resolved is None or resolved.lower().endswith((".cmd", ".bat")):
             shell = os.environ.get("COMSPEC", "").strip() or shutil.which("cmd") or "cmd.exe"
-            return shell, ["/c", command, *args]
+            return shell, ["/d", "/c", resolved or command, *args]
     return command, args
 
 
