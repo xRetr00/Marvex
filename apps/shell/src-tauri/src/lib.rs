@@ -9,6 +9,7 @@ mod token_handoff;
 pub mod service;
 
 use std::{
+    collections::HashMap,
     net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream},
     path::PathBuf,
     sync::{
@@ -44,7 +45,7 @@ struct ShellRuntimeConfig {
 struct ShellState {
     token: String,
     supervisor: Supervisor,
-    active_chat_cancel: Option<oneshot::Sender<()>>,
+    active_chat_cancels: HashMap<String, oneshot::Sender<()>>,
 }
 
 const TRAY_ICON_BYTES: &[u8] = include_bytes!(concat!(
@@ -232,18 +233,23 @@ async fn submit_chat_turn_stream(
     text: String,
     metadata: Option<Value>,
     previous_response_id: Option<String>,
+    request_id: String,
     state: tauri::State<'_, Mutex<ShellState>>,
 ) -> Result<Value, String> {
     let text = text.trim().to_string();
     if text.is_empty() {
         return Err("chat text must be non-empty".to_string());
     }
+    let request_id = request_id.trim().to_string();
+    if request_id.is_empty() {
+        return Err("chat stream request id must be non-empty".to_string());
+    }
     let (token, session_id, mut cancel_rx) = {
         let mut guard = state
             .lock()
             .map_err(|_| "shell state unavailable".to_string())?;
         let (cancel_tx, cancel_rx) = oneshot::channel();
-        guard.active_chat_cancel = Some(cancel_tx);
+        guard.active_chat_cancels.insert(request_id.clone(), cancel_tx);
         (
             guard.token.clone(),
             session_id_from_metadata(&metadata),
@@ -288,10 +294,16 @@ async fn submit_chat_turn_stream(
             Some(&token),
             &body,
             http::TURN_HTTP_TIMEOUT,
-        ) => result?,
+        ) => match result {
+            Ok(response) => response,
+            Err(err) => {
+                clear_active_chat_cancel(&state, &request_id);
+                return Err(err);
+            }
+        },
         _ = &mut cancel_rx => {
-            clear_active_chat_cancel(&state);
-            let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
+            clear_active_chat_cancel(&state, &request_id);
+            let _ = app.emit("chat-stream", json!({"request_id": request_id, "turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
             return Err("chat turn cancelled".to_string());
         }
     };
@@ -311,12 +323,13 @@ async fn submit_chat_turn_stream(
                     if final_result.is_some() {
                         break;
                     }
+                    clear_active_chat_cancel(&state, &request_id);
                     return Err(format!("stream read failed: {err}"));
                 }
             },
             _ = &mut cancel_rx => {
-                clear_active_chat_cancel(&state);
-                let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
+                clear_active_chat_cancel(&state, &request_id);
+                let _ = app.emit("chat-stream", json!({"request_id": request_id, "turn_id": turn_id, "event": {"type": "error", "message": "Chat turn stopped.", "reason": "user_cancelled"}}));
                 return Err("chat turn cancelled".to_string());
             }
         };
@@ -333,34 +346,41 @@ async fn submit_chat_turn_stream(
             if event.get("type").and_then(|value| value.as_str()) == Some("final") {
                 final_result = event.get("result").cloned();
             }
-            let _ = app.emit("chat-stream", json!({"turn_id": turn_id, "event": event}));
+            let _ = app.emit("chat-stream", json!({"request_id": request_id, "turn_id": turn_id, "event": event}));
         }
     }
 
-    clear_active_chat_cancel(&state);
+    clear_active_chat_cancel(&state, &request_id);
     final_result.ok_or_else(|| "stream ended without a final result".to_string())
 }
 
-fn clear_active_chat_cancel(state: &tauri::State<'_, Mutex<ShellState>>) {
+fn clear_active_chat_cancel(state: &tauri::State<'_, Mutex<ShellState>>, request_id: &str) {
     if let Ok(mut guard) = state.lock() {
-        guard.active_chat_cancel = None;
+        guard.active_chat_cancels.remove(request_id);
     }
 }
 
 #[tauri::command]
 fn cancel_active_chat_turn(state: tauri::State<'_, Mutex<ShellState>>) -> Result<Value, String> {
-    let sender = {
+    let senders = {
         let mut guard = state
             .lock()
             .map_err(|_| "shell state unavailable".to_string())?;
-        guard.active_chat_cancel.take()
+        guard
+            .active_chat_cancels
+            .drain()
+            .map(|(_, sender)| sender)
+            .collect::<Vec<_>>()
     };
-    if let Some(sender) = sender {
+    let cancel_count = senders.len();
+    for sender in senders {
         let _ = sender.send(());
-        Ok(json!({"schema_version": "1", "cancel_requested": true}))
-    } else {
-        Ok(json!({"schema_version": "1", "cancel_requested": false}))
     }
+    Ok(json!({
+        "schema_version": "1",
+        "cancel_requested": cancel_count > 0,
+        "cancel_count": cancel_count,
+    }))
 }
 
 fn session_id_from_metadata(metadata: &Option<Value>) -> String {
@@ -865,7 +885,7 @@ pub fn run() {
             app.manage(Mutex::new(ShellState {
                 token,
                 supervisor,
-                active_chat_cancel: None,
+                active_chat_cancels: HashMap::new(),
             }));
             build_tray(app.handle())?;
             #[cfg(target_os = "windows")]

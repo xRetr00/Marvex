@@ -361,15 +361,27 @@ fn find_uv(resource_dir: Option<&Path>) -> Option<PathBuf> {
 /// Find the bundled `marvex-*.whl` in the resource dir.
 fn first_marvex_wheel(resource_dir: &Path) -> Option<PathBuf> {
     let entries = fs::read_dir(resource_dir).ok()?;
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-            if name.starts_with("marvex-") && name.ends_with(".whl") {
-                return Some(path);
-            }
-        }
+    let mut wheels = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| {
+            path.file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name.starts_with("marvex-") && name.ends_with(".whl"))
+        })
+        .collect::<Vec<_>>();
+    wheels.sort();
+
+    let version_prefix = format!("marvex-{}-", env!("CARGO_PKG_VERSION"));
+    if let Some(current) = wheels.iter().find(|path| {
+        path.file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name.starts_with(&version_prefix))
+    }) {
+        return Some(current.clone());
     }
-    None
+
+    (wheels.len() == 1).then(|| wheels.remove(0))
 }
 
 fn runtime_wheel_marker_path(data_dir: &Path) -> PathBuf {
@@ -889,9 +901,9 @@ fn sanitize_log_line(line: &str) -> String {
 mod tests {
     use super::{
         console_script_can_be_updated, default_file_capability_root, default_product_model,
-        default_product_provider, find_uv, record_installed_runtime_wheel, resource_env_paths,
-        runtime_uv_cache_dir, runtime_venv_is_current, sanitize_log_line, service_kind_label,
-        service_specs, sidecar_path, venv_create_args, venv_root, venv_script,
+        default_product_provider, find_uv, first_marvex_wheel, record_installed_runtime_wheel,
+        resource_env_paths, runtime_uv_cache_dir, runtime_venv_is_current, sanitize_log_line,
+        service_kind_label, service_specs, sidecar_path, venv_create_args, venv_root, venv_script,
         write_runtime_manifest, RuntimeConfig, RuntimeOutcome, ServiceKind, Supervisor,
         SupervisorStatus, PYTHON_RUNTIME_VERSION,
     };
@@ -1065,6 +1077,20 @@ mod tests {
             &venv,
             Some(&resource_dir)
         ));
+    }
+
+    #[test]
+    fn bundled_wheel_selection_prefers_shell_version_over_stale_wheel() {
+        let root = unique_temp_dir("runtime-wheel-version-selection");
+        let stale = root.join("marvex-0.2.0-py3-none-any.whl");
+        let current = root.join(format!(
+            "marvex-{}-py3-none-any.whl",
+            env!("CARGO_PKG_VERSION")
+        ));
+        fs::write(&stale, b"stale runtime wheel").expect("stale wheel");
+        fs::write(&current, b"current runtime wheel").expect("current wheel");
+
+        assert_eq!(first_marvex_wheel(&root), Some(current));
     }
 
     #[test]
