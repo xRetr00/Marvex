@@ -1,6 +1,10 @@
+import { VOICE_THINKING_FILLERS, pickVoiceFiller } from "./voiceFillers";
+
 export type VoiceSpeak = (text: string, options?: { bargeIn?: boolean }) => Promise<unknown>;
 
-export const VOICE_RESPONSE_FILLERS = ["One moment.", "Let me check.", "I'm checking."] as const;
+// Fallback fillers for the rare turn that emits no progress at all before the
+// final reply. Shares the playful pool so the spoken voice stays consistent.
+export const VOICE_RESPONSE_FILLERS = VOICE_THINKING_FILLERS;
 
 export type VoiceTurnSpeechOptions<T> = {
   runTurn: (reportProgress: (text: string) => void) => Promise<T>;
@@ -64,5 +68,5 @@ export async function runVoiceTurnWithSpeech<T>({
 }
 
 function randomVoiceResponseFiller(): string {
-  return VOICE_RESPONSE_FILLERS[Math.floor(Math.random() * VOICE_RESPONSE_FILLERS.length)];
+  return pickVoiceFiller();
 }

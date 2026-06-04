@@ -12,6 +12,29 @@ from packages.contracts import ErrorCode, ErrorEnvelope, ProviderRequest
 from services.provider_worker.controller import ProviderWorkerController
 from services.provider_worker.models import SCHEMA_VERSION, ProviderWorkerCommandResult
 
+# Windows consoles/pipes reject a single large text write (WriteConsoleW caps
+# around 64 KiB and raises OSError [Errno 22]), and a legacy cp1252 stdout wrapper
+# would also choke on non-Latin1 content. A provider response packet (instructions
+# + the full tools array) routinely exceeds 25 KiB, which crashed the worker
+# mid-response and dropped the turn. Writing UTF-8 bytes straight to the binary
+# buffer in bounded chunks sidesteps both problems.
+_STDOUT_CHUNK_BYTES = 8192
+
+
+def _emit_line(line: str) -> None:
+    """Write a single JSONL line to stdout robustly across platforms/encodings."""
+
+    data = (line + "\n").encode("utf-8", errors="backslashreplace")
+    buffer = getattr(sys.stdout, "buffer", None)
+    if buffer is None:  # pragma: no cover - exotic stdout without a binary buffer
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+        return
+    view = memoryview(data)
+    for start in range(0, len(view), _STDOUT_CHUNK_BYTES):
+        buffer.write(view[start : start + _STDOUT_CHUNK_BYTES])
+    buffer.flush()
+
 
 def run_health_once() -> int:
     print(ProviderWorkerController().health().model_dump_json())
@@ -30,10 +53,10 @@ def run_jsonl() -> int:
             continue
         if _is_stream_command(line):
             for frame in handle_stream_command(controller, line):
-                print(json.dumps(frame, sort_keys=True), flush=True)
+                _emit_line(json.dumps(frame, sort_keys=True))
             continue
         result = handle_jsonl_command(controller, line)
-        print(json.dumps(result.model_dump(mode="json"), sort_keys=True), flush=True)
+        _emit_line(json.dumps(result.model_dump(mode="json"), sort_keys=True))
         if result.command == "stop" and result.ok:
             break
     return 0

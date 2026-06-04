@@ -104,6 +104,30 @@ def test_wake_detect_then_command_transcript_over_continuous_stream(tmp_path: Pa
     assert completed.summary.get("normalized_transcript_text") == "what time is it"
 
 
+def test_capture_suppressed_while_marvex_is_speaking(tmp_path: Path):
+    """Half-duplex gate: the loudspeaker's TTS must never be captured + re-sent.
+
+    While playback is active the mic hears Marvex's own voice. Without a gate the
+    wake/probe path treats that as a wake and the command capture transcribes the
+    TTS, looping it back in as a user turn (the reported STT-captures-TTS bug).
+    """
+
+    controller, stt_calls = _controller(tmp_path)
+    controller._playback_active = True  # Marvex is speaking right now.
+    script = (
+        [_frame("w", i) for i in range(3)]
+        + [_frame("s", i) for i in range(4)]
+        + [_frame("q", i) for i in range(4)]
+    )
+    capture = FakeContinuousCapture(script)
+    result = controller.run_wake_listen_loop(
+        capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0
+    )
+
+    assert result["detections"] == 0
+    assert stt_calls == [], "STT must not run on Marvex's own TTS playback"
+
+
 def test_wake_detection_does_not_speak_tts_cue_before_command_capture(tmp_path: Path):
     manager = _install(tmp_path)
     spoken: list[str] = []

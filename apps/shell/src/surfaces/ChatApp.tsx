@@ -13,6 +13,7 @@ import { fetchProviders, refreshProviderModels, selectProviderModel, selectProvi
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
+import { voiceProgressSpeech, pickListeningCue } from "@/lib/voiceFillers";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
 import { providerUsageFromTurnResult, type ProviderUsage } from "@/lib/providerUsage";
 import { MARVEX_APP_VERSION } from "@/lib/appVersion";
@@ -38,11 +39,13 @@ type SendResult = { text: string; speechText: string };
 type VoiceCaptureTarget = "dictation" | "voice";
 type WorkerTranscript = { text: string; eventId: string };
 
-const LISTENING_CUES = ["Yes", "I'm Here"] as const;
 const NOISE_TRANSCRIPTS = new Set(["ah", "eh", "er", "huh", "hm", "hmm", "mm", "oh", "uh", "um", "umm"]);
 
+let lastListeningCue = "";
 function randomListeningCue(): string {
-  return LISTENING_CUES[Math.floor(Math.random() * LISTENING_CUES.length)];
+  const cue = pickListeningCue(lastListeningCue);
+  lastListeningCue = cue;
+  return cue;
 }
 
 // Restored sessions must never resume in a live "Working…" state: a turn that
@@ -370,8 +373,23 @@ export function ChatApp() {
   }, []);
 
   const handleVoiceTranscript = useCallback(async (text: string, options: { shouldSpeak?: () => boolean } = {}) => {
+    // Voice mode speaks live progress. Swap content-free status labels
+    // ("Thinking", "Working") for a single playful filler and stay quiet for the
+    // rest, while the on-screen activity chips keep their precise labels.
+    const voiceProgress = { fillerSpoken: false, previousFiller: "" };
     await runVoiceTurnWithSpeech({
-      runTurn: (reportProgress) => send(text, { onProgress: reportProgress }),
+      runTurn: (reportProgress) =>
+        send(text, {
+          onProgress: (label) => {
+            const speech = voiceProgressSpeech(label, voiceProgress);
+            if (speech.skip) return;
+            if (speech.isFiller) {
+              voiceProgress.fillerSpoken = true;
+              voiceProgress.previousFiller = speech.text;
+            }
+            reportProgress(speech.text);
+          },
+        }),
       speechText: (reply) => reply.speechText,
       speak: speakVoiceWorker,
       shouldSpeak: options.shouldSpeak,
@@ -599,6 +617,30 @@ export function ChatApp() {
     });
   }, [providers]);
 
+  // The displayed/active model is derived straight from the catalog's active
+  // provider row, not just from whichever option happens to carry the `active`
+  // flag. That keeps the header from falling back to "Select model" during the
+  // mount-time refresh window (or any option-list mismatch) when a model IS in
+  // fact selected.
+  const activeModelOption = useMemo(() => {
+    const flagged = modelOptions.find((model) => model.active);
+    if (flagged) return flagged;
+    const activeProvider = providers?.providers.find((provider) => provider.provider_id === providers.active_provider_id);
+    const activeModel = activeProvider?.active_model?.trim();
+    if (!activeProvider || !activeModel) return undefined;
+    return {
+      id: `${activeProvider.provider_id}:${activeModel}`,
+      name: activeModel,
+      provider: activeProvider.provider_id.split("_")[0],
+      active: true,
+      providerId: activeProvider.provider_id,
+      model: activeModel,
+      contextWindow: activeProvider.model_metadata?.[activeModel]?.context_window,
+      reasoningEffort: activeProvider.reasoning_effort,
+      reasoningEffortOptions: activeProvider.model_metadata?.[activeModel]?.reasoning_effort_options ?? [],
+    };
+  }, [modelOptions, providers]);
+
   const selectModel = useCallback((value: string) => {
     const found = modelOptions.find((model) => model.id === value);
     if (!found) return;
@@ -606,10 +648,10 @@ export function ChatApp() {
   }, [modelOptions]);
 
   const selectReasoningEffort = useCallback((effort: string) => {
-    const active = modelOptions.find((model) => model.active);
+    const active = activeModelOption;
     if (!active) return;
     void selectProviderReasoningEffort(active.providerId, effort).then(setProviders).catch(() => undefined);
-  }, [modelOptions]);
+  }, [activeModelOption]);
 
   const openSession = useCallback((id: string) => {
     sessionIdRef.current = id;
@@ -741,17 +783,17 @@ export function ChatApp() {
                 onClarificationAnswer={answerClarification}
                 onStop={stopChatTurn}
                 pending={pending}
-                modelLabel={modelOptions.find((model) => model.active)?.name ?? (config ? "Select model" : "Connecting runtime")}
+                modelLabel={activeModelOption?.name ?? (providers ? "Select model" : "Connecting runtime")}
                 models={modelOptions}
                 onSelectModel={selectModel}
                 contextInputTokens={providerUsage.inputTokens}
                 outputTokens={providerUsage.outputTokens}
                 totalTokens={providerUsage.totalTokens}
                 reasoningTokens={providerUsage.reasoningTokens}
-                contextWindow={modelOptions.find((model) => model.active)?.contextWindow}
+                contextWindow={activeModelOption?.contextWindow}
                 cachedInputTokens={providerUsage.cachedInputTokens}
-                reasoningEffort={modelOptions.find((model) => model.active)?.reasoningEffort}
-                reasoningEffortOptions={modelOptions.find((model) => model.active)?.reasoningEffortOptions}
+                reasoningEffort={activeModelOption?.reasoningEffort}
+                reasoningEffortOptions={activeModelOption?.reasoningEffortOptions}
                 onSelectReasoningEffort={selectReasoningEffort}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "marvex"
-version = "0.2.1"
+version = "0.2.5"
 description = "Marvex v1 contract package"
 requires-python = ">=3.11"
 dependencies = [
