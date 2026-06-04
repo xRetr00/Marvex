@@ -46,6 +46,7 @@ $ShellTauriDir = Join-Path $ShellDir "src-tauri"
 $ControlPlaneDir = Join-Path $RepoRoot "apps\control_plane_web"
 $RuntimeDir = Join-Path $ShellDir "runtime"
 $DistDir = Join-Path $ShellDir "dist"
+$PlaywrightMcpVersion = "0.0.75"
 
 # ============================================================================
 # Load Version from Central File
@@ -309,6 +310,35 @@ function Prepare-Runtime-Resources {
     $uvDest = Join-Path $RuntimeDir "uv.exe"
     Copy-Item -Path $uvSource -Destination $uvDest -Force
     Write-Success "uv.exe copied to $RuntimeDir"
+
+    # Playwright MCP is a Node stdio server. Bundle a real node.exe and a
+    # pinned npm installation so packaged Marvex launches `node cli.js`
+    # directly instead of depending on a user's npm/npx shims.
+    Write-Step "Staging Node.js + Playwright MCP runtime..." 2 5
+    $node = Get-Command node.exe -ErrorAction SilentlyContinue
+    if (-not $node) {
+        $node = Get-Command node -ErrorAction SilentlyContinue
+    }
+    if (-not $node -or -not (Test-Path $node.Source)) {
+        Write-Error-Exit "node.exe not found in PATH"
+    }
+    $nodeDest = Join-Path $RuntimeDir "node.exe"
+    Copy-Item -LiteralPath $node.Source -Destination $nodeDest -Force
+
+    $playwrightMcpRuntime = Join-Path $RuntimeDir "playwright-mcp"
+    if (Test-Path $playwrightMcpRuntime) {
+        Remove-Item -LiteralPath $playwrightMcpRuntime -Recurse -Force
+    }
+    New-Item -ItemType Directory -Path $playwrightMcpRuntime | Out-Null
+    $mcpInstallOutput = npm install --prefix "$playwrightMcpRuntime" --omit=dev --no-audit --no-fund --save-exact "@playwright/mcp@$PlaywrightMcpVersion" 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error-Exit "Failed to stage @playwright/mcp@${PlaywrightMcpVersion}: $mcpInstallOutput"
+    }
+    $playwrightMcpCli = Join-Path $playwrightMcpRuntime "node_modules\@playwright\mcp\cli.js"
+    if (-not (Test-Path $playwrightMcpCli)) {
+        Write-Error-Exit "Playwright MCP install is missing cli.js: $playwrightMcpCli"
+    }
+    Write-Success "node.exe and @playwright/mcp@$PlaywrightMcpVersion staged for bundling"
     
     Write-Host ""
 }
