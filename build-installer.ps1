@@ -442,36 +442,12 @@ function Verify-Frontend-Assets {
 }
 
 # ============================================================================
-# Step 4b: Voice model assets + backend service binary
+# Step 4b: Backend service binary
 # ============================================================================
 
-function Prepare-Voice-And-Service {
-    Write-Section "Step 4b: Voice Models + Backend Service Binary"
-
-    # Fetch + verify the required "Hey Marvex" / STT / TTS model assets into the
-    # shell's bundled voice-asset root. Fails the build if a required asset is
-    # missing so the installer never ships a broken wake word.
-    $voiceAssets = Join-Path $ShellDir "voice-assets"
-    if (-not (Test-Path $voiceAssets)) { New-Item -ItemType Directory -Path $voiceAssets | Out-Null }
-    Write-Step "Fetching voice model assets..." 4 6
-    Push-Location $RepoRoot
-    try {
-        uv run python scripts/fetch_voice_models.py --asset-root "$voiceAssets"
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "Required voice model assets missing. Fix voice_models.manifest.json source URLs/checksums and re-run."
-        }
-        # The generic sherpa-onnx KWS model ships sample keywords; rewrite them so
-        # the wake word is actually "Hey Marvex" (+ variants).
-        uv run python scripts/generate_wakeword_keywords.py --asset-root "$voiceAssets"
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error-Exit "Failed to generate Hey Marvex wakeword keywords"
-        }
-    }
-    finally {
-        Pop-Location
-    }
-    Write-Success "Voice model assets present (Hey Marvex keywords generated)"
-
+function Prepare-Service-Binary {
+    Write-Section "Step 4b: Backend Service Binary"
+    Write-Step "Voice model assets are post-install downloads from voice_models.manifest.json." 4 6
     # Build the always-on backend Windows service binary and place it where the
     # bundle override config (tauri.bundle.conf.json -> externalBin) expects it.
     Write-Step "Building marvex-service (backend Windows service)..." 4 6
@@ -647,7 +623,7 @@ function Main {
     Prepare-Runtime-Resources -WheelPath $wheel
     Build-Frontend
     Verify-Frontend-Assets
-    Prepare-Voice-And-Service
+    Prepare-Service-Binary
     
     if ($SkipInstaller) {
         Build-Tauri-App -NoBundle

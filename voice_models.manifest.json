@@ -1,6 +1,6 @@
 {
   "schema_version": "1",
-  "comment": "Required voice model assets bundled with the Marvex installer so 'Hey Marvex' works offline. Paths are relative to the voice-asset root (default: <data>/.marvex/voice-assets, override with --asset-root). source_uri may be https:// (downloaded) or file:// (copied). Archives (.tar.bz2/.tar.gz/.tgz/.zip) are extracted into relative_path. checksum_sha256 is optional but recommended. NOTE: URLs are canonical project sources; verify/adjust on first build if any 404s.",
+  "comment": "Voice model assets are discovered from this manifest and downloaded after installation instead of being bundled into the installer. Paths are relative to the voice-asset root (packaged default: <data>/voice-assets, worker fallback: <data>/.marvex/voice-assets, override with MARVEX_VOICE_ASSET_ROOT or --asset-root). source_uri may be https:// (downloaded) or file:// (copied). Archives (.tar.bz2/.tar.gz/.tgz/.zip) are extracted into relative_path. checksum_sha256 is optional but recommended. NOTE: URLs are canonical project sources; verify/adjust on first build if any 404s.",
   "assets": [
     {
       "model_id": "hey-marvex",
