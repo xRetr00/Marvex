@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -272,7 +273,9 @@ class LiteLLMProvider:
         if reasoning_open:
             final_text_parts.append("</think>")
             yield StreamTextDelta("</think>")
-        output_text = "".join(final_text_parts)
+        joined = "".join(final_text_parts)
+        authoritative = self._read_output_text(completed_response) if completed_response is not None else ""
+        output_text = joined if len(joined) >= len(authoritative) else authoritative
         tool_calls = self._read_tool_calls(completed_response) if completed_response is not None else []
         self._record_turn(response_id, request, output_text)
         yield StreamCompleted(
@@ -614,7 +617,7 @@ class LiteLLMProvider:
             if isinstance(content, str):
                 parts.append(content)
                 continue
-            if not isinstance(content, list):
+            if not _is_item_sequence(content):
                 continue
             for part in content:
                 text = self._read_attr(part, "text")
@@ -624,7 +627,7 @@ class LiteLLMProvider:
 
     def _read_output_items(self, response: object) -> list[object]:
         output = self._read_attr(response, "output")
-        return output if isinstance(output, list) else []
+        return list(output) if _is_item_sequence(output) else []
 
     def _read_first_choice_attr(self, response: object, name: str) -> object:
         choices = self._read_attr(response, "choices")
@@ -683,6 +686,10 @@ class LiteLLMProvider:
 
 def _is_output_delta(event_type: str) -> bool:
     return not event_type or event_type.endswith("output_text.delta")
+
+
+def _is_item_sequence(value: object) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
 
 def _is_output_done(event_type: str) -> bool:

@@ -31,7 +31,7 @@ def _prompt_result():
     candidates = (
         ContextCandidate.from_safe_summary(
             ContextSourceRef(kind=ContextSourceKind.CAPABILITY_SCHEMA, identifier="builtin.calculator"),
-            "tool=builtin.calculator; purpose=Safe arithmetic; risk=low; approval_required=False",
+            "tool=builtin.calculator; purpose=Evaluate arithmetic",
             token_estimate=24,
             intent_tags=(IntentKind.CAPABILITY_TOOL.value,),
         ),
@@ -72,14 +72,17 @@ def test_provider_prompt_compiler_is_single_marvex_identity_no_persona() -> None
     )
 
     assert payload.instructions is not None
-    # Marvex is Marvex: a single identity, with context-safety + policy.
+    # Marvex is Marvex: a single identity. Runtime policy remains backend-owned.
     assert "You are Marvex" in payload.instructions
     # Every compiled prompt carries the authoritative current date/time so the
     # model never answers with a stale "today" or outdated "current" facts.
     assert "Current date and time:" in payload.instructions
     assert "authoritative present moment" in payload.instructions
-    assert "untrusted data" in payload.instructions
-    assert "Marvex policy remains authoritative" in payload.instructions
+    assert "untrusted data" not in payload.instructions
+    assert "Context safety" not in payload.instructions
+    assert "approval" not in payload.instructions.lower()
+    assert "risk" not in payload.instructions.lower()
+    assert "Marvex policy remains authoritative" not in payload.instructions
     # Reasoning is routed to a single <think> channel so the shell can stream
     # thinking separately and runaway chain-of-thought is bounded.
     assert "<think>" in payload.instructions

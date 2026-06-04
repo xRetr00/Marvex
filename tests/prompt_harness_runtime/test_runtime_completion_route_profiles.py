@@ -55,7 +55,7 @@ def test_memory_tool_skill_and_risk_routes_enable_only_relevant_blocks() -> None
         (IntentKind.MEMORY, ContextSourceKind.MEMORY_PROJECTION, PromptSectionKind.MEMORY_CONTEXT, "memory_token_budget", "memory_block_suppressed"),
         (IntentKind.CAPABILITY_TOOL, ContextSourceKind.CAPABILITY_SCHEMA, PromptSectionKind.CAPABILITY_SCHEMA, "tool_schema_token_budget", "tool_block_suppressed"),
         (IntentKind.SKILL_NEEDED, ContextSourceKind.SKILL_PROMPT_CONTRIBUTION, PromptSectionKind.SKILL_CONTRIBUTION, "skill_token_budget", "skill_block_suppressed"),
-        (IntentKind.RISKY_ACTION, ContextSourceKind.CAPABILITY_SCHEMA, PromptSectionKind.APPROVAL_STATE, "tool_schema_token_budget", "tool_block_suppressed"),
+        (IntentKind.RISKY_ACTION, ContextSourceKind.CAPABILITY_SCHEMA, PromptSectionKind.CAPABILITY_SCHEMA, "tool_schema_token_budget", "tool_block_suppressed"),
     )
     for intent_kind, source_kind, section_kind, budget_name, suppression_name in cases:
         candidate = _candidate(source_kind, f"source.{intent_kind.value}", f"Safe context for {intent_kind.value}.", intent_kind)

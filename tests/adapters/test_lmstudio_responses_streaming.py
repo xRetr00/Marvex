@@ -71,6 +71,21 @@ def _completed(response_id: str, text: str) -> object:
     )
 
 
+def _completed_with_sdk_sequences(response_id: str, text: str) -> object:
+    return SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            id=response_id,
+            output=(
+                SimpleNamespace(
+                    type="message",
+                    content=(SimpleNamespace(type="output_text", text=text),),
+                ),
+            ),
+        ),
+    )
+
+
 def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag():
     provider, client = _provider([_delta("Hel"), _delta("lo"), _completed("resp-9", "Hello")])
     events = list(provider.stream_send(_request()))
@@ -80,6 +95,16 @@ def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag():
     assert isinstance(events[-1], StreamCompleted)
     assert events[-1].response_id == "resp-9"
     assert events[-1].output_text == "Hello"
+
+
+def test_stream_send_reads_completed_text_from_sdk_sequence_collections():
+    provider, _ = _provider([_completed_with_sdk_sequences("resp-sequence", "Sequence reply")])
+
+    events = list(provider.stream_send(_request()))
+
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].response_id == "resp-sequence"
+    assert events[-1].output_text == "Sequence reply"
 
 
 def test_stream_send_drives_through_run_streaming_turn():

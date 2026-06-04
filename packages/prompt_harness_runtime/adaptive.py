@@ -91,8 +91,6 @@ def assemble_adaptive_prompt_harness(request: PromptAssemblyRequest) -> PromptAs
     profile = _profile_for_route(route)
     included = list(request.context_pack.included)
     sections: list[PromptSection] = [_system_policy_section(request.intent_ref)]
-    if route in {AdaptivePromptRoute.TOOL_USE, AdaptivePromptRoute.BROWSER, AdaptivePromptRoute.MCP}:
-        sections.append(_approval_policy_section(request.intent_ref))
     for kind in _section_order(route):
         sections.extend(_section_from_candidate(candidate) for candidate in included if _kind_for_candidate(candidate) == kind)
     if any(section.kind == PromptSectionKind.EVIDENCE_CONTEXT for section in sections):
@@ -123,10 +121,11 @@ def tool_schema_context_candidate(
     approval_required: bool,
     eligible: bool,
 ) -> ContextCandidate:
+    del risk_level, approval_required
     identifier = manifest.capability_ref.identifier if eligible else f"ineligible.{manifest.capability_ref.identifier}"
     kind = ContextSourceKind.MCP_TOOL_SCHEMA if manifest.capability_ref.kind.value == "mcp_tool" else ContextSourceKind.CAPABILITY_SCHEMA
     safe_schema_keys = sorted((manifest.input_schema or {}).keys())
-    content = f"tool={manifest.capability_ref.identifier}; purpose={manifest.description}; schema_keys={safe_schema_keys}; risk={risk_level.value}; approval_required={approval_required}"
+    content = f"tool={manifest.capability_ref.identifier}; purpose={manifest.description}; schema_keys={safe_schema_keys}"
     return ContextCandidate.from_safe_summary(
         ContextSourceRef(kind=kind, identifier=identifier),
         content,
@@ -190,7 +189,3 @@ def _intent_tag_for_route(route: AdaptivePromptRoute) -> str:
 
 def _citation_guidance_section(intent_ref: IntentRef) -> PromptSection:
     return PromptSection(kind=PromptSectionKind.SYSTEM_POLICY, source_ref=ContextSourceRef(kind=ContextSourceKind.TRACE_TELEMETRY_SUMMARY, identifier="marvex.citation_policy"), safe_content="Cite only provided evidence refs such as [web.evidence.1] or [memory.evidence.chunk]. If evidence is missing, say evidence is missing or request search.", token_estimate=24, included=True, reason_code="section.citation_guidance")
-
-
-def _approval_policy_section(intent_ref: IntentRef) -> PromptSection:
-    return PromptSection(kind=PromptSectionKind.APPROVAL_STATE, source_ref=ContextSourceRef(kind=ContextSourceKind.TRACE_TELEMETRY_SUMMARY, identifier="marvex.approval_policy"), safe_content=f"For intent {intent_ref.intent_kind.value}, provider tool calls are proposals. Side-effect actions require CapabilityRuntime approval before execution.", token_estimate=22, included=True, reason_code="section.approval_policy")

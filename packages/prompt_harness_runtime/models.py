@@ -170,7 +170,7 @@ def assemble_prompt_harness(request: PromptAssemblyRequest) -> PromptAssemblyRes
 
 
 def _system_policy_section(intent_ref: IntentRef) -> PromptSection:
-    return PromptSection(kind=PromptSectionKind.SYSTEM_POLICY, source_ref=ContextSourceRef(kind=ContextSourceKind.TRACE_TELEMETRY_SUMMARY, identifier="marvex.policy"), safe_content=f"Marvex policy remains authoritative. Intent: {intent_ref.intent_kind.value}.", token_estimate=10, included=True, reason_code="section.system_policy")
+    return PromptSection(kind=PromptSectionKind.SYSTEM_POLICY, source_ref=ContextSourceRef(kind=ContextSourceKind.TRACE_TELEMETRY_SUMMARY, identifier="marvex.route"), safe_content=f"Current intent route: {intent_ref.intent_kind.value}.", token_estimate=8, included=True, reason_code="section.system_policy")
 
 
 def _response_contract_section(intent_ref: IntentRef) -> PromptSection:
@@ -179,7 +179,7 @@ def _response_contract_section(intent_ref: IntentRef) -> PromptSection:
     elif intent_ref.intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}:
         content = "Use citation markers exactly as supplied by evidence sections. If evidence is missing, say evidence is missing."
     else:
-        content = "Continue with only included safe context sections."
+        content = "Continue with the included context sections."
     return PromptSection(kind=PromptSectionKind.RESPONSE_CONTRACT, source_ref=ContextSourceRef(kind=ContextSourceKind.USER_INPUT_SUMMARY, identifier="response.contract"), safe_content=content, token_estimate=8, included=True, reason_code="section.response_contract")
 
 
@@ -198,13 +198,6 @@ def _section_from_candidate(candidate: ContextCandidate) -> PromptSection:
 
 def _ordered_sections(request: PromptAssemblyRequest) -> list[PromptSection]:
     sections = [_section_from_candidate(candidate) for candidate in request.context_pack.included]
-    if request.intent_ref.intent_kind == IntentKind.RISKY_ACTION:
-        sections = [
-            section.model_copy(update={"kind": PromptSectionKind.APPROVAL_STATE, "reason_code": "section.approval_policy"})
-            if section.kind == PromptSectionKind.CAPABILITY_SCHEMA
-            else section
-            for section in sections
-        ]
     order = _section_order(request.intent_ref.intent_kind)
     return sorted(sections, key=lambda section: order.get(section.kind, 99))
 

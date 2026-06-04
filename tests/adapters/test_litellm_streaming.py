@@ -52,6 +52,21 @@ def _reasoning_done(text: str) -> object:
     )
 
 
+def _completed_with_sdk_sequences(response_id: str, text: str) -> object:
+    return SimpleNamespace(
+        type="response.completed",
+        response=SimpleNamespace(
+            id=response_id,
+            output=(
+                SimpleNamespace(
+                    type="message",
+                    content=(SimpleNamespace(type="output_text", text=text),),
+                ),
+            ),
+        ),
+    )
+
+
 def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -82,6 +97,19 @@ def test_stream_send_uses_output_text_done_when_delta_was_absent(monkeypatch):
     assert deltas == ["Done text"]
     assert isinstance(events[-1], StreamCompleted)
     assert events[-1].output_text == "Done text"
+
+
+def test_stream_send_reads_completed_text_from_sdk_sequence_collections(monkeypatch):
+    def fake_responses(**_kwargs):
+        return iter([_completed_with_sdk_sequences("resp-sequence", "Sequence reply")])
+
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
+
+    events = list(LiteLLMProvider().stream_send(_request()))
+
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].response_id == "resp-sequence"
+    assert events[-1].output_text == "Sequence reply"
 
 
 def test_stream_send_uses_reasoning_done_when_delta_was_absent(monkeypatch):

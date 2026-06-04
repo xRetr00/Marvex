@@ -1502,7 +1502,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         turn_input,
                         text=(
                             "The provider failed while generating the required tool call. "
-                            "Approval cannot run without a model-authored tool call."
+                            "The action was not executed."
                         ),
                         metadata=_with_loop_metadata(
                             {
@@ -1535,6 +1535,33 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 metadata_retry_note = None
         else:
             metadata_retry_note = None
+
+        required_tool_retry_note: dict[str, object] | None = None
+        if require_tool_call and loop_result.status == "final" and not loop_result.executed_tool_ids:
+            max_required_tool_attempts = 5
+            required_tool_attempts = 2 if metadata_retry_note is not None else 1
+            repair_prompt = _required_tool_call_repair_prompt(
+                original_user_input=provider_turn_input.user_visible_input or "",
+                required_tool_reason=required_tool_reason,
+            )
+            while required_tool_attempts < max_required_tool_attempts:
+                required_tool_attempts += 1
+                loop_result = run_tool_loop(
+                    send=send,
+                    registry=registry,
+                    request_builder=request_builder,
+                    max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
+                    initial_input=repair_prompt,
+                    previous_response_id=None,
+                    debug_callback=debug_tool_outcome,
+                )
+                if loop_result.status != "final" or loop_result.executed_tool_ids:
+                    break
+            required_tool_retry_note = {
+                "attempted": True,
+                "attempt_count": required_tool_attempts,
+                "max_attempts": max_required_tool_attempts,
+            }
 
         if loop_result.status == "error":
             # Provider failed on the very first/any step -> fall back to the
@@ -1668,6 +1695,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "executed_count": len(loop_result.executed_tool_ids),
                     "model_tool_call_required": True,
                     "reason_code": required_tool_reason,
+                    "required_tool_call_retry": required_tool_retry_note,
                 },
             }
             if desktop_context is not None:
@@ -1689,7 +1717,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 }
             return _entrypoint_text_result(
                 turn_input,
-                text="This action requires a model-authored tool call before approval can run.",
+                text="The model did not provide the required tool call, so the action was not executed.",
                 metadata=_with_loop_metadata(blocked_metadata, loop, self._trace_reader, turn_input),
                 stage_name="model_tool_call_required",
             )
@@ -2262,7 +2290,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             loop.step("finalize", stop_reason="blocked")
             return _entrypoint_text_result(
                 turn_input,
-                text="Browser/computer-use requires a model-authored tool call before approval can run.",
+                text="The model did not provide a browser or desktop tool call, so the action was not executed.",
                 metadata=_with_loop_metadata(
                     {
                         **metadata,
@@ -4459,7 +4487,7 @@ def _tool_failure_retry_guidance(
         "failed_capability": capability_id,
         "failure_reason": str(reason),
         "instructions": [
-            "The approved tool call failed safely and did not complete.",
+            "The tool call failed and did not complete.",
             f"Original user request: {turn_input.user_visible_input or ''}",
             f"Failed capability: {capability_id}",
             f"Failure reason: {reason}",
@@ -4474,7 +4502,7 @@ def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool
     if required_tool_reason == "file_write_tool_required":
         tool_hint = (
             "Call the needed tools with valid JSON. If current information is needed, call web.search first; "
-            "then call file.write with path and content. Do not ask for approval yourself."
+            "then call file.write with path and content."
         )
     elif required_tool_reason == "browser_computer_use_tool_required":
         tool_hint = (
@@ -4485,7 +4513,7 @@ def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool
     else:
         tool_hint = "Call the required available tool with valid JSON arguments."
     return (
-        "Your previous tool call failed before Marvex received a valid callable payload.\n"
+        "Your previous tool call failed or your response did not provide a valid callable payload.\n"
         f"Original user request: {original_user_input}\n"
         f"Required tool reason: {required_tool_reason}\n"
         f"{tool_hint}"
@@ -4544,7 +4572,7 @@ def _turn_input_with_prompt(
     if desktop_context and desktop_context.get("available") is True:
         content = str(desktop_context.get("content") or "").strip()
         if content:
-            prompt_text = prompt_text + "\n\nDesktop Agent safe content projection:\n" + content[:1200]
+            prompt_text = prompt_text + "\n\nDesktop Agent context:\n" + content[:1200]
     return turn_input.model_copy(update={"user_visible_input": prompt_text}), instructions
 
 

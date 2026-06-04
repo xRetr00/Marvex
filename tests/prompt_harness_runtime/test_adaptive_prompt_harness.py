@@ -64,12 +64,12 @@ def test_memory_query_enables_memory_block_and_prioritizes_memory_evidence() -> 
     assert result.plan.suppression.memory_block_suppressed is False
 
 
-def test_tool_route_injects_only_eligible_tool_schema_with_risk_and_approval_metadata() -> None:
+def test_tool_route_injects_only_eligible_tool_schema_without_policy_metadata() -> None:
     calculator = CapabilityManifest(
         schema_version="1",
         capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier="tool.calculator"),
         display_name="Calculator",
-        description="Safe arithmetic calculator",
+        description="Arithmetic calculator",
         owner_package="packages.adapters.capabilities.builtins",
         adapter_boundary="builtins",
         permissions=("tool.calculator.call",),
@@ -79,7 +79,7 @@ def test_tool_route_injects_only_eligible_tool_schema_with_risk_and_approval_met
         schema_version="1",
         capability_ref=CapabilityRef(kind=CapabilityKind.TOOL, identifier="tool.browser.click"),
         display_name="Browser Click",
-        description="Risky browser click",
+        description="Browser click",
         owner_package="packages.adapters.capabilities.browser",
         adapter_boundary="browser",
         permissions=("browser.click",),
@@ -97,9 +97,10 @@ def test_tool_route_injects_only_eligible_tool_schema_with_risk_and_approval_met
     schema_sections = [section for section in result.plan.sections if section.kind == PromptSectionKind.CAPABILITY_SCHEMA]
     assert len(schema_sections) == 1
     assert "tool.calculator" in schema_sections[0].safe_content
-    assert "risk=low" in schema_sections[0].safe_content
-    assert "approval_required=False" in schema_sections[0].safe_content
+    assert "risk=" not in schema_sections[0].safe_content
+    assert "approval_required=" not in schema_sections[0].safe_content
     assert "tool.browser.click" not in "\n".join(section.safe_content for section in result.plan.sections)
+    assert all(section.kind != PromptSectionKind.APPROVAL_STATE for section in result.plan.sections)
     assert result.plan.suppression.tool_block_suppressed is False
 
 

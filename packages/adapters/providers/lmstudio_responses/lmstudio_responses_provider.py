@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -288,11 +289,11 @@ class LMStudioResponsesProvider:
 
         parts: list[str] = []
         output = self._read_attr(response, "output")
-        if not isinstance(output, list):
+        if not _is_item_sequence(output):
             return ""
         for item in output:
             content = self._read_attr(item, "content")
-            if not isinstance(content, list):
+            if not _is_item_sequence(content):
                 continue
             for content_item in content:
                 content_type = self._read_attr(content_item, "type")
@@ -311,7 +312,7 @@ class LMStudioResponsesProvider:
         """
 
         output = self._read_attr(response, "output")
-        if not isinstance(output, list):
+        if not _is_item_sequence(output):
             return []
         calls: list[dict[str, Any]] = []
         for item in output:
@@ -428,6 +429,10 @@ def _event_part_key(event: object) -> tuple[object, ...]:
         getattr(event, "content_index", None),
         getattr(event, "summary_index", None),
     )
+
+
+def _is_item_sequence(value: object) -> bool:
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
 
 
 def _responses_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
