@@ -88,12 +88,12 @@ def run_worker_contract_loop(
     tick_thread.start()
 
     def warm_models() -> None:
-        # Off the critical path: load the STT/TTS model objects at startup so the
-        # first listen-after-wake and first spoken reply are not slowed by a cold
-        # model load. Best-effort; failures fall back to lazy loading.
+        # Off the critical path: load the STT model object at startup so the
+        # first listen-after-wake is not slowed by a cold model load. TTS stays
+        # lazy; the runtime speak command is the real Kokoro/device path.
         try:
             outcome = controller.warm_models()
-            _write_tick_telemetry({"event": "model_warm", "detected": False, "reason_code": f"stt:{outcome.get('stt')}|tts:{outcome.get('tts')}"})
+            _write_tick_telemetry({"event": "model_warm", "detected": False, "reason_code": f"stt:{outcome.get('stt')}"})
         except Exception as exc:  # never let warm-up kill the worker
             _write_tick_telemetry({"event": "model_warm_error", "detected": False, "reason_code": type(exc).__name__})
 

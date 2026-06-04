@@ -164,18 +164,17 @@ class VoiceWorkerBackendRuntime:
             )
         return self._local_wake_runner
 
-    def warm(self, *, stt_backend_id: str, tts_backend_id: str, voice_id: str) -> dict[str, str]:
-        """Eagerly load the STT and TTS model objects (best-effort).
+    def warm(self, *, stt_backend_id: str) -> dict[str, str]:
+        """Eagerly load the active STT model object (best-effort).
 
-        Both runners cache their underlying model on first call, so without this
-        the first listen after a wake — and the first spoken reply — pay the full
-        model-load cost (hundreds of ms to seconds). Running one throwaway
-        transcription on silence and one short synthesis at worker startup moves
-        that cost off the interactive path. Never raises: warm-up failures fall
-        back to lazy loading on first real use.
+        STT has the highest first-use impact for wake/manual capture because the
+        user is waiting after speech has already ended. TTS remains lazy: the
+        runtime ``speak`` command is the authoritative Kokoro/device path, and
+        startup synthesis creates noisy diagnostics that do not reflect whether
+        real reply playback works.
         """
 
-        outcome: dict[str, str] = {"stt": "skipped", "tts": "skipped"}
+        outcome: dict[str, str] = {"stt": "skipped"}
         try:
             sample_rate = 16_000
             duration_ms = 320
@@ -198,16 +197,6 @@ class VoiceWorkerBackendRuntime:
             outcome["stt"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
         except Exception:
             outcome["stt"] = "error"
-        try:
-            result = self.test_tts(
-                trace_id="voice-warm-tts",
-                backend_id=tts_backend_id,
-                voice_id=voice_id,
-                text="Ready.",
-            )
-            outcome["tts"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
-        except Exception:
-            outcome["tts"] = "error"
         return outcome
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:

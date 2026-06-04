@@ -1,9 +1,10 @@
-"""Fetch + verify the voice model assets required for an offline "Hey Marvex".
+"""Fetch + verify Marvex voice model assets after installation or for dev.
 
 Reads ``voice_models.manifest.json`` and downloads/copies each asset into the
 voice-asset root, extracting archives, verifying optional SHA-256 checksums, and
-failing (non-zero exit) if any *required* asset is missing afterwards. The build
-runs this so the installer ships a working wake word / STT / TTS set.
+failing (non-zero exit) if any *required* asset is missing afterwards. The
+installer does not bundle these assets; packaged runs download them into the
+per-user voice asset root from the manifest.
 
 Pure helpers (``load_manifest``, ``asset_present``, ``fetch_asset``,
 ``missing_required``) are import-friendly and unit-tested with a fake fetcher;

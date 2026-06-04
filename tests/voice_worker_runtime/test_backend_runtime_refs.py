@@ -61,6 +61,32 @@ def test_worker_test_stt_captures_audio_ref_for_runner_without_persistence(tmp_p
     assert "\\x01\\x02" not in serialized
 
 
+def test_worker_warm_models_only_warms_stt_not_tts(tmp_path: Path) -> None:
+    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
+    (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True))
+    audio_refs = VoiceWorkerAudioRefStore()
+    observed_stt: list[str] = []
+    observed_tts: list[str] = []
+
+    def stt_runner(request, asset):
+        observed_stt.append(asset.model_id)
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="", backend_id=request.backend_id or "moonshine-v2", duration_ms=request.duration_ms)
+
+    def tts_runner(request, asset):
+        observed_tts.append(asset.model_id)
+        return SpeechSynthesisResult.failed(trace_id=request.trace_id, backend_id=request.backend_id or "kokoro-onnx", voice_id=request.voice_id)
+
+    backend_runtime = VoiceWorkerBackendRuntime(asset_manager=manager, audio_refs=audio_refs, stt_runner=stt_runner, tts_runner=tts_runner)
+    controller = VoiceWorkerController(audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=backend_runtime)
+
+    outcome = controller.warm_models()
+
+    assert outcome == {"stt": "ok"}
+    assert observed_stt == ["moonshine-v2"]
+    assert observed_tts == []
+
+
 def test_worker_generated_audio_sink_creates_ref_without_persisting_audio(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
