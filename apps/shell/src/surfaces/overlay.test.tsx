@@ -56,7 +56,11 @@ describe("OverlaySurface", () => {
       "wake transcript",
       { session_id: "overlay-session" },
       undefined,
-      expect.any(Function),
+      expect.objectContaining({
+        onDelta: expect.any(Function),
+        onStatus: expect.any(Function),
+        onTool: expect.any(Function),
+      }),
     ), { timeout: 2500 });
     expect(speakVoiceWorker).toHaveBeenCalledWith("Done.", { bargeIn: true });
   });

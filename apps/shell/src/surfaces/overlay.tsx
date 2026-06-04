@@ -19,6 +19,7 @@ import { speechTextFromTurnResult } from "../lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "../lib/turnResultHelpers";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, transcriptFromStatus } from "../lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "../lib/voiceTurnSpeech";
+import { activityLabel } from "../lib/activityLabels";
 import DynamicIsland from "@/components/dynamic-island/DynamicIsland";
 import { IslandWaveform } from "@/components/dynamic-island/IslandWaveform";
 import { ApprovalCard } from "@/components/dynamic-island/cards/ApprovalCard";
@@ -165,13 +166,29 @@ export function OverlaySurface() {
 
   const runOverlayVoiceTurn = async (text: string) => {
     await runVoiceTurnWithSpeech({
-      runTurn: async () => {
+      runTurn: async (reportProgress) => {
         const sessionId = await ensureOverlaySession();
         const result = await submitChatTurnStream(
           text,
           { session_id: sessionId },
           previousResponseIdsRef.current[sessionId],
-          () => undefined,
+          {
+            onDelta: () => undefined,
+            onTool: (event) => {
+              if (event.phase === "end") return;
+              reportProgress(activityLabel({
+                id: event.id || event.name || "tool",
+                name: event.name ?? "",
+                arguments: event.arguments,
+                active: true,
+              }));
+            },
+            onStatus: (event) => {
+              const status = String(event.status ?? "").trim();
+              if (!["thinking", "working", "using_tools", "mcp", "skills", "searching_web"].includes(status)) return;
+              reportProgress(activityLabel({ id: `status.${status}`, name: `status.${status}`, active: true }));
+            },
+          },
         );
         const nextProviderResponseId = providerResponseIdFromTurnResult(result);
         if (nextProviderResponseId) previousResponseIdsRef.current[sessionId] = nextProviderResponseId;
