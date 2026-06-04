@@ -9,6 +9,13 @@ export const providerRowSchema = z.object({
   active_model: z.string().optional(),
   automation_model: z.string().optional(),
   models: z.array(z.string()).optional(),
+  model_metadata: z.record(z.string(), z.object({
+    context_window: z.number().int().positive().optional(),
+    supports_reasoning: z.boolean().optional(),
+    supports_reasoning_summary: z.boolean().optional(),
+    reasoning_effort_options: z.array(z.string()).optional(),
+    reasoning_default: z.string().optional(),
+  }).passthrough()).optional(),
   multi_models: z.array(z.string()).optional(),
   base_url: z.string().optional(),
   provider_mode: z.string().optional(),
@@ -22,6 +29,7 @@ export const providerRowSchema = z.object({
   secret_present: z.boolean().optional(),
   secret_display: z.string().optional(),
   secret_value_present: z.literal(false).optional(),
+  reasoning_effort: z.string().optional(),
 }).passthrough();
 
 export const providerCatalogSchema = z.object({
@@ -48,6 +56,10 @@ export async function selectProviderModel(providerId: string, model: string): Pr
 
 export async function selectProviderMultiModels(providerId: string, models: string[]): Promise<ProviderCatalog> {
   return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/models/multi`, "POST", { models }));
+}
+
+export async function selectProviderReasoningEffort(providerId: string, effort: string): Promise<ProviderCatalog> {
+  return providerCatalogSchema.parse(await controlRequest(`/providers/${encodeURIComponent(providerId)}/reasoning`, "POST", { effort }));
 }
 
 export async function setProviderConnection(providerId: string, baseUrl: string, providerMode: string): Promise<ProviderCatalog> {

@@ -92,19 +92,38 @@ export type ChatToolEvent = {
   state?: string;
 };
 
+export type ChatStatusEvent = {
+  type: "status";
+  status?: string;
+  detail?: string;
+  trace_id?: string;
+};
+
+export type ChatCommentaryEvent = {
+  type: "commentary";
+  text?: string;
+  trace_id?: string;
+};
+
 type ChatStreamEvent = {
   turn_id: string;
   event:
     | { type: "delta"; text?: string }
     | { type: "final"; result?: unknown }
     | { type: "error"; message?: string; reason?: string }
-    | ChatToolEvent;
+    | ChatToolEvent
+    | ChatStatusEvent
+    | ChatCommentaryEvent;
 };
 
 export interface ChatStreamHandlers {
   onDelta: (chunk: string) => void;
   /** Live tool-activity steps for the unified Chain-of-Thought UI. */
   onTool?: (event: ChatToolEvent) => void;
+  /** Safe runtime lifecycle commentary such as thinking or searching. */
+  onStatus?: (event: ChatStatusEvent) => void;
+  /** Model-authored user-visible text emitted before a tool call. */
+  onCommentary?: (event: ChatCommentaryEvent) => void;
 }
 
 /**
@@ -130,6 +149,10 @@ export async function submitChatTurnStream(
       resolved.onDelta(event.text);
     } else if (event.type === "tool") {
       resolved.onTool?.(event);
+    } else if (event.type === "status") {
+      resolved.onStatus?.(event);
+    } else if (event.type === "commentary") {
+      resolved.onCommentary?.(event);
     }
   });
   try {
