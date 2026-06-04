@@ -141,6 +141,8 @@ function sanitizeAssistantText(text: string): string {
 
 export interface RichMessageProps {
   text: string;
+  /** Model-authored user-visible progress emitted before tool calls. */
+  commentary?: string[];
   stages?: TurnStage[];
   citations?: CitationRef[];
   /** Backend model-driven directives; when present they drive rendering (not keyword heuristics). */
@@ -157,7 +159,7 @@ export interface RichMessageProps {
 
 /** Renders an assistant response as rich blocks. Backend directives are
  *  authoritative; the text heuristic is only a fallback when none are present. */
-export function RichMessage({ text, stages, citations = [], directives, streaming = false, activity = [], startedAt, endedAt }: RichMessageProps) {
+export function RichMessage({ text, commentary = [], stages, citations = [], directives, streaming = false, activity = [], startedAt, endedAt }: RichMessageProps) {
   const { thinking, answer, thinkingStreaming } = splitReasoning(text);
   const safeText = sanitizeAssistantText(answer);
   const blocks = useMemo(() => {
@@ -176,6 +178,11 @@ export function RichMessage({ text, stages, citations = [], directives, streamin
 
   return (
     <div className="flex flex-col gap-3">
+      {commentary.map((item, index) => (
+        <p key={`${item}-${index}`} className="whitespace-pre-wrap text-sm leading-relaxed text-foreground/88">
+          {item}
+        </p>
+      ))}
       {streaming || hasChain ? (
         <WorkTrace
           thinking={thinking}

@@ -1,8 +1,9 @@
-import { AudioLines, ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
+import { AudioLines, Brain, ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { formatTokenCount } from "@/lib/providerUsage";
 
 export type ChatbotPromptInputProps = {
   disabled?: boolean;
@@ -21,6 +22,15 @@ export type ChatbotPromptInputProps = {
   modelLabel?: string;
   models?: Array<{ id: string; name: string; provider?: string; active?: boolean }>;
   onSelectModel?: (modelId: string) => void | Promise<void>;
+  contextInputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  contextWindow?: number;
+  cachedInputTokens?: number;
+  reasoningEffort?: string;
+  reasoningEffortOptions?: string[];
+  onSelectReasoningEffort?: (effort: string) => void | Promise<void>;
 };
 
 export function ChatbotPromptInput({
@@ -40,10 +50,20 @@ export function ChatbotPromptInput({
   modelLabel = "Assistant runtime",
   models = [],
   onSelectModel,
+  contextInputTokens = 0,
+  outputTokens = 0,
+  totalTokens = 0,
+  reasoningTokens = 0,
+  contextWindow,
+  cachedInputTokens = 0,
+  reasoningEffort,
+  reasoningEffortOptions = [],
+  onSelectReasoningEffort,
 }: ChatbotPromptInputProps) {
   const [localValue, setLocalValue] = useState("");
   const [modelOpen, setModelOpen] = useState(false);
   const [toolsOpen, setToolsOpen] = useState(false);
+  const [reasoningOpen, setReasoningOpen] = useState(false);
   const [hints, setHints] = useState<string[]>([]);
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
 
@@ -161,7 +181,40 @@ export function ChatbotPromptInput({
                 </div>
               ) : null}
             </div>
-            <span className="hidden text-[11px] tabular-nums text-muted-foreground sm:inline">{textValue.length} / 12000</span>
+            {reasoningEffort && reasoningEffortOptions.length > 0 ? (
+              <div className="relative">
+                <Button
+                  aria-label={`Reasoning effort: ${prettyEffort(reasoningEffort)}`}
+                  className="h-7 rounded-full px-2 text-[11px] text-muted-foreground"
+                  onClick={() => setReasoningOpen((open) => !open)}
+                  type="button"
+                  variant="ghost"
+                >
+                  <Brain size={13} />
+                  <span>{prettyEffort(reasoningEffort)}</span>
+                </Button>
+                {reasoningOpen ? (
+                  <div className="absolute bottom-9 left-0 z-30 min-w-32 rounded-lg border border-border bg-popover p-1 text-xs text-popover-foreground shadow-[var(--shadow-float)]">
+                    {reasoningEffortOptions.map((effort) => (
+                      <button
+                        key={effort}
+                        type="button"
+                        className={cn("block w-full rounded-md px-3 py-2 text-left hover:bg-accent", effort === reasoningEffort && "bg-accent/70")}
+                        onClick={() => { setReasoningOpen(false); void onSelectReasoningEffort?.(effort); }}
+                      >
+                        {prettyEffort(effort)}
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+            <span
+              className="hidden rounded-full border border-border/45 bg-secondary/45 px-2 py-1 text-[11px] tabular-nums text-muted-foreground sm:inline"
+              title={`Input ${contextInputTokens} tokens, output ${outputTokens}, total ${totalTokens}${cachedInputTokens ? `, ${cachedInputTokens} cached` : ""}${reasoningTokens ? `, ${reasoningTokens} reasoning` : ""}${contextWindow ? `, ${contextWindow} context window` : ""}`}
+            >
+              {formatTokenCount(contextInputTokens)} / {contextWindow ? formatTokenCount(contextWindow) : "?"}
+            </span>
           </div>
           {generating ? (
             <Button aria-label="Stop generation" className="h-8 w-8 rounded-lg" onClick={onStop} size="icon" type="button" variant="outline">
@@ -176,6 +229,10 @@ export function ChatbotPromptInput({
       </div>
     </form>
   );
+}
+
+function prettyEffort(effort: string): string {
+  return effort.charAt(0).toUpperCase() + effort.slice(1);
 }
 
 function ListeningBars() {
