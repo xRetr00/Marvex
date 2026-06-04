@@ -106,6 +106,7 @@ export type ChatCommentaryEvent = {
 };
 
 type ChatStreamEvent = {
+  request_id: string;
   turn_id: string;
   event:
     | { type: "delta"; text?: string }
@@ -140,9 +141,18 @@ export async function submitChatTurnStream(
   previousResponseId: string | undefined,
   handlers: ((chunk: string) => void) | ChatStreamHandlers,
 ): Promise<unknown> {
+  const requestId = globalThis.crypto?.randomUUID?.()
+    ?? `chat-stream-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const resolved: ChatStreamHandlers =
     typeof handlers === "function" ? { onDelta: handlers } : handlers;
+  let settleFromEvent: ((result: unknown) => void) | undefined;
+  let rejectFromEvent: ((error: Error) => void) | undefined;
+  const terminalEvent = new Promise<unknown>((resolve, reject) => {
+    settleFromEvent = resolve;
+    rejectFromEvent = reject;
+  });
   const unlisten = await listen<ChatStreamEvent>("chat-stream", (message) => {
+    if (message.payload?.request_id !== requestId) return;
     const event = message.payload?.event;
     if (!event) return;
     if (event.type === "delta" && typeof event.text === "string") {
@@ -153,10 +163,20 @@ export async function submitChatTurnStream(
       resolved.onStatus?.(event);
     } else if (event.type === "commentary") {
       resolved.onCommentary?.(event);
+    } else if (event.type === "final" && event.result !== undefined) {
+      settleFromEvent?.(event.result);
+    } else if (event.type === "error") {
+      rejectFromEvent?.(new Error(event.message || event.reason || "Chat stream failed."));
     }
   });
+  const invokeResult = invoke("submit_chat_turn_stream", { text, metadata, previousResponseId, requestId });
+  // The native command normally returns the final result too, but the terminal
+  // stream event is authoritative and may arrive before the HTTP body fully
+  // closes. Catch the losing invoke promise so a later transport error is not
+  // reported as an unhandled rejection after the final result was delivered.
+  void invokeResult.catch(() => undefined);
   try {
-    return await invoke("submit_chat_turn_stream", { text, metadata, previousResponseId });
+    return await Promise.race([invokeResult, terminalEvent]);
   } finally {
     unlisten();
   }

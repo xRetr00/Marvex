@@ -4,7 +4,7 @@ import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localTurn";
 import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ChatStatusEvent, type ShellRuntimeConfig } from "@/lib/shellCommands";
-import { persistMode } from "@/lib/modeStore";
+import { getPersistedMode, persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
@@ -521,6 +521,7 @@ export function ChatApp() {
     let busy = false;
     const timer = setInterval(() => {
       if (busy) return;
+      if (getPersistedMode() !== "chat") return;
       busy = true;
       void Promise.resolve(fetchVoiceWorkerStatus())
         .then(async (status) => {

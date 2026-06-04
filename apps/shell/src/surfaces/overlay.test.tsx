@@ -4,6 +4,7 @@ import { OverlaySurface, toOverlayWindowSize } from "./overlay";
 import { ISLAND_GEOMETRY } from "@/components/dynamic-island/geometry.generated";
 import { submitChatTurnStream } from "../lib/shellCommands";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, transcriptFromStatus } from "../lib/voiceControlClient";
+import { getPersistedMode } from "../lib/modeStore";
 
 vi.mock("../lib/tauriBridge", () => ({ listen: vi.fn(async () => vi.fn()) }));
 vi.mock("../lib/backendStatus", () => ({
@@ -23,6 +24,10 @@ vi.mock("../lib/voiceControlClient", () => ({
   fetchVoiceWorkerStatus: vi.fn(async () => ({ recent_events: [] })),
   speakVoiceWorker: vi.fn(async () => ({ recent_events: [] })),
   transcriptFromStatus: vi.fn(() => null),
+}));
+vi.mock("../lib/modeStore", () => ({
+  getPersistedMode: vi.fn(() => "overlay"),
+  persistMode: vi.fn(),
 }));
 
 afterEach(() => {
@@ -63,5 +68,16 @@ describe("OverlaySurface", () => {
       }),
     ), { timeout: 2500 });
     expect(speakVoiceWorker).toHaveBeenCalledWith("Done.", { bargeIn: true });
+  });
+
+  it("does not consume wake transcripts while chat mode owns voice", async () => {
+    vi.mocked(getPersistedMode).mockReturnValue("chat");
+    vi.mocked(transcriptFromStatus).mockReturnValue({ text: "wake transcript", eventId: "wake-event-chat-mode" });
+
+    render(<OverlaySurface />);
+
+    await new Promise((resolve) => setTimeout(resolve, 1700));
+    expect(fetchVoiceWorkerStatus).not.toHaveBeenCalled();
+    expect(submitChatTurnStream).not.toHaveBeenCalled();
   });
 });

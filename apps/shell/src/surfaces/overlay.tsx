@@ -12,7 +12,7 @@ import {
   type AssistantStateEvent,
 } from "../lib/assistantState";
 import { createChatSession, listChatSessions, setOverlaySize, showChat, submitChatTurnStream, type OverlayWindowSize } from "../lib/shellCommands";
-import { persistMode } from "../lib/modeStore";
+import { getPersistedMode, persistMode } from "../lib/modeStore";
 import { createIslandQueue, type IslandCard, type IslandQueueSnapshot } from "../lib/islandQueue";
 import { fetchPendingApprovals, type ApprovalSummary } from "../lib/controlPlaneClient";
 import { speechTextFromTurnResult } from "../lib/turnOutcome";
@@ -206,6 +206,7 @@ export function OverlaySurface() {
     let busy = false;
     const timer = window.setInterval(() => {
       if (busy) return;
+      if (getPersistedMode() !== "overlay") return;
       busy = true;
       void Promise.resolve(fetchVoiceWorkerStatus())
         .then(async (status) => {
