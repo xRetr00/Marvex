@@ -3,17 +3,18 @@ import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText,
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ChatStatusEvent, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
-import { fetchProviders, selectProviderModel, type ProviderCatalog } from "@/lib/providerControlClient";
+import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
-import { type ActivityStep } from "@/lib/activityLabels";
+import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
+import { providerUsageFromTurnResult, type ProviderUsage } from "@/lib/providerUsage";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -29,7 +30,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
+type ChatMessage = { role: "user" | "assistant" | "system"; text: string; commentary?: string[]; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
@@ -80,6 +81,13 @@ function agentStateFromStatus(status: AssistantStatusKind): AgentOrbState {
   return null;
 }
 
+const COMMENTARY_STATUSES = new Set(["thinking", "working", "using_tools", "mcp", "skills", "searching_web", "asking", "needs_approval"]);
+
+function statusActivityName(event: ChatStatusEvent): string | null {
+  const status = String(event.status ?? "").trim();
+  return COMMENTARY_STATUSES.has(status) ? `status.${status}` : null;
+}
+
 export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
@@ -88,6 +96,7 @@ export function ChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready." }]);
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [providers, setProviders] = useState<ProviderCatalog | null>(null);
+  const [providerUsage, setProviderUsage] = useState<ProviderUsage>({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
   const [pending, setPending] = useState(false);
   const [dictationActive, setDictationActive] = useState(false);
   const [composerText, setComposerText] = useState("");
@@ -101,6 +110,7 @@ export function ChatApp() {
   const [helloDone, setHelloDone] = useState(false);
   const [booted, setBooted] = useState(false);
   const voiceSessionActiveRef = useRef(false);
+  const pendingRef = useRef(false);
   const voiceListenPendingRef = useRef(false);
   const voiceCaptureTargetRef = useRef<VoiceCaptureTarget | null>(null);
   const manualVoiceCuePlayedRef = useRef(false);
@@ -116,12 +126,26 @@ export function ChatApp() {
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
     const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
+    setProviderUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
     setSessions(listCachedSessions());
   }, []);
 
+  const ensureBackendSession = useCallback(async (): Promise<string> => {
+    if (sessionIdRef.current) return sessionIdRef.current;
+    const first = (await listChatSessions()).sessions[0] ?? (await createChatSession("New chat")).session;
+    activateBackendSession(first);
+    return first.session_ref.ref_id;
+  }, [activateBackendSession]);
+
   useEffect(() => {
     void getShellRuntimeConfig().then(setConfig).catch(() => setConfig(null));
-    void fetchProviders().then(setProviders).catch(() => undefined);
+    void fetchProviders()
+      .then((catalog) => {
+        setProviders(catalog);
+        return refreshProviderModels(catalog.active_provider_id);
+      })
+      .then(setProviders)
+      .catch(() => undefined);
     let cleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
       try { setState(normalizeAssistantState(event.payload)); }
@@ -174,27 +198,35 @@ export function ChatApp() {
 
   const lastVoiceEventRef = useRef<string>("");
 
-  const send = useCallback(async (text: string, options: { appendUser?: boolean } = {}): Promise<SendResult> => {
-    if (!text.trim() || pending) return { text: "", speechText: "" };
+  const send = useCallback(async (text: string, options: { appendUser?: boolean; onProgress?: (text: string) => void } = {}): Promise<SendResult> => {
+    if (!text.trim() || pendingRef.current) return { text: "", speechText: "" };
     const appendUser = options.appendUser ?? true;
+    pendingRef.current = true;
     setPending(true);
     // Timer anchor for the "Working…/Worked for …" trace.
     const startedAt = Date.now();
     // Append a user message only for direct user turns. Follow-up UI controls
     // such as clarification answers and approvals update the active assistant
     // turn instead of creating transcript noise.
-    if (appendUser) {
-      setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true, activityStartedAt: startedAt }]);
-    } else {
-      updateLastAssistant({ role: "assistant", text: "", streaming: true, activityStartedAt: startedAt });
-    }
+    let turnPlaceholderAppended = false;
+    const appendTurnPlaceholder = () => {
+      if (turnPlaceholderAppended) return;
+      turnPlaceholderAppended = true;
+      if (appendUser) {
+        setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true, activityStartedAt: startedAt }]);
+      } else {
+        updateLastAssistant({ role: "assistant", text: "", streaming: true, activityStartedAt: startedAt });
+      }
+    };
     let replyText = "";
     let speechText = "";
     let streamed = "";
     let activity: ActivityStep[] = [];
+    let commentary: string[] = [];
+    let modelCommentarySeen = false;
     try {
-      const sessionId = sessionIdRef.current;
-      if (!sessionId) throw new Error("backend session unavailable");
+      const sessionId = await ensureBackendSession();
+      appendTurnPlaceholder();
       const result = await submitChatTurnStream(
         text,
         { session_id: sessionId },
@@ -202,16 +234,37 @@ export function ChatApp() {
         {
           onDelta: (chunk) => {
             streamed += chunk;
-            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
           },
           onTool: (event) => {
             const id = event.id || event.name || String(activity.length);
             if (event.phase === "end") {
               activity = activity.map((step) => (step.id === id || step.name === event.name) && step.active ? { ...step, active: false } : step);
             } else {
-              activity = [...activity, { id, name: event.name ?? "", arguments: event.arguments, active: true }];
+              const step = { id, name: event.name ?? "", arguments: event.arguments, active: true };
+              activity = [...activity, step];
+              if (!modelCommentarySeen) options.onProgress?.(activityLabel(step));
             }
-            updateLastAssistant({ role: "assistant", text: streamed, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+          },
+          onStatus: (event) => {
+            const name = statusActivityName(event);
+            activity = activity.map((step) => step.name.startsWith("status.") && step.active ? { ...step, active: false } : step);
+            if (name && activity[activity.length - 1]?.name !== name) {
+              const step = { id: `${name}:${activity.length}`, name, active: true };
+              activity = [...activity, step];
+              if (!modelCommentarySeen) options.onProgress?.(activityLabel(step));
+            }
+            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+          },
+          onCommentary: (event) => {
+            const modelText = String(event.text ?? "").trim();
+            if (!modelText || commentary.includes(modelText)) return;
+            modelCommentarySeen = true;
+            commentary = [...commentary, modelText];
+            if (streamed.trim() === modelText) streamed = "";
+            options.onProgress?.(modelText);
+            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
           },
         },
       );
@@ -227,21 +280,24 @@ export function ChatApp() {
         });
       }
       const outcome = outcomeFromTurnResult(result);
+      setProviderUsage(providerUsageFromTurnResult(result));
       replyText = outcome.text;
       speechText = speechTextFromTurnResult(result);
       // Reconcile with the authoritative final result (text + stages + refs).
       // Settle any still-active tool steps so the chain-of-thought stops shimmering.
       const settledActivity = activity.map((step) => (step.active ? { ...step, active: false } : step));
-      updateLastAssistant({ role: "assistant", text: outcome.text, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined, activityStartedAt: startedAt, activityEndedAt: Date.now() });
+      updateLastAssistant({ role: "assistant", text: outcome.text, commentary: commentary.length ? commentary : undefined, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } catch (error) {
+      appendTurnPlaceholder();
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
       updateLastAssistant({ role: "assistant", text: outcome.text, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } finally {
+      pendingRef.current = false;
       setPending(false);
     }
     return { text: replyText, speechText };
-  }, [pending, updateLastAssistant]);
+  }, [ensureBackendSession, updateLastAssistant]);
 
   const answerClarification = useCallback((clarification: MarvexChatClarification, answerText: string) => {
     const reply = answerText.trim();
@@ -263,6 +319,7 @@ export function ChatApp() {
 
   const stopChatTurn = useCallback(() => {
     void cancelActiveChatTurn().catch(() => undefined);
+    pendingRef.current = false;
     setPending(false);
     setMessages((prev) => prev.filter((message) => !(message.role === "assistant" && !message.text.trim() && message.streaming)));
   }, []);
@@ -313,7 +370,7 @@ export function ChatApp() {
 
   const handleVoiceTranscript = useCallback(async (text: string, options: { shouldSpeak?: () => boolean } = {}) => {
     await runVoiceTurnWithSpeech({
-      runTurn: () => send(text),
+      runTurn: (reportProgress) => send(text, { onProgress: reportProgress }),
       speechText: (reply) => reply.speechText,
       speak: speakVoiceWorker,
       shouldSpeak: options.shouldSpeak,
@@ -338,7 +395,7 @@ export function ChatApp() {
     }
     if (target === "voice") {
       const generation = voiceSessionGenerationRef.current;
-      const stillCurrent = () => voiceSessionActiveRef.current && voiceSessionGenerationRef.current === generation;
+      const stillCurrent = () => voiceSessionGenerationRef.current === generation;
       setVoiceSessionListening(false);
       voiceListenPendingRef.current = false;
       voiceCaptureTargetRef.current = null;
@@ -521,20 +578,35 @@ export function ChatApp() {
 
   const modelOptions = useMemo(() => {
     const rows = providers?.providers ?? [];
-    return rows.flatMap((provider) => (provider.models ?? []).map((model) => ({
-      id: `${provider.provider_id}:${model}`,
-      name: model,
-      provider: provider.provider_id.split("_")[0],
-      active: provider.provider_id === providers?.active_provider_id && model === provider.active_model,
-      providerId: provider.provider_id,
-      model,
-    })));
+    return rows.flatMap((provider) => {
+      const models = Array.from(new Set([
+        provider.active_model,
+        ...(provider.models ?? []),
+      ].filter((model): model is string => Boolean(model?.trim()))));
+      return models.map((model) => ({
+        id: `${provider.provider_id}:${model}`,
+        name: model,
+        provider: provider.provider_id.split("_")[0],
+        active: provider.provider_id === providers?.active_provider_id && model === provider.active_model,
+        providerId: provider.provider_id,
+        model,
+        contextWindow: provider.model_metadata?.[model]?.context_window,
+        reasoningEffort: provider.reasoning_effort,
+        reasoningEffortOptions: provider.model_metadata?.[model]?.reasoning_effort_options ?? [],
+      }));
+    });
   }, [providers]);
 
   const selectModel = useCallback((value: string) => {
     const found = modelOptions.find((model) => model.id === value);
     if (!found) return;
     void selectProviderModel(found.providerId, found.model).then(setProviders).catch(() => undefined);
+  }, [modelOptions]);
+
+  const selectReasoningEffort = useCallback((effort: string) => {
+    const active = modelOptions.find((model) => model.active);
+    if (!active) return;
+    void selectProviderReasoningEffort(active.providerId, effort).then(setProviders).catch(() => undefined);
   }, [modelOptions]);
 
   const openSession = useCallback((id: string) => {
@@ -547,6 +619,7 @@ export function ChatApp() {
     }
     const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
+    setProviderUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
     setSidebarOpen(false);
     setActiveTab("chat");
   }, []);
@@ -647,6 +720,15 @@ export function ChatApp() {
                 modelLabel={modelOptions.find((model) => model.active)?.name ?? (config ? "Select model" : "Connecting runtime")}
                 models={modelOptions}
                 onSelectModel={selectModel}
+                contextInputTokens={providerUsage.inputTokens}
+                outputTokens={providerUsage.outputTokens}
+                totalTokens={providerUsage.totalTokens}
+                reasoningTokens={providerUsage.reasoningTokens}
+                contextWindow={modelOptions.find((model) => model.active)?.contextWindow}
+                cachedInputTokens={providerUsage.cachedInputTokens}
+                reasoningEffort={modelOptions.find((model) => model.active)?.reasoningEffort}
+                reasoningEffortOptions={modelOptions.find((model) => model.active)?.reasoningEffortOptions}
+                onSelectReasoningEffort={selectReasoningEffort}
                 renderAssistantOrb={(state) => <AgentOrb agentState={state ?? orbState} />}
               />
             )}

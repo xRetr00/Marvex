@@ -28,4 +28,9 @@ describe("activityLabel", () => {
     expect(activityLabel({ id: "6", name: "mystery.tool", arguments: "not json", active: true })).toBe("Running mystery tool");
     expect(activityLabel({ id: "7", name: "web.search", active: true })).toBe("Searching the web");
   });
+
+  it("uses concise commentary labels for runtime status events", () => {
+    expect(activityLabel({ id: "8", name: "status.thinking", active: true })).toBe("Thinking");
+    expect(activityLabel({ id: "9", name: "status.searching_web", active: false })).toBe("Searched the web");
+  });
 });

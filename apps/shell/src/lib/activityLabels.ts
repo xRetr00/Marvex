@@ -40,6 +40,14 @@ const VERBS: Record<string, VerbForms> = {
   "playwright_mcp.task": { active: "Browsing", done: "Browsed", targetKeys: ["url", "task"] },
   "browser_use.task": { active: "Browsing", done: "Browsed", targetKeys: ["task", "url"] },
   "computer_use.action": { active: "Controlling the desktop", done: "Controlled the desktop", targetKeys: ["action", "task"] },
+  "status.thinking": { active: "Thinking", done: "Thought", targetKeys: [] },
+  "status.working": { active: "Working", done: "Worked", targetKeys: [] },
+  "status.using_tools": { active: "Using tools", done: "Used tools", targetKeys: [] },
+  "status.mcp": { active: "Connecting to MCP", done: "Used MCP", targetKeys: [] },
+  "status.skills": { active: "Loading skills", done: "Loaded skills", targetKeys: [] },
+  "status.searching_web": { active: "Searching the web", done: "Searched the web", targetKeys: [] },
+  "status.asking": { active: "Preparing a question", done: "Prepared a question", targetKeys: [] },
+  "status.needs_approval": { active: "Waiting for approval", done: "Approval handled", targetKeys: [] },
 };
 
 function normalizeName(name: string): string {
