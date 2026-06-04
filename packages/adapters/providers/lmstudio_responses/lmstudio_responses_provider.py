@@ -145,34 +145,53 @@ class LMStudioResponsesProvider:
 
         response_id: str | None = None
         final_text_parts: list[str] = []
-        # Track whether a <think> reasoning block is currently open so native
-        # reasoning deltas (a separate Responses channel) are wrapped in the same
-        # <think>...</think> markup the shell already understands. Models that
-        # surface reasoning in the message channel are unaffected (no reasoning
-        # events fire), and models with a real reasoning channel now stream their
-        # chain-of-thought live and keep it in the final stored text.
+        # LM Studio exposes model reasoning as Responses-style reasoning_text
+        # deltas. Keep it inside the existing <think> channel so the shell can
+        # render/collapse it and strip it from speech/copy paths.
         reasoning_open = False
+        output_delta_keys: set[tuple[object, ...]] = set()
+        reasoning_delta_keys: set[tuple[object, ...]] = set()
         try:
             for event in stream:
                 event_type = str(getattr(event, "type", "") or "")
                 if _is_reasoning_delta(event_type):
                     delta = _event_text_delta(event)
                     if delta:
+                        reasoning_delta_keys.add(_event_part_key(event))
                         if not reasoning_open:
                             reasoning_open = True
                             final_text_parts.append("<think>")
                             yield StreamTextDelta("<think>")
                         final_text_parts.append(delta)
                         yield StreamTextDelta(delta)
+                elif _is_reasoning_done(event_type):
+                    text = _event_done_text(event)
+                    if text and _event_part_key(event) not in reasoning_delta_keys:
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(text)
+                        yield StreamTextDelta(text)
                 elif event_type.endswith("output_text.delta"):
                     delta = _event_text_delta(event)
                     if delta:
+                        output_delta_keys.add(_event_part_key(event))
                         if reasoning_open:
                             reasoning_open = False
                             final_text_parts.append("</think>")
                             yield StreamTextDelta("</think>")
                         final_text_parts.append(delta)
                         yield StreamTextDelta(delta)
+                elif event_type.endswith("output_text.done"):
+                    text = _event_done_text(event)
+                    if text and _event_part_key(event) not in output_delta_keys:
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
+                        final_text_parts.append(text)
+                        yield StreamTextDelta(text)
                 elif event_type.endswith("response.completed") or event_type == "response.completed":
                     if reasoning_open:
                         reasoning_open = False
@@ -193,6 +212,7 @@ class LMStudioResponsesProvider:
                         finish_reason="stop",
                         output_text=output_text,
                         tool_calls=tool_calls or None,
+                        usage=self._to_plain_mapping(self._read_attr(response_obj, "usage")),
                     )
                     return
                 elif event_type.endswith("failed") or event_type.endswith("error"):
@@ -247,11 +267,18 @@ class LMStudioResponsesProvider:
     ) -> tuple[dict[str, object], list[str]]:
         allowed: dict[str, object] = {}
         ignored: list[str] = []
+        reasoning: dict[str, object] = {}
         for name, value in provider_options.items():
             if name in {"temperature", "max_output_tokens", "top_p", "timeout", "parallel_tool_calls"}:
                 allowed[name] = value
+            elif name == "reasoning_effort" and isinstance(value, str) and value.strip():
+                reasoning["effort"] = value.strip()
+            elif name == "reasoning_summary" and isinstance(value, str) and value.strip():
+                reasoning["summary"] = value.strip()
             else:
                 ignored.append(name)
+        if reasoning:
+            allowed["reasoning"] = reasoning
         return allowed, sorted(ignored)
 
     def _read_output_text(self, response: object) -> str:
@@ -347,15 +374,21 @@ class LMStudioResponsesProvider:
 
 
 def _is_reasoning_delta(event_type: str) -> bool:
-    """True for Responses streaming events that carry incremental reasoning text.
+    """True for provider-generated reasoning deltas."""
 
-    Covers both the summarized (``response.reasoning_summary_text.delta``) and
-    raw (``response.reasoning_text.delta``) reasoning channels emitted by
-    reasoning-capable models, without matching the ordinary
-    ``output_text.delta`` answer channel.
-    """
+    return (
+        ("reasoning_summary" in event_type or "reasoning_text" in event_type)
+        and event_type.endswith(".delta")
+    )
 
-    return "reasoning" in event_type and event_type.endswith(".delta")
+
+def _is_reasoning_done(event_type: str) -> bool:
+    """True for completed reasoning text events used when deltas are absent."""
+
+    return (
+        ("reasoning_summary_text" in event_type or "reasoning_text" in event_type)
+        and event_type.endswith(".done")
+    )
 
 
 def _event_text_delta(event: object) -> str:
@@ -370,6 +403,31 @@ def _event_text_delta(event: object) -> str:
         if isinstance(text, str):
             return text
     return ""
+
+
+def _event_done_text(event: object) -> str:
+    """Read finalized text from a Responses ``*.done`` event."""
+
+    text = getattr(event, "text", "")
+    if isinstance(text, str):
+        return text
+    part = getattr(event, "part", None)
+    if isinstance(part, dict):
+        nested = part.get("text")
+        return nested if isinstance(nested, str) else ""
+    nested = getattr(part, "text", "")
+    return nested if isinstance(nested, str) else ""
+
+
+def _event_part_key(event: object) -> tuple[object, ...]:
+    """Stable key for matching delta/done events for one content part."""
+
+    return (
+        getattr(event, "item_id", None),
+        getattr(event, "output_index", None),
+        getattr(event, "content_index", None),
+        getattr(event, "summary_index", None),
+    )
 
 
 def _responses_tool_schemas(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:

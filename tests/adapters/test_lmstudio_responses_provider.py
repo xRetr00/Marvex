@@ -243,6 +243,24 @@ def test_provider_options_allowlist_and_ignored_options_are_recorded():
     assert response.raw_metadata["ignored_provider_options"] == ["api_key", "unknown"]
 
 
+def test_reasoning_options_are_sent_only_when_configured():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+
+    client = RecordingClient()
+    provider = LMStudioResponsesProvider(client_factory=RecordingClientFactory(client))
+
+    provider.send(
+        make_request(
+            provider_options={
+                "reasoning_effort": "high",
+                "reasoning_summary": "auto",
+            }
+        )
+    )
+
+    assert client.responses.calls[0]["reasoning"] == {"effort": "high", "summary": "auto"}
+
+
 def test_adapter_source_has_no_forbidden_boundary_or_raw_http_imports():
     source = (
         Path("packages")

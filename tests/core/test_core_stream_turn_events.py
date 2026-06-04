@@ -60,6 +60,28 @@ def test_stream_turn_events_emits_live_deltas_and_tool_then_final():
     assert events[-1]["result"]["assistant_final_response"]["text"] == "<think>look</think>Done"
 
 
+def test_stream_turn_events_preserves_model_authored_commentary_frame():
+    from services.core.main import (
+        _active_live_event_sink,
+        _active_live_token_sink,
+        _stream_turn_events,
+    )
+
+    class _Service:
+        def submit_turn(self, turn_input, **kwargs):
+            token = _active_live_token_sink()
+            event = _active_live_event_sink()
+            token("I'm locating MAR.txt.")
+            event({"type": "commentary", "text": "I'm locating MAR.txt."})
+            event({"type": "tool", "phase": "start", "id": "c1", "name": "file.read"})
+            token("The file contains test data.")
+            return _result("The file contains test data.")
+
+    events = list(_stream_turn_events(_Service(), _request()))
+    assert [event["type"] for event in events] == ["delta", "commentary", "tool", "delta", "final"]
+    assert events[1]["text"] == "I'm locating MAR.txt."
+
+
 def test_stream_turn_events_falls_back_to_chunking_when_no_live_deltas():
     from services.core.main import _stream_turn_events
 

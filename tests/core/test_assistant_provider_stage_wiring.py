@@ -289,7 +289,11 @@ def test_trace_lifecycle_is_emitted_through_assistant_runtime_safe_path():
         TraceStage.TURN_COMPLETED,
     ]
     assert all(event.trace_id == "trace-core-provider-stage" for event in sink.events)
-    assert sink.events[0].data == {"stage": "provider_stage"}
+    assert sink.events[0].data == {
+        "stage": "provider_stage",
+        "model": "neutral-model",
+        "previous_response_id_present": False,
+    }
     assert sink.events[2].data["status"] == "success"
 
 

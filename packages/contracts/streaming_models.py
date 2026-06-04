@@ -32,6 +32,8 @@ class StreamCompleted:
     finish_reason: str
     output_text: str
     tool_calls: list[dict[str, Any]] | None = field(default=None)
+    usage: dict[str, Any] = field(default_factory=dict)
+    raw_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

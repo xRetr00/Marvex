@@ -207,17 +207,54 @@ class LiteLLMProvider:
         finish_reason = "stop"
         final_text_parts: list[str] = []
         completed_response: object | None = None
+        reasoning_open = False
+        output_delta_keys: set[tuple[object, ...]] = set()
+        reasoning_delta_keys: set[tuple[object, ...]] = set()
         try:
             for event in stream:
                 response_obj = self._read_attr(event, "response")
                 chunk_id = self._read_attr(event, "id") or self._read_attr(response_obj, "id")
                 if isinstance(chunk_id, str) and chunk_id:
                     response_id = chunk_id
-                content = self._read_attr(event, "delta") or self._read_attr(event, "text")
-                if isinstance(content, str) and content:
-                    final_text_parts.append(content)
-                    yield StreamTextDelta(content)
-                event_type = self._read_attr(event, "type")
+                event_type = str(self._read_attr(event, "type") or "")
+                if _is_reasoning_delta(event_type):
+                    content = _event_text_delta(event)
+                    if content:
+                        reasoning_delta_keys.add(_event_part_key(event))
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_reasoning_done(event_type):
+                    content = _event_done_text(event)
+                    if content and _event_part_key(event) not in reasoning_delta_keys:
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_output_delta(event_type):
+                    content = _event_text_delta(event)
+                    if content:
+                        output_delta_keys.add(_event_part_key(event))
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_output_done(event_type):
+                    content = _event_done_text(event)
+                    if content and _event_part_key(event) not in output_delta_keys:
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
                 if event_type == "response.incomplete":
                     finish_reason = "length"
                 elif event_type == "response.failed":
@@ -232,6 +269,9 @@ class LiteLLMProvider:
             yield StreamError(self._safe_exception_message(exc))
             return
 
+        if reasoning_open:
+            final_text_parts.append("</think>")
+            yield StreamTextDelta("</think>")
         output_text = "".join(final_text_parts)
         tool_calls = self._read_tool_calls(completed_response) if completed_response is not None else []
         self._record_turn(response_id, request, output_text)
@@ -240,10 +280,11 @@ class LiteLLMProvider:
             finish_reason=finish_reason,
             output_text=output_text,
             tool_calls=tool_calls or None,
+            usage=self._to_plain_mapping(self._read_attr(completed_response, "usage")),
         )
 
     def _send_via_openai_responses(self, request: ProviderRequest) -> ProviderResponse:
-        call_args = self._openai_responses_call_args(request, stream=False)
+        call_args = self._openai_responses_call_args(request)
         allowed_options, ignored_options = self._filter_provider_options(request.provider_options)
         call_args.update(allowed_options)
         raw_metadata: dict[str, object] = {
@@ -297,7 +338,8 @@ class LiteLLMProvider:
         )
 
     def _stream_via_openai_responses(self, request: ProviderRequest):
-        call_args = self._openai_responses_call_args(request, stream=True)
+        call_args = self._openai_responses_call_args(request)
+        call_args["stream"] = True
         allowed_options, _ignored = self._filter_provider_options(request.provider_options)
         call_args.update(allowed_options)
         try:
@@ -309,18 +351,59 @@ class LiteLLMProvider:
 
         response_id: str | None = None
         final_text_parts: list[str] = []
+        reasoning_open = False
+        output_delta_keys: set[tuple[object, ...]] = set()
+        reasoning_delta_keys: set[tuple[object, ...]] = set()
         try:
             for event in stream:
                 response_obj = self._read_attr(event, "response")
                 chunk_id = self._read_attr(event, "id") or self._read_attr(response_obj, "id")
                 if isinstance(chunk_id, str) and chunk_id:
                     response_id = chunk_id
-                content = self._read_attr(event, "delta") or self._read_attr(event, "text")
-                if isinstance(content, str) and content:
-                    final_text_parts.append(content)
-                    yield StreamTextDelta(content)
                 event_type = str(self._read_attr(event, "type") or "")
+                if _is_reasoning_delta(event_type):
+                    content = _event_text_delta(event)
+                    if content:
+                        reasoning_delta_keys.add(_event_part_key(event))
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_reasoning_done(event_type):
+                    content = _event_done_text(event)
+                    if content and _event_part_key(event) not in reasoning_delta_keys:
+                        if not reasoning_open:
+                            reasoning_open = True
+                            final_text_parts.append("<think>")
+                            yield StreamTextDelta("<think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_output_delta(event_type):
+                    content = _event_text_delta(event)
+                    if content:
+                        output_delta_keys.add(_event_part_key(event))
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
+                elif _is_output_done(event_type):
+                    content = _event_done_text(event)
+                    if content and _event_part_key(event) not in output_delta_keys:
+                        if reasoning_open:
+                            reasoning_open = False
+                            final_text_parts.append("</think>")
+                            yield StreamTextDelta("</think>")
+                        final_text_parts.append(content)
+                        yield StreamTextDelta(content)
                 if event_type.endswith("response.completed") or event_type == "response.completed":
+                    if reasoning_open:
+                        reasoning_open = False
+                        final_text_parts.append("</think>")
+                        yield StreamTextDelta("</think>")
                     if response_obj is not None:
                         response_id = response_id or self._read_attr(response_obj, "id")
                         authoritative = self._read_output_text(response_obj)
@@ -328,13 +411,15 @@ class LiteLLMProvider:
                     else:
                         authoritative = ""
                         tool_calls = []
-                    output_text = authoritative or "".join(final_text_parts)
+                    joined = "".join(final_text_parts)
+                    output_text = joined if len(joined) >= len(authoritative) else authoritative
                     self._record_turn(response_id, request, output_text)
                     yield StreamCompleted(
                         response_id=response_id if isinstance(response_id, str) else None,
                         finish_reason="stop",
                         output_text=output_text,
                         tool_calls=tool_calls or None,
+                        usage=self._to_plain_mapping(self._read_attr(response_obj, "usage")),
                     )
                     return
                 if event_type.endswith("failed") or event_type.endswith("error"):
@@ -343,17 +428,18 @@ class LiteLLMProvider:
         except Exception as exc:
             yield StreamError(self._safe_exception_message(exc))
             return
+        if reasoning_open:
+            final_text_parts.append("</think>")
+            yield StreamTextDelta("</think>")
         output_text = "".join(final_text_parts)
         self._record_turn(response_id, request, output_text)
         yield StreamCompleted(response_id=response_id, finish_reason="stop", output_text=output_text)
 
-    def _openai_responses_call_args(self, request: ProviderRequest, *, stream: bool) -> dict[str, Any]:
+    def _openai_responses_call_args(self, request: ProviderRequest) -> dict[str, Any]:
         call_args: dict[str, Any] = {
             "model": request.model,
             "input": self._build_responses_input(request),
         }
-        if stream:
-            call_args["stream"] = True
         if request.instructions is not None:
             call_args["instructions"] = request.instructions
         if request.previous_response_id is not None:
@@ -493,6 +579,7 @@ class LiteLLMProvider:
     ) -> tuple[dict[str, object], list[str]]:
         allowed: dict[str, object] = {}
         ignored: list[str] = []
+        reasoning: dict[str, object] = {}
         for name, value in provider_options.items():
             if name == "temperature":
                 allowed["temperature"] = value
@@ -504,8 +591,14 @@ class LiteLLMProvider:
                 allowed["timeout"] = value
             elif name == "parallel_tool_calls":
                 allowed["parallel_tool_calls"] = value
+            elif name == "reasoning_effort" and isinstance(value, str) and value.strip():
+                reasoning["effort"] = value.strip()
+            elif name == "reasoning_summary" and isinstance(value, str) and value.strip():
+                reasoning["summary"] = value.strip()
             else:
                 ignored.append(name)
+        if reasoning:
+            allowed["reasoning"] = reasoning
 
         return allowed, sorted(ignored)
 
@@ -586,3 +679,63 @@ class LiteLLMProvider:
         ):
             return f"openai/{model}"
         return model
+
+
+def _is_output_delta(event_type: str) -> bool:
+    return not event_type or event_type.endswith("output_text.delta")
+
+
+def _is_output_done(event_type: str) -> bool:
+    return event_type.endswith("output_text.done")
+
+
+def _is_reasoning_delta(event_type: str) -> bool:
+    return (
+        ("reasoning_summary" in event_type or "reasoning_text" in event_type)
+        and event_type.endswith(".delta")
+    )
+
+
+def _is_reasoning_done(event_type: str) -> bool:
+    return (
+        ("reasoning_summary_text" in event_type or "reasoning_text" in event_type)
+        and event_type.endswith(".done")
+    )
+
+
+def _event_text_delta(event: object) -> str:
+    delta = _read_event_attr(event, "delta")
+    if isinstance(delta, str):
+        return delta
+    if isinstance(delta, dict):
+        text = delta.get("text")
+        return text if isinstance(text, str) else ""
+    text = _read_event_attr(event, "text")
+    return text if isinstance(text, str) else ""
+
+
+def _event_done_text(event: object) -> str:
+    text = _read_event_attr(event, "text")
+    if isinstance(text, str):
+        return text
+    part = _read_event_attr(event, "part")
+    if isinstance(part, dict):
+        nested = part.get("text")
+        return nested if isinstance(nested, str) else ""
+    nested = _read_event_attr(part, "text")
+    return nested if isinstance(nested, str) else ""
+
+
+def _event_part_key(event: object) -> tuple[object, ...]:
+    return (
+        _read_event_attr(event, "item_id"),
+        _read_event_attr(event, "output_index"),
+        _read_event_attr(event, "content_index"),
+        _read_event_attr(event, "summary_index"),
+    )
+
+
+def _read_event_attr(value: object, name: str) -> object:
+    if isinstance(value, dict):
+        return value.get(name)
+    return getattr(value, name, None)

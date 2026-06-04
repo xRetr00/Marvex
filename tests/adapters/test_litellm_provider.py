@@ -157,6 +157,13 @@ def test_litellm_proxy_stream_uses_responses_streaming_client():
         def create(self, **kwargs: object) -> list[SimpleNamespace]:
             self.calls.append(kwargs)
             return [
+                SimpleNamespace(
+                    type="response.reasoning_text.done",
+                    item_id="rs-stream",
+                    output_index=0,
+                    content_index=0,
+                    text="Thinking.",
+                ),
                 SimpleNamespace(type="response.output_text.delta", delta="Hi"),
                 SimpleNamespace(
                     type="response.completed",
@@ -187,7 +194,7 @@ def test_litellm_proxy_stream_uses_responses_streaming_client():
     assert client.calls[0]["stream"] is True
     assert client.calls[0]["previous_response_id"] == "prev-001"
     assert events[-1].response_id == "resp-stream"
-    assert events[-1].output_text == "Hi"
+    assert events[-1].output_text == "<think>Thinking.</think>Hi"
 
 
 def test_litellm_openai_compatible_mode_prefixes_plain_model_ids(monkeypatch):
@@ -377,6 +384,30 @@ def test_provider_options_allowlist_filters_and_records_ignored(monkeypatch):
         "tools",
         "unknown",
     ]
+
+
+def test_reasoning_options_are_sent_as_non_null_responses_reasoning(monkeypatch):
+    from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
+
+    calls: list[dict[str, object]] = []
+
+    def fake_responses(**kwargs):
+        calls.append(kwargs)
+        return make_responses_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
+
+    LiteLLMProvider().send(
+        make_request(
+            provider_options={
+                "reasoning_effort": "high",
+                "reasoning_summary": "auto",
+            }
+        )
+    )
+
+    assert calls[0]["reasoning"] == {"effort": "high", "summary": "auto"}
 
 
 def test_no_tools_mcp_or_streaming_fields_sent(monkeypatch):

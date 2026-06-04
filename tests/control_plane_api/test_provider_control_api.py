@@ -176,6 +176,20 @@ def test_default_litellm_model_refresh_uses_configured_model_list(monkeypatch) -
     assert provider["models"][:2] == ["openai/gpt-4.1-mini", "openrouter/auto"]
 
 
+def test_litellm_model_refresh_exposes_model_aware_reasoning_and_context(monkeypatch) -> None:
+    monkeypatch.setenv("MARVEX_LITELLM_MODELS", "openai/gpt-5.4")
+    control = InMemoryProviderControl()
+
+    payload = control.refresh_models("litellm")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    metadata = provider["model_metadata"]["openai/gpt-5.4"]
+    assert metadata["supports_reasoning"] is True
+    assert metadata["context_window"] > 0
+    assert "high" in metadata["reasoning_effort_options"]
+    assert provider["reasoning_effort"] == "medium"
+
+
 def test_litellm_model_refresh_does_not_inject_openrouter_when_unconfigured(monkeypatch) -> None:
     monkeypatch.delenv("MARVEX_LITELLM_MODELS", raising=False)
     monkeypatch.delenv("LITELLM_MODELS", raising=False)
@@ -284,6 +298,29 @@ def test_provider_connection_and_automation_routes_are_exposed() -> None:
     assert litellm_automation["automation_validation"]["ready"] is True
 
 
+def test_provider_reasoning_route_updates_supported_model(monkeypatch) -> None:
+    monkeypatch.setenv("MARVEX_LITELLM_MODELS", "openai/gpt-5.4")
+    control = InMemoryProviderControl()
+    control.refresh_models("litellm")
+    app = create_control_plane_test_app(
+        approval_store=InMemoryApprovalStore.from_requests(()),
+        snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
+        local_auth_token="fake-control-token",
+        provider_control=control,
+    )
+
+    status, _headers, payload = asgi_call(
+        app,
+        "/control/providers/litellm/reasoning",
+        method="POST",
+        body={"effort": "high"},
+    )
+
+    assert status == "200 OK"
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
+    assert provider["reasoning_effort"] == "high"
+
+
 def test_snapshot_settings_include_provider_control_catalog() -> None:
     control = InMemoryProviderControl()
     control.set_active_provider("litellm")
@@ -338,6 +375,9 @@ def test_litellm_model_refresh_uses_in_memory_secret_for_sdk_discovery(monkeypat
 
 def test_default_lmstudio_model_refresh_reads_openai_compatible_models(monkeypatch) -> None:
     class Response:
+        def __init__(self, payload: dict[str, object]):
+            self.payload = payload
+
         def __enter__(self):
             return self
 
@@ -345,14 +385,30 @@ def test_default_lmstudio_model_refresh_reads_openai_compatible_models(monkeypat
             return False
 
         def read(self) -> bytes:
-            return json.dumps({"data": [{"id": "local/qwen"}, {"id": "local/llama"}]}).encode("utf-8")
+            return json.dumps(self.payload).encode("utf-8")
 
-    captured = {}
+    captured = []
 
     def fake_urlopen(request, timeout: float):
-        captured["url"] = request.full_url
-        captured["timeout"] = timeout
-        return Response()
+        captured.append({"url": request.full_url, "timeout": timeout})
+        if request.full_url.endswith("/api/v1/models"):
+            return Response(
+                {
+                    "models": [
+                        {
+                            "key": "local/qwen",
+                            "max_context_length": 131072,
+                            "capabilities": {
+                                "reasoning": {
+                                    "allowed_options": ["off", "low", "medium", "high", "on"],
+                                    "default": "medium",
+                                }
+                            },
+                        }
+                    ]
+                }
+            )
+        return Response({"data": [{"id": "local/qwen"}, {"id": "local/llama"}]})
 
     monkeypatch.setattr("packages.control_plane_api.providers.urlopen", fake_urlopen)
     monkeypatch.setenv("MARVEX_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
@@ -361,6 +417,17 @@ def test_default_lmstudio_model_refresh_reads_openai_compatible_models(monkeypat
     payload = control.refresh_models("lmstudio_responses")
 
     provider = next(row for row in payload["providers"] if row["provider_id"] == "lmstudio_responses")
-    assert captured == {"url": "http://127.0.0.1:1234/v1/models", "timeout": 2.0}
+    assert captured == [
+        {"url": "http://127.0.0.1:1234/v1/models", "timeout": 2.0},
+        {"url": "http://127.0.0.1:1234/api/v1/models", "timeout": 2.0},
+    ]
     assert provider["healthy"] is True
     assert provider["active_model"] == "local/qwen"
+    assert provider["model_metadata"]["local/qwen"] == {
+        "supports_reasoning": True,
+        "supports_reasoning_summary": False,
+        "reasoning_effort_options": ["off", "low", "medium", "high", "on"],
+        "reasoning_default": "medium",
+        "context_window": 131072,
+    }
+    assert provider["reasoning_effort"] == "medium"

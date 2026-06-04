@@ -30,6 +30,28 @@ def _chunk(text: str | None, *, chunk_id: str = "resp-1", event_type: str = "res
     return SimpleNamespace(id=chunk_id, delta=text, type=event_type)
 
 
+def _text_done(text: str) -> object:
+    return SimpleNamespace(
+        id="resp-1",
+        type="response.output_text.done",
+        item_id="msg-1",
+        output_index=0,
+        content_index=0,
+        text=text,
+    )
+
+
+def _reasoning_done(text: str) -> object:
+    return SimpleNamespace(
+        id="resp-1",
+        type="response.reasoning_text.done",
+        item_id="rs-1",
+        output_index=0,
+        content_index=0,
+        text=text,
+    )
+
+
 def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag(monkeypatch):
     captured: dict[str, object] = {}
 
@@ -47,6 +69,36 @@ def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag(monkeypat
     assert events[-1].response_id == "resp-1"
     assert events[-1].output_text == "Hello"
     assert events[-1].finish_reason == "stop"
+
+
+def test_stream_send_uses_output_text_done_when_delta_was_absent(monkeypatch):
+    def fake_responses(**_kwargs):
+        return iter([_text_done("Done text"), _chunk(None, event_type="response.completed")])
+
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
+
+    events = list(LiteLLMProvider().stream_send(_request()))
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["Done text"]
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].output_text == "Done text"
+
+
+def test_stream_send_uses_reasoning_done_when_delta_was_absent(monkeypatch):
+    def fake_responses(**_kwargs):
+        return iter([
+            _reasoning_done("Finished reasoning."),
+            _chunk("Final."),
+            _chunk(None, event_type="response.completed"),
+        ])
+
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
+
+    events = list(LiteLLMProvider().stream_send(_request()))
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["<think>", "Finished reasoning.", "</think>", "Final."]
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].output_text == "<think>Finished reasoning.</think>Final."
 
 
 def test_stream_send_drives_through_run_streaming_turn(monkeypatch):

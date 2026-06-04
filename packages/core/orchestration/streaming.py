@@ -48,6 +48,8 @@ class StreamedTurn:
     error_message: str = ""
     deltas: list[str] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] | None = None
+    usage: dict[str, Any] = field(default_factory=dict)
+    raw_metadata: dict[str, Any] = field(default_factory=dict)
 
 
 # on_delta(text_chunk) -> None. Called for each text delta as it arrives.
@@ -98,6 +100,8 @@ def run_streaming_turn(
                 delta_count=len(accumulated),
                 deltas=list(accumulated),
                 tool_calls=event.tool_calls,
+                usage=dict(event.usage),
+                raw_metadata=dict(event.raw_metadata),
             )
         elif isinstance(event, StreamError):
             return StreamedTurn(

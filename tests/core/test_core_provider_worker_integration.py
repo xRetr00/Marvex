@@ -37,6 +37,8 @@ def test_core_provider_worker_roundtrip_command_uses_real_worker_process():
             "Hello through ProviderWorker",
             "--provider",
             "provider_worker",
+            "--worker-provider",
+            "fake",
             "--model",
             "fake-model",
         ],

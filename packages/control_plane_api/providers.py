@@ -27,6 +27,7 @@ class ProviderControlState:
     active_model: str = ""
     automation_model: str = ""
     models: list[str] = field(default_factory=list)
+    model_metadata: dict[str, dict[str, Any]] = field(default_factory=dict)
     multi_models: list[str] = field(default_factory=list)
     base_url: str = ""
     provider_mode: str = "native"
@@ -35,6 +36,7 @@ class ProviderControlState:
     automation_policy: dict[str, bool] = field(default_factory=lambda: {"vision_required": False})
     secret_present: bool = False
     secret_display: str = ""
+    reasoning_effort: str = ""
 
     def projection(self) -> dict[str, Any]:
         automation_capabilities = dict(self.automation_model_capabilities)
@@ -47,6 +49,7 @@ class ProviderControlState:
             "active_model": self.active_model,
             "automation_model": self.automation_model,
             "models": list(self.models),
+            "model_metadata": {key: dict(value) for key, value in self.model_metadata.items()},
             "multi_models": list(self.multi_models),
             "base_url": self.base_url,
             "provider_mode": self.provider_mode,
@@ -61,6 +64,7 @@ class ProviderControlState:
             "secret_present": self.secret_present,
             "secret_display": self.secret_display if self.secret_present else "",
             "secret_value_present": False,
+            "reasoning_effort": self.reasoning_effort,
         }
 
 
@@ -146,6 +150,18 @@ class InMemoryProviderControl:
         row.configured = True
         if model and model not in row.models:
             row.models.append(model)
+        self._normalize_reasoning_effort(row)
+        return self._changed()
+
+    def set_reasoning_effort(self, provider_id: str, effort: str) -> dict[str, Any]:
+        row = self._provider(provider_id)
+        cleaned = str(effort or "").strip().lower()
+        metadata = row.model_metadata.get(row.active_model, {})
+        options = metadata.get("reasoning_effort_options")
+        allowed = [str(value) for value in options] if isinstance(options, list) else []
+        if cleaned not in allowed:
+            raise ValueError("reasoning_effort_not_supported")
+        row.reasoning_effort = cleaned
         return self._changed()
 
     def set_multi_models(self, provider_id: str, models: list[str]) -> dict[str, Any]:
@@ -237,10 +253,32 @@ class InMemoryProviderControl:
         row.healthy = bool(models)
         if models:
             row.models = _dedupe([*models, *row.models])
+            row.model_metadata = _default_model_metadata(
+                provider_id,
+                row.models,
+                secret=self.secret_value(provider_id),
+                base_url=row.base_url,
+            )
             if row.active_model not in row.models:
                 row.active_model = row.models[0]
+            self._normalize_reasoning_effort(row)
             row.configured = True
         return self._changed()
+
+    def _normalize_reasoning_effort(self, row: ProviderControlState) -> None:
+        metadata = row.model_metadata.get(row.active_model, {})
+        options = metadata.get("reasoning_effort_options")
+        allowed = [str(value) for value in options] if isinstance(options, list) else []
+        if row.reasoning_effort not in allowed:
+            default = str(metadata.get("reasoning_default") or "").strip().lower()
+            if default in allowed:
+                row.reasoning_effort = default
+            elif "medium" in allowed:
+                row.reasoning_effort = "medium"
+            elif "on" in allowed:
+                row.reasoning_effort = "on"
+            else:
+                row.reasoning_effort = allowed[0] if allowed else ""
 
     def _provider(self, provider_id: str) -> ProviderControlState:
         try:
@@ -304,6 +342,13 @@ class InMemoryProviderControl:
             models = row_data.get("models")
             if isinstance(models, list):
                 row.models = [str(m) for m in models if isinstance(m, str) and m.strip()]
+            model_metadata = row_data.get("model_metadata")
+            if isinstance(model_metadata, dict):
+                row.model_metadata = {
+                    str(key): dict(value)
+                    for key, value in model_metadata.items()
+                    if isinstance(key, str) and isinstance(value, dict)
+                }
             multi = row_data.get("multi_models")
             if isinstance(multi, list):
                 row.multi_models = [str(m) for m in multi if isinstance(m, str) and m.strip()]
@@ -323,6 +368,10 @@ class InMemoryProviderControl:
                 }
             if row_data.get("configured") is True:
                 row.configured = True
+            reasoning_effort = row_data.get("reasoning_effort")
+            if isinstance(reasoning_effort, str):
+                row.reasoning_effort = reasoning_effort.strip().lower()
+            self._normalize_reasoning_effort(row)
 
     def _save_to_disk(self, path: str) -> None:
         """Best-effort persist of the provider catalog (no secrets)."""
@@ -336,12 +385,14 @@ class InMemoryProviderControl:
                     "active_model": row.active_model,
                     "automation_model": row.automation_model,
                     "models": list(row.models),
+                    "model_metadata": {key: dict(value) for key, value in row.model_metadata.items()},
                     "multi_models": list(row.multi_models),
                     "base_url": row.base_url,
                     "provider_mode": row.provider_mode,
                     "automation_model_capabilities": dict(row.automation_model_capabilities),
                     "automation_policy": dict(row.automation_policy),
                     "configured": row.configured,
+                    "reasoning_effort": row.reasoning_effort,
                 }
                 for row in self._providers.values()
             ],
@@ -400,6 +451,15 @@ def handle_provider_control_request(
             if not isinstance(models, list):
                 raise ValueError("models_required")
             return "200 OK", _safe_catalog(control.set_multi_models(provider_id, models))
+        if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/reasoning") and method == "POST":
+            provider_id = _provider_path_id(path, suffix="/reasoning")
+            body = _read_json(environ)
+            return "200 OK", _safe_catalog(
+                control.set_reasoning_effort(
+                    provider_id,
+                    str(body.get("effort") or "").strip(),
+                )
+            )
         if path.startswith(f"{CONTROL_PROVIDERS_PREFIX}/") and path.endswith("/connection") and method == "POST":
             provider_id = _provider_path_id(path, suffix="/connection")
             body = _read_json(environ)
@@ -527,6 +587,125 @@ def _default_model_discovery(provider_id: str, secret: str | None = None, base_u
         configured.extend(_litellm_sdk_models(api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"), api_base=effective_base_url))
         return _dedupe(configured)
     return []
+
+
+def _default_model_metadata(
+    provider_id: str,
+    models: list[str],
+    *,
+    secret: str | None = None,
+    base_url: str | None = None,
+) -> dict[str, dict[str, Any]]:
+    if provider_id == "lmstudio_responses":
+        effective_base_url = base_url or _first_env("MARVEX_LMSTUDIO_BASE_URL", "LMSTUDIO_BASE_URL") or "http://127.0.0.1:1234/v1"
+        return _lmstudio_model_metadata(effective_base_url, api_key=secret)
+    if provider_id == "litellm":
+        return _litellm_model_metadata(models, api_base=base_url)
+    return {}
+
+
+def _lmstudio_model_metadata(base_url: str, *, api_key: str | None = None) -> dict[str, dict[str, Any]]:
+    parsed = urlparse(base_url.strip())
+    url = f"{parsed.scheme}://{parsed.netloc}/api/v1/models"
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if api_key:
+        headers["Authorization"] = f"Bearer {api_key}"
+    try:
+        with urlopen(Request(url, headers=headers), timeout=2.0) as response:
+            payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    except (OSError, URLError, TimeoutError, ValueError, json.JSONDecodeError):
+        return {}
+    items = payload.get("models") if isinstance(payload, dict) else None
+    if not isinstance(items, list):
+        return {}
+    metadata: dict[str, dict[str, Any]] = {}
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        model_id = str(item.get("key") or item.get("id") or "").strip()
+        if not model_id:
+            continue
+        context_window = item.get("max_context_length")
+        loaded = item.get("loaded_instances")
+        if isinstance(loaded, list) and loaded:
+            config = loaded[0].get("config") if isinstance(loaded[0], dict) else None
+            if isinstance(config, dict) and isinstance(config.get("context_length"), int):
+                context_window = config["context_length"]
+        capabilities = item.get("capabilities")
+        reasoning = capabilities.get("reasoning") if isinstance(capabilities, dict) else None
+        allowed_options = reasoning.get("allowed_options") if isinstance(reasoning, dict) else None
+        responses_reasoning_efforts = {"off", "on", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
+        reasoning_options = [
+            str(value).strip().lower()
+            for value in allowed_options
+            if isinstance(value, str) and str(value).strip().lower() in responses_reasoning_efforts
+        ] if isinstance(allowed_options, list) else []
+        reasoning_default = ""
+        if isinstance(reasoning, dict):
+            candidate = str(reasoning.get("default") or reasoning.get("default_option") or "").strip().lower()
+            if candidate in reasoning_options:
+                reasoning_default = candidate
+        row: dict[str, Any] = {
+            "supports_reasoning": bool(reasoning_options),
+            "supports_reasoning_summary": False,
+            "reasoning_effort_options": _dedupe(reasoning_options),
+        }
+        if reasoning_default:
+            row["reasoning_default"] = reasoning_default
+        if isinstance(context_window, int) and context_window > 0:
+            row["context_window"] = context_window
+        metadata[model_id] = row
+    return metadata
+
+
+def _litellm_model_metadata(models: list[str], *, api_base: str | None) -> dict[str, dict[str, Any]]:
+    try:
+        litellm = import_module("litellm")
+        get_model_info = getattr(litellm, "get_model_info")
+    except Exception:
+        return {}
+    metadata: dict[str, dict[str, Any]] = {}
+    for model in models:
+        info = None
+        for candidate in _litellm_model_info_candidates(model):
+            try:
+                info = get_model_info(candidate, api_base=api_base)
+            except Exception:
+                continue
+            if isinstance(info, dict):
+                break
+        if not isinstance(info, dict):
+            continue
+        supports_reasoning = info.get("supports_reasoning") is True
+        options: list[str] = []
+        if supports_reasoning:
+            if info.get("supports_none_reasoning_effort") is True:
+                options.append("none")
+            if info.get("supports_minimal_reasoning_effort") is True:
+                options.append("minimal")
+            options.extend(["low", "medium", "high"])
+            if info.get("supports_xhigh_reasoning_effort") is True:
+                options.append("xhigh")
+            if info.get("supports_max_reasoning_effort") is True:
+                options.append("max")
+        context_window = info.get("max_input_tokens") or info.get("max_tokens")
+        row: dict[str, Any] = {
+            "supports_reasoning": supports_reasoning,
+            "supports_reasoning_summary": supports_reasoning and info.get("litellm_provider") == "openai",
+            "reasoning_effort_options": _dedupe(options),
+        }
+        if isinstance(context_window, int) and context_window > 0:
+            row["context_window"] = context_window
+        metadata[model] = row
+    return metadata
+
+
+def _litellm_model_info_candidates(model: str) -> list[str]:
+    candidates = [model]
+    tail = model.rsplit("/", 1)[-1]
+    if tail != model:
+        candidates.extend([tail, f"openai/{tail}"])
+    return _dedupe(candidates)
 
 
 def _openai_compatible_models(base_url: str, *, api_key: str | None = None) -> list[str]:

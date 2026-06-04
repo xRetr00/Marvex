@@ -204,7 +204,10 @@ def run_provider_stage_turn(
         memory_result_refs=[],
         session_result_ref=None,
         error=None,
-        metadata={},
+        metadata={
+            "provider_model": model,
+            "provider_usage": dict(response.usage),
+        },
     )
 
 

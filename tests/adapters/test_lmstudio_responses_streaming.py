@@ -54,6 +54,16 @@ def _delta(text: str) -> object:
     return SimpleNamespace(type="response.output_text.delta", delta=text)
 
 
+def _text_done(text: str) -> object:
+    return SimpleNamespace(
+        type="response.output_text.done",
+        item_id="msg-1",
+        output_index=0,
+        content_index=0,
+        text=text,
+    )
+
+
 def _completed(response_id: str, text: str) -> object:
     return SimpleNamespace(
         type="response.completed",
@@ -80,6 +90,17 @@ def test_stream_send_drives_through_run_streaming_turn():
     assert result.text == "Marvex"
     assert result.response_id == "r1"
     assert sink == ["Mar", "vex"]
+
+
+def test_stream_send_uses_output_text_done_when_delta_was_absent():
+    provider, _ = _provider([_text_done("Done text"), _completed("r-done", "Done text")])
+
+    events = list(provider.stream_send(_request()))
+
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["Done text"]
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].output_text == "Done text"
 
 
 def test_stream_send_maps_client_failure_to_stream_error():
@@ -139,7 +160,17 @@ def _reasoning_summary_delta(text: str) -> object:
     return SimpleNamespace(type="response.reasoning_summary_text.delta", delta=text)
 
 
-def test_stream_send_wraps_native_reasoning_in_think_tags():
+def _reasoning_done(text: str) -> object:
+    return SimpleNamespace(
+        type="response.reasoning_text.done",
+        item_id="rs-1",
+        output_index=0,
+        content_index=0,
+        text=text,
+    )
+
+
+def test_stream_send_surfaces_reasoning_text_inside_think_block():
     provider, _ = _provider(
         [
             _reasoning_delta("Plan"),
@@ -150,13 +181,27 @@ def test_stream_send_wraps_native_reasoning_in_think_tags():
     )
     events = list(provider.stream_send(_request()))
     deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
-    # Reasoning is opened, streamed, and closed before the answer begins.
     assert deltas == ["<think>", "Plan", " it", "</think>", "Answer"]
     completed = events[-1]
     assert isinstance(completed, StreamCompleted)
-    # The accumulated text (with the think block) is the authoritative output so
-    # reasoning is never dropped from the persisted turn.
     assert completed.output_text == "<think>Plan it</think>Answer"
+
+
+def test_stream_send_uses_reasoning_done_when_delta_was_absent():
+    provider, _ = _provider(
+        [
+            _reasoning_done("Finished reasoning."),
+            _delta("Final."),
+            _completed("r-reasoning-done", "Final."),
+        ]
+    )
+
+    events = list(provider.stream_send(_request()))
+
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["<think>", "Finished reasoning.", "</think>", "Final."]
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].output_text == "<think>Finished reasoning.</think>Final."
 
 
 def test_stream_send_closes_reasoning_when_summary_channel_used():
