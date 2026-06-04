@@ -177,7 +177,7 @@ pub async fn open_post_stream(
 #[cfg(test)]
 mod tests {
     use super::{
-        loopback_ok, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT, LoopbackHttpClient,
+        loopback_ok, LoopbackHttpClient, CONTROL_POST_HTTP_TIMEOUT, DEFAULT_HTTP_TIMEOUT,
         TURN_HTTP_TIMEOUT,
     };
     use std::time::Duration;
@@ -201,7 +201,10 @@ mod tests {
         let client = LoopbackHttpClient::new("127.0.0.1", 8765, DEFAULT_HTTP_TIMEOUT)
             .expect("loopback client");
 
-        assert_eq!(client.url("/health").expect("url").as_str(), "http://127.0.0.1:8765/health");
+        assert_eq!(
+            client.url("/health").expect("url").as_str(),
+            "http://127.0.0.1:8765/health"
+        );
         assert!(LoopbackHttpClient::new("example.com", 8765, DEFAULT_HTTP_TIMEOUT).is_err());
     }
 }

@@ -244,7 +244,11 @@ async fn submit_chat_turn_stream(
             .map_err(|_| "shell state unavailable".to_string())?;
         let (cancel_tx, cancel_rx) = oneshot::channel();
         guard.active_chat_cancel = Some(cancel_tx);
-        (guard.token.clone(), session_id_from_metadata(&metadata), cancel_rx)
+        (
+            guard.token.clone(),
+            session_id_from_metadata(&metadata),
+            cancel_rx,
+        )
     };
     let now = monotonic_id();
     let trace_id = format!("trace-shell-chat-{now}");
@@ -542,7 +546,12 @@ fn marvex_restart(app: AppHandle, state: tauri::State<Mutex<ShellState>>) -> Res
 }
 
 #[tauri::command]
-fn set_overlay_size(app: AppHandle, width: f64, height: f64, radius: Option<f64>) -> Result<(), String> {
+fn set_overlay_size(
+    app: AppHandle,
+    width: f64,
+    height: f64,
+    radius: Option<f64>,
+) -> Result<(), String> {
     if !width.is_finite() || !height.is_finite() {
         return Err("overlay size must be finite".to_string());
     }
@@ -558,17 +567,30 @@ fn set_overlay_size(app: AppHandle, width: f64, height: f64, radius: Option<f64>
             let monitor_position = monitor.position();
             let margin = ((overlay_geometry::OVERLAY_TOP_MARGIN as f64) * scale).round() as i32;
             let width = requested_width
-                .min(monitor_size.width.saturating_sub((margin.max(0) * 2) as u32))
+                .min(
+                    monitor_size
+                        .width
+                        .saturating_sub((margin.max(0) * 2) as u32),
+                )
                 .max(1);
             let height = requested_height
-                .min(monitor_size.height.saturating_sub((margin.max(0) * 2) as u32))
+                .min(
+                    monitor_size
+                        .height
+                        .saturating_sub((margin.max(0) * 2) as u32),
+                )
                 .max(1);
             // Top-center notch anchor: centre horizontally on the monitor.
             let x = monitor_position.x + ((monitor_size.width as i32) - (width as i32)) / 2;
             let y = monitor_position.y + margin;
             (width, height, x.max(monitor_position.x), y)
         } else {
-            (requested_width, requested_height, 0, overlay_geometry::OVERLAY_TOP_MARGIN)
+            (
+                requested_width,
+                requested_height,
+                0,
+                overlay_geometry::OVERLAY_TOP_MARGIN,
+            )
         };
         window
             .set_size(tauri::Size::Physical(tauri::PhysicalSize::new(
@@ -840,7 +862,11 @@ pub fn run() {
                 token.clone(),
                 supervisor.shutdown_flag(),
             );
-            app.manage(Mutex::new(ShellState { token, supervisor, active_chat_cancel: None }));
+            app.manage(Mutex::new(ShellState {
+                token,
+                supervisor,
+                active_chat_cancel: None,
+            }));
             build_tray(app.handle())?;
             #[cfg(target_os = "windows")]
             {

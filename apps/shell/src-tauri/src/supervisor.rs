@@ -426,7 +426,11 @@ fn console_script_can_be_updated(path: &Path) -> bool {
     OpenOptions::new().append(true).open(path).is_ok()
 }
 
-fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(String, String)> {
+fn resource_env_paths(
+    resource_dir: Option<&Path>,
+    repo_root: &Path,
+    data_dir: &Path,
+) -> Vec<(String, String)> {
     let mut env = Vec::new();
     if let Some(uv) = find_uv(resource_dir) {
         if uv.is_absolute() && uv.is_file() {
@@ -435,6 +439,28 @@ fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(Str
                 uv.to_string_lossy().to_string(),
             ));
         }
+    }
+    let node = resource_dir
+        .map(|dir| dir.join(if cfg!(windows) { "node.exe" } else { "node" }))
+        .filter(|path| path.is_file());
+    let playwright_mcp_cli = resource_dir
+        .map(|dir| {
+            dir.join("playwright-mcp")
+                .join("node_modules")
+                .join("@playwright")
+                .join("mcp")
+                .join("cli.js")
+        })
+        .filter(|path| path.is_file());
+    if let (Some(node), Some(cli)) = (node, playwright_mcp_cli) {
+        env.push((
+            "MARVEX_NODE_PATH".to_string(),
+            node.to_string_lossy().to_string(),
+        ));
+        env.push((
+            "MARVEX_PLAYWRIGHT_MCP_CLI".to_string(),
+            cli.to_string_lossy().to_string(),
+        ));
     }
     let web_dist = resource_dir
         .map(|dir| dir.join("control_plane_web"))
@@ -456,8 +482,13 @@ fn resource_env_paths(resource_dir: Option<&Path>, repo_root: &Path) -> Vec<(Str
         .map(|dir| dir.join("voice-assets"))
         .filter(|path| path.is_dir())
         .or_else(|| {
+            if resource_dir.is_some() {
+                return Some(data_dir.join("voice-assets"));
+            }
             let path = repo_root.join("apps").join("shell").join("voice-assets");
-            path.is_dir().then_some(path)
+            path.is_dir()
+                .then_some(path)
+                .or_else(|| Some(data_dir.join("voice-assets")))
         });
     if let Some(path) = voice_assets {
         env.push((
@@ -756,7 +787,7 @@ fn spawn_service(
     };
 
     let repo_root = project_root();
-    for (name, value) in resource_env_paths(resource_dir, &repo_root) {
+    for (name, value) in resource_env_paths(resource_dir, &repo_root, data_dir) {
         command.env(name, value);
     }
     for (name, value) in &spec.env {
@@ -1126,12 +1157,28 @@ mod tests {
         )
         .expect("voice manifest");
         fs::write(resource_dir.join("uv.exe"), b"uv").expect("uv");
+        fs::write(resource_dir.join("node.exe"), b"node").expect("node");
+        let mcp_cli = resource_dir
+            .join("playwright-mcp")
+            .join("node_modules")
+            .join("@playwright")
+            .join("mcp")
+            .join("cli.js");
+        fs::create_dir_all(mcp_cli.parent().expect("mcp cli parent")).expect("mcp cli dir");
+        fs::write(&mcp_cli, b"mcp").expect("mcp cli");
 
-        let env = resource_env_paths(Some(&resource_dir), &root);
+        let data_dir = root.join("data");
+        let env = resource_env_paths(Some(&resource_dir), &root, &data_dir);
 
         assert!(env
             .iter()
             .any(|(name, value)| { name == "MARVEX_UV_PATH" && value.ends_with("uv.exe") }));
+        assert!(env
+            .iter()
+            .any(|(name, value)| { name == "MARVEX_NODE_PATH" && value.ends_with("node.exe") }));
+        assert!(env.iter().any(|(name, value)| {
+            name == "MARVEX_PLAYWRIGHT_MCP_CLI" && value.ends_with("cli.js")
+        }));
         assert!(env.iter().any(|(name, value)| {
             name == "MARVEX_CONTROL_WEB_DIST" && value.ends_with("control_plane_web")
         }));
@@ -1142,8 +1189,14 @@ mod tests {
             name == "MARVEX_VOICE_MODEL_MANIFEST" && value.ends_with("voice_models.manifest.json")
         }));
 
-        let missing = resource_env_paths(Some(&root.join("missing")), &root);
-        assert!(missing.is_empty());
+        let missing = resource_env_paths(Some(&root.join("missing")), &root, &data_dir);
+        assert_eq!(
+            missing,
+            vec![(
+                "MARVEX_VOICE_ASSET_ROOT".to_string(),
+                data_dir.join("voice-assets").to_string_lossy().to_string()
+            )]
+        );
     }
 
     fn unique_temp_dir(label: &str) -> std::path::PathBuf {

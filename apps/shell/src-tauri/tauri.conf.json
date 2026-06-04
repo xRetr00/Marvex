@@ -51,11 +51,12 @@
     ],
     "resources": {
       "../runtime/uv.exe": "uv.exe",
+      "../runtime/node.exe": "node.exe",
+      "../runtime/playwright-mcp": "playwright-mcp",
       "../runtime/marvex-*.whl": ".",
       "../runtime/wheels": "wheels",
       "../../control_plane_web/dist": "control_plane_web",
-      "../../../voice_models.manifest.json": "voice_models.manifest.json",
-      "../voice-assets": "voice-assets"
+      "../../../voice_models.manifest.json": "voice_models.manifest.json"
     },
     "windows": {
       "nsis": {
