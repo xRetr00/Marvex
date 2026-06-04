@@ -56,6 +56,15 @@ def test_packaging_bundles_node_and_playwright_mcp_runtime() -> None:
     assert "cli.js" in build_text
 
 
+def test_sha_manifest_generation_is_compatible_with_windows_powershell_5() -> None:
+    ps1_text = (ROOT / "build-installer.ps1").read_text(encoding="utf-8")
+    bat_text = (ROOT / "build-installer.bat").read_text(encoding="utf-8")
+
+    assert "GetRelativePath" not in ps1_text
+    assert "GetRelativePath" not in bat_text
+    assert "Get-CompatibleRelativePath" in ps1_text
+
+
 def test_packaging_keeps_voice_models_out_of_installer() -> None:
     tauri = json.loads((ROOT / "apps" / "shell" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
     resources = tauri["bundle"]["resources"]

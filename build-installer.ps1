@@ -95,6 +95,19 @@ function Write-Success {
     Write-Host "✓ $Message" -ForegroundColor Green
 }
 
+function Get-CompatibleRelativePath {
+    param(
+        [string]$RootPath,
+        [string]$FullPath
+    )
+
+    $rootFull = [System.IO.Path]::GetFullPath($RootPath).TrimEnd('\') + '\'
+    $fileFull = [System.IO.Path]::GetFullPath($FullPath)
+    $rootUri = New-Object System.Uri($rootFull)
+    $fileUri = New-Object System.Uri($fileFull)
+    return [System.Uri]::UnescapeDataString($rootUri.MakeRelativeUri($fileUri).ToString())
+}
+
 function Write-Sha256-Manifest {
     param(
         [string]$RootPath,
@@ -128,7 +141,7 @@ function Write-Sha256-Manifest {
         Sort-Object FullName -Unique |
         ForEach-Object {
             $full = [System.IO.Path]::GetFullPath($_.FullName)
-            $relative = [System.IO.Path]::GetRelativePath($resolvedRoot, $full).Replace('\', '/')
+            $relative = Get-CompatibleRelativePath -RootPath $resolvedRoot -FullPath $full
             $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $full).Hash.ToLowerInvariant()
             "$hash  $relative"
         }
