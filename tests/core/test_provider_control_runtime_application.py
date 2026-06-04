@@ -36,6 +36,15 @@ def test_apply_provider_control_passes_connection_and_automation_model() -> None
                 "automation_model_capabilities": {"vision": True},
                 "automation_policy": {"vision_required": True},
                 "automation_validation": {"ready": True, "reason_code": None},
+                "model_metadata": {
+                    "anthropic/claude-sonnet-4-5": {
+                        "context_window": 200000,
+                        "supports_reasoning": True,
+                        "supports_reasoning_summary": False,
+                        "reasoning_effort_options": ["low", "medium", "high"],
+                    }
+                },
+                "reasoning_effort": "high",
             }
         ],
     }
@@ -52,5 +61,7 @@ def test_apply_provider_control_passes_connection_and_automation_model() -> None
             "automation_model": "openai/gpt-4o",
             "automation_model_supports_vision": True,
             "automation_vision_required": True,
+            "provider_options": {"reasoning_effort": "high"},
+            "model_context_window": 200000,
         }
     ]

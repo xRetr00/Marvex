@@ -135,3 +135,30 @@ def test_core_audio_level_zero_no_raw_audio() -> None:
     ev = bus.snapshot
     assert ev.raw_audio_persisted is False
     assert 0.0 <= ev.audio_level <= 1.0
+
+
+def test_core_publishes_safe_status_frames_to_live_turn_stream() -> None:
+    from packages.telemetry import InMemoryTraceReader
+    from services.core.main import _CoreServiceProviderWorkerTurnExecutor, _set_live_event_sink
+
+    frames: list[dict[str, object]] = []
+    executor = _CoreServiceProviderWorkerTurnExecutor(
+        provider_name="fake",
+        model="fake-model",
+        trace_reader=InMemoryTraceReader(),
+    )
+    try:
+        _set_live_event_sink(frames.append)
+        executor._publish(AssistantStatusKind.THINKING, detail="provider_turn", trace_id="trace-status-frame")
+    finally:
+        _set_live_event_sink(None)
+        executor.shutdown()
+
+    assert frames == [
+        {
+            "type": "status",
+            "status": "thinking",
+            "detail": "provider_turn",
+            "trace_id": "trace-status-frame",
+        }
+    ]

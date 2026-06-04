@@ -286,3 +286,33 @@ def test_failed_execution_becomes_error_message(tmp_path: Path):
     )
     assert outcome.results[0].status == "error"
     assert "error" in outcome.tool_messages[0]["content"].lower()
+    assert "failure attempt 1 of 5" in outcome.tool_messages[0]["content"]
+    assert "Try again" in outcome.tool_messages[0]["content"]
+    assert "another available tool" in outcome.tool_messages[0]["content"]
+
+
+def test_loop_counts_repeated_tool_failure_attempts(tmp_path: Path):
+    observed_tool_messages = []
+
+    def send(_input_text, tool_messages, _prev):
+        observed_tool_messages.append(tool_messages)
+        if len(observed_tool_messages) <= 2:
+            return ProviderStep(
+                output_text="",
+                tool_calls=[_call("file.read", '{"path": "does_not_exist.txt"}')],
+                response_id=f"r{len(observed_tool_messages)}",
+                error=False,
+            )
+        return ProviderStep(output_text="real failure acknowledged", tool_calls=[], response_id="r-final", error=False)
+
+    result = run_tool_loop(
+        send=send,
+        registry=file_tools_registry(),
+        request_builder=_builder(root=str(tmp_path)),
+        max_steps=3,
+        initial_input="read missing file",
+    )
+
+    assert result.status == "final"
+    assert "failure attempt 1 of 5" in observed_tool_messages[1][1]["content"]
+    assert "failure attempt 2 of 5" in observed_tool_messages[2][1]["content"]

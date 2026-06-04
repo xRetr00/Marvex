@@ -257,8 +257,8 @@ class ProviderWorkerController:
                             response_id=event.response_id,
                             output_text=text,
                             finish_reason=_stream_finish_reason(event.finish_reason),
-                            usage={},
-                            raw_metadata={},
+                            usage=dict(event.usage),
+                            raw_metadata=dict(event.raw_metadata),
                             error=None,
                             tool_calls=event.tool_calls,
                         )

@@ -20,6 +20,7 @@ Design constraints honored here:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Callable
 
@@ -42,6 +43,7 @@ _APPROVAL_SIDE_EFFECTS = {
 # caller injects sandbox root, trace/turn ids, and an approved permission for
 # safe tools. Returns None if it declines to build (treated as unknown).
 RequestBuilder = Callable[[str, dict[str, Any]], CapabilityExecutionRequest | None]
+FailureAttemptCounter = Callable[[str, str], tuple[int, int]]
 
 
 @dataclass
@@ -104,6 +106,30 @@ def _tool_message(call_id: str, content: str) -> dict[str, Any]:
     return {"role": "tool", "tool_call_id": call_id, "content": content}
 
 
+def _failure_guidance(tool_name: str, reason: str, failure_attempt_counter: FailureAttemptCounter | None) -> str:
+    attempt, max_attempts = failure_attempt_counter(tool_name, reason) if failure_attempt_counter is not None else (1, 5)
+    if attempt >= max_attempts:
+        return (
+            f"Recovery guidance: failure attempt {attempt} of {max_attempts}. "
+            "Do not keep retrying the same failed tool path. If another available tool can solve the request, call it now; "
+            "otherwise tell the user the real failure reason and what is needed next."
+        )
+    return (
+        f"Recovery guidance: failure attempt {attempt} of {max_attempts}. "
+        "Try again with corrected arguments if that can solve the request. If another available tool is better, call that tool instead. "
+        "Do not claim success until a tool result succeeds."
+    )
+
+
+def _tool_failure_message(
+    tool_name: str,
+    reason: str,
+    message: str,
+    failure_attempt_counter: FailureAttemptCounter | None,
+) -> str:
+    return f"{message}\n{_failure_guidance(tool_name or 'unknown_tool', reason, failure_attempt_counter)}"
+
+
 def _validated_tool_arguments(tool: Tool | None, arguments: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
     if tool is None:
         return dict(arguments), None
@@ -125,6 +151,7 @@ def execute_tool_calls(
     registry: ToolRegistry,
     request_builder: RequestBuilder,
     prior_tool_messages: list[dict[str, Any]] | None = None,
+    failure_attempt_counter: FailureAttemptCounter | None = None,
 ) -> ToolStepOutcome:
     """Execute a batch of model tool calls and build continuation messages.
 
@@ -170,9 +197,11 @@ def execute_tool_calls(
             # model's arguments so Core executes the real capability on approve.
             validated_arguments, validation_reason = _validated_tool_arguments(registry.get(name), arguments)
             if validated_arguments is None:
-                content = (
-                    f"Tool '{name}' arguments are invalid ({validation_reason}). "
-                    "Call the tool again with arguments matching its schema."
+                content = _tool_failure_message(
+                    name,
+                    validation_reason or "invalid_arguments",
+                    f"Tool '{name}' arguments are invalid ({validation_reason}). Call the tool again with arguments matching its schema.",
+                    failure_attempt_counter,
                 )
                 results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
                 tool_messages.append(results[-1].message)
@@ -207,9 +236,11 @@ def execute_tool_calls(
 
         tool = registry.get(name)
         if tool is None:
-            content = (
-                f"Tool '{name or '(unnamed)'}' does not exist. "
-                "Only the listed tools are available."
+            content = _tool_failure_message(
+                name or "unknown_tool",
+                "unknown_tool",
+                f"Tool '{name or '(unnamed)'}' does not exist. Only the listed tools are available.",
+                failure_attempt_counter,
             )
             results.append(ToolCallResult(call_id, name, "unknown", _tool_message(call_id, content)))
             tool_messages.append(results[-1].message)
@@ -217,9 +248,11 @@ def execute_tool_calls(
 
         validated_arguments, validation_reason = _validated_tool_arguments(tool, arguments)
         if validated_arguments is None:
-            content = (
-                f"Tool '{name}' arguments are invalid ({validation_reason}). "
-                "Call the tool again with arguments matching its schema."
+            content = _tool_failure_message(
+                name,
+                validation_reason or "invalid_arguments",
+                f"Tool '{name}' arguments are invalid ({validation_reason}). Call the tool again with arguments matching its schema.",
+                failure_attempt_counter,
             )
             results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
             tool_messages.append(results[-1].message)
@@ -228,7 +261,8 @@ def execute_tool_calls(
 
         grounding_retry = _web_grounded_write_retry_message(name, arguments, prior_tool_messages)
         if grounding_retry is not None:
-            results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, grounding_retry)))
+            content = _tool_failure_message(name, "web_grounded_write_missing_source_url", grounding_retry, failure_attempt_counter)
+            results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
             tool_messages.append(results[-1].message)
             continue
 
@@ -258,7 +292,12 @@ def execute_tool_calls(
 
         request = request_builder(name, arguments)
         if request is None:
-            content = f"Tool '{name}' could not be prepared for execution."
+            content = _tool_failure_message(
+                name,
+                "tool_request_prepare_failed",
+                f"Tool '{name}' could not be prepared for execution.",
+                failure_attempt_counter,
+            )
             results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
             tool_messages.append(results[-1].message)
             continue
@@ -268,13 +307,25 @@ def execute_tool_calls(
             safe_result = dict(getattr(envelope, "safe_result", {}) or {})
             status = str(getattr(envelope, "status", "succeeded"))
             if status != "succeeded":
-                content = f"Tool '{name}' did not complete: {safe_result.get('reason_code', status)}."
+                reason = str(safe_result.get("reason_code") or status)
+                content = _tool_failure_message(
+                    name,
+                    reason,
+                    f"Tool '{name}' did not complete: {reason}.",
+                    failure_attempt_counter,
+                )
                 results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
             else:
                 content = json.dumps(safe_result, default=str)[:4000]
                 results.append(ToolCallResult(call_id, name, "succeeded", _tool_message(call_id, content)))
         except Exception as exc:  # never let a tool crash the loop
-            content = f"Tool '{name}' raised an error: {type(exc).__name__}."
+            reason = f"exception:{type(exc).__name__}"
+            content = _tool_failure_message(
+                name,
+                reason,
+                f"Tool '{name}' raised an error: {type(exc).__name__}.",
+                failure_attempt_counter,
+            )
             results.append(ToolCallResult(call_id, name, "error", _tool_message(call_id, content)))
         tool_messages.append(results[-1].message)
 
@@ -376,6 +427,7 @@ class ProviderStep:
     tool_calls: list[dict[str, Any]]
     response_id: str | None
     error: bool
+    usage: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -389,11 +441,49 @@ class LoopResult:
     automation: dict[str, Any] | None = None  # capability+args when an automation tool needs approval
     pending_tool: dict[str, Any] | None = None  # capability+args when any model-authored tool needs approval
     response_id: str | None = None  # provider response id at pause (for resume)
+    commentary: list[str] = field(default_factory=list)
+    usage: dict[str, Any] = field(default_factory=dict)
 
 
 # send(input_text, tool_messages, previous_response_id) -> ProviderStep
 SendFn = Callable[[str, list[dict[str, Any]] | None, str | None], ProviderStep]
 ToolDebugCallback = Callable[[int, ToolStepOutcome], None]
+
+_THINK_BLOCK_RE = re.compile(r"<think>[\s\S]*?</think>", re.IGNORECASE)
+_OPEN_THINK_RE = re.compile(r"<think>[\s\S]*$", re.IGNORECASE)
+_FINAL_ANSWER_REPAIR_PROMPT = (
+    "Provide the final user-facing answer now. Do not include analysis, hidden reasoning, "
+    "or a <think> block. Answer the user's request directly."
+)
+
+
+def has_user_visible_text(text: str) -> bool:
+    """True when provider text contains content outside private think blocks."""
+
+    without_closed = _THINK_BLOCK_RE.sub(" ", text or "")
+    without_open = _OPEN_THINK_RE.sub(" ", without_closed)
+    return bool(without_open.strip())
+
+
+def user_visible_text(text: str) -> str:
+    """Return provider text outside private think blocks."""
+
+    without_closed = _THINK_BLOCK_RE.sub(" ", text or "")
+    return _OPEN_THINK_RE.sub(" ", without_closed).strip()
+
+
+def _merge_usage(total: dict[str, Any], usage: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(total)
+    for key, value in usage.items():
+        if isinstance(value, bool):
+            continue
+        if isinstance(value, int | float):
+            prior = merged.get(key)
+            merged[key] = (prior if isinstance(prior, int | float) and not isinstance(prior, bool) else 0) + value
+        elif isinstance(value, dict):
+            prior = merged.get(key)
+            merged[key] = _merge_usage(prior if isinstance(prior, dict) else {}, value)
+    return merged
 
 
 def run_tool_loop(
@@ -404,6 +494,7 @@ def run_tool_loop(
     max_steps: int,
     initial_input: str,
     previous_response_id: str | None = None,
+    initial_tool_messages: list[dict[str, Any]] | None = None,
     debug_callback: ToolDebugCallback | None = None,
 ) -> LoopResult:
     """Drive the model<->tools loop until a text answer, approval, or limit.
@@ -421,25 +512,44 @@ def run_tool_loop(
 
     steps = max(1, int(max_steps))
     prev = previous_response_id
-    tool_messages: list[dict[str, Any]] | None = None
-    input_text = initial_input
+    tool_messages: list[dict[str, Any]] | None = list(initial_tool_messages) if initial_tool_messages else None
+    input_text = "" if tool_messages else initial_input
     executed: list[str] = []
     last_text = ""
+    reasoning_only_retry_used = False
+    commentary: list[str] = []
+    usage: dict[str, Any] = {}
+    failure_counts: dict[tuple[str, str], int] = {}
+
+    def count_failure(tool_name: str, reason: str) -> tuple[int, int]:
+        key = (tool_name, reason)
+        failure_counts[key] = failure_counts.get(key, 0) + 1
+        return failure_counts[key], 5
 
     for index in range(steps):
         step = send(input_text, tool_messages, prev)
+        usage = _merge_usage(usage, step.usage)
         if step.error:
-            return LoopResult(status="error", text=last_text, steps=index + 1, executed_tool_ids=executed)
+            return LoopResult(status="error", text=last_text, steps=index + 1, executed_tool_ids=executed, response_id=prev, commentary=commentary, usage=usage)
         last_text = step.output_text or last_text
         if step.response_id:
             prev = step.response_id
         if not step.tool_calls:
-            return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed, response_id=prev)
+            if step.output_text and not has_user_visible_text(step.output_text) and not reasoning_only_retry_used:
+                reasoning_only_retry_used = True
+                input_text = _FINAL_ANSWER_REPAIR_PROMPT
+                tool_messages = None
+                continue
+            return LoopResult(status="final", text=last_text, steps=index + 1, executed_tool_ids=executed, response_id=prev, commentary=commentary, usage=usage)
+        visible_commentary = user_visible_text(step.output_text)
+        if visible_commentary:
+            commentary.append(visible_commentary)
         outcome = execute_tool_calls(
             step.tool_calls,
             registry=registry,
             request_builder=request_builder,
             prior_tool_messages=tool_messages,
+            failure_attempt_counter=count_failure,
         )
         if debug_callback is not None:
             try:
@@ -455,6 +565,8 @@ def run_tool_loop(
                 executed_tool_ids=executed,
                 clarification=outcome.needs_clarification[0].clarification,
                 response_id=prev,
+                commentary=commentary,
+                usage=usage,
             )
         if outcome.needs_approval:
             automation_calls = outcome.automation_calls
@@ -468,11 +580,13 @@ def run_tool_loop(
                 automation=automation_calls[0].automation if automation_calls else None,
                 pending_tool=pending_calls[0].pending_tool if pending_calls else None,
                 response_id=prev,
+                commentary=commentary,
+                usage=usage,
             )
         tool_messages = outcome.all_messages
         input_text = ""  # continuation: provider uses tool_messages
 
-    return LoopResult(status="max_steps", text=last_text, steps=steps, executed_tool_ids=executed, response_id=prev)
+    return LoopResult(status="max_steps", text=last_text, steps=steps, executed_tool_ids=executed, response_id=prev, commentary=commentary, usage=usage)
 
 
 __all__ = [
@@ -484,6 +598,8 @@ __all__ = [
     "SendFn",
     "ToolDebugCallback",
     "execute_tool_calls",
+    "has_user_visible_text",
+    "user_visible_text",
     "parse_tool_arguments",
     "run_tool_loop",
 ]

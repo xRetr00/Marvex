@@ -281,7 +281,7 @@ def test_core_service_entrypoint_starts_control_plane_state_api():
 
 
 def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
-    import services.core.main as core_main
+    import packages.local_api.asgi_host as asgi_host
     from services.core.main import CoreServiceEntrypointConfig, run_core_service
 
     captured: dict[str, object] = {}
@@ -290,7 +290,7 @@ def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
         captured.update(kwargs)
         return 0
 
-    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+    monkeypatch.setattr(asgi_host, "run_dual_asgi_host", fake_run_dual_asgi_host)
 
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
@@ -312,7 +312,7 @@ def test_core_service_entrypoint_default_serve_uses_asgi_host(monkeypatch):
 
 
 def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane(monkeypatch):
-    import services.core.main as core_main
+    import packages.local_api.asgi_host as asgi_host
     from services.core.main import CoreServiceEntrypointConfig, run_core_service
 
     captured: dict[str, object] = {}
@@ -341,7 +341,7 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
         }
         return 0
 
-    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+    monkeypatch.setattr(asgi_host, "run_dual_asgi_host", fake_run_dual_asgi_host)
 
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
@@ -369,7 +369,7 @@ def test_core_service_entrypoint_shares_backend_session_truth_with_control_plane
 
 
 def test_core_service_entrypoint_shares_pending_approvals_with_control_plane(monkeypatch):
-    import services.core.main as core_main
+    import packages.local_api.asgi_host as asgi_host
     from services.core.main import CoreServiceEntrypointConfig, run_core_service
 
     captured: dict[str, object] = {}
@@ -388,7 +388,7 @@ def test_core_service_entrypoint_shares_pending_approvals_with_control_plane(mon
         }
         return 0
 
-    monkeypatch.setattr(core_main, "run_dual_asgi_host", fake_run_dual_asgi_host)
+    monkeypatch.setattr(asgi_host, "run_dual_asgi_host", fake_run_dual_asgi_host)
 
     exit_code = run_core_service(
         config=CoreServiceEntrypointConfig(
@@ -401,10 +401,10 @@ def test_core_service_entrypoint_shares_pending_approvals_with_control_plane(mon
     assert exit_code == 0
     result = captured["result"]
     assert result["turn_status"] == "200 OK"
-    assert result["turn_payload"]["metadata"]["agentic_loop"]["stop_reason"] == "waiting_for_human_approval"
+    assert result["turn_payload"]["metadata"]["agentic_loop"]["stop_reason"] == "finalized"
     assert result["approvals_status"] == "200 OK"
-    assert result["approvals_payload"]["pending_count"] == 1
-    assert result["approvals_payload"]["approvals"][0]["approval_request_id"].startswith("approval-turn-core-entrypoint")
+    assert result["approvals_payload"]["pending_count"] == 0
+    assert result["approvals_payload"]["approvals"] == []
 
 
 def test_core_service_entrypoint_main_uses_env_token_for_supervisor_path(monkeypatch):

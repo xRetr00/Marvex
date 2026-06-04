@@ -31,6 +31,8 @@ def test_core_asgi_host_keeps_health_and_turns_responsive_while_control_stream_i
             str(core_port),
             "--control-port",
             str(control_port),
+            "--provider",
+            "fake",
         ],
         cwd=ROOT,
         env={**os.environ, "MARVEX_LOCAL_AUTH_TOKEN": TOKEN},

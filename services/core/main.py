@@ -293,6 +293,42 @@ def _emit_live_tool_events(tool_calls: list[dict[str, object]] | None, *, phase:
             pass
 
 
+def _emit_live_status_event(
+    status: AssistantStatusKind,
+    *,
+    detail: str,
+    trace_id: str | None,
+) -> None:
+    """Push a safe lifecycle commentary frame into the active streaming turn."""
+
+    sink = _active_live_event_sink()
+    if sink is None:
+        return
+    try:
+        sink(
+            {
+                "type": "status",
+                "status": status.value,
+                "detail": detail,
+                "trace_id": trace_id,
+            }
+        )
+    except Exception:
+        pass
+
+
+def _emit_live_commentary_event(text: str, *, trace_id: str | None) -> None:
+    """Push model-authored user-visible text produced before a tool call."""
+
+    sink = _active_live_event_sink()
+    if sink is None or not text.strip():
+        return
+    try:
+        sink({"type": "commentary", "text": text.strip(), "trace_id": trace_id})
+    except Exception:
+        pass
+
+
 def _command_model(command: dict[str, object]) -> str | None:
     request = command.get("request")
     if isinstance(request, dict):
@@ -1051,6 +1087,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             timeout_seconds=timeout_seconds,
         )
         self._provider_secret: str | None = None
+        self._provider_options: dict[str, object] = {}
+        self._model_context_window: int | None = None
         self._automation_model = model
         self._automation_model_supports_vision = False
         self._automation_vision_required = False
@@ -1117,6 +1155,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         automation_model_supports_vision: bool = False,
         automation_vision_required: bool = False,
         provider_mode: str | None = None,
+        provider_options: dict[str, object] | None = None,
+        model_context_window: int | None = None,
     ) -> None:
         provider_name = provider_name.strip()
         model = model.strip()
@@ -1144,6 +1184,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
             self._base_url = clean_base_url
             self._provider_mode = clean_provider_mode
         self._model = model
+        self._provider_options = dict(provider_options or {})
+        self._model_context_window = model_context_window if isinstance(model_context_window, int) and model_context_window > 0 else None
         self._automation_model = (automation_model or model).strip() or model
         self._automation_model_supports_vision = bool(automation_model_supports_vision)
         self._automation_vision_required = bool(automation_vision_required)
@@ -1163,7 +1205,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         provider_id=provider_name,
                         model=model,
                         supports_tools=provider_name in {"litellm", "lmstudio_responses", "provider_worker"},
-                        context_length=4096,
+                        context_length=self._model_context_window or 4096,
                         locality="local",
                         healthy=True,
                         cost_tier="free",
@@ -1196,6 +1238,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 provider=self._provider,
                 model=self._model,
                 instructions=instruction,
+                provider_options=self._provider_options,
                 telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
             )
         except Exception:
@@ -1303,6 +1346,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         required_tool_reason: str = "model_tool_call_required",
         allowed_tool_ids: set[str] | None = None,
         fallback_without_tool_calls: bool = False,
+        initial_tool_messages: list[dict[str, object]] | None = None,
     ) -> AssistantTurnResult | None:
         """Drive the model-tool-call loop. Returns None to fall back.
 
@@ -1313,7 +1357,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         the caller falls back to the historical bounded continuation loop.
         """
 
-        from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop
+        from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop, user_visible_text
 
         registry = self._agentic_tool_registry(allowed_tool_ids=allowed_tool_ids)
         tool_schemas = list(registry.tool_schemas())
@@ -1333,7 +1377,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 input_text=input_text,
                 instructions=instructions,
                 previous_response_id=prev,
-                provider_options={"parallel_tool_calls": False},
+                provider_options={**self._provider_options, "parallel_tool_calls": False},
                 tools=tool_schemas,
                 tool_messages=tool_messages,
             )
@@ -1375,6 +1419,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
                 return ProviderStep(output_text="", tool_calls=[], response_id=None, error=True)
             if response.tool_calls:
+                commentary = user_visible_text(response.output_text or "")
+                if commentary:
+                    _emit_live_commentary_event(commentary, trace_id=turn_input.trace_id)
                 loop.step("tool")
                 self._publish(AssistantStatusKind.USING_TOOLS, detail="agentic_tool", trace_id=turn_input.trace_id)
                 _emit_live_tool_events(response.tool_calls, phase="start")
@@ -1398,6 +1445,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 tool_calls=list(response.tool_calls or []),
                 response_id=response.response_id,
                 error=False,
+                usage=dict(response.usage),
             )
 
         def debug_tool_outcome(step_index: int, outcome: object) -> None:
@@ -1423,6 +1471,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             max_steps=_resolve_agentic_max_steps(cognition.step_plan.max_steps),
             initial_input=provider_turn_input.user_visible_input or "",
             previous_response_id=previous_response_id,
+            initial_tool_messages=initial_tool_messages,
             debug_callback=debug_tool_outcome,
         )
 
@@ -1559,8 +1608,38 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 provider_name=self._provider_name,
             )
         if require_grounded_validation:
-            # Grounded/search routes must finish through the grounded path so
-            # evidence refs are enforced and citation metadata is emitted.
+            # Reuse a completed agentic answer when cognition already carries
+            # evidence. Asking the provider again only to validate citations
+            # burns latency and tokens and can produce a different answer.
+            if loop_result.status == "final" and (cognition.web_evidence_refs or cognition.memory_evidence_refs):
+                loop.step("finalize", stop_reason="finalized")
+                provider_result = self._finalize_agentic_turn(
+                    turn_input,
+                    text=loop_result.text or "(no response)",
+                    loop=loop,
+                    intent_projection=intent_projection,
+                    intent_response=intent_response,
+                    session_projection=session_projection,
+                    selection_projection=selection_projection,
+                    desktop_context=desktop_context,
+                    cognition=cognition,
+                    executed_tool_ids=loop_result.executed_tool_ids,
+                    provider_response_id=loop_result.response_id,
+                    model_commentary=loop_result.commentary,
+                    provider_usage=loop_result.usage,
+                    provider_turn_input=provider_turn_input,
+                    provider_instructions=provider_instructions,
+                )
+                return self._run_grounded_path(
+                    turn_input,
+                    metadata=provider_result.metadata,
+                    cognition=cognition,
+                    loop=loop,
+                    previous_response_id=previous_response_id,
+                    provider_result=provider_result,
+                )
+            # Grounded/search routes without evidence still finish through the
+            # grounded path so missing-evidence behavior remains deterministic.
             return None
         if (
             loop_result.status == "final"
@@ -1633,6 +1712,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
             cognition=cognition,
             executed_tool_ids=loop_result.executed_tool_ids,
             provider_response_id=loop_result.response_id,
+            model_commentary=loop_result.commentary,
+            provider_usage=loop_result.usage,
+            provider_turn_input=provider_turn_input,
+            provider_instructions=provider_instructions,
         )
 
     def _finalize_agentic_turn(
@@ -1649,6 +1732,10 @@ class _CoreServiceProviderWorkerTurnExecutor:
         cognition: CognitionTurnAssembly,
         executed_tool_ids: list[str],
         provider_response_id: str | None = None,
+        model_commentary: list[str] | None = None,
+        provider_usage: dict[str, object] | None = None,
+        provider_turn_input: AssistantTurnInput | None = None,
+        provider_instructions: str | None = None,
     ) -> AssistantTurnResult:
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
         learning_projection = _run_learning_hook(
@@ -1669,6 +1756,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
             "provider_selection": selection_projection,
             "provider_boundary": "provider_worker_process",
+            "provider_model": self._model,
+            "provider_usage": dict(provider_usage or {}),
+            "model_commentary": list(model_commentary or []),
+            "prompt_fidelity": _prompt_fidelity_projection(
+                cognition,
+                provider_turn_input or turn_input,
+                provider_instructions,
+            ),
             "agentic_tool_loop": {
                 "enabled": True,
                 "executed_tool_ids": executed_tool_ids,
@@ -1841,6 +1936,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             trace_id=trace_id,
             session_ref=session_ref,
         )
+        _emit_live_status_event(status, detail=detail, trace_id=trace_id)
 
     def submit_turn(
         self,
@@ -1948,6 +2044,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
         loop.step("plan")
         plan_intents = _intent_plan_kinds(cognition.intent_plan)
         route_intents = tuple(dict.fromkeys((intent_kind, *plan_intents)))
+        if effective_resume_approval and "connector_account" in route_intents:
+            self._publish(AssistantStatusKind.USING_TOOLS, detail="connector_approval_resume", trace_id=turn_input.trace_id)
+            return self._run_connector_path(turn_input, metadata=metadata, loop=loop)
         if effective_resume_approval:
             self._publish(AssistantStatusKind.USING_TOOLS, detail="approval_resume", trace_id=turn_input.trace_id)
             return self._run_approval_path(
@@ -2154,6 +2253,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 allowed_tool_ids={
                     "builtin.clarify",
                     "builtin.browser_use",
+                    "builtin.playwright_browser",
                     "builtin.computer_use",
                 },
             )
@@ -2268,6 +2368,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 instructions=_with_ui_toolset(provider_instructions, self._provider_name),
                 telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
                 previous_response_id=chained_previous_response_id,
+                provider_options=self._provider_options,
             )
             result = step_result
             response_id = _provider_response_id(step_result)
@@ -2291,6 +2392,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 instructions=_with_ui_toolset(provider_instructions, self._provider_name),
                 telemetry_sink=_OperationalTelemetrySink(self._trace_reader),
                 previous_response_id=chained_previous_response_id,
+                provider_options=self._provider_options,
             )
             step_count = max(step_count, 1)
         memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
@@ -2419,7 +2521,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
         cognition: CognitionTurnAssembly,
         loop: "_AgenticLoopProjection",
         previous_response_id: str | None = None,
+        provider_result: AssistantTurnResult | None = None,
     ) -> AssistantTurnResult:
+        reused_provider_result = provider_result is not None
         web_refs = tuple(cognition.web_evidence_refs)
         if not web_refs and not cognition.memory_evidence_refs:
             loop.step("finalize", stop_reason="finalized")
@@ -2438,19 +2542,20 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         memory_citation_ids = tuple(_memory_citation_id(ref) for ref in tuple(cognition.memory_evidence_refs)[:4])
         citation_ids = tuple(ref.evidence_id for ref in web_refs[:4]) + memory_citation_ids
-        provider_result = self._run_provider_answer_path(
-            turn_input,
-            metadata=metadata,
-            cognition=cognition,
-            loop=loop,
-            stage_name="grounded_answer",
-            provider_options={
-                "grounded_answer_required": True,
-                "grounded_citation_ids": list(citation_ids[:4]),
-                "raw_evidence_persisted": False,
-            },
-            previous_response_id=previous_response_id,
-        )
+        if provider_result is None:
+            provider_result = self._run_provider_answer_path(
+                turn_input,
+                metadata=metadata,
+                cognition=cognition,
+                loop=loop,
+                stage_name="grounded_answer",
+                provider_options={
+                    "grounded_answer_required": True,
+                    "grounded_citation_ids": list(citation_ids[:4]),
+                    "raw_evidence_persisted": False,
+                },
+                previous_response_id=previous_response_id,
+            )
         if provider_result.error is not None:
             return provider_result
         response_text = provider_result.assistant_final_response.text if provider_result.assistant_final_response is not None else ""
@@ -2519,6 +2624,14 @@ class _CoreServiceProviderWorkerTurnExecutor:
             citations_required=True,
         )
         if not validation.valid:
+            if reused_provider_result:
+                return self._run_grounded_path(
+                    turn_input,
+                    metadata=metadata,
+                    cognition=cognition,
+                    loop=loop,
+                    previous_response_id=_provider_response_id(provider_result),
+                )
             loop.step("finalize", stop_reason="finalized")
             metadata = {
                 **provider_result.metadata,
@@ -2679,10 +2792,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
         structured_requested = self._structured_output_required or bool(
             dict(provider_options or {}).get("structured_output_required")
         )
+        requested_provider_options = {**self._provider_options, **dict(provider_options or {})}
         effective_provider_options = (
-            _structured_provider_options(provider_options)
+            _structured_provider_options(requested_provider_options)
             if structured_requested
-            else dict(provider_options or {})
+            else requested_provider_options
         )
         result = run_assistant_provider_stage_turn(
             provider_turn_input,
@@ -2995,14 +3109,75 @@ class _CoreServiceProviderWorkerTurnExecutor:
         pending_tool: dict[str, object],
         tool_response: dict[str, object],
     ) -> AssistantTurnResult | None:
+        max_attempts = 5
+        failed_capability_id = str(pending_tool.get("capability_id") or "")
+        last_retry: AssistantTurnResult | None = None
+        for attempt in range(1, max_attempts + 1):
+            provider_turn_input, provider_instructions = _turn_input_with_prompt(
+                turn_input,
+                cognition,
+                session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
+            )
+            retry_messages = _approved_tool_continuation_messages(
+                pending_tool,
+                tool_response,
+                recovery_guidance=_tool_failure_retry_guidance(
+                    turn_input,
+                    pending_tool=pending_tool,
+                    tool_response=tool_response,
+                    attempt=attempt,
+                    max_attempts=max_attempts,
+                ),
+            )
+            retry = self._run_agentic_tool_loop(
+                turn_input,
+                provider_turn_input=provider_turn_input,
+                provider_instructions=provider_instructions,
+                cognition=cognition,
+                loop=loop,
+                previous_response_id=str(pending_tool.get("response_id") or "") or None,
+                intent_projection=dict(metadata.get("intent") or {}),
+                intent_response={"backend_name": metadata.get("intent_backend", "intent_worker")},
+                session_projection=dict(metadata.get("session") or {}),
+                selection_projection=dict(metadata.get("provider_selection") or {}),
+                desktop_context=dict(metadata.get("desktop_agent") or {}) if isinstance(metadata.get("desktop_agent"), dict) else None,
+                initial_tool_messages=retry_messages,
+            )
+            if retry is None:
+                continue
+            last_retry = retry
+            retry_metadata = {
+                **retry.metadata,
+                "approved_tool_failure_retry": {
+                    "attempted": True,
+                    "attempt": attempt,
+                    "max_attempts": max_attempts,
+                    "failed_capability_id": failed_capability_id,
+                    "raw_tool_payload_persisted": False,
+                },
+            }
+            return retry.model_copy(update={"metadata": retry_metadata})
+        if last_retry is not None:
+            return last_retry
+        return None
+
+    def _continue_model_after_approved_tool(
+        self,
+        turn_input: AssistantTurnInput,
+        *,
+        metadata: dict[str, object],
+        cognition: CognitionTurnAssembly,
+        loop: "_AgenticLoopProjection",
+        pending_tool: dict[str, object],
+        tool_response: dict[str, object],
+    ) -> AssistantTurnResult | None:
         provider_turn_input, provider_instructions = _turn_input_with_prompt(
             turn_input,
             cognition,
             session_context=self._session_context.prompt_context(self._session_id_of(turn_input)),
         )
-        failure_prompt = _tool_failure_retry_prompt(turn_input, pending_tool=pending_tool, tool_response=tool_response)
-        provider_turn_input = provider_turn_input.model_copy(update={"user_visible_input": failure_prompt})
-        retry = self._run_agentic_tool_loop(
+        capability_id = str(pending_tool.get("capability_id") or "")
+        continuation = self._run_agentic_tool_loop(
             turn_input,
             provider_turn_input=provider_turn_input,
             provider_instructions=provider_instructions,
@@ -3014,18 +3189,27 @@ class _CoreServiceProviderWorkerTurnExecutor:
             session_projection=dict(metadata.get("session") or {}),
             selection_projection=dict(metadata.get("provider_selection") or {}),
             desktop_context=dict(metadata.get("desktop_agent") or {}) if isinstance(metadata.get("desktop_agent"), dict) else None,
+            initial_tool_messages=_approved_tool_continuation_messages(pending_tool, tool_response),
         )
-        if retry is None:
+        if continuation is None:
             return None
-        retry_metadata = {
-            **retry.metadata,
-            "approved_tool_failure_retry": {
+        agentic = dict(continuation.metadata.get("agentic_tool_loop") or {})
+        executed = [capability_id, *list(agentic.get("executed_tool_ids") or [])]
+        continuation_metadata = {
+            **metadata,
+            **continuation.metadata,
+            "agentic_tool_loop": {
+                **agentic,
+                "executed_tool_ids": executed,
+                "executed_count": len(executed),
+            },
+            "approved_tool_continuation": {
                 "attempted": True,
-                "failed_capability_id": str(pending_tool.get("capability_id") or ""),
+                "completed_capability_id": capability_id,
                 "raw_tool_payload_persisted": False,
             },
         }
-        return retry.model_copy(update={"metadata": retry_metadata})
+        return continuation.model_copy(update={"metadata": continuation_metadata})
 
     def _run_approval_path(
         self,
@@ -3173,6 +3357,23 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         )
                         if retry is not None:
                             return retry
+                    else:
+                        continuation = self._continue_model_after_approved_tool(
+                            turn_input,
+                            metadata={
+                                **metadata,
+                                "approval": {"approval_request_id": effective_resume_approval, "decision": "approved"},
+                                "tool_boundary": "tool_worker_process",
+                                "completed_tool": tool_response,
+                                "automation": tool_response,
+                            },
+                            cognition=cognition,
+                            loop=loop,
+                            pending_tool=pending_automation,
+                            tool_response=tool_response,
+                        )
+                        if continuation is not None:
+                            return continuation
                     loop.step("finalize", stop_reason="finalized", executed=bool(tool_response.get("ok")))
                     return _entrypoint_text_result(
                         turn_input,
@@ -3290,6 +3491,19 @@ def _entrypoint_text_result(
     provider_response_id: str | None = None,
     provider_name: str = "lmstudio_responses",
 ) -> AssistantTurnResult:
+    from packages.core.orchestration.agentic_tools import has_user_visible_text
+
+    guarded_text = text
+    guarded_metadata = metadata
+    if not has_user_visible_text(text):
+        guarded_text = "I couldn't produce a user-facing response. Please try again."
+        guarded_metadata = {
+            **metadata,
+            "final_response_guard": {
+                "reason_code": "reasoning_only_or_empty_provider_response",
+                "private_reasoning_exposed": False,
+            },
+        }
     # Surface the provider's response id as a chainable ProviderTurnRef so the
     # shell can pass it back as previous_response_id on the next turn. Without
     # this the agentic/clarification/approval paths returned no refs and every
@@ -3314,7 +3528,7 @@ def _entrypoint_text_result(
         assistant_final_response=AssistantFinalResponse(
             schema_version=turn_input.schema_version,
             response_type=AssistantResponseType.TEXT,
-            text=text,
+            text=guarded_text,
             payload_ref=None,
             output_channel_intent=OutputChannelIntent.DEFAULT,
             safe_for_display=True,
@@ -3334,7 +3548,7 @@ def _entrypoint_text_result(
         memory_result_refs=[],
         session_result_ref=None,
         error=None,
-        metadata=metadata,
+        metadata=guarded_metadata,
     )
 
 
@@ -3955,10 +4169,16 @@ _TOOL_REASON_FRIENDLY: dict[str, str] = {
         "Live browser control isn't enabled in the current mode."
     ),
     "playwright_mcp_tool_not_available": "That browser action isn't available.",
+    "playwright_mcp_extension_not_found": (
+        "Install the Playwright Extension in the main Chrome profile so Marvex can attach to the open browser."
+    ),
     "playwright_mcp_execution_failed": (
         "I couldn't drive the browser — the automation runtime failed to start."
     ),
     "browser_use_unavailable": "The browser automation runtime isn't available.",
+    "chrome_default_profile_requires_playwright_extension": (
+        "The open Chrome profile must be controlled through the Playwright browser extension."
+    ),
     "not_allowlisted": "That capability isn't allowed in the current mode.",
 }
 
@@ -4064,6 +4284,45 @@ def _automation_needs_destructive_approval(tool_response: dict[str, object]) -> 
     return safe_result.get("destructive_action_approval_required") is True
 
 
+def _approved_tool_continuation_messages(
+    pending_tool: dict[str, object],
+    tool_response: dict[str, object],
+    *,
+    recovery_guidance: dict[str, object] | None = None,
+) -> list[dict[str, object]]:
+    """Rebuild the model tool-call/result pair so the same turn can continue."""
+
+    tool_id = str(pending_tool.get("tool_id") or pending_tool.get("capability_id") or "tool")
+    call_id = str(pending_tool.get("call_id") or f"call-{tool_id}")
+    arguments = dict(pending_tool.get("arguments") or {})
+    result = dict(tool_response.get("result") or {})
+    safe_result = dict(result.get("safe_result") or {})
+    payload: dict[str, object] = {
+        "status": str(result.get("status") or ("succeeded" if tool_response.get("ok") is True else "failed")),
+        "safe_result": safe_result,
+    }
+    if recovery_guidance is not None:
+        payload["recovery_guidance"] = recovery_guidance
+    content = json.dumps(payload, default=str)[:4000]
+    return [
+        {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": call_id,
+                    "type": "function",
+                    "function": {
+                        "name": tool_id,
+                        "arguments": json.dumps(arguments, default=str),
+                    },
+                }
+            ],
+        },
+        {"role": "tool", "tool_call_id": call_id, "content": content},
+    ]
+
+
 def _pending_tool_log_projection(pending_tool: dict[str, object] | None) -> dict[str, object] | None:
     if not isinstance(pending_tool, dict):
         return None
@@ -4161,18 +4420,54 @@ def _tool_failure_retry_prompt(
     pending_tool: dict[str, object],
     tool_response: dict[str, object],
 ) -> str:
+    guidance = _tool_failure_retry_guidance(
+        turn_input,
+        pending_tool=pending_tool,
+        tool_response=tool_response,
+        attempt=1,
+        max_attempts=5,
+    )
+    return "\n".join(str(item) for item in guidance["instructions"])
+
+
+def _tool_failure_retry_guidance(
+    turn_input: AssistantTurnInput,
+    *,
+    pending_tool: dict[str, object],
+    tool_response: dict[str, object],
+    attempt: int,
+    max_attempts: int,
+) -> dict[str, object]:
     result = dict(tool_response.get("result") or {})
     safe = dict(result.get("safe_result") or {})
     reason = safe.get("reason_code") or dict(tool_response.get("error") or {}).get("code") or result.get("status") or "tool_failed"
     capability_id = str(pending_tool.get("capability_id") or "unknown_tool")
-    return (
-        "The approved tool call failed safely and did not complete.\n"
-        f"Original user request: {turn_input.user_visible_input or ''}\n"
-        f"Failed capability: {capability_id}\n"
-        f"Failure reason: {reason}\n"
-        "Try a different available tool call if it can solve the request. "
-        "If no retry can help, explain the limitation without claiming the tool succeeded."
-    )
+    if attempt >= max_attempts:
+        retry_instruction = (
+            "This is the final retry attempt. Do not call the same failed tool path again unless the arguments are materially different. "
+            "If no available alternative tool can solve the request, explain the real failure reason."
+        )
+    else:
+        retry_instruction = (
+            "Try again with corrected arguments if that can solve the request. "
+            "If any other available tool can solve it better, call that tool instead."
+        )
+    return {
+        "attempt": attempt,
+        "max_attempts": max_attempts,
+        "original_user_request": turn_input.user_visible_input or "",
+        "failed_capability": capability_id,
+        "failure_reason": str(reason),
+        "instructions": [
+            "The approved tool call failed safely and did not complete.",
+            f"Original user request: {turn_input.user_visible_input or ''}",
+            f"Failed capability: {capability_id}",
+            f"Failure reason: {reason}",
+            f"Retry attempt: {attempt} of {max_attempts}",
+            retry_instruction,
+            "Do not claim the tool succeeded unless a later tool result succeeds.",
+        ],
+    }
 
 
 def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool_reason: str) -> str:
@@ -4183,7 +4478,8 @@ def _required_tool_call_repair_prompt(*, original_user_input: str, required_tool
         )
     elif required_tool_reason == "browser_computer_use_tool_required":
         tool_hint = (
-            "Call browser_use or computer_use with valid JSON arguments. "
+            "Call browser_use, playwright_browser, or computer_use with valid JSON arguments. "
+            "If one browser tool fails, try another available browser or desktop tool that can complete the request. "
             "Do not answer in prose instead of calling a tool."
         )
     else:
@@ -5106,9 +5402,9 @@ def _stream_turn_events(service: Any, request: Any):
     Runs the unchanged ``submit_turn`` pipeline on a background thread (so tools,
     approval, clarification, refs, and persistence behave identically) while two
     per-thread live sinks push events into a queue as they happen:
-    ``delta`` (assistant/answer tokens, including ``<think>`` reasoning) and
-    ``tool`` (chain-of-thought tool steps). This generator drains the queue and
-    yields each event live, then a terminal ``final`` carrying the full
+    ``delta`` (assistant/answer tokens, including ``<think>`` reasoning),
+    ``status`` (safe lifecycle commentary), and ``tool`` (tool activity steps).
+    This generator drains the queue and yields each event live, then a terminal ``final`` carrying the full
     ``AssistantTurnResult``. If the provider can't stream, no ``delta`` is emitted
     live and the reconciled final text is chunk-streamed as a fallback so the
     bubble still fills — no turn is ever broken by streaming.
@@ -5318,6 +5614,21 @@ def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provi
     automation_model = str(active.get("automation_model") or "").strip() or model
     automation_capabilities = active.get("automation_model_capabilities")
     automation_policy = active.get("automation_policy")
+    model_metadata = active.get("model_metadata")
+    active_model_metadata = (
+        model_metadata.get(model)
+        if isinstance(model_metadata, dict) and isinstance(model_metadata.get(model), dict)
+        else {}
+    )
+    provider_options: dict[str, object] = {}
+    if active_model_metadata.get("supports_reasoning") is True:
+        reasoning_effort = str(active.get("reasoning_effort") or "").strip()
+        options = active_model_metadata.get("reasoning_effort_options")
+        if reasoning_effort and isinstance(options, list) and reasoning_effort in options:
+            provider_options["reasoning_effort"] = reasoning_effort
+        if active_model_metadata.get("supports_reasoning_summary") is True:
+            provider_options["reasoning_summary"] = "auto"
+    context_window = active_model_metadata.get("context_window")
     secret = None
     if provider_control is not None and hasattr(provider_control, "secret_value"):
         try:
@@ -5341,6 +5652,8 @@ def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provi
             if isinstance(automation_policy, dict)
             else False
         ),
+        provider_options=provider_options,
+        model_context_window=context_window if isinstance(context_window, int) else None,
     )
 
 

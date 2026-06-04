@@ -44,13 +44,13 @@ def test_grounding_forbids_invented_capabilities():
 def test_with_tool_grounding_appends_to_existing_instructions():
     combined = with_tool_grounding("Follow the house style.", now=datetime(2026, 5, 29, tzinfo=UTC))
     assert combined.startswith("Follow the house style.")
-    assert "ONLY tools" in combined
+    assert "tools available" in combined
     assert "2026-05-29" in combined
 
 
 def test_with_tool_grounding_handles_none_and_blank():
-    assert "ONLY tools" in with_tool_grounding(None)
-    assert "ONLY tools" in with_tool_grounding("   ")
+    assert "tools available" in with_tool_grounding(None)
+    assert "tools available" in with_tool_grounding("   ")
 
 
 def test_grounding_does_not_list_phantom_tools():
@@ -59,11 +59,11 @@ def test_grounding_does_not_list_phantom_tools():
         assert forbidden not in grounding.lower()
 
 
-def test_grounding_prefers_browser_use_for_browser_automation():
+def test_grounding_offers_existing_browser_playwright_automation():
     grounding = available_tools_grounding()
 
     assert "'browser_use'" in grounding
-    assert "'playwright_browser'" not in grounding
+    assert "'playwright_browser'" in grounding
 
 
 def test_grounding_tells_model_to_chain_discovery_before_file_actions():

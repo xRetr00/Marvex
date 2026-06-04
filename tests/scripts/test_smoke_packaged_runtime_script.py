@@ -42,3 +42,32 @@ def test_packaging_uses_valid_wheel_filename_for_uv_install() -> None:
     assert "../runtime/wheels" in resource_text
     assert 'Where-Object { $_.Name -ne "marvex-runtime.whl" }' in smoke_text
     assert "wheelhouseDest" in smoke_text
+
+
+def test_packaging_bundles_node_and_playwright_mcp_runtime() -> None:
+    tauri = json.loads((ROOT / "apps" / "shell" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    resource_text = json.dumps(tauri["bundle"]["resources"], sort_keys=True)
+    build_text = (ROOT / "build-installer.ps1").read_text(encoding="utf-8")
+
+    assert "../runtime/node.exe" in resource_text
+    assert "../runtime/playwright-mcp" in resource_text
+    assert "@playwright/mcp@" in build_text
+    assert "node.exe" in build_text
+    assert "cli.js" in build_text
+
+
+def test_packaging_keeps_voice_models_out_of_installer() -> None:
+    tauri = json.loads((ROOT / "apps" / "shell" / "src-tauri" / "tauri.conf.json").read_text(encoding="utf-8"))
+    resources = tauri["bundle"]["resources"]
+    resource_text = json.dumps(resources, sort_keys=True)
+    manifest_text = (ROOT / "voice_models.manifest.json").read_text(encoding="utf-8")
+    build_text = (ROOT / "build-installer.ps1").read_text(encoding="utf-8")
+    smoke_text = SCRIPT.read_text(encoding="utf-8")
+
+    assert "../../../voice_models.manifest.json" in resources
+    assert "voice_models.manifest.json" in resource_text
+    assert "voice-assets" not in resource_text
+    assert "downloaded after installation" in manifest_text
+    assert "fetch_voice_models.py" not in build_text
+    assert "generate_wakeword_keywords.py" not in build_text
+    assert "apps\\shell\\voice-assets" not in smoke_text

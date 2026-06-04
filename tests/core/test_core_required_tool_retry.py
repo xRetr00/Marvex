@@ -8,7 +8,12 @@ from packages.assistant_runtime.input_normalization import build_text_input_even
 from packages.capability_runtime import AutonomyMode, AutonomyPolicy
 from packages.contracts import ErrorCode, ErrorEnvelope, FinishReason, ProviderRequest, ProviderResponse
 from packages.telemetry import InMemoryTraceReader
-from services.core.main import _CoreServiceProviderWorkerTurnExecutor, _required_tool_call_repair_prompt
+from services.core.main import (
+    _CoreServiceProviderWorkerTurnExecutor,
+    _approved_tool_continuation_messages,
+    _required_tool_call_repair_prompt,
+    _tool_failure_retry_guidance,
+)
 
 
 class _RiskyIntentClassifier:
@@ -60,6 +65,19 @@ class _ProviderErrorThenFileWrite:
 
     def send(self, request: ProviderRequest) -> ProviderResponse:
         self.requests.append(request)
+        if request.tool_messages:
+            return ProviderResponse(
+                schema_version=request.schema_version,
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                provider_name="fake",
+                response_id="resp-file-write-final",
+                output_text="File update completed.",
+                finish_reason=FinishReason.STOP,
+                usage={},
+                raw_metadata={},
+                error=None,
+            )
         if request.tools and not self.failed_tool_request:
             self.failed_tool_request = True
             return ProviderResponse(
@@ -251,10 +269,12 @@ def test_auto_marvex_auto_approves_model_file_write_and_executes(tmp_path: Path)
     assert (tmp_path / "Desktop" / "Zebra.md").read_text(encoding="utf-8") == "Zebra notes"
     assert result.metadata["auto_approval"]["enabled"] is True
     assert result.metadata["approval"]["decision"] == "approved"
+    assert result.metadata["approved_tool_continuation"]["attempted"] is True
+    assert any(request.tool_messages for request in provider.requests)
     assert "approval-turn-auto-marvex-file-write" not in executor._pending_automation
 
 
-def test_browser_intent_tool_catalog_prefers_browser_use_not_playwright_mcp(tmp_path: Path) -> None:
+def test_browser_intent_tool_catalog_includes_existing_browser_playwright_mcp(tmp_path: Path) -> None:
     provider = _RecordingPlainProvider()
     executor = _CoreServiceProviderWorkerTurnExecutor(
         provider_name="fake",
@@ -280,12 +300,13 @@ def test_browser_intent_tool_catalog_prefers_browser_use_not_playwright_mcp(tmp_
         if isinstance(tool, dict)
     }
     assert "builtin.browser_use" in tool_names
-    assert "builtin.playwright_browser" not in tool_names
+    assert "builtin.playwright_browser" in tool_names
+    assert "builtin.computer_use" in tool_names
     assert provider.requests
     assert provider.requests[0].provider_options["parallel_tool_calls"] is False
 
 
-def test_browser_tool_repair_prompt_does_not_nudge_playwright_mcp() -> None:
+def test_browser_tool_repair_prompt_offers_browser_tool_alternatives() -> None:
     prompt = _required_tool_call_repair_prompt(
         original_user_input="Open YouTube",
         required_tool_reason="browser_computer_use_tool_required",
@@ -293,4 +314,48 @@ def test_browser_tool_repair_prompt_does_not_nudge_playwright_mcp() -> None:
 
     assert "browser_use" in prompt
     assert "computer_use" in prompt
-    assert "playwright_browser" not in prompt
+    assert "playwright_browser" in prompt
+    assert "try another available browser or desktop tool" in prompt
+
+
+def test_failed_approved_tool_result_carries_retry_guidance_to_model() -> None:
+    turn_input = _turn_input(
+        "Open YouTube",
+        trace_id="trace-approved-tool-guidance",
+        turn_id="turn-approved-tool-guidance",
+    )
+    pending_tool = {
+        "tool_id": "builtin.playwright_browser",
+        "capability_id": "playwright_mcp.task",
+        "arguments": {"tool_name": "browser_navigate", "tool_args": {"url": "https://youtube.com"}},
+        "call_id": "call-browser",
+    }
+    tool_response = {
+        "ok": False,
+        "result": {
+            "status": "failed",
+            "safe_result": {"reason_code": "playwright_mcp_execution_failed:ExceptionGroup"},
+        },
+    }
+
+    guidance = _tool_failure_retry_guidance(
+        turn_input,
+        pending_tool=pending_tool,
+        tool_response=tool_response,
+        attempt=3,
+        max_attempts=5,
+    )
+    messages = _approved_tool_continuation_messages(
+        pending_tool,
+        tool_response,
+        recovery_guidance=guidance,
+    )
+
+    assert messages[0]["role"] == "assistant"
+    assert messages[1]["role"] == "tool"
+    assert messages[1]["tool_call_id"] == "call-browser"
+    content = str(messages[1]["content"])
+    assert '"attempt": 3' in content
+    assert '"max_attempts": 5' in content
+    assert "playwright_mcp_execution_failed:ExceptionGroup" in content
+    assert "If any other available tool can solve it better" in content

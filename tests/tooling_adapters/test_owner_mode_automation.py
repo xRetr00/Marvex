@@ -144,12 +144,14 @@ def test_browser_use_prefers_current_chatopenai_export(monkeypatch) -> None:
     assert browser_use._browser_use_openai_llm_class() is current
 
 
-def test_playwright_mcp_builtin_server_config_is_headed_chrome_by_default() -> None:
-    config = PlaywrightMcpServerConfig.builtin()
+def test_playwright_mcp_builtin_server_config_is_headed_chrome_by_default(monkeypatch) -> None:
+    monkeypatch.delenv("MARVEX_NODE_PATH", raising=False)
+    monkeypatch.delenv("MARVEX_PLAYWRIGHT_MCP_CLI", raising=False)
+    config = PlaywrightMcpServerConfig.builtin(extension_mode=True)
 
     assert config.server_id == "playwright-mcp"
     assert config.command == "npx"
-    assert config.args == ("@playwright/mcp@latest", "--browser=chrome")
+    assert config.args == ("@playwright/mcp@latest", "--extension")
     assert config.headed_by_default is True
     assert config.transport == "stdio"
 
@@ -159,6 +161,58 @@ def test_playwright_mcp_extension_mode_uses_extension_arg() -> None:
 
     assert config.args == ("@playwright/mcp@latest", "--extension")
     assert config.extension_mode is True
+
+
+def test_playwright_mcp_argument_config_defaults_to_existing_chrome_extension(monkeypatch) -> None:
+    monkeypatch.delenv("MARVEX_PLAYWRIGHT_MCP_NO_EXTENSION", raising=False)
+    monkeypatch.delenv("MARVEX_PLAYWRIGHT_MCP_EXTENSION", raising=False)
+    monkeypatch.delenv("MARVEX_NODE_PATH", raising=False)
+    monkeypatch.delenv("MARVEX_PLAYWRIGHT_MCP_CLI", raising=False)
+
+    config = playwright_mcp._config_from_arguments({"browser": "chrome"})
+
+    assert config.extension_mode is True
+    assert config.cdp_endpoint is None
+    assert config.args == ("@playwright/mcp@latest", "--extension")
+
+
+def test_playwright_mcp_detects_missing_existing_browser_extension() -> None:
+    result = SimpleNamespace(
+        content=[SimpleNamespace(text='Error: Playwright Extension not found in "Chrome User Data".')],
+    )
+
+    assert playwright_mcp._tool_error_reason(result) == "playwright_mcp_extension_not_found"
+
+
+def test_playwright_mcp_sync_reuses_persistent_stdio_session(monkeypatch) -> None:
+    created = []
+
+    class FakeSession:
+        def __init__(self, config):
+            self.config = config
+            self.calls = []
+            created.append(self)
+
+        def call(self, *, tool_name, tool_args):
+            self.calls.append((tool_name, tool_args))
+            return playwright_mcp.PlaywrightMcpExecutionReport(status="succeeded", tool_name=tool_name)
+
+        def close(self):
+            return None
+
+    playwright_mcp._close_persistent_sessions()
+    monkeypatch.setattr(playwright_mcp, "_PersistentPlaywrightMcpSession", FakeSession)
+    config = PlaywrightMcpServerConfig.builtin(extension_mode=True)
+
+    playwright_mcp._run_playwright_mcp_sync(config, tool_name="browser_tabs", tool_args={"action": "list"})
+    playwright_mcp._run_playwright_mcp_sync(config, tool_name="browser_snapshot", tool_args={})
+
+    assert len(created) == 1
+    assert created[0].calls == [
+        ("browser_tabs", {"action": "list"}),
+        ("browser_snapshot", {}),
+    ]
+    playwright_mcp._close_persistent_sessions()
 
 
 def test_playwright_mcp_unsafe_code_tool_requires_extra_approval(monkeypatch) -> None:
@@ -235,6 +289,22 @@ def test_playwright_mcp_windows_runs_real_exe_directly(monkeypatch) -> None:
 
     assert command == r"C:\\Program Files\\nodejs\\npx.exe"
     assert args == list(config.args)
+
+
+def test_playwright_mcp_builtin_prefers_bundled_node_cli(monkeypatch, tmp_path: Path) -> None:
+    node = tmp_path / "node.exe"
+    cli = tmp_path / "playwright-mcp" / "node_modules" / "@playwright" / "mcp" / "cli.js"
+    cli.parent.mkdir(parents=True)
+    node.write_bytes(b"node")
+    cli.write_text("console.log('mcp')", encoding="utf-8")
+    monkeypatch.setenv("MARVEX_NODE_PATH", str(node))
+    monkeypatch.setenv("MARVEX_PLAYWRIGHT_MCP_CLI", str(cli))
+
+    config = PlaywrightMcpServerConfig.builtin(browser="chrome")
+
+    assert config.command == str(node)
+    assert config.args[0] == str(cli)
+    assert config.args[1:] == ("--browser=chrome",)
 
 
 def test_playwright_mcp_posix_leaves_command_unchanged(monkeypatch) -> None:

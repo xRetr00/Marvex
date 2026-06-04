@@ -74,6 +74,36 @@ def test_immediate_text_answer_finalizes():
     assert len(sends) == 1
 
 
+def test_reasoning_only_response_is_retried_for_a_user_facing_answer():
+    steps = [
+        ProviderStep(
+            output_text="<think>I should answer the greeting.</think>",
+            tool_calls=[],
+            response_id="r1",
+            error=False,
+        ),
+        ProviderStep(
+            output_text="I'm doing well. How can I help?",
+            tool_calls=[],
+            response_id="r2",
+            error=False,
+        ),
+    ]
+    seen = []
+
+    def send(input_text, tool_messages, prev):
+        seen.append((input_text, tool_messages, prev))
+        return steps.pop(0)
+
+    result = run_tool_loop(send=send, registry=default_registry(), request_builder=_builder(), max_steps=5, initial_input="How are you?")
+
+    assert result.status == "final"
+    assert result.text == "I'm doing well. How can I help?"
+    assert result.response_id == "r2"
+    assert seen[1][2] == "r1"
+    assert "user-facing answer" in seen[1][0]
+
+
 def test_single_tool_call_then_text():
     # Step 1: model calls calculator. Step 2: model answers with the result.
     steps = [
@@ -95,6 +125,77 @@ def test_single_tool_call_then_text():
     assert seen[1][1] is not None  # tool_messages threaded
     assert any(m.get("role") == "tool" and "42" in str(m.get("content")) for m in seen[1][1])
     assert seen[1][2] == "r1"  # previous_response_id chained
+
+
+def test_model_authored_text_before_tool_call_is_preserved_as_commentary():
+    steps = [
+        ProviderStep(
+            output_text="<think>private plan</think>I'm locating MAR.txt on your Desktop.",
+            tool_calls=[_fc("file.read", '{"path": "Desktop/MAR.txt"}')],
+            response_id="r1",
+            error=False,
+            usage={"input_tokens": 10, "output_tokens": 4, "total_tokens": 14},
+        ),
+        ProviderStep(
+            output_text="MAR.txt contains test data.",
+            tool_calls=[],
+            response_id="r2",
+            error=False,
+            usage={
+                "input_tokens": 20,
+                "output_tokens": 6,
+                "total_tokens": 26,
+                "input_tokens_details": {"cached_tokens": 5},
+            },
+        ),
+    ]
+
+    def send(input_text, tool_messages, prev):
+        return steps.pop(0)
+
+    result = run_tool_loop(
+        send=send,
+        registry=_combined_registry(),
+        request_builder=_builder(),
+        max_steps=5,
+        initial_input="read MAR.txt",
+    )
+
+    assert result.status == "final"
+    assert result.text == "MAR.txt contains test data."
+    assert result.commentary == ["I'm locating MAR.txt on your Desktop."]
+    assert result.usage == {
+        "input_tokens": 30,
+        "output_tokens": 10,
+        "total_tokens": 40,
+        "input_tokens_details": {"cached_tokens": 5},
+    }
+
+
+def test_loop_can_resume_from_an_approved_tool_result():
+    initial_messages = [
+        {"role": "assistant", "content": None, "tool_calls": [_fc("file.write", '{"path":"note.txt","content":"done"}')]},
+        {"role": "tool", "tool_call_id": "c1", "content": '{"status":"succeeded"}'},
+    ]
+    seen = []
+
+    def send(input_text, tool_messages, prev):
+        seen.append((input_text, tool_messages, prev))
+        return ProviderStep(output_text="The file is written.", tool_calls=[], response_id="r2", error=False)
+
+    result = run_tool_loop(
+        send=send,
+        registry=default_registry(),
+        request_builder=_builder(),
+        max_steps=5,
+        initial_input="write the note",
+        previous_response_id="r1",
+        initial_tool_messages=initial_messages,
+    )
+
+    assert result.status == "final"
+    assert result.text == "The file is written."
+    assert seen == [("", initial_messages, "r1")]
 
 
 def test_risky_tool_stops_for_approval(tmp_path: Path):

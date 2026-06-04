@@ -93,9 +93,6 @@ function Stage-DefaultRuntimeResources {
     Stage-DirectoryResource `
         (Join-Path $RepoRoot "apps\control_plane_web\dist") `
         (Join-Path $serviceDir "control_plane_web")
-    Stage-DirectoryResource `
-        (Join-Path $RepoRoot "apps\shell\voice-assets") `
-        (Join-Path $serviceDir "voice-assets")
 }
 
 function Wait-Until([scriptblock]$Predicate, [string]$Description) {
