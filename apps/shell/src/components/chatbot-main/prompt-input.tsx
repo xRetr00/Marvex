@@ -181,33 +181,40 @@ export function ChatbotPromptInput({
                 </div>
               ) : null}
             </div>
-            {reasoningEffort && reasoningEffortOptions.length > 0 ? (
-              <div className="relative">
-                <Button
-                  aria-label={`Reasoning effort: ${prettyEffort(reasoningEffort)}`}
-                  className="h-7 rounded-full px-2 text-[11px] text-muted-foreground"
-                  onClick={() => setReasoningOpen((open) => !open)}
-                  type="button"
-                  variant="ghost"
-                >
-                  <Brain size={13} />
-                  <span>{prettyEffort(reasoningEffort)}</span>
-                </Button>
-                {reasoningOpen ? (
-                  <div className="absolute bottom-9 left-0 z-30 min-w-32 rounded-lg border border-border bg-popover p-1 text-xs text-popover-foreground shadow-[var(--shadow-float)]">
-                    {reasoningEffortOptions.map((effort) => (
-                      <button
-                        key={effort}
-                        type="button"
-                        className={cn("block w-full rounded-md px-3 py-2 text-left hover:bg-accent", effort === reasoningEffort && "bg-accent/70")}
-                        onClick={() => { setReasoningOpen(false); void onSelectReasoningEffort?.(effort); }}
-                      >
-                        {prettyEffort(effort)}
-                      </button>
-                    ))}
+            {reasoningEffortOptions.length > 0 ? (
+              (() => {
+                // Show the toggle for any reasoning-capable model, even when no
+                // effort is set yet (so an OFF model still surfaces an ON option).
+                const currentEffort = reasoningEffort || reasoningEffortOptions[0];
+                return (
+                  <div className="relative">
+                    <Button
+                      aria-label={`Reasoning effort: ${prettyEffort(currentEffort)}`}
+                      className="h-7 rounded-full px-2 text-[11px] text-muted-foreground"
+                      onClick={() => setReasoningOpen((open) => !open)}
+                      type="button"
+                      variant="ghost"
+                    >
+                      <Brain size={13} />
+                      <span>{prettyEffort(currentEffort)}</span>
+                    </Button>
+                    {reasoningOpen ? (
+                      <div className="absolute bottom-9 left-0 z-30 min-w-32 rounded-lg border border-border bg-popover p-1 text-xs text-popover-foreground shadow-[var(--shadow-float)]">
+                        {reasoningEffortOptions.map((effort) => (
+                          <button
+                            key={effort}
+                            type="button"
+                            className={cn("block w-full rounded-md px-3 py-2 text-left hover:bg-accent", effort === currentEffort && "bg-accent/70")}
+                            onClick={() => { setReasoningOpen(false); void onSelectReasoningEffort?.(effort); }}
+                          >
+                            {prettyEffort(effort)}
+                          </button>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
-                ) : null}
-              </div>
+                );
+              })()
             ) : null}
             <span
               className="hidden rounded-full border border-border/45 bg-secondary/45 px-2 py-1 text-[11px] tabular-nums text-muted-foreground sm:inline"

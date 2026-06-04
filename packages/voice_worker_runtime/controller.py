@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import array
 import math
+import time
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
@@ -168,6 +169,13 @@ class VoiceWorkerController:
         self._heartbeat: VoiceWorkerHeartbeat | None = None
         self._events: list[VoiceWorkerEvent] = []
         self._playback_status = "stopped"
+        # Half-duplex guard: True while Marvex is emitting audio so the continuous
+        # wake/capture loop stands down and never re-captures its own TTS (self-
+        # echo). ``_capture_resume_at`` keeps capture muted for a brief echo-tail
+        # cooldown after playback ends. Plain attribute reads/writes are atomic in
+        # CPython, which is all the cross-thread visibility this gate needs.
+        self._playback_active = False
+        self._capture_resume_at = 0.0
         self._queued_tts_count = 0
         self._error: VoiceWorkerErrorEnvelope | None = None
         # True while the continuous wake loop owns the mic input stream. Command
@@ -618,6 +626,22 @@ class VoiceWorkerController:
         self._manual_listen_trace_id = None
         return trace_id
 
+    def _begin_playback_guard(self) -> None:
+        """Mark that Marvex is emitting audio so the wake/capture loop stands down."""
+
+        self._playback_active = True
+
+    def _end_playback_guard(self, *, cooldown_ms: int = 350) -> None:
+        """Clear the playback guard, holding capture off briefly for the echo tail."""
+
+        self._playback_active = False
+        self._capture_resume_at = time.monotonic() + max(0, cooldown_ms) / 1000.0
+
+    def _capture_suppressed(self) -> bool:
+        """True while Marvex's own audio (or its lingering echo) could be mis-captured."""
+
+        return self._playback_active or time.monotonic() < self._capture_resume_at
+
     def run_wake_listen_loop(
         self,
         *,
@@ -733,6 +757,14 @@ class VoiceWorkerController:
                 if frame is None:
                     continue
                 frames_read += 1
+                # Half-duplex: while Marvex is speaking (or during the brief echo
+                # tail after), drop mic frames entirely instead of feeding them to
+                # wake detection or command capture. Otherwise the loudspeaker's own
+                # TTS is detected/transcribed and looped back as a user turn.
+                if self._capture_suppressed():
+                    batch = []
+                    recent_frames.clear()
+                    continue
                 with _locked():
                     manual_trace_id = self._take_manual_listen_trace_id()
                     if manual_trace_id:
@@ -1270,11 +1302,15 @@ class VoiceWorkerController:
                 self._speak_with_barge_in(trace_id=trace_id, audio_ref=result.audio_ref, sample_rate=result.sample_rate)
             else:
                 self._record(VoiceWorkerEventType.PLAYBACK_STARTED, trace_id=trace_id, summary={"audio_ref_present": True, "speak": True})
-                playback = self.audio.play_audio(
-                    device_id=self.config.audio.output_device_id,
-                    audio_ref=result.audio_ref,
-                    sample_rate=result.sample_rate,
-                )
+                self._begin_playback_guard()
+                try:
+                    playback = self.audio.play_audio(
+                        device_id=self.config.audio.output_device_id,
+                        audio_ref=result.audio_ref,
+                        sample_rate=result.sample_rate,
+                    )
+                finally:
+                    self._end_playback_guard()
                 self._playback_status = playback.status
                 self._record(VoiceWorkerEventType.PLAYBACK_FINISHED, trace_id=trace_id, summary={**playback.model_dump(mode="json"), "speak": True})
         return event

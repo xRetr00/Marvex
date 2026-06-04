@@ -38,6 +38,36 @@ def run_worker_jsonl(commands: list[dict[str, object]]) -> list[dict[str, object
     return [json.loads(line) for line in completed.stdout.splitlines()]
 
 
+def test_emit_line_writes_chunked_utf8_bytes_for_large_nonascii_payload(monkeypatch):
+    """A large response must not crash the worker on a constrained/cp1252 stdout."""
+
+    import io
+
+    from services.provider_worker import main as worker_main
+
+    class _Cp1252TextStdout:
+        """Mimics a Windows stdout that rejects large/non-Latin1 text writes."""
+
+        def __init__(self) -> None:
+            self.buffer = io.BytesIO()
+
+        def write(self, _text: str) -> int:  # pragma: no cover - must not be used
+            raise OSError(22, "Invalid argument")
+
+        def flush(self) -> None:  # pragma: no cover - must not be used
+            raise OSError(22, "Invalid argument")
+
+    fake_stdout = _Cp1252TextStdout()
+    monkeypatch.setattr(worker_main.sys, "stdout", fake_stdout)
+
+    payload = json.dumps({"text": "naïve café — 日本語 😀" * 2000}, sort_keys=True)
+    worker_main._emit_line(payload)
+
+    written = fake_stdout.buffer.getvalue()
+    assert written.endswith(b"\n")
+    assert written.decode("utf-8") == payload + "\n"
+
+
 def test_stream_command_emits_delta_frames_then_final_with_tool_calls():
     from packages.contracts.streaming_models import StreamCompleted, StreamTextDelta
     from services.provider_worker.controller import ProviderWorkerController

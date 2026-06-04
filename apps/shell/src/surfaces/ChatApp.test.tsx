@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { LISTENING_CUES } from "@/lib/voiceFillers";
 
 afterEach(() => {
   cleanup();
@@ -57,7 +58,7 @@ describe("ChatApp module boundary", () => {
     render(<ChatApp />);
 
     await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
-    expect(screen.getByLabelText("Marvex version")).toHaveTextContent("v0.2.1");
+    expect(screen.getByLabelText("Marvex version")).toHaveTextContent("v0.2.5");
   });
 
   it("does not let the optional orb renderer break the chat surface import", async () => {
@@ -407,7 +408,7 @@ describe("ChatApp module boundary", () => {
     await waitFor(() => expect(listenVoiceWorker).toHaveBeenCalled());
     expect(speakVoiceWorker).toHaveBeenCalledTimes(1);
     const cueText = (speakVoiceWorker.mock.calls[0] as unknown[])[0];
-    expect(["Yes", "I'm Here"]).toContain(cueText);
+    expect(LISTENING_CUES as readonly string[]).toContain(cueText);
     expect(screen.getByRole("button", { name: "Stop voice mode" })).toBeInTheDocument();
   });
 

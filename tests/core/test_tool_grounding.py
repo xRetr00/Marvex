@@ -8,16 +8,20 @@ from packages.core.orchestration.tool_grounding import (
 )
 
 
-def test_grounding_lists_real_tools_including_web_search():
+def test_grounding_references_steered_tools_without_duplicating_catalog():
     grounding = available_tools_grounding()
-    assert "builtin.calculator" in grounding
+    # Guidance still names the tools it actively steers toward.
     assert "file.read" in grounding
     assert "file.write" in grounding
     assert "file.patch" in grounding
     # web.search is advertised even though it lives on the executor.
     assert "web.search" in grounding
-    assert "memory.search" in grounding
-    assert "memory.remember" in grounding
+    # The full per-tool catalog is NO LONGER re-listed in prose: the structured
+    # tools array on the request is authoritative, so tools that the guidance
+    # does not specifically reference must not be enumerated here.
+    assert "builtin.calculator" not in grounding
+    assert "memory.list_recent" not in grounding
+    assert "- builtin." not in grounding
 
 
 def test_grounding_injects_current_date():
@@ -33,6 +37,17 @@ def test_grounding_steers_to_web_search_for_time_sensitive():
     assert "web.search" in grounding
     assert "latest" in grounding
     assert "from memory" in grounding
+
+
+def test_grounding_steers_memory_and_autonomous_tool_use():
+    grounding = available_tools_grounding().lower()
+    # Proactive memory recall + explicit-save behavior.
+    assert "memory.search" in grounding
+    assert "memory.remember" in grounding
+    assert "remember that" in grounding
+    # Autonomy: multi-step tool use without asking, grounding via read/search.
+    assert "work autonomously" in grounding
+    assert "chain tool calls" in grounding
 
 
 def test_grounding_forbids_invented_capabilities():
