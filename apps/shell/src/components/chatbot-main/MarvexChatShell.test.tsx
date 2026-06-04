@@ -129,6 +129,27 @@ describe("MarvexChatShell", () => {
     expect(screen.getByText("Step completed.")).toBeVisible();
   });
 
+  it("renders model-authored commentary separately from the final answer", () => {
+    render(
+      <MarvexChatShell
+        messages={[
+          {
+            role: "assistant",
+            text: "MAR.txt contains test data.",
+            commentary: ["I'm locating MAR.txt on your Desktop."],
+            activity: [{ id: "read-1", name: "file.read", active: false }],
+          },
+        ]}
+        pending={false}
+        onSubmit={vi.fn()}
+        renderAssistantOrb={() => <span />}
+      />,
+    );
+
+    expect(screen.getByText("I'm locating MAR.txt on your Desktop.")).toBeInTheDocument();
+    expect(screen.getByText("MAR.txt contains test data.")).toBeInTheDocument();
+  });
+
   it("summarizes clarification answers in place with the selected label", async () => {
     const onClarificationAnswer = vi.fn();
     render(
@@ -163,20 +184,33 @@ describe("MarvexChatShell", () => {
     expect(screen.getByText("Answered: OpenAI (the company)")).toBeInTheDocument();
   });
 
-  it("shows model selector composer metadata and switches send to stop while generating", async () => {
+  it("shows model-aware context and reasoning controls and switches send to stop while generating", async () => {
     const onStop = vi.fn();
+    const onSelectReasoningEffort = vi.fn();
     render(
       <MarvexChatShell
         messages={[]}
         pending
         onSubmit={vi.fn()}
         onStop={onStop}
+        contextInputTokens={1240}
+        outputTokens={320}
+        totalTokens={1560}
+        reasoningTokens={64}
+        contextWindow={128000}
+        cachedInputTokens={240}
+        reasoningEffort="high"
+        reasoningEffortOptions={["low", "medium", "high"]}
+        onSelectReasoningEffort={onSelectReasoningEffort}
         renderAssistantOrb={() => <span />}
       />,
     );
 
     expect(screen.getByRole("button", { name: "Select model" })).toBeInTheDocument();
-    expect(screen.getByText("0 / 12000")).toBeInTheDocument();
+    expect(screen.getByText("1.2K / 128K")).toHaveAttribute("title", "Input 1240 tokens, output 320, total 1560, 240 cached, 64 reasoning, 128000 context window");
+    await userEvent.click(screen.getByRole("button", { name: "Reasoning effort: High" }));
+    await userEvent.click(screen.getByRole("button", { name: "Medium" }));
+    expect(onSelectReasoningEffort).toHaveBeenCalledWith("medium");
     await userEvent.click(screen.getByRole("button", { name: "Stop generation" }));
     expect(onStop).toHaveBeenCalledTimes(1);
   });

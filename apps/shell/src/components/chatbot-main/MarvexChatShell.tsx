@@ -34,6 +34,7 @@ export type MarvexChatClarification = {
 export type MarvexChatMessage = {
   role: "user" | "assistant" | "system";
   text: string;
+  commentary?: string[];
   stages?: TurnStage[];
   citations?: CitationRef[];
   directives?: UiDirective[];
@@ -65,6 +66,15 @@ export type MarvexChatShellProps = {
   modelLabel?: string;
   models?: Array<{ id: string; name: string; provider?: string; active?: boolean }>;
   onSelectModel?: (modelId: string) => void | Promise<void>;
+  contextInputTokens?: number;
+  outputTokens?: number;
+  totalTokens?: number;
+  reasoningTokens?: number;
+  contextWindow?: number;
+  cachedInputTokens?: number;
+  reasoningEffort?: string;
+  reasoningEffortOptions?: string[];
+  onSelectReasoningEffort?: (effort: string) => void | Promise<void>;
 };
 
 export function MarvexChatShell({
@@ -87,6 +97,15 @@ export function MarvexChatShell({
   modelLabel = "Assistant runtime",
   models = [],
   onSelectModel,
+  contextInputTokens = 0,
+  outputTokens = 0,
+  totalTokens = 0,
+  reasoningTokens = 0,
+  contextWindow,
+  cachedInputTokens = 0,
+  reasoningEffort,
+  reasoningEffortOptions = [],
+  onSelectReasoningEffort,
 }: MarvexChatShellProps) {
   const conversationRef = useRef<HTMLDivElement | null>(null);
 
@@ -110,6 +129,7 @@ export function MarvexChatShell({
               message.role === "assistant" &&
               !message.streaming &&
               !message.text.trim() &&
+              !message.commentary?.length &&
               !message.stages?.length &&
               !message.directives?.length &&
               !message.activity?.length &&
@@ -124,7 +144,7 @@ export function MarvexChatShell({
               {message.role === "assistant" ? (
                 <ChatbotAssistantFrame orb={renderAssistantOrb(assistantOrbState)}>
                   <ChatbotMessageContent from="assistant">
-                    <RichMessage text={visibleAssistantText} stages={message.stages} citations={message.citations} directives={message.directives} streaming={message.streaming} activity={message.activity} startedAt={message.activityStartedAt} endedAt={message.activityEndedAt} />
+                    <RichMessage text={visibleAssistantText} commentary={message.commentary} stages={message.stages} citations={message.citations} directives={message.directives} streaming={message.streaming} activity={message.activity} startedAt={message.activityStartedAt} endedAt={message.activityEndedAt} />
                     {message.approval ? (
                       <Confirmation
                         approval={message.approval.status === "pending" ? { id: message.approval.approvalId } : { id: message.approval.approvalId, approved: message.approval.status === "approved" }}
@@ -213,6 +233,15 @@ export function MarvexChatShell({
           modelLabel={modelLabel}
           models={models}
           onSelectModel={onSelectModel}
+          contextInputTokens={contextInputTokens}
+          outputTokens={outputTokens}
+          totalTokens={totalTokens}
+          reasoningTokens={reasoningTokens}
+          contextWindow={contextWindow}
+          cachedInputTokens={cachedInputTokens}
+          reasoningEffort={reasoningEffort}
+          reasoningEffortOptions={reasoningEffortOptions}
+          onSelectReasoningEffort={onSelectReasoningEffort}
           onStop={onStop}
           onSubmit={onSubmit}
           onToggleVoice={onToggleVoice}
