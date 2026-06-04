@@ -182,6 +182,7 @@ class VoiceWorkerBackendRuntime:
             # run a no-op transcription pass.
             silent_pcm = b"\x00\x00" * (sample_rate * duration_ms // 1000)
             frame = AudioFrame(
+                frame_id="voice-warm-stt-frame-1",
                 pcm=silent_pcm,
                 sample_rate=sample_rate,
                 duration_ms=duration_ms,
