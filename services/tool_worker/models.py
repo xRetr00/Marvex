@@ -6,11 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from packages.capability_runtime.results import CapabilityResultEnvelope, SafeCapabilityProjection
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-tool-worker"
-SERVICE_VERSION = "0.2.1"
 
 
 class ToolWorkerModel(BaseModel):

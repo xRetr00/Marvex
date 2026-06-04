@@ -26,11 +26,11 @@ from packages.runtime_composition import (
     run_lmstudio_responses_assistant_bridge,
     run_provider_foundation_turn,
 )
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex"
-SERVICE_VERSION = "0.2.1"
 LOCAL_RUNTIME_STARTED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 

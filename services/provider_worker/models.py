@@ -6,11 +6,11 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from packages.contracts import ErrorEnvelope, ProviderResponse
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-provider-worker"
-SERVICE_VERSION = "0.2.1"
 
 
 class ProviderWorkerModel(BaseModel):

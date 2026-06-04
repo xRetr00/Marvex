@@ -6,10 +6,10 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict
 
 from packages.voice_worker_runtime.models import SCHEMA_VERSION
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 
 SERVICE_NAME = "marvex-voice-worker"
-SERVICE_VERSION = "0.2.1"
 
 
 class VoiceWorkerServiceModel(BaseModel):

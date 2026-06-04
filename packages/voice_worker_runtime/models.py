@@ -8,6 +8,7 @@ from pydantic import Field
 
 from packages.voice_runtime.base import SCHEMA_VERSION, VoiceRuntimeModel, safe_mapping
 from packages.voice_worker_runtime.assets import InstalledModelRegistry
+from packages.version import MARVEX_VERSION
 
 
 class VoiceWorkerLifecycleState(str, Enum):
@@ -146,7 +147,7 @@ class VoiceWorkerHealth(VoiceRuntimeModel):
 class VoiceWorkerVersionInfo(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     worker: str
-    worker_version: str = "0.2.1"
+    worker_version: str = MARVEX_VERSION
     contract_versions: dict[str, str] = Field(
         default_factory=lambda: {
             "VoiceWorkerCommand": SCHEMA_VERSION,

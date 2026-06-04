@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from packages.process_runtime import HealthVersionProvider, ProcessRuntimeConfig
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 from .asgi_app import create_local_api_asgi_app
 from .asgi_host import run_asgi_host
@@ -16,7 +17,6 @@ from .contracts import (
 
 
 SERVICE_NAME = "marvex-local-api"
-SERVICE_VERSION = "0.2.1"
 SCHEMA_VERSION = "0.1.1-draft"
 CONTRACT_VERSIONS = {
     "HealthCheck": SCHEMA_VERSION,

@@ -15,11 +15,11 @@ from packages.contracts import (
     VersionInfo,
 )
 from packages.ports.core_service_port import CoreTurnExecutorPort
+from packages.version import MARVEX_VERSION as SERVICE_VERSION
 
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-core-service"
-SERVICE_VERSION = "0.2.1"
 CONTRACT_VERSIONS = {
     "CoreService": SCHEMA_VERSION,
     "HealthCheck": SCHEMA_VERSION,
