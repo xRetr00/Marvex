@@ -39,8 +39,8 @@ class ClarifyTool(Tool):
     id: ClassVar[str] = CLARIFY_TOOL_ID
     name: ClassVar[str] = "Ask the user"
     description: ClassVar[str] = (
-        "Ask the user a brief clarifying question when their request is ambiguous and you cannot "
-        "safely proceed (e.g. an ambiguous name, missing detail, or two plausible meanings). "
+        "Ask the user a brief clarifying question when their request is ambiguous or missing a needed detail "
+        "(e.g. an ambiguous name or two plausible meanings). "
         "Provide the question and optional short answer choices. The turn pauses for the user's reply."
     )
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE

@@ -28,7 +28,7 @@ class LocalMcpEchoTool(Tool):
 
     id: ClassVar[str] = "mcp.local.echo"
     name: ClassVar[str] = "Local MCP Echo"
-    description: ClassVar[str] = "Call the allowlisted local MCP echo fixture and return a safe result projection."
+    description: ClassVar[str] = "Call the local MCP echo fixture and return its result."
     params_model: ClassVar[type[BaseModel]] = McpEchoParams
     ref_prefix: ClassVar[str] = ""
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE

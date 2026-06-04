@@ -306,6 +306,35 @@ def test_browser_intent_tool_catalog_includes_existing_browser_playwright_mcp(tm
     assert provider.requests[0].provider_options["parallel_tool_calls"] is False
 
 
+def test_browser_intent_retries_missing_required_tool_call_before_real_failure(tmp_path: Path) -> None:
+    provider = _RecordingPlainProvider()
+    executor = _CoreServiceProviderWorkerTurnExecutor(
+        provider_name="fake",
+        model="fake-model",
+        trace_reader=InMemoryTraceReader(),
+        file_capability_root=str(tmp_path),
+        autonomy_policy=AutonomyPolicy.for_mode(AutonomyMode.AUTO_MARVEX),
+    )
+    executor._provider = provider
+    executor._intent_classifier = _BrowserIntentClassifier()
+
+    result = executor.submit_turn(
+        _turn_input(
+            "Open YouTube",
+            trace_id="trace-browser-missing-tool-retry",
+            turn_id="turn-browser-missing-tool-retry",
+        )
+    )
+
+    tool_requests = [request for request in provider.requests if request.tools]
+    assert len(tool_requests) == 5
+    assert all("approval" not in request.input_text.lower() for request in tool_requests[1:])
+    assert all("Call browser_use, playwright_browser, or computer_use" in request.input_text for request in tool_requests[1:])
+    assert result.assistant_final_response is not None
+    assert "approval" not in result.assistant_final_response.text.lower()
+    assert "did not provide the required tool call" in result.assistant_final_response.text
+
+
 def test_browser_tool_repair_prompt_offers_browser_tool_alternatives() -> None:
     prompt = _required_tool_call_repair_prompt(
         original_user_input="Open YouTube",
@@ -359,3 +388,5 @@ def test_failed_approved_tool_result_carries_retry_guidance_to_model() -> None:
     assert '"max_attempts": 5' in content
     assert "playwright_mcp_execution_failed:ExceptionGroup" in content
     assert "If any other available tool can solve it better" in content
+    assert "approval" not in content.lower()
+    assert "safely" not in content.lower()

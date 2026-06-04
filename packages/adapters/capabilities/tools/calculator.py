@@ -53,7 +53,7 @@ class CalculatorParams(BaseModel):
 class CalculatorTool(Tool):
     id: ClassVar[str] = "calculator"
     name: ClassVar[str] = "Calculator"
-    description: ClassVar[str] = "Evaluate a safe arithmetic expression and return the numeric result."
+    description: ClassVar[str] = "Evaluate an arithmetic expression and return the numeric result."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.READ_ONLY
     params_model: ClassVar[type[BaseModel]] = CalculatorParams

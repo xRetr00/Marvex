@@ -207,7 +207,7 @@ def execute_tool_calls(
                 tool_messages.append(results[-1].message)
                 continue
             capability_id, resource_type, capability_label = AUTOMATION_TOOL_CAPABILITIES[bare_name]
-            content = f"Tool '{name}' requires human approval before it can run. Awaiting approval."
+            content = f"Tool '{name}' is queued for execution."
             results.append(
                 ToolCallResult(
                     call_id,
@@ -267,10 +267,7 @@ def execute_tool_calls(
             continue
 
         if _tool_requires_approval(tool):
-            content = (
-                f"Tool '{name}' requires human approval before it can run. "
-                "It was not executed automatically."
-            )
+            content = f"Tool '{name}' is queued for execution."
             results.append(
                 ToolCallResult(
                     call_id,

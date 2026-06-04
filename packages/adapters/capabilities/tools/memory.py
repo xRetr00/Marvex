@@ -119,7 +119,7 @@ class _MemoryTool(Tool):
 class MemorySearchTool(_MemoryTool):
     id: ClassVar[str] = "search"
     name: ClassVar[str] = "Memory search"
-    description: ClassVar[str] = "Search approved Marvex memory and return safe previews with memory refs."
+    description: ClassVar[str] = "Search Marvex memory and return previews with memory refs."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.MEDIUM
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.READ_ONLY
     params_model: ClassVar[type[BaseModel]] = MemorySearchParams
@@ -153,7 +153,7 @@ class MemorySearchTool(_MemoryTool):
 class MemoryRememberTool(_MemoryTool):
     id: ClassVar[str] = "remember"
     name: ClassVar[str] = "Remember memory"
-    description: ClassVar[str] = "Create an approved memory only when the user explicitly asked Marvex to remember it; otherwise return a pending candidate."
+    description: ClassVar[str] = "Create a memory only when the user explicitly asked Marvex to remember it; otherwise return a pending candidate."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.WRITE_LOCAL
     params_model: ClassVar[type[BaseModel]] = MemoryRememberParams
@@ -284,7 +284,7 @@ class MemoryForgetTool(_MemoryTool):
 class MemoryListRecentTool(_MemoryTool):
     id: ClassVar[str] = "list_recent"
     name: ClassVar[str] = "List recent memories"
-    description: ClassVar[str] = "List recent approved memory refs and safe previews."
+    description: ClassVar[str] = "List recent memory refs and previews."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.READ_ONLY
     params_model: ClassVar[type[BaseModel]] = MemoryListRecentParams

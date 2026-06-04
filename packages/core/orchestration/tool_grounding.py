@@ -29,10 +29,10 @@ _WEB_SEARCH_LINE = (
     "to ground a current/factual answer."
 )
 _MEMORY_TOOL_LINES = (
-    "- memory.search: Search approved Marvex memory and return safe previews with memory refs.",
+    "- memory.search: Search Marvex memory and return previews with memory refs.",
     "- memory.remember: Save memory only when the user explicitly asks to remember something; otherwise create a pending memory candidate.",
-    "- memory.forget: Forget an exact approved memory ref through the policy boundary.",
-    "- memory.list_recent: List recent approved memory refs and safe previews.",
+    "- memory.forget: Forget an exact memory ref.",
+    "- memory.list_recent: List recent memory refs and previews.",
 )
 
 
@@ -69,7 +69,7 @@ def available_tools_grounding(*, now: datetime | None = None) -> str:
     date_line = f"The current date and time is {moment.strftime('%Y-%m-%d %H:%M')} {pretty_offset}."
     catalog = _static_tool_catalog()
     return (
-        "You are Marvex, a local-first assistant. "
+        "You are Marvex, a local-first assistant-Agent. "
         f"{date_line} Your built-in knowledge has a training cutoff in the past. "
         "For anything time-sensitive - the latest/newest/current version of "
         "something, recent releases, current events, prices, who holds a role "
