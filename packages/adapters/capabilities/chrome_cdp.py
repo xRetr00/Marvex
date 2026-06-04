@@ -1,12 +1,9 @@
-"""Ensure a Chrome instance is running with its DevTools/CDP endpoint enabled,
-pointed at the user's REAL profile, so browser automation drives the user's
-actual browser + logins instead of a throwaway Playwright/automation profile.
+"""Ensure a Chrome instance is running with a DevTools/CDP endpoint enabled.
 
-This is the fix for "the browser opened but not my main profile, showed a
-Playwright page, then closed": browser_use's launch fell back to a dedicated
-profile and closed on completion. Instead we (re)launch the user's own Chrome
-with ``--remote-debugging-port`` on their User Data dir and connect over CDP,
-with ``keep_alive`` so the window is never auto-closed.
+CDP is supported for explicit non-default Chrome data directories. Modern
+Chrome intentionally blocks remote debugging for the default user profile, so
+the user's already-open logged-in browser must be controlled through the
+Playwright browser extension instead of attempting a misleading relaunch.
 
 Stdlib only - this module must NOT import browser_use/playwright/agents (tooling
 boundary gate). The SDK clients connect to the ``cdp_url`` this returns.
@@ -124,6 +121,15 @@ def cdp_endpoint_alive(port: int, *, timeout: float = 0.5) -> bool:
         return False
 
 
+def _same_path(left: str | None, right: str | None) -> bool:
+    if not left or not right:
+        return False
+    try:
+        return os.path.normcase(os.path.abspath(left)) == os.path.normcase(os.path.abspath(right))
+    except OSError:
+        return False
+
+
 def ensure_debuggable_chrome(
     *,
     port: int | None = None,
@@ -132,8 +138,8 @@ def ensure_debuggable_chrome(
     launch: bool = True,
     wait_seconds: float = 12.0,
 ) -> dict[str, object]:
-    """Return a CDP url for the user's Chrome, launching it with the debug port
-    on their real profile if one isn't already listening.
+    """Return a CDP url for Chrome, launching an eligible custom profile if one
+    isn't already listening.
 
     Result dict: ``cdp_url`` (str|None), ``port``, ``launched`` (bool),
     ``reused`` (bool), ``reason_code`` (str|None). ``cdp_url`` is None on failure
@@ -153,6 +159,19 @@ def ensure_debuggable_chrome(
         return {"cdp_url": None, "port": resolved_port, "launched": False, "reused": False, "reason_code": "chrome_executable_not_found"}
 
     resolved_user_data_dir = user_data_dir or default_user_data_dir()
+    # Chrome 136+ intentionally ignores remote-debugging switches for the
+    # default Chrome data directory. Invoking chrome.exe in that state merely
+    # opens another window in the existing process and can never create CDP.
+    # Existing logged-in Chrome must be controlled through Playwright's browser
+    # extension instead.
+    if _same_path(resolved_user_data_dir, default_user_data_dir()):
+        return {
+            "cdp_url": None,
+            "port": resolved_port,
+            "launched": False,
+            "reused": False,
+            "reason_code": "chrome_default_profile_requires_playwright_extension",
+        }
     args = [
         executable,
         f"--remote-debugging-port={resolved_port}",

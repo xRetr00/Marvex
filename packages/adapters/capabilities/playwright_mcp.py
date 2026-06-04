@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import atexit
 import asyncio
+import concurrent.futures
 import importlib.util
 import os
 import re
 import shutil
 import sys
+import threading
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -37,10 +41,17 @@ class PlaywrightMcpServerConfig(PlaywrightMcpModel):
         extension_mode: bool = False,
         cdp_endpoint: str | None = None,
     ) -> "PlaywrightMcpServerConfig":
-        # Pinnable for reproducibility/offline; defaults to latest. Set
-        # MARVEX_PLAYWRIGHT_MCP_SPEC=@playwright/mcp@<version> to lock it.
-        spec = (os.environ.get("MARVEX_PLAYWRIGHT_MCP_SPEC") or "@playwright/mcp@latest").strip()
-        args: list[str] = [spec]
+        bundled_node = Path(os.environ.get("MARVEX_NODE_PATH", "").strip())
+        bundled_cli = Path(os.environ.get("MARVEX_PLAYWRIGHT_MCP_CLI", "").strip())
+        if bundled_node.is_file() and bundled_cli.is_file():
+            command = str(bundled_node)
+            args: list[str] = [str(bundled_cli)]
+        else:
+            # Development fallback. Packaged builds set the bundled node/CLI
+            # environment paths so runtime execution never depends on npm/npx.
+            command = "npx"
+            spec = (os.environ.get("MARVEX_PLAYWRIGHT_MCP_SPEC") or "@playwright/mcp@latest").strip()
+            args = [spec]
         if extension_mode:
             args.append("--extension")
         elif cdp_endpoint:
@@ -48,6 +59,7 @@ class PlaywrightMcpServerConfig(PlaywrightMcpModel):
         else:
             args.append(f"--browser={browser}")
         return cls(
+            command=command,
             args=tuple(args),
             browser=browser,
             extension_mode=extension_mode,
@@ -67,6 +79,85 @@ class PlaywrightMcpExecutionReport(PlaywrightMcpModel):
     install_dep_id: str | None = None
     missing_dependencies: tuple[str, ...] = ()
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
+
+
+class _PersistentPlaywrightMcpSession:
+    """Long-lived stdio MCP session so chained browser calls share tab state."""
+
+    def __init__(self, config: PlaywrightMcpServerConfig) -> None:
+        self.config = config
+        self.loop: asyncio.AbstractEventLoop | None = None
+        self.queue: asyncio.Queue[tuple[str, dict[str, Any], concurrent.futures.Future[PlaywrightMcpExecutionReport]] | None] | None = None
+        self.ready = threading.Event()
+        self.error: BaseException | None = None
+        self.thread = threading.Thread(target=self._thread_main, name="marvex-playwright-mcp", daemon=True)
+        self.thread.start()
+
+    def _thread_main(self) -> None:
+        loop = asyncio.ProactorEventLoop() if os.name == "nt" else asyncio.new_event_loop()
+        self.loop = loop
+        asyncio.set_event_loop(loop)
+        try:
+            loop.run_until_complete(self._worker())
+        except BaseException as exc:  # pragma: no cover - local process failures vary
+            self.error = exc
+            self.ready.set()
+        finally:
+            loop.close()
+            asyncio.set_event_loop(None)
+
+    async def _worker(self) -> None:
+        from mcp import ClientSession, StdioServerParameters
+        from mcp.client.stdio import stdio_client
+
+        command, args = _resolve_stdio_command(self.config)
+        server = StdioServerParameters(command=command, args=args)
+        self.queue = asyncio.Queue()
+        async with stdio_client(server) as (read, write):
+            async with ClientSession(read, write) as session:
+                await session.initialize()
+                self.ready.set()
+                while True:
+                    item = await self.queue.get()
+                    if item is None:
+                        return
+                    tool_name, tool_args, future = item
+                    try:
+                        future.set_result(await _call_playwright_mcp_tool(self.config, session, tool_name=tool_name, tool_args=tool_args))
+                    except BaseException as exc:
+                        future.set_exception(exc)
+
+    def call(self, *, tool_name: str, tool_args: dict[str, Any], timeout: float = 180.0) -> PlaywrightMcpExecutionReport:
+        if not self.ready.wait(timeout=30.0):
+            raise TimeoutError("playwright_mcp_session_start_timeout")
+        if self.error is not None:
+            raise self.error
+        if self.loop is None or self.queue is None:
+            raise RuntimeError("playwright_mcp_session_unavailable")
+        future: concurrent.futures.Future[PlaywrightMcpExecutionReport] = concurrent.futures.Future()
+        self.loop.call_soon_threadsafe(self.queue.put_nowait, (tool_name, tool_args, future))
+        return future.result(timeout=timeout)
+
+    def close(self) -> None:
+        if self.loop is not None and self.queue is not None and self.thread.is_alive():
+            self.loop.call_soon_threadsafe(self.queue.put_nowait, None)
+            self.thread.join(timeout=5.0)
+
+
+_PERSISTENT_SESSIONS: dict[tuple[str, tuple[str, ...]], _PersistentPlaywrightMcpSession] = {}
+_PERSISTENT_SESSIONS_LOCK = threading.Lock()
+_MAX_PERSISTENT_SESSIONS = 4
+
+
+def _close_persistent_sessions() -> None:
+    with _PERSISTENT_SESSIONS_LOCK:
+        sessions = list(_PERSISTENT_SESSIONS.values())
+        _PERSISTENT_SESSIONS.clear()
+    for session in sessions:
+        session.close()
+
+
+atexit.register(_close_persistent_sessions)
 
 
 def execute_playwright_mcp_task(request: CapabilityExecutionRequest) -> PlaywrightMcpExecutionReport:
@@ -169,27 +260,25 @@ def _run_playwright_mcp_sync(
     tool_name: str,
     tool_args: dict[str, Any],
 ) -> PlaywrightMcpExecutionReport:
-    """Run the async MCP driver, forcing a subprocess-capable loop on Windows.
+    """Run through a long-lived subprocess-capable MCP session."""
 
-    ``asyncio`` subprocess transports on Windows only work on the Proactor event
-    loop. If any imported library has switched the process default to the
-    Selector loop, ``asyncio.run`` spawns ``npx`` on a loop that can't create
-    subprocess pipes, which surfaces as an ``OSError``/``NotImplementedError``.
-    Drive the coroutine on an explicit Proactor loop to avoid that.
-    """
-
-    coro = _run_playwright_mcp(config, tool_name=tool_name, tool_args=tool_args)
-    if os.name == "nt":
-        loop = asyncio.ProactorEventLoop()
-        try:
-            asyncio.set_event_loop(loop)
-            return loop.run_until_complete(coro)
-        finally:
-            try:
-                loop.close()
-            finally:
-                asyncio.set_event_loop(None)
-    return asyncio.run(coro)
+    key = (config.command, config.args)
+    with _PERSISTENT_SESSIONS_LOCK:
+        session = _PERSISTENT_SESSIONS.get(key)
+        if session is None:
+            if len(_PERSISTENT_SESSIONS) >= _MAX_PERSISTENT_SESSIONS:
+                oldest_key = next(iter(_PERSISTENT_SESSIONS))
+                _PERSISTENT_SESSIONS.pop(oldest_key).close()
+            session = _PersistentPlaywrightMcpSession(config)
+            _PERSISTENT_SESSIONS[key] = session
+    try:
+        return session.call(tool_name=tool_name, tool_args=tool_args)
+    except Exception:
+        with _PERSISTENT_SESSIONS_LOCK:
+            if _PERSISTENT_SESSIONS.get(key) is session:
+                _PERSISTENT_SESSIONS.pop(key, None)
+        session.close()
+        raise
 
 
 async def _run_playwright_mcp(
@@ -207,29 +296,42 @@ async def _run_playwright_mcp(
     async with stdio_client(server) as (read, write):
         async with ClientSession(read, write) as session:
             await session.initialize()
-            tools = await session.list_tools()
-            available = {tool.name for tool in getattr(tools, "tools", ())}
-            if tool_name not in available:
-                return PlaywrightMcpExecutionReport(
-                    status="denied",
-                    tool_name=tool_name,
-                    browser=config.browser,
-                    extension_mode=config.extension_mode,
-                    cdp_endpoint_present=bool(config.cdp_endpoint),
-                    reason_code="playwright_mcp_tool_not_available",
-                    artifact_payloads={"available_tools": sorted(available)},
-                )
-            result = await session.call_tool(tool_name, arguments=tool_args)
-            return PlaywrightMcpExecutionReport(
-                status="failed" if result.isError else "succeeded",
-                tool_name=tool_name,
-                action_count=1,
-                browser=config.browser,
-                extension_mode=config.extension_mode,
-                cdp_endpoint_present=bool(config.cdp_endpoint),
-                reason_code="playwright_mcp_tool_error" if result.isError else None,
-                artifact_payloads={"tool_result": _safe_tool_result(result)},
-            )
+            return await _call_playwright_mcp_tool(config, session, tool_name=tool_name, tool_args=tool_args)
+
+
+async def _call_playwright_mcp_tool(
+    config: PlaywrightMcpServerConfig,
+    session: Any,
+    *,
+    tool_name: str,
+    tool_args: dict[str, Any],
+) -> PlaywrightMcpExecutionReport:
+    tools = await session.list_tools()
+    available = {tool.name for tool in getattr(tools, "tools", ())}
+    if tool_name not in available:
+        return PlaywrightMcpExecutionReport(
+            status="denied",
+            tool_name=tool_name,
+            browser=config.browser,
+            extension_mode=config.extension_mode,
+            cdp_endpoint_present=bool(config.cdp_endpoint),
+            reason_code="playwright_mcp_tool_not_available",
+            artifact_payloads={"available_tools": sorted(available)},
+        )
+    result = await session.call_tool(tool_name, arguments=tool_args)
+    reason_code = _tool_error_reason(result) if result.isError else None
+    return PlaywrightMcpExecutionReport(
+        status="failed" if result.isError else "succeeded",
+        tool_name=tool_name,
+        action_count=1,
+        browser=config.browser,
+        extension_mode=config.extension_mode,
+        cdp_endpoint_present=bool(config.cdp_endpoint),
+        reason_code=reason_code,
+        install_dep_id="playwright_extension" if reason_code == "playwright_mcp_extension_not_found" else None,
+        missing_dependencies=("playwright_extension",) if reason_code == "playwright_mcp_extension_not_found" else (),
+        artifact_payloads={"tool_result": _safe_tool_result(result)},
+    )
 
 
 def _resolve_stdio_command(config: PlaywrightMcpServerConfig) -> tuple[str, list[str]]:
@@ -256,12 +358,26 @@ def _config_from_arguments(arguments: dict[str, object]) -> PlaywrightMcpServerC
     browser = str(arguments.get("browser") or os.environ.get("MARVEX_PLAYWRIGHT_MCP_BROWSER") or "chrome")
     if browser not in {"chrome", "msedge", "chromium", "firefox", "webkit"}:
         browser = "chrome"
-    extension_mode = arguments.get("extension_mode") is True
+    explicit_extension_mode = arguments.get("extension_mode")
+    extension_mode = explicit_extension_mode is True
     cdp_endpoint = str(arguments.get("cdp_endpoint") or "").strip() or None
-    # Prefer driving the user's REAL Chrome (their profile + logins) via CDP, the
-    # same instance browser_use attaches to, instead of a throwaway Playwright
-    # profile. Only when no explicit endpoint/extension mode is requested and the
-    # caller hasn't opted out via MARVEX_PLAYWRIGHT_MCP_NO_CDP.
+    extension_disabled = os.environ.get("MARVEX_PLAYWRIGHT_MCP_NO_EXTENSION", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if (
+        explicit_extension_mode is None
+        and cdp_endpoint is None
+        and browser in {"chrome", "msedge"}
+        and not extension_disabled
+    ):
+        # Playwright's extension is the supported way to attach to an already
+        # open Chrome/Edge profile and reuse its logged-in sessions.
+        extension_mode = True
+    # CDP remains available for explicit custom profiles and older deployments
+    # that opt out of extension mode.
     if (
         cdp_endpoint is None
         and not extension_mode
@@ -311,6 +427,16 @@ def _safe_tool_result(result: Any) -> dict[str, Any]:
         "content_types": [str(getattr(item, "type", type(item).__name__)) for item in content],
         "structured_content_present": getattr(result, "structuredContent", None) is not None,
     }
+
+
+def _tool_error_reason(result: Any) -> str:
+    text = " ".join(
+        str(getattr(item, "text", "") or "")
+        for item in (getattr(result, "content", ()) or ())
+    ).lower()
+    if "playwright extension not found" in text:
+        return "playwright_mcp_extension_not_found"
+    return "playwright_mcp_tool_error"
 
 
 def _raw_persistence_enabled(arguments: dict[str, object]) -> bool:

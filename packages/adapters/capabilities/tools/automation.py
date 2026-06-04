@@ -10,7 +10,7 @@ harmless fallback for the Tool ABC; the loop never runs it directly.
 
 from __future__ import annotations
 
-from typing import ClassVar
+from typing import Any, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -45,8 +45,8 @@ class BrowserUseTool(Tool):
     id: ClassVar[str] = BROWSER_USE_TOOL_ID
     name: ClassVar[str] = "Use the web browser"
     description: ClassVar[str] = (
-        "Autonomously drive a real web browser to accomplish a task (open sites, navigate, read, "
-        "fill forms). Requires human approval before running. Give a clear task description."
+        "Autonomously drive a managed web browser to accomplish a multi-step task such as navigating, "
+        "reading, or filling forms. Give a clear task description."
     )
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.HIGH
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.BROWSER_ACTION
@@ -79,7 +79,8 @@ class ComputerUseTool(Tool):
 
 class PlaywrightBrowserParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
-    tool_name: str = Field(default="", description="Playwright-MCP tool (e.g. browser_navigate). Leave blank to derive from url.")
+    tool_name: str = Field(default="", description="Playwright-MCP tool such as browser_navigate, browser_snapshot, browser_click, or browser_type.")
+    tool_args: dict[str, Any] = Field(default_factory=dict, description="Arguments for the selected Playwright-MCP tool.")
     url: str = Field(default="", description="URL to open, if navigating.")
 
 
@@ -87,9 +88,8 @@ class PlaywrightBrowserTool(Tool):
     id: ClassVar[str] = PLAYWRIGHT_MCP_TOOL_ID
     name: ClassVar[str] = "Browser (Playwright)"
     description: ClassVar[str] = (
-        "Drive the browser via Playwright for precise, structured steps (navigate, click, type). "
-        "Requires human approval. Prefer this for a specific known action; use 'use the web browser' "
-        "for an autonomous multi-step task."
+        "Drive the user's already-open Chrome or Edge browser through the Playwright extension, reusing "
+        "logged-in tabs and profile state. Use precise structured steps and chain calls as needed."
     )
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.HIGH
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.BROWSER_ACTION

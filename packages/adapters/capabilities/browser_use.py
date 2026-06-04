@@ -333,10 +333,9 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
     from browser_use import Agent, Browser
 
     profile = str(request.arguments.get("chrome_profile") or request.arguments.get("profile_directory") or "Default")
-    # Drive the user's REAL Chrome (their profile + logins) by attaching over the
-    # DevTools/CDP endpoint, instead of launching a throwaway profile that closes
-    # on completion. ensure_debuggable_chrome (re)launches the user's Chrome with
-    # the debug port on their User Data dir when one isn't already listening.
+    # Browser Use can attach only when a CDP endpoint already exists or an
+    # explicit custom Chrome data directory can be launched with one. The
+    # default logged-in Chrome profile is handled by Playwright extension mode.
     from .chrome_cdp import ensure_debuggable_chrome
 
     chrome = ensure_debuggable_chrome(profile_directory=profile)
