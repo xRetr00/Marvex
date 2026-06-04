@@ -137,6 +137,7 @@ def ensure_debuggable_chrome(
     profile_directory: str = "Default",
     launch: bool = True,
     wait_seconds: float = 12.0,
+    allow_fallback_profile: bool | None = None,
 ) -> dict[str, object]:
     """Return a CDP url for Chrome, launching an eligible custom profile if one
     isn't already listening.
@@ -165,6 +166,18 @@ def ensure_debuggable_chrome(
     # Existing logged-in Chrome must be controlled through Playwright's browser
     # extension instead.
     if _same_path(resolved_user_data_dir, default_user_data_dir()):
+        fallback = _launch_fallback_profile(
+            executable=executable,
+            port=resolved_port,
+            cdp_url=cdp_url,
+            profile_directory=profile_directory,
+            wait_seconds=wait_seconds,
+            resolved_user_data_dir=resolved_user_data_dir,
+            allow_fallback_profile=allow_fallback_profile,
+            fallback_reason_code="chrome_default_profile_requires_playwright_extension",
+        )
+        if fallback is not None:
+            return fallback
         return {
             "cdp_url": None,
             "port": resolved_port,
@@ -210,8 +223,49 @@ def ensure_debuggable_chrome(
             return {"cdp_url": cdp_url, "port": resolved_port, "launched": True, "reused": False, "reason_code": None}
         time.sleep(0.3)
 
+    fallback = _launch_fallback_profile(
+        executable=executable,
+        port=resolved_port,
+        cdp_url=cdp_url,
+        profile_directory=profile_directory,
+        wait_seconds=wait_seconds,
+        resolved_user_data_dir=resolved_user_data_dir,
+        allow_fallback_profile=allow_fallback_profile,
+        fallback_reason_code="cdp_endpoint_did_not_start_chrome_already_running",
+        prior_launch_attempted=True,
+    )
+    if fallback is not None:
+        return fallback
+
+    # Launched but the debug port never came up. The dominant cause on Windows is
+    # that a Chrome was ALREADY running on this user-data-dir without the debug
+    # flag, so our invocation just opened a tab in it and exited (Chrome only
+    # enables remote debugging for the first process owning a profile dir).
+    return {
+        "cdp_url": None,
+        "port": resolved_port,
+        "launched": True,
+        "reused": False,
+        "reason_code": "cdp_endpoint_did_not_start_chrome_already_running",
+    }
+
+
+def _launch_fallback_profile(
+    *,
+    executable: str,
+    port: int,
+    cdp_url: str,
+    profile_directory: str,
+    wait_seconds: float,
+    resolved_user_data_dir: str | None,
+    allow_fallback_profile: bool | None,
+    fallback_reason_code: str,
+    prior_launch_attempted: bool = False,
+) -> dict[str, object] | None:
     fallback_enabled = (
-        os.environ.get("MARVEX_CHROME_CDP_ALLOW_FALLBACK", "").strip().lower()
+        bool(allow_fallback_profile)
+        if allow_fallback_profile is not None
+        else os.environ.get("MARVEX_CHROME_CDP_ALLOW_FALLBACK", "").strip().lower()
         in {"1", "true", "yes", "on"}
     )
     fallback_disabled = (
@@ -227,7 +281,7 @@ def ensure_debuggable_chrome(
     ):
         fallback_args = [
             executable,
-            f"--remote-debugging-port={resolved_port}",
+            f"--remote-debugging-port={port}",
             "--no-first-run",
             "--no-default-browser-check",
             "--restore-last-session",
@@ -249,44 +303,36 @@ def ensure_debuggable_chrome(
         except Exception as exc:
             return {
                 "cdp_url": None,
-                "port": resolved_port,
-                "launched": True,
+                "port": port,
+                "launched": prior_launch_attempted,
                 "reused": False,
                 "fallback_profile": True,
+                "fallback_reason_code": fallback_reason_code,
                 "reason_code": f"chrome_fallback_launch_failed:{type(exc).__name__}",
             }
         fallback_deadline = time.monotonic() + max(1.0, wait_seconds)
         while time.monotonic() < fallback_deadline:
-            if cdp_endpoint_alive(resolved_port):
+            if cdp_endpoint_alive(port):
                 return {
                     "cdp_url": cdp_url,
-                    "port": resolved_port,
+                    "port": port,
                     "launched": True,
                     "reused": False,
                     "fallback_profile": True,
+                    "fallback_reason_code": fallback_reason_code,
                     "reason_code": None,
                 }
             time.sleep(0.3)
         return {
             "cdp_url": None,
-            "port": resolved_port,
-            "launched": True,
+            "port": port,
+            "launched": prior_launch_attempted,
             "reused": False,
             "fallback_profile": True,
+            "fallback_reason_code": fallback_reason_code,
             "reason_code": "cdp_endpoint_did_not_start_after_fallback_profile",
         }
-
-    # Launched but the debug port never came up. The dominant cause on Windows is
-    # that a Chrome was ALREADY running on this user-data-dir without the debug
-    # flag, so our invocation just opened a tab in it and exited (Chrome only
-    # enables remote debugging for the first process owning a profile dir).
-    return {
-        "cdp_url": None,
-        "port": resolved_port,
-        "launched": True,
-        "reused": False,
-        "reason_code": "cdp_endpoint_did_not_start_chrome_already_running",
-    }
+    return None
 
 
 __all__ = [

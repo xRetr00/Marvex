@@ -41,11 +41,11 @@ class PlaywrightMcpServerConfig(PlaywrightMcpModel):
         extension_mode: bool = False,
         cdp_endpoint: str | None = None,
     ) -> "PlaywrightMcpServerConfig":
-        bundled_node = Path(os.environ.get("MARVEX_NODE_PATH", "").strip())
-        bundled_cli = Path(os.environ.get("MARVEX_PLAYWRIGHT_MCP_CLI", "").strip())
+        bundled_node = Path(_node_main_safe_path(os.environ.get("MARVEX_NODE_PATH", "").strip()))
+        bundled_cli = Path(_node_main_safe_path(os.environ.get("MARVEX_PLAYWRIGHT_MCP_CLI", "").strip()))
         if bundled_node.is_file() and bundled_cli.is_file():
-            command = str(bundled_node)
-            args: list[str] = [str(bundled_cli)]
+            command = _node_main_safe_path(str(bundled_node))
+            args: list[str] = [_node_main_safe_path(str(bundled_cli))]
         else:
             # Development fallback. Packaged builds set the bundled node/CLI
             # environment paths so runtime execution never depends on npm/npx.
@@ -342,8 +342,8 @@ def _resolve_stdio_command(config: PlaywrightMcpServerConfig) -> tuple[str, list
     193``. Route those through ``cmd /c`` so the shim is interpreted correctly.
     """
 
-    command = config.command
-    args = list(config.args)
+    command = _node_main_safe_path(config.command)
+    args = [_node_main_safe_path(arg) for arg in config.args]
     if os.name == "nt":
         resolved = shutil.which(command)
         if resolved and resolved.lower().endswith(".exe"):
@@ -352,6 +352,24 @@ def _resolve_stdio_command(config: PlaywrightMcpServerConfig) -> tuple[str, list
             shell = os.environ.get("COMSPEC", "").strip() or shutil.which("cmd") or "cmd.exe"
             return shell, ["/d", "/c", resolved or command, *args]
     return command, args
+
+
+def _node_main_safe_path(path: str) -> str:
+    r"""Node v24 cannot use Windows verbatim paths as the main script.
+
+    Tauri/resource paths can arrive as ``\\?\D:\...``. Passing that path as
+    Node's entrypoint reproduces the live failure ``EISDIR: lstat 'D:'`` and the
+    MCP client then reports only ``Connection closed`` / ``ExceptionGroup``.
+    Normalize before launching Node while leaving non-path arguments unchanged.
+    """
+
+    if os.name != "nt":
+        return path
+    if path.startswith("\\\\?\\UNC\\"):
+        return "\\\\" + path[len("\\\\?\\UNC\\") :]
+    if path.startswith("\\\\?\\"):
+        return path[len("\\\\?\\") :]
+    return path
 
 
 def _config_from_arguments(arguments: dict[str, object]) -> PlaywrightMcpServerConfig:

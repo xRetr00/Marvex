@@ -15,6 +15,7 @@ import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoice
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
 import { providerUsageFromTurnResult, type ProviderUsage } from "@/lib/providerUsage";
+import { MARVEX_APP_VERSION } from "@/lib/appVersion";
 
 import { LimelightNav } from "@/components/dock";
 import { Loader } from "@/components/loader";
@@ -644,7 +645,29 @@ export function ChatApp() {
           <img src="/assets/Marvex_App_192.png" alt="Marvex" style={{ width: 30, height: 30, borderRadius: 8, objectFit: "contain" }}
             onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />
           <div>
-            <ScrambleText as="h1" text={TAB_TITLES[activeTab]} className="m-0 text-[17px] font-bold" style={{ color: "var(--foreground)" }} />
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <ScrambleText as="h1" text={TAB_TITLES[activeTab]} className="m-0 text-[17px] font-bold" style={{ color: "var(--foreground)" }} />
+              <span
+                aria-label="Marvex version"
+                title="Marvex version"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  height: 18,
+                  borderRadius: 999,
+                  border: "1px solid color-mix(in srgb, var(--border) 70%, transparent)",
+                  background: "color-mix(in srgb, var(--secondary) 74%, transparent)",
+                  color: "var(--muted-foreground)",
+                  padding: "0 7px",
+                  fontSize: 10,
+                  fontWeight: 650,
+                  lineHeight: "18px",
+                  letterSpacing: 0,
+                }}
+              >
+                v{MARVEX_APP_VERSION}
+              </span>
+            </div>
             <p style={{ margin: "1px 0 0", color: "var(--muted-foreground)", fontSize: 11 }}>{config ? headerSubtitle : "Connecting runtime..."}</p>
           </div>
         </div>

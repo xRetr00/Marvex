@@ -1,10 +1,23 @@
 import { defineConfig } from "vitest/config";
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
+import fs from "fs";
 import path from "path";
+function readAppVersion() {
+    const versionFile = path.resolve(__dirname, "../../version.toml");
+    const content = fs.readFileSync(versionFile, "utf8");
+    const match = content.match(/^\s*version\s*=\s*"([^"]+)"/m);
+    if (!match) {
+        throw new Error(`Could not parse app version from ${versionFile}`);
+    }
+    return match[1];
+}
 export default defineConfig({
     base: "./",
     plugins: [react(), tailwindcss()],
+    define: {
+        __MARVEX_APP_VERSION__: JSON.stringify(readAppVersion()),
+    },
     resolve: {
         alias: {
             "@": path.resolve(__dirname, "./src"),

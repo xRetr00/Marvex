@@ -113,6 +113,8 @@ def test_browser_use_safe_result_reports_runtime_mode_metadata() -> None:
         llm_adapter="ChatOpenAI",
         use_vision=False,
         cdp_endpoint_present=True,
+        fallback_profile_used=True,
+        fallback_reason_code="chrome_default_profile_requires_playwright_extension",
     )
     request = SimpleNamespace(
         arguments={},
@@ -129,6 +131,8 @@ def test_browser_use_safe_result_reports_runtime_mode_metadata() -> None:
     assert safe["llm_adapter"] == "ChatOpenAI"
     assert safe["use_vision"] is False
     assert safe["cdp_endpoint_present"] is True
+    assert safe["fallback_profile_used"] is True
+    assert safe["fallback_reason_code"] == "chrome_default_profile_requires_playwright_extension"
     assert raw_persisted is False
 
 
@@ -305,6 +309,25 @@ def test_playwright_mcp_builtin_prefers_bundled_node_cli(monkeypatch, tmp_path: 
     assert config.command == str(node)
     assert config.args[0] == str(cli)
     assert config.args[1:] == ("--browser=chrome",)
+
+
+def test_playwright_mcp_strips_windows_verbatim_paths_before_node_launch(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(playwright_mcp.os, "name", "nt")
+    node = tmp_path / "node.exe"
+    cli = tmp_path / "playwright-mcp" / "node_modules" / "@playwright" / "mcp" / "cli.js"
+    cli.parent.mkdir(parents=True)
+    node.write_bytes(b"node")
+    cli.write_text("console.log('mcp')", encoding="utf-8")
+    monkeypatch.setenv("MARVEX_NODE_PATH", "\\\\?\\" + str(node))
+    monkeypatch.setenv("MARVEX_PLAYWRIGHT_MCP_CLI", "\\\\?\\" + str(cli))
+
+    config = PlaywrightMcpServerConfig.builtin(browser="chrome")
+    command, args = playwright_mcp._resolve_stdio_command(config)
+
+    assert command == str(node)
+    assert args[0] == str(cli)
+    assert not command.startswith("\\\\?\\")
+    assert not args[0].startswith("\\\\?\\")
 
 
 def test_playwright_mcp_posix_leaves_command_unchanged(monkeypatch) -> None:

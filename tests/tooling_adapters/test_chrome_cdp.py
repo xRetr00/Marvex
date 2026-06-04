@@ -106,6 +106,46 @@ def test_default_profile_uses_extension_path_without_launching_extra_window(monk
     assert launched == []
 
 
+def test_default_profile_can_fall_back_to_dedicated_profile_when_allowed(monkeypatch, tmp_path):
+    fake_exe = tmp_path / "chrome.exe"
+    fake_exe.write_text("", encoding="utf-8")
+    default_dir = tmp_path / "Chrome" / "User Data"
+    fallback_dir = tmp_path / "fallback-profile"
+    launched: list[list[str]] = []
+    state = {"fallback_started": False, "fallback_checks": 0}
+    monkeypatch.setattr(chrome_cdp, "chrome_executable_path", lambda: str(fake_exe))
+    monkeypatch.setattr(chrome_cdp, "default_user_data_dir", lambda: str(default_dir))
+    monkeypatch.setattr(chrome_cdp, "fallback_user_data_dir", lambda: str(fallback_dir))
+
+    def fake_popen(args, **kwargs):
+        launched.append(list(args))
+        if any(str(fallback_dir) in arg for arg in args):
+            state["fallback_started"] = True
+        return object()
+
+    def fake_alive(port, **_):
+        if state["fallback_started"]:
+            state["fallback_checks"] += 1
+            return state["fallback_checks"] > 1
+        return False
+
+    monkeypatch.setattr(chrome_cdp.subprocess, "Popen", fake_popen)
+    monkeypatch.setattr(chrome_cdp, "cdp_endpoint_alive", fake_alive)
+
+    result = chrome_cdp.ensure_debuggable_chrome(
+        port=9222,
+        user_data_dir=str(default_dir),
+        wait_seconds=1.0,
+        allow_fallback_profile=True,
+    )
+
+    assert result["cdp_url"] == "http://127.0.0.1:9222"
+    assert result["fallback_profile"] is True
+    assert result["fallback_reason_code"] == "chrome_default_profile_requires_playwright_extension"
+    assert len(launched) == 1
+    assert any(str(fallback_dir) in arg for arg in launched[0])
+
+
 def test_launched_but_port_never_comes_up(monkeypatch, tmp_path):
     fake_exe = tmp_path / "chrome.exe"
     fake_exe.write_text("", encoding="utf-8")

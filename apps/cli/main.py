@@ -30,7 +30,7 @@ from packages.runtime_composition import (
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex"
-SERVICE_VERSION = "0.2.0"
+SERVICE_VERSION = "0.2.1"
 LOCAL_RUNTIME_STARTED_AT = datetime(2026, 1, 1, tzinfo=UTC)
 
 

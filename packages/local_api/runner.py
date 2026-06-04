@@ -16,7 +16,7 @@ from .contracts import (
 
 
 SERVICE_NAME = "marvex-local-api"
-SERVICE_VERSION = "0.2.0"
+SERVICE_VERSION = "0.2.1"
 SCHEMA_VERSION = "0.1.1-draft"
 CONTRACT_VERSIONS = {
     "HealthCheck": SCHEMA_VERSION,

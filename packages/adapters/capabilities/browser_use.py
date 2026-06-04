@@ -217,6 +217,8 @@ class BrowserUseExecutionReport(BrowserUseModel):
     llm_adapter: str | None = None
     use_vision: bool = False
     cdp_endpoint_present: bool = False
+    fallback_profile_used: bool = False
+    fallback_reason_code: str | None = None
     artifact_payloads: dict[str, Any] = Field(default_factory=dict)
 
     def final_url_host(self) -> str | None:
@@ -314,6 +316,8 @@ def browser_use_safe_result(
             "llm_adapter": report.llm_adapter,
             "use_vision": report.use_vision,
             "cdp_endpoint_present": report.cdp_endpoint_present,
+            "fallback_profile_used": report.fallback_profile_used,
+            "fallback_reason_code": report.fallback_reason_code,
             "approval_required": True,
             "approved_execution": request.approval_decision is not None,
             "raw_browser_payload_persisted": bool(records),
@@ -338,7 +342,7 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
     # default logged-in Chrome profile is handled by Playwright extension mode.
     from .chrome_cdp import ensure_debuggable_chrome
 
-    chrome = ensure_debuggable_chrome(profile_directory=profile)
+    chrome = ensure_debuggable_chrome(profile_directory=profile, allow_fallback_profile=True)
     cdp_url = chrome.get("cdp_url")
     if not cdp_url:
         return BrowserUseExecutionReport(
@@ -390,6 +394,8 @@ def _run_browser_use_task(request: CapabilityExecutionRequest, task: str) -> Bro
         llm_adapter=llm_class.__name__,
         use_vision=use_vision,
         cdp_endpoint_present=True,
+        fallback_profile_used=bool(chrome.get("fallback_profile")),
+        fallback_reason_code=str(chrome.get("fallback_reason_code") or "") or None,
         step_payloads=step_payloads,
     )
 
@@ -402,6 +408,8 @@ def _report_from_history(
     llm_adapter: str | None = None,
     use_vision: bool = False,
     cdp_endpoint_present: bool = False,
+    fallback_profile_used: bool = False,
+    fallback_reason_code: str | None = None,
     step_payloads: list[dict[str, Any]] | None = None,
 ) -> BrowserUseExecutionReport:
     items = list(getattr(history, "history", []) or [])
@@ -421,6 +429,8 @@ def _report_from_history(
         llm_adapter=llm_adapter,
         use_vision=use_vision,
         cdp_endpoint_present=cdp_endpoint_present,
+        fallback_profile_used=fallback_profile_used,
+        fallback_reason_code=fallback_reason_code,
         artifact_payloads=payloads,
     )
 

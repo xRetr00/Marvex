@@ -95,6 +95,52 @@ function Write-Success {
     Write-Host "✓ $Message" -ForegroundColor Green
 }
 
+function Write-Sha256-Manifest {
+    param(
+        [string]$RootPath,
+        [string]$OutputPath,
+        [string[]]$Include
+    )
+
+    if (-not (Test-Path -LiteralPath $RootPath)) {
+        Write-Error-Exit "Cannot write SHA manifest; root missing: $RootPath"
+    }
+
+    $resolvedRoot = (Resolve-Path -LiteralPath $RootPath).Path.TrimEnd('\')
+    $outputFull = [System.IO.Path]::GetFullPath($OutputPath)
+    $files = New-Object System.Collections.Generic.List[System.IO.FileInfo]
+
+    foreach ($item in $Include) {
+        $path = Join-Path $RootPath $item
+        if ($item -match '[\*\?]') {
+            Get-ChildItem -Path $path -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $files.Add($_) }
+        }
+        elseif (Test-Path -LiteralPath $path -PathType Container) {
+            Get-ChildItem -LiteralPath $path -File -Recurse -ErrorAction SilentlyContinue | ForEach-Object { $files.Add($_) }
+        }
+        elseif (Test-Path -LiteralPath $path -PathType Leaf) {
+            $files.Add((Get-Item -LiteralPath $path))
+        }
+    }
+
+    $lines = $files |
+        Where-Object { [System.IO.Path]::GetFullPath($_.FullName) -ne $outputFull } |
+        Sort-Object FullName -Unique |
+        ForEach-Object {
+            $full = [System.IO.Path]::GetFullPath($_.FullName)
+            $relative = [System.IO.Path]::GetRelativePath($resolvedRoot, $full).Replace('\', '/')
+            $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $full).Hash.ToLowerInvariant()
+            "$hash  $relative"
+        }
+
+    if (-not $lines -or $lines.Count -eq 0) {
+        Write-Error-Exit "No files matched for SHA manifest: $OutputPath"
+    }
+
+    Set-Content -LiteralPath $OutputPath -Value $lines -Encoding ASCII
+    Write-Success "SHA256 manifest written: $OutputPath"
+}
+
 function Invoke-NpmCi {
     param([string]$Label)
 
@@ -339,6 +385,11 @@ function Prepare-Runtime-Resources {
         Write-Error-Exit "Playwright MCP install is missing cli.js: $playwrightMcpCli"
     }
     Write-Success "node.exe and @playwright/mcp@$PlaywrightMcpVersion staged for bundling"
+
+    Write-Sha256-Manifest `
+        -RootPath $RuntimeDir `
+        -OutputPath (Join-Path $RuntimeDir "marvex-runtime.sha256") `
+        -Include @("marvex-*.whl", "wheels", "uv.exe", "node.exe", "playwright-mcp")
     
     Write-Host ""
 }
@@ -378,6 +429,10 @@ function Build-Frontend {
         Write-Error-Exit "Control Plane dist missing built assets"
     }
     Write-Success "Control Plane dist verified"
+    Write-Sha256-Manifest `
+        -RootPath $cpDist `
+        -OutputPath (Join-Path $cpDist "marvex-control-plane.sha256") `
+        -Include @("index.html", "assets")
     
     # Build Shell Frontend
     Push-Location $ShellDir
@@ -437,6 +492,10 @@ function Verify-Frontend-Assets {
     
     Write-Host "  JavaScript files: $jsFiles" -ForegroundColor Cyan
     Write-Host "  CSS files: $cssFiles" -ForegroundColor Cyan
+    Write-Sha256-Manifest `
+        -RootPath $distPath `
+        -OutputPath (Join-Path $distPath "marvex-shell-frontend.sha256") `
+        -Include @("index.html", "assets")
     
     Write-Host ""
 }
@@ -463,6 +522,10 @@ function Prepare-Service-Binary {
         $svcDst = Join-Path $binDir "marvex-service-x86_64-pc-windows-msvc.exe"
         Copy-Item -Path $svcSrc -Destination $svcDst -Force
         Write-Success "marvex-service staged for bundling"
+        Write-Sha256-Manifest `
+            -RootPath $binDir `
+            -OutputPath (Join-Path $binDir "marvex-service.sha256") `
+            -Include @("marvex-service-*.exe")
     }
     finally {
         Pop-Location

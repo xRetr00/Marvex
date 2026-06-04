@@ -134,6 +134,17 @@ exit /b 0
 echo [OK] %~1
 exit /b 0
 
+:WriteSha256Manifest
+set "ShaRoot=%~1"
+set "ShaOut=%~2"
+set "ShaInclude=%~3"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "$ErrorActionPreference='Stop'; $root=(Resolve-Path -LiteralPath $env:ShaRoot).Path.TrimEnd('\'); $out=[IO.Path]::GetFullPath($env:ShaOut); $files=New-Object 'System.Collections.Generic.List[System.IO.FileInfo]'; foreach($item in $env:ShaInclude.Split(';')){ $path=Join-Path $env:ShaRoot $item; if($item -match '[*?]'){ Get-ChildItem -Path $path -File -Recurse -ErrorAction SilentlyContinue | %% { $files.Add($_) } } elseif(Test-Path -LiteralPath $path -PathType Container){ Get-ChildItem -LiteralPath $path -File -Recurse -ErrorAction SilentlyContinue | %% { $files.Add($_) } } elseif(Test-Path -LiteralPath $path -PathType Leaf){ $files.Add((Get-Item -LiteralPath $path)) } }; $lines=$files | Where-Object { [IO.Path]::GetFullPath($_.FullName) -ne $out } | Sort-Object FullName -Unique | %% { $full=[IO.Path]::GetFullPath($_.FullName); $rel=[IO.Path]::GetRelativePath($root,$full).Replace('\','/'); $hash=(Get-FileHash -Algorithm SHA256 -LiteralPath $full).Hash.ToLowerInvariant(); \"$hash  $rel\" }; if(-not $lines){ throw \"No files matched for SHA manifest: $out\" }; Set-Content -LiteralPath $out -Value $lines -Encoding ASCII; Write-Host \"[OK] SHA256 manifest written: $out\""
+if errorlevel 1 (
+    call :Die "Failed to write SHA256 manifest: %ShaOut%"
+    exit /b 1
+)
+exit /b 0
+
 :Die
 echo [ERROR] %~1
 exit /b 1
@@ -347,6 +358,9 @@ if errorlevel 1 (
 )
 call :WriteSuccess "uv.exe copied to %RuntimeDir%"
 
+call :WriteSha256Manifest "%RuntimeDir%" "%RuntimeDir%\marvex-runtime.sha256" "marvex-*.whl;wheels;uv.exe"
+if errorlevel 1 exit /b 1
+
 echo.
 exit /b 0
 
@@ -392,6 +406,8 @@ if errorlevel 1 (
     exit /b 1
 )
 call :WriteSuccess "Control Plane dist verified"
+call :WriteSha256Manifest "%ControlPlaneDir%\dist" "%ControlPlaneDir%\dist\marvex-control-plane.sha256" "index.html;assets"
+if errorlevel 1 exit /b 1
 
 pushd "%ShellDir%"
 call :WriteStep "Installing Shell dependencies..." 3 6
@@ -455,6 +471,8 @@ for /f %%A in ('dir /b /a-d "%distPath%\assets\*.css" 2^>nul ^| "%SystemRoot%\Sy
 
 echo   JavaScript files: !jsCount!
 echo   CSS files: !cssCount!
+call :WriteSha256Manifest "%distPath%" "%distPath%\marvex-shell-frontend.sha256" "index.html;assets"
+if errorlevel 1 exit /b 1
 echo.
 exit /b 0
 
@@ -496,6 +514,8 @@ if not exist "%ShellTauriDir%\binaries" mkdir "%ShellTauriDir%\binaries"
 copy /y "%ShellTauriDir%\target\release\marvex-service.exe" "%ShellTauriDir%\binaries\marvex-service-x86_64-pc-windows-msvc.exe" >nul
 popd
 call :WriteSuccess "marvex-service staged for bundling"
+call :WriteSha256Manifest "%ShellTauriDir%\binaries" "%ShellTauriDir%\binaries\marvex-service.sha256" "marvex-service-*.exe"
+if errorlevel 1 exit /b 1
 goto :eof
 
 :BuildTauriApp

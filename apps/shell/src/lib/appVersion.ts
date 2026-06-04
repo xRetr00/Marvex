@@ -1,0 +1,1 @@
+export const MARVEX_APP_VERSION = __MARVEX_APP_VERSION__;

@@ -25,7 +25,7 @@ use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
 const MANIFEST_SCHEMA_VERSION: &str = "1";
-const MARVEX_VERSION: &str = "0.2.0";
+const MARVEX_VERSION: &str = "0.2.1";
 const CORE_PORT: u16 = 8765;
 const CONTROL_PORT: u16 = 8766;
 const RUNTIME_WHEEL_MARKER_FILE: &str = "wheel.marker";

@@ -10,7 +10,7 @@ from packages.contracts import ErrorEnvelope, ProviderResponse
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-provider-worker"
-SERVICE_VERSION = "0.2.0"
+SERVICE_VERSION = "0.2.1"
 
 
 class ProviderWorkerModel(BaseModel):

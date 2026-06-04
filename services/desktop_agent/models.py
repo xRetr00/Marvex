@@ -10,7 +10,7 @@ from packages.desktop_agent_runtime.models import DesktopPerceptionSnapshot, Des
 
 SCHEMA_VERSION = "0.1.1-draft"
 SERVICE_NAME = "marvex-desktop-agent"
-SERVICE_VERSION = "0.2.0"
+SERVICE_VERSION = "0.2.1"
 
 
 class DesktopAgentServiceModel(BaseModel):
