@@ -274,6 +274,24 @@ def test_continuous_loop_services_queued_manual_listen_without_wake(tmp_path: Pa
     assert completed.summary.get("normalized_transcript_text") == "what time is it"
 
 
+def test_manual_listen_runs_even_while_playback_suppresses_capture(tmp_path: Path):
+    """Free-hand Voice Mode: an explicit user listen must fire even when the
+    half-duplex echo gate is suppressing wake/auto-capture (e.g. right after the
+    listening cue plays). Regression for free-hand voice silently doing nothing."""
+
+    controller, stt_calls = _controller(tmp_path)
+    controller._playback_active = True  # echo gate would otherwise block capture
+    controller._manual_listen_trace_id = "trace-manual-suppressed"
+    script = [_frame("s", i) for i in range(4)] + [_frame("q", i) for i in range(4)]
+    capture = FakeContinuousCapture(script)
+
+    controller.run_wake_listen_loop(capture=capture, should_stop=lambda: capture.remaining() == 0, frames_per_decode=3, idle_timeout=0.0)
+
+    assert stt_calls, "manual listen must capture + run STT even while playback suppresses ambient capture"
+    completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
+    assert completed.summary.get("normalized_transcript_text") == "what time is it"
+
+
 def test_queued_manual_listen_rejects_short_vad_blip_before_stt(tmp_path: Path):
     controller, stt_calls = _controller(tmp_path)
     controller.config = controller.config.model_copy(update={"vad": controller.config.vad.model_copy(update={"min_speech_ms": 300})})

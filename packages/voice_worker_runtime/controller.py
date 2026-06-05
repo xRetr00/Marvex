@@ -862,26 +862,31 @@ class VoiceWorkerController:
                 if frame is None:
                     continue
                 frames_read += 1
-                # Half-duplex: while Marvex is speaking (or during the brief echo
-                # tail after), drop mic frames entirely instead of feeding them to
-                # wake detection or command capture. Otherwise the loudspeaker's own
-                # TTS is detected/transcribed and looped back as a user turn.
-                if self._capture_suppressed():
-                    batch = []
-                    recent_frames.clear()
-                    continue
+                # An explicit, user-initiated listen (free-hand Voice Mode / mic
+                # button) is the user CHOOSING to talk - it must always run, even
+                # right after the listening cue, so it is checked BEFORE the
+                # half-duplex echo gate. Gating it behind playback suppression is
+                # what made free-hand voice silently do nothing.
                 with _locked():
                     manual_trace_id = self._take_manual_listen_trace_id()
-                    if manual_trace_id:
-                        _emit({"event": "manual_listen_started", "trace_id": manual_trace_id})
+                if manual_trace_id:
+                    _emit({"event": "manual_listen_started", "trace_id": manual_trace_id})
+                    with _locked():
                         self._run_post_wake_capture(
                             parent_trace_id=manual_trace_id,
                             read_frame=reader_with_first(frame),
                             on_diagnostic=on_diagnostic,
                             ambient_rms=ambient_ema,
                         )
-                        batch = []
-                        continue
+                    batch = []
+                    continue
+                # Half-duplex: while Marvex is speaking (or during the brief echo
+                # tail after), drop mic frames before WAKE detection / auto-capture
+                # so the loudspeaker's own TTS is never detected or looped back.
+                if self._capture_suppressed():
+                    batch = []
+                    recent_frames.clear()
+                    continue
                 if not dumped:
                     pcm = getattr(frame, "pcm", b"") or b""
                     dump_buffer.append(pcm)
