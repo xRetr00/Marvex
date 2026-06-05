@@ -29,7 +29,7 @@ class VoiceModelInstallRequest(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     model_id: str = Field(..., min_length=1)
     backend_id: str = Field(..., min_length=1)
-    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad", "langid"]
     relative_path: str = Field(..., min_length=1)
     checksum_sha256: str | None = None
     explicit_user_triggered: Literal[True] = True
@@ -52,7 +52,7 @@ class VoiceModelDownloadRequest(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     model_id: str = Field(..., min_length=1)
     backend_id: str = Field(..., min_length=1)
-    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad", "langid"]
     source_uri: str = Field(..., min_length=1)
     relative_path: str = Field(..., min_length=1)
     install_relative_path: str | None = Field(default=None, min_length=1)
@@ -79,13 +79,17 @@ class VoiceModelCatalogAsset(VoiceRuntimeModel):
     schema_version: str = SCHEMA_VERSION
     model_id: str
     backend_id: str
-    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad", "langid"]
     source_uri: str
     relative_path: str
     install_relative_path: str | None = None
     extract: bool = False
     checksum_sha256: str | None = None
     required: bool = True
+    # Bundled assets ship inside the installer and are seeded into the writable
+    # asset root on first launch, so they are install-from-bundle, never a
+    # runtime download (the download catalog filters them out).
+    bundled: bool = False
     explicit_user_triggered: Literal[True] = True
     raw_payload_persisted: Literal[False] = False
 
@@ -389,10 +393,31 @@ def load_voice_model_catalog(manifest_path: Path | None = None) -> VoiceModelCat
                 extract=bool(item.get("extract", False)),
                 checksum_sha256=item.get("checksum_sha256") or None,
                 required=bool(item.get("required", True)),
+                bundled=bool(item.get("bundled", False)),
                 explicit_user_triggered=True,
             )
         )
     return VoiceModelCatalog(assets=tuple(assets))
+
+
+def bundled_install_relative_paths(catalog: VoiceModelCatalog | None = None) -> tuple[str, ...]:
+    """Distinct install paths of assets shipped in the installer (seeded, not downloaded)."""
+
+    paths: list[str] = []
+    for asset in (catalog or load_voice_model_catalog()).assets:
+        if not asset.bundled:
+            continue
+        install_relative_path = asset.install_relative_path or asset.relative_path
+        if install_relative_path not in paths:
+            paths.append(install_relative_path)
+    return tuple(paths)
+
+
+def downloadable_voice_model_catalog(catalog: VoiceModelCatalog | None = None) -> VoiceModelCatalog:
+    """Catalog of assets the user may download at runtime (bundled ones excluded)."""
+
+    source = catalog or load_voice_model_catalog()
+    return VoiceModelCatalog(assets=tuple(asset for asset in source.assets if not asset.bundled))
 
 
 def _voice_model_manifest_path(manifest_path: Path | None = None) -> Path:

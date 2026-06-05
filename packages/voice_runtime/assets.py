@@ -11,7 +11,7 @@ from packages.voice_runtime.config import VoiceInstallStatus
 class VoiceModelRef(VoiceRuntimeModel):
     model_id: str = Field(..., min_length=1)
     backend_id: str = Field(..., min_length=1)
-    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad", "langid"]
 
 
 class VoiceModelManifest(VoiceRuntimeModel):
@@ -33,7 +33,7 @@ class VoiceModelManifest(VoiceRuntimeModel):
 class VoiceDownloadRequest(VoiceRuntimeModel):
     model_id: str = Field(..., min_length=1)
     backend_id: str = Field(..., min_length=1)
-    model_kind: Literal["stt", "tts_voice", "wakeword", "vad"]
+    model_kind: Literal["stt", "tts_voice", "wakeword", "vad", "langid"]
     source_uri: str = Field(..., min_length=1)
     explicit_user_triggered: Literal[True] = True
 

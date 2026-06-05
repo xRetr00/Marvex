@@ -238,5 +238,9 @@ def test_control_plane_voice_worker_exposes_safe_model_catalog() -> None:
 
     assert status == "200 OK"
     assert catalog["raw_payload_persisted"] is False
-    assert any(asset["model_id"] == "moonshine-v2" for asset in catalog["assets"])
+    # Runtime download catalog: downloadable models are present, but bundled
+    # assets (STT + wakeword, shipped in the installer) are filtered out.
+    assert any(asset["model_id"] == "kokoro-af-heart" for asset in catalog["assets"])
+    assert not any(asset["model_id"] == "moonshine-v2" for asset in catalog["assets"])
+    assert not any(asset["model_id"] == "hey-marvex" for asset in catalog["assets"])
     assert all(asset["explicit_user_triggered"] is True for asset in catalog["assets"])
