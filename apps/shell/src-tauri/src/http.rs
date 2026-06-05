@@ -86,6 +86,17 @@ impl LoopbackHttpClient {
         }
         response_from_request(req).await
     }
+
+    async fn delete(&self, path: &str, token: Option<&str>) -> Result<HttpResponse, String> {
+        let mut req = self
+            .client
+            .delete(self.url(path)?)
+            .header("Accept", "application/json");
+        if let Some(token) = token {
+            req = req.bearer_auth(token);
+        }
+        response_from_request(req).await
+    }
 }
 
 async fn response_from_request(req: reqwest::RequestBuilder) -> Result<HttpResponse, String> {
@@ -132,6 +143,18 @@ pub async fn http_post_json_with_timeout(
 ) -> Result<HttpResponse, String> {
     LoopbackHttpClient::new(host, port, timeout)?
         .post_json(path, token, body)
+        .await
+}
+
+pub async fn http_delete_with_timeout(
+    host: &str,
+    port: u16,
+    path: &str,
+    token: Option<&str>,
+    timeout: Duration,
+) -> Result<HttpResponse, String> {
+    LoopbackHttpClient::new(host, port, timeout)?
+        .delete(path, token)
         .await
 }
 

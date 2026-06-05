@@ -383,6 +383,87 @@ fn cancel_active_chat_turn(state: tauri::State<'_, Mutex<ShellState>>) -> Result
     }))
 }
 
+#[tauri::command]
+async fn cancel_provider_response(
+    response_id: String,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
+    let response_id = validate_provider_response_id(response_id)?;
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
+    let path = format!("/v1/responses/{}/cancel", percent_encode_path_segment(&response_id));
+    let response = http::http_post_json_with_timeout(
+        "127.0.0.1",
+        8765,
+        &path,
+        Some(&token),
+        &json!({}),
+        http::DEFAULT_HTTP_TIMEOUT,
+    )
+    .await?;
+    serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
+#[tauri::command]
+async fn delete_provider_response(
+    response_id: String,
+    state: tauri::State<'_, Mutex<ShellState>>,
+) -> Result<Value, String> {
+    let response_id = validate_provider_response_id(response_id)?;
+    let token = {
+        state
+            .lock()
+            .map_err(|_| "shell state unavailable".to_string())?
+            .token
+            .clone()
+    };
+    let path = format!("/v1/responses/{}", percent_encode_path_segment(&response_id));
+    let response = http::http_delete_with_timeout(
+        "127.0.0.1",
+        8765,
+        &path,
+        Some(&token),
+        http::DEFAULT_HTTP_TIMEOUT,
+    )
+    .await?;
+    serde_json::from_str(&response.body).map_err(|err| format!("invalid Core response: {err}"))
+}
+
+fn validate_provider_response_id(response_id: String) -> Result<String, String> {
+    let cleaned = response_id.trim().to_string();
+    if cleaned.is_empty() {
+        return Err("provider response id must be non-empty".to_string());
+    }
+    if !cleaned
+        .chars()
+        .all(|ch| ch.is_ascii_alphanumeric() || matches!(ch, '.' | ':' | '-' | '_'))
+    {
+        return Err("provider response id contains unsupported characters".to_string());
+    }
+    Ok(cleaned)
+}
+
+fn percent_encode_path_segment(value: &str) -> String {
+    value
+        .bytes()
+        .flat_map(|byte| match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'.'
+            | b':'
+            | b'-'
+            | b'_' => vec![byte as char],
+            _ => format!("%{byte:02X}").chars().collect(),
+        })
+        .collect()
+}
+
 fn session_id_from_metadata(metadata: &Option<Value>) -> String {
     if let Some(Value::Object(map)) = metadata {
         if let Some(Value::String(id)) = map.get("session_id") {
@@ -839,6 +920,8 @@ pub fn run() {
             submit_chat_turn,
             submit_chat_turn_stream,
             cancel_active_chat_turn,
+            cancel_provider_response,
+            delete_provider_response,
             resume_approval_turn,
             create_chat_session,
             list_chat_sessions,
