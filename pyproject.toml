@@ -23,7 +23,6 @@ dependencies = [
   "fastembed>=0.4.0,<1",
   "fastapi>=0.135,<0.137",
   "moonshine-voice==0.0.59",
-  "funasr==1.3.1",
   "speechbrain==1.1.0",
   "sherpa-onnx==1.13.2",
   "sentencepiece==0.2.1",
@@ -38,7 +37,6 @@ dependencies = [
   "pywinauto>=0.6; sys_platform == \"win32\"",
   "uiautomation>=2.0; sys_platform == \"win32\"",
   "uvicorn==0.47.0",
-  "aliyun-python-sdk-core==2.13.10",
 ]
 
 [project.scripts]
@@ -49,6 +47,9 @@ marvex-tool-worker = "services.tool_worker.main:main"
 marvex-voice-worker = "services.voice_worker.main:main"
 
 [project.optional-dependencies]
+sensevoice = [
+  "funasr==1.3.1",
+]
 test = [
   "pytest>=9.0.3,<10",
 ]
