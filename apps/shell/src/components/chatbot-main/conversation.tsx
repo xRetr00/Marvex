@@ -49,7 +49,7 @@ export function ChatbotScrollButton({ targetRef }: { targetRef: RefObject<HTMLDi
   return (
     <Button
       aria-label="Scroll to bottom"
-      className="absolute bottom-4 left-1/2 z-10 h-8 -translate-x-1/2 rounded-full border-border/50 bg-card/90 px-3 shadow-[var(--shadow-float)] backdrop-blur-lg"
+      className="absolute bottom-28 left-1/2 z-10 h-8 -translate-x-1/2 rounded-full border-border/50 bg-card/90 px-3 shadow-[var(--shadow-float)] backdrop-blur-lg md:bottom-32"
       onClick={() => {
         const node = targetRef.current;
         if (!node) return;

@@ -19,7 +19,7 @@ export const VOICE_THINKING_FILLERS = [
   "Hmm, let me noodle on this…",
   "Spinning up the gears…",
   "Alright, let me dig into that…",
-  "One sec, doing the smart thing…",
+  "let's see what we got here…",
   "Putting the pieces together…",
   "Let me chew on that for a moment…",
 ] as const;

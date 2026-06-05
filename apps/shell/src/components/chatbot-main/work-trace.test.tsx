@@ -22,6 +22,11 @@ describe("WorkTrace", () => {
     expect(screen.getByText("Thinking")).toBeInTheDocument();
   });
 
+  it("opens reasoning details by default when provider reasoning text exists", () => {
+    render(<WorkTrace streaming={false} startedAt={0} endedAt={1000} thinking="Plan the next tool call." activity={[]} />);
+    expect(screen.getByText("Plan the next tool call.")).toBeInTheDocument();
+  });
+
   it("renders a 'Worked for' summary with the elapsed duration when done", () => {
     render(
       <WorkTrace

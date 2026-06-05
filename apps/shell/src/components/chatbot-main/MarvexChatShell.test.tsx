@@ -217,6 +217,24 @@ describe("MarvexChatShell", () => {
     expect(onStop).toHaveBeenCalledTimes(1);
   });
 
+  it("keeps the reasoning selector visible when only the active effort is known", async () => {
+    const onSelectReasoningEffort = vi.fn();
+    render(
+      <MarvexChatShell
+        messages={[]}
+        pending={false}
+        onSubmit={vi.fn()}
+        reasoningEffort="medium"
+        reasoningEffortOptions={[]}
+        onSelectReasoningEffort={onSelectReasoningEffort}
+        renderAssistantOrb={() => <span />}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Reasoning effort: Medium" }));
+    expect(screen.getByRole("button", { name: "Medium" })).toBeInTheDocument();
+  });
+
   it("uses total response tokens for context-window usage when available", () => {
     render(
       <MarvexChatShell

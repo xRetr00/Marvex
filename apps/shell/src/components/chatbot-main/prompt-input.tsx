@@ -75,6 +75,11 @@ export function ChatbotPromptInput({
   }, [value, localValue]);
 
   const textValue = value ?? localValue;
+  const effectiveReasoningEffortOptions = reasoningEffortOptions.length > 0
+    ? Array.from(new Set(reasoningEffort ? [reasoningEffort, ...reasoningEffortOptions] : reasoningEffortOptions))
+    : reasoningEffort
+      ? [reasoningEffort]
+      : [];
   const setTextValue = (next: string) => {
     if (value === undefined) {
       setLocalValue(next);
@@ -181,11 +186,11 @@ export function ChatbotPromptInput({
                 </div>
               ) : null}
             </div>
-            {reasoningEffortOptions.length > 0 ? (
+            {effectiveReasoningEffortOptions.length > 0 ? (
               (() => {
                 // Show the toggle for any reasoning-capable model, even when no
                 // effort is set yet (so an OFF model still surfaces an ON option).
-                const currentEffort = reasoningEffort || reasoningEffortOptions[0];
+                const currentEffort = reasoningEffort || effectiveReasoningEffortOptions[0];
                 return (
                   <div className="relative">
                     <Button
@@ -200,7 +205,7 @@ export function ChatbotPromptInput({
                     </Button>
                     {reasoningOpen ? (
                       <div className="absolute bottom-9 left-0 z-30 min-w-32 rounded-lg border border-border bg-popover p-1 text-xs text-popover-foreground shadow-[var(--shadow-float)]">
-                        {reasoningEffortOptions.map((effort) => (
+                        {effectiveReasoningEffortOptions.map((effort) => (
                           <button
                             key={effort}
                             type="button"

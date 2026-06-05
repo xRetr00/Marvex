@@ -103,10 +103,11 @@ export function WorkTrace({
       : "Working";
 
   const hasDetail = Boolean(thinking) || activity.length > 0;
+  const openByDefault = Boolean(thinking) || (streaming && thinkingStreaming);
 
   return (
     <Collapsible
-      defaultOpen={false}
+      defaultOpen={openByDefault}
       className="not-prose w-full max-w-[min(100%,72ch)] overflow-hidden rounded-xl border border-border/45 bg-card/35 shadow-[var(--shadow-card)] backdrop-blur-sm"
     >
       <CollapsibleTrigger
@@ -139,7 +140,7 @@ export function WorkTrace({
         <CollapsibleContent className="data-[state=closed]:animate-out data-[state=open]:animate-in data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0">
           <div className="space-y-2 border-t border-border/40 px-3 py-2.5">
             {thinking ? (
-              <Reasoning isStreaming={streaming && thinkingStreaming} defaultOpen={streaming && thinkingStreaming}>
+              <Reasoning isStreaming={streaming && thinkingStreaming} defaultOpen={Boolean(thinking)}>
                 <ReasoningTrigger />
                 <ReasoningContent>{thinking}</ReasoningContent>
               </Reasoning>

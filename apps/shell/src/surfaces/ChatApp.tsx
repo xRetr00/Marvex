@@ -9,7 +9,7 @@ import { displayDetail, idleAssistantState, normalizeAssistantState, type Assist
 import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "@/lib/turnOutcome";
 import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
-import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog } from "@/lib/providerControlClient";
+import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog, type ProviderRow } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
 import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
@@ -99,10 +99,61 @@ function agentStateFromStatus(status: AssistantStatusKind): AgentOrbState {
 }
 
 const COMMENTARY_STATUSES = new Set(["thinking", "working", "using_tools", "mcp", "skills", "searching_web", "asking", "needs_approval"]);
+const RESPONSES_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 function statusActivityName(event: ChatStatusEvent): string | null {
   const status = String(event.status ?? "").trim();
   return COMMENTARY_STATUSES.has(status) ? `status.${status}` : null;
+}
+
+function modelRuntimeMetadata(provider: ProviderRow, model: string): {
+  contextWindow?: number;
+  reasoningEffort?: string;
+  reasoningEffortOptions: string[];
+} {
+  const metadata = metadataForModel(provider, model);
+  const supportsReasoning = metadata?.supports_reasoning === true;
+  const metadataOptions = normalizeReasoningOptions(metadata?.reasoning_effort_options);
+  const current = normalizeReasoningEffort(provider.reasoning_effort);
+  const fallback = supportsReasoning && metadataOptions.length === 0 ? ["none", "low", "medium", "high"] : [];
+  const options = dedupeStrings([...metadataOptions, ...fallback, ...(supportsReasoning && current ? [current] : [])]);
+  return {
+    contextWindow: metadata?.context_window,
+    reasoningEffort: current || options[0],
+    reasoningEffortOptions: options,
+  };
+}
+
+function metadataForModel(provider: ProviderRow, model: string): NonNullable<ProviderRow["model_metadata"]>[string] | undefined {
+  const metadata = provider.model_metadata;
+  if (!metadata) return undefined;
+  if (metadata[model]) return metadata[model];
+  const lowered = model.toLowerCase();
+  const exactCase = Object.entries(metadata).find(([key]) => key.toLowerCase() === lowered)?.[1];
+  if (exactCase) return exactCase;
+  const tail = lowered.split("/").pop();
+  if (!tail) return undefined;
+  return Object.entries(metadata).find(([key]) => key.toLowerCase().split("/").pop() === tail)?.[1];
+}
+
+function normalizeReasoningOptions(values: unknown): string[] {
+  if (!Array.isArray(values)) return [];
+  return dedupeStrings(values.map((value) => normalizeReasoningEffort(value)).filter(Boolean));
+}
+
+function normalizeReasoningEffort(value: unknown): string {
+  const cleaned = String(value ?? "").trim().toLowerCase();
+  const aliases: Record<string, string> = {
+    off: "none",
+    on: "medium",
+    max: "xhigh",
+  };
+  const normalized = aliases[cleaned] ?? cleaned;
+  return RESPONSES_REASONING_EFFORTS.has(normalized) ? normalized : "";
+}
+
+function dedupeStrings(values: string[]): string[] {
+  return Array.from(new Set(values.filter(Boolean)));
 }
 
 export function ChatApp() {
@@ -744,15 +795,13 @@ export function ChatApp() {
         ...(provider.models ?? []),
       ].filter((model): model is string => Boolean(model?.trim()))));
       return models.map((model) => ({
+        ...modelRuntimeMetadata(provider, model),
         id: `${provider.provider_id}:${model}`,
         name: model,
         provider: provider.provider_id.split("_")[0],
         active: provider.provider_id === providers?.active_provider_id && model === provider.active_model,
         providerId: provider.provider_id,
         model,
-        contextWindow: provider.model_metadata?.[model]?.context_window,
-        reasoningEffort: provider.reasoning_effort,
-        reasoningEffortOptions: provider.model_metadata?.[model]?.reasoning_effort_options ?? [],
       }));
     });
   }, [providers]);
@@ -769,15 +818,13 @@ export function ChatApp() {
     const activeModel = activeProvider?.active_model?.trim();
     if (!activeProvider || !activeModel) return undefined;
     return {
+      ...modelRuntimeMetadata(activeProvider, activeModel),
       id: `${activeProvider.provider_id}:${activeModel}`,
       name: activeModel,
       provider: activeProvider.provider_id.split("_")[0],
       active: true,
       providerId: activeProvider.provider_id,
       model: activeModel,
-      contextWindow: activeProvider.model_metadata?.[activeModel]?.context_window,
-      reasoningEffort: activeProvider.reasoning_effort,
-      reasoningEffortOptions: activeProvider.model_metadata?.[activeModel]?.reasoning_effort_options ?? [],
     };
   }, [modelOptions, providers]);
 
