@@ -24,6 +24,7 @@ use windows::Win32::System::Threading::PROCESS_CREATION_FLAGS;
 
 const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 const CREATE_NEW_PROCESS_GROUP: u32 = 0x0000_0200;
+const DETACHED_PROCESS: u32 = 0x0000_0008;
 const MANIFEST_SCHEMA_VERSION: &str = "1";
 const MARVEX_VERSION: &str = "0.2.1";
 const CORE_PORT: u16 = 8765;
@@ -871,12 +872,14 @@ fn default_file_capability_root(data_dir: &Path) -> PathBuf {
         .unwrap_or_else(|| data_dir.to_path_buf())
 }
 
-fn spawn_wrapped_child(command: Command) -> std::io::Result<Box<dyn ChildWrapper>> {
+fn spawn_wrapped_child(mut command: Command) -> std::io::Result<Box<dyn ChildWrapper>> {
+    #[cfg(windows)]
+    command.creation_flags(CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP);
     let mut command = CommandWrap::from(command);
     #[cfg(windows)]
     {
         command.wrap(CreationFlags(PROCESS_CREATION_FLAGS(
-            CREATE_NO_WINDOW | CREATE_NEW_PROCESS_GROUP,
+            CREATE_NO_WINDOW | DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
         )));
         command.wrap(JobObject);
     }
