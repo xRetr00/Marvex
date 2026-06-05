@@ -1,235 +1,116 @@
-# Version Management Guide
+# Marvex Version Bump Checklist
 
-## Overview
+This document lists the files that must be reviewed for every Marvex application
+version bump. Keep runtime code centralized where possible, but still update the
+static metadata files required by Python packaging, Tauri, Cargo, and npm.
 
-Marvex uses a **centralized version file** (`version.toml`) as the single source of truth for all version information across the project. This eliminates manual version bumping across multiple files while keeping complexity minimal.
+## Source Of Truth
 
----
+Update this first:
 
-## Central Version File
+| File | Field |
+| --- | --- |
+| `version.toml` | `[app].version` |
 
-**Location**: `version.toml` (repo root)
+The shell UI reads this value at Vite build time. The installer scripts also read
+this value when building packages and installers.
 
-**Contents**:
-```toml
-[app]
-version = "0.1.0"
-wheel_name = "marvex-runtime.whl"
-```
+## Required Manual Updates
 
-This file includes detailed inline comments explaining:
-- What needs to be manually synced on version bumps
-- Why manual sync is necessary (external tool constraints)
-- Which build scripts read automatically from this file
+These files contain first-party app/package metadata and should match
+`version.toml`.
 
----
+| Area | File | Field |
+| --- | --- | --- |
+| Python package metadata | `pyproject.toml` | `[project].version` |
+| Python runtime constant | `packages/version.py` | `MARVEX_VERSION` |
+| Python lock metadata | `uv.lock` | `[[package]] name = "marvex"` version |
+| Shell npm package | `apps/shell/package.json` | `version` |
+| Shell npm lock | `apps/shell/package-lock.json` | root package versions |
+| Control Plane npm package | `apps/control_plane_web/package.json` | `version` |
+| Control Plane npm lock | `apps/control_plane_web/package-lock.json` | root package versions |
+| Tauri app config | `apps/shell/src-tauri/tauri.conf.json` | `version` |
+| Rust package metadata | `apps/shell/src-tauri/Cargo.toml` | `[package].version` |
+| Rust lock metadata | `apps/shell/src-tauri/Cargo.lock` | `[[package]] name = "marvex-shell"` version |
+| Rust runtime manifest version | `apps/shell/src-tauri/src/supervisor.rs` | `MARVEX_VERSION` |
 
-## Version Bump Workflow
+## Python Runtime Consumers
 
-### Step 1: Update `version.toml`
+Do not put version literals in service modules. They should import the packaged
+constant from `packages.version`.
 
-Edit `version.toml` and change the version:
+Current Python consumers include:
 
-```toml
-[app]
-version = "0.1.1"  # Changed from 0.1.0
-wheel_name = "marvex-runtime.whl"
-```
+| File | Expected pattern |
+| --- | --- |
+| `apps/cli/main.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `packages/core/service.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `packages/local_api/runner.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `packages/local_service_startup/startup.py` | `from packages.version import MARVEX_VERSION as DEFAULT_SERVICE_VERSION` |
+| `packages/voice_worker_runtime/models.py` | `from packages.version import MARVEX_VERSION` |
+| `services/desktop_agent/models.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `services/intent_worker/models.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `services/provider_worker/models.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `services/tool_worker/models.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
+| `services/voice_worker/models.py` | `from packages.version import MARVEX_VERSION as SERVICE_VERSION` |
 
-### Step 2: Manually Sync Three Files
+## Build Scripts
 
-These tools require static version files at build time and cannot read from external sources:
+These should not need version edits during a bump:
 
-#### File 1: `pyproject.toml`
-**Line 7**: Update the version
-```toml
-version = "0.1.1"  # Was: "0.1.0"
-```
+| File | Behavior |
+| --- | --- |
+| `build-installer.ps1` | Reads `version.toml`; writes SHA manifests for packaged artifacts |
+| `build-installer.bat` | Reads `version.toml`; writes SHA manifests for packaged artifacts |
+| `apps/shell/vite.config.ts` / `apps/shell/vite.config.js` | Reads `version.toml` and injects `__MARVEX_APP_VERSION__` |
+| `apps/shell/src/lib/appVersion.ts` | Exposes the injected shell UI version |
 
-#### File 2: `apps/shell/src-tauri/tauri.conf.json`
-**Line 4**: Update the version
-```json
-"version": "0.1.1",  // Was: "0.1.0"
-```
+## Tests To Review
 
-#### File 3: `apps/shell/src-tauri/Cargo.toml`
-**Line 3**: Update the version
-```toml
-version = "0.1.1"  # Was: "0.1.0"
-```
+If a test asserts the exact app version, update it or change it to compare
+against the central source.
 
-### Step 3: Build
+Known exact-version tests:
 
-Run the build script normally:
-```powershell
-.\build-installer.ps1
-```
+| File | Check |
+| --- | --- |
+| `apps/shell/src/lib/appVersion.test.ts` | Expects the shell injected version |
+| `tests/test_python_runtime_version.py` | Expects `packages.version.MARVEX_VERSION` |
 
-**What happens**:
-- Build scripts automatically read the new version from `version.toml`
-- Installers will be named `Marvex_0.1.1_x64-setup.exe` (etc.)
-- No further configuration needed
+## Generated Artifacts
 
----
+Do not hand-edit these. Regenerate them through the normal package/build tools.
 
-## Why This Approach?
+| Artifact | How it is produced |
+| --- | --- |
+| `dist/marvex-<version>-py3-none-any.whl` | `uv build --wheel` |
+| `apps/shell/dist/**` | `npm run build` in `apps/shell` |
+| `apps/control_plane_web/dist/**` | `npm run build` in `apps/control_plane_web` |
+| `apps/shell/runtime/marvex-runtime.sha256` | `build-installer.ps1` / `build-installer.bat` |
+| `apps/shell/dist/marvex-shell-frontend.sha256` | `build-installer.ps1` / `build-installer.bat` |
+| `apps/control_plane_web/dist/marvex-control-plane.sha256` | `build-installer.ps1` / `build-installer.bat` |
+| `apps/shell/src-tauri/binaries/marvex-service.sha256` | `build-installer.ps1` / `build-installer.bat` |
 
-### What Gets Automated ✅
+## Suggested Verification
 
-| File | Read By | Why Auto |
-|------|---------|----------|
-| `build-installer.ps1` | Build script | We control it—can read external file |
-| `build-installer.bat` | Build script | We control it—can read external file |
-
-### What Stays Manual ⚠️
-
-| File | Read By | Why Manual |
-|------|---------|-----------|
-| `pyproject.toml` | setuptools | Requires static version in file |
-| `tauri.conf.json` | Tauri CLI | Reads at build time; no hook point |
-| `Cargo.toml` | Rust compiler | Tied to Tauri version via build system |
-
-**Why don't we automate everything?**
-
-These are third-party tools with their own build systems:
-- **setuptools** (Python packaging) expects `pyproject.toml` to contain the definitive version
-- **Tauri** (desktop framework) reads `tauri.conf.json` during the build process
-- **Cargo** (Rust package manager) expects `Cargo.toml` to have the version
-
-Adding preprocessing hooks would require:
-- Complex build script logic
-- Hidden version injection (debugging nightmare)
-- Multiple points of failure during version bumps
-
-**The manual approach is simpler and more transparent**: 3 files, 30 seconds to update.
-
----
-
-## Build Script Integration
-
-### PowerShell (`build-installer.ps1`)
+Run focused checks after a version bump:
 
 ```powershell
-# Load version from central file
-$versionContent = Get-Content -LiteralPath "version.toml"
-$versionLine = $versionContent | Where-Object { $_ -match '^\s*version\s*=' } | Select-Object -First 1
-# Parse: version = "0.1.1"
-$AppVersion = $matches[1]  # ← Gets "0.1.1"
-
-# Display in validation output
-Write-Success "Marvex App Version: $AppVersion"
-
-# Used during wheel build, Tauri config, etc.
+uv run --frozen pytest tests/test_python_runtime_version.py -q
+npm test -- --run src/lib/appVersion.test.ts
 ```
 
-### Batch (`build-installer.bat`)
-
-```batch
-setlocal enabledelayedexpansion
-for /f "tokens=*" %%A in ('findstr "version = " "%VersionFile%"') do (
-    set "line=%%A"
-    if "!line:~0,1!" neq "#" (
-        for /f "tokens=3 delims="""  %%B in ("%%A") do (
-            set "AppVersion=%%B"
-        )
-    )
-)
-endlocal & set "AppVersion=%AppVersion%"
-
-REM Display in validation output
-echo [OK] Marvex App Version: !AppVersion!
-```
-
-Both scripts extract the version at startup and display it in validation output, confirming the correct version is being used.
-
----
-
-## Documentation Updates
-
-### For Current Version References
-
-Docs that reference the current application version should now point to this guide:
-
-```markdown
-See [Version Management Guide](../VERSION_MANAGEMENT.md) for the current version.
-```
-
-**Files updated**:
-- `docs/BUILD_GUIDE.md` — Build workflow documentation
-- `docs/MARVEX_INSTALLER_PACKAGING.md` — Packaging architecture
-- `docs/ARCHITECTURE_DECISIONS.md` — Design decisions
-
-### For Version-Specific Docs
-
-Version-specific documentation (e.g., "Marvex v1 Features", "v2 Migration Guide") are left unchanged:
-- These docs are intentionally version-specific
-- They should not reference the central version file
-
----
-
-## Quick Reference: Version Bump Checklist
-
-```
-□ Update version.toml (line 2)
-□ Update pyproject.toml (line 7)
-□ Update tauri.conf.json (line 4)
-□ Update Cargo.toml (line 3)
-□ Commit and push
-□ Run .\build-installer.ps1 to verify
-□ Test installer on clean Windows machine
-```
-
-**Time to complete**: ~1 minute
-
----
-
-## Troubleshooting
-
-### Build Script Can't Find version.toml
-
-**Symptom**: `✗ ERROR: version.toml not found`
-
-**Fix**: Ensure `version.toml` exists in the repo root (`D:\Marvex\version.toml`)
+Run packaging checks before producing an installer:
 
 ```powershell
-Test-Path D:\Marvex\version.toml
+uv build --wheel
+npm run build --prefix apps/shell
+npm run build --prefix apps/control_plane_web
+.\build-installer.ps1 -SkipInstaller
 ```
 
-### Build Script Can't Parse Version
+Use `rg` to catch missed first-party literals:
 
-**Symptom**: `✗ ERROR: Could not parse version from version.toml`
-
-**Fix**: Ensure `version.toml` has correct format:
-```toml
-[app]
-version = "X.Y.Z"
-```
-
-Check the line is not commented out and quotes are present.
-
-### Installer Named Incorrectly
-
-**Symptom**: Installer is `Marvex_0.1.0_x64-setup.exe` but should be `0.1.1`
-
-**Fix**: You likely forgot to sync `tauri.conf.json` line 4.
-
-Verify all three files match:
 ```powershell
-grep "version" D:\Marvex\pyproject.toml
-grep "version" D:\Marvex\apps\shell\src-tauri\tauri.conf.json
-grep "version" D:\Marvex\apps\shell\src-tauri\Cargo.toml
+rg -n "0\.X\.Y|MARVEX_VERSION|SERVICE_VERSION|\"version\":|version = " version.toml pyproject.toml apps packages services
 ```
-
----
-
-## Files Involved
-
-| File | Purpose | Updated On |
-|------|---------|-----------|
-| `version.toml` | Single source of truth | Every version bump |
-| `pyproject.toml` | Python package version | Every version bump (manual) |
-| `tauri.conf.json` | Tauri app version, installer name | Every version bump (manual) |
-| `Cargo.toml` | Rust package version | Every version bump (manual) |
-| `build-installer.ps1` | Reads version, displays in output | As-needed for build automation |
-| `build-installer.bat` | Reads version, displays in output | As-needed for build automation |
-| `VERSION_MANAGEMENT.md` | This guide | Reference only |
