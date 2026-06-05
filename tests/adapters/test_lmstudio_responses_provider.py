@@ -271,6 +271,17 @@ def test_reasoning_options_are_sent_only_when_configured():
     assert client.responses.calls[0]["reasoning"] == {"effort": "high", "summary": "auto"}
 
 
+def test_reasoning_effort_aliases_are_normalized_before_responses_request():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+
+    client = RecordingClient()
+    provider = LMStudioResponsesProvider(client_factory=RecordingClientFactory(client))
+
+    provider.send(make_request(provider_options={"reasoning_effort": "on"}))
+
+    assert client.responses.calls[0]["reasoning"] == {"effort": "medium"}
+
+
 def test_response_cancel_and_delete_call_responses_endpoints():
     from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
 

@@ -426,8 +426,54 @@ def test_default_lmstudio_model_refresh_reads_openai_compatible_models(monkeypat
     assert provider["model_metadata"]["local/qwen"] == {
         "supports_reasoning": True,
         "supports_reasoning_summary": False,
-        "reasoning_effort_options": ["off", "low", "medium", "high", "on"],
+        "reasoning_effort_options": ["none", "low", "medium", "high"],
         "reasoning_default": "medium",
         "context_window": 131072,
     }
+    assert provider["reasoning_effort"] == "medium"
+
+
+def test_reasoning_effort_aliases_are_normalized_for_responses_api(monkeypatch) -> None:
+    class Response:
+        def __init__(self, payload: dict[str, object]):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def read(self) -> bytes:
+            return json.dumps(self.payload).encode("utf-8")
+
+    def fake_urlopen(request, timeout: float):
+        if request.full_url.endswith("/api/v1/models"):
+            return Response(
+                {
+                    "models": [
+                        {
+                            "key": "local/gemma",
+                            "capabilities": {
+                                "reasoning": {
+                                    "allowed_options": ["off", "on", "max"],
+                                    "default": "on",
+                                }
+                            },
+                        }
+                    ]
+                }
+            )
+        return Response({"data": [{"id": "local/gemma"}]})
+
+    monkeypatch.setattr("packages.control_plane_api.providers.urlopen", fake_urlopen)
+    monkeypatch.setenv("MARVEX_LMSTUDIO_BASE_URL", "http://127.0.0.1:1234/v1")
+    control = InMemoryProviderControl()
+
+    payload = control.refresh_models("lmstudio_responses")
+
+    provider = next(row for row in payload["providers"] if row["provider_id"] == "lmstudio_responses")
+    metadata = provider["model_metadata"]["local/gemma"]
+    assert metadata["reasoning_effort_options"] == ["none", "medium", "xhigh"]
+    assert metadata["reasoning_default"] == "medium"
     assert provider["reasoning_effort"] == "medium"

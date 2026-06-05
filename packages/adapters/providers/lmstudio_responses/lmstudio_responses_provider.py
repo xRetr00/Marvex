@@ -298,7 +298,11 @@ class LMStudioResponsesProvider:
             if name in {"temperature", "max_output_tokens", "top_p", "timeout", "parallel_tool_calls"}:
                 allowed[name] = value
             elif name == "reasoning_effort" and isinstance(value, str) and value.strip():
-                reasoning["effort"] = value.strip()
+                effort = _normalize_responses_reasoning_effort(value)
+                if effort:
+                    reasoning["effort"] = effort
+                else:
+                    ignored.append(name)
             elif name == "reasoning_summary" and isinstance(value, str) and value.strip():
                 reasoning["summary"] = value.strip()
             else:
@@ -397,6 +401,17 @@ class LMStudioResponsesProvider:
         if value in {"error", "failed"}:
             return FinishReason.ERROR
         return FinishReason.UNKNOWN
+
+
+def _normalize_responses_reasoning_effort(value: str) -> str:
+    cleaned = str(value or "").strip().lower()
+    aliases = {
+        "off": "none",
+        "on": "medium",
+        "max": "xhigh",
+    }
+    cleaned = aliases.get(cleaned, cleaned)
+    return cleaned if cleaned in {"none", "minimal", "low", "medium", "high", "xhigh"} else ""
 
 
 def _is_reasoning_delta(event_type: str) -> bool:

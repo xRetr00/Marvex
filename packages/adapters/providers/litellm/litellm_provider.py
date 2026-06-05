@@ -624,7 +624,11 @@ class LiteLLMProvider:
             elif name == "parallel_tool_calls":
                 allowed["parallel_tool_calls"] = value
             elif name == "reasoning_effort" and isinstance(value, str) and value.strip():
-                reasoning["effort"] = value.strip()
+                effort = _normalize_responses_reasoning_effort(value)
+                if effort:
+                    reasoning["effort"] = effort
+                else:
+                    ignored.append(name)
             elif name == "reasoning_summary" and isinstance(value, str) and value.strip():
                 reasoning["summary"] = value.strip()
             else:
@@ -723,6 +727,17 @@ def _is_item_sequence(value: object) -> bool:
 
 def _is_output_done(event_type: str) -> bool:
     return event_type.endswith("output_text.done")
+
+
+def _normalize_responses_reasoning_effort(value: str) -> str:
+    cleaned = str(value or "").strip().lower()
+    aliases = {
+        "off": "none",
+        "on": "medium",
+        "max": "xhigh",
+    }
+    cleaned = aliases.get(cleaned, cleaned)
+    return cleaned if cleaned in {"none", "minimal", "low", "medium", "high", "xhigh"} else ""
 
 
 def _is_reasoning_delta(event_type: str) -> bool:

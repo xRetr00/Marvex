@@ -155,10 +155,10 @@ class InMemoryProviderControl:
 
     def set_reasoning_effort(self, provider_id: str, effort: str) -> dict[str, Any]:
         row = self._provider(provider_id)
-        cleaned = str(effort or "").strip().lower()
+        cleaned = _normalize_responses_reasoning_effort(effort)
         metadata = row.model_metadata.get(row.active_model, {})
         options = metadata.get("reasoning_effort_options")
-        allowed = [str(value) for value in options] if isinstance(options, list) else []
+        allowed = _responses_reasoning_effort_options(options)
         if cleaned not in allowed:
             raise ValueError("reasoning_effort_not_supported")
         row.reasoning_effort = cleaned
@@ -268,17 +268,27 @@ class InMemoryProviderControl:
     def _normalize_reasoning_effort(self, row: ProviderControlState) -> None:
         metadata = row.model_metadata.get(row.active_model, {})
         options = metadata.get("reasoning_effort_options")
-        allowed = [str(value) for value in options] if isinstance(options, list) else []
-        if row.reasoning_effort not in allowed:
+        allowed = _responses_reasoning_effort_options(options)
+        if isinstance(metadata, dict):
+            metadata["reasoning_effort_options"] = allowed
+            default_value = _normalize_responses_reasoning_effort(
+                str(metadata.get("reasoning_default") or "").strip()
+            )
+            if default_value:
+                metadata["reasoning_default"] = default_value
+            elif "reasoning_default" in metadata:
+                metadata.pop("reasoning_default", None)
+        current = _normalize_responses_reasoning_effort(row.reasoning_effort)
+        if current not in allowed:
             default = str(metadata.get("reasoning_default") or "").strip().lower()
             if default in allowed:
                 row.reasoning_effort = default
             elif "medium" in allowed:
                 row.reasoning_effort = "medium"
-            elif "on" in allowed:
-                row.reasoning_effort = "on"
             else:
                 row.reasoning_effort = allowed[0] if allowed else ""
+        else:
+            row.reasoning_effort = current
 
     def _provider(self, provider_id: str) -> ProviderControlState:
         try:
@@ -634,15 +644,12 @@ def _lmstudio_model_metadata(base_url: str, *, api_key: str | None = None) -> di
         capabilities = item.get("capabilities")
         reasoning = capabilities.get("reasoning") if isinstance(capabilities, dict) else None
         allowed_options = reasoning.get("allowed_options") if isinstance(reasoning, dict) else None
-        responses_reasoning_efforts = {"off", "on", "none", "minimal", "low", "medium", "high", "xhigh", "max"}
-        reasoning_options = [
-            str(value).strip().lower()
-            for value in allowed_options
-            if isinstance(value, str) and str(value).strip().lower() in responses_reasoning_efforts
-        ] if isinstance(allowed_options, list) else []
+        reasoning_options = _responses_reasoning_effort_options(allowed_options)
         reasoning_default = ""
         if isinstance(reasoning, dict):
-            candidate = str(reasoning.get("default") or reasoning.get("default_option") or "").strip().lower()
+            candidate = _normalize_responses_reasoning_effort(
+                str(reasoning.get("default") or reasoning.get("default_option") or "").strip()
+            )
             if candidate in reasoning_options:
                 reasoning_default = candidate
         row: dict[str, Any] = {
@@ -684,10 +691,8 @@ def _litellm_model_metadata(models: list[str], *, api_base: str | None) -> dict[
             if info.get("supports_minimal_reasoning_effort") is True:
                 options.append("minimal")
             options.extend(["low", "medium", "high"])
-            if info.get("supports_xhigh_reasoning_effort") is True:
+            if info.get("supports_xhigh_reasoning_effort") is True or info.get("supports_max_reasoning_effort") is True:
                 options.append("xhigh")
-            if info.get("supports_max_reasoning_effort") is True:
-                options.append("max")
         context_window = info.get("max_input_tokens") or info.get("max_tokens")
         row: dict[str, Any] = {
             "supports_reasoning": supports_reasoning,
@@ -768,6 +773,29 @@ def _split_models(value: str | None) -> list[str]:
         return []
     normalized = value.replace(";", ",").replace("\n", ",")
     return [part.strip() for part in normalized.split(",") if part.strip()]
+
+
+def _normalize_responses_reasoning_effort(value: str | None) -> str:
+    cleaned = str(value or "").strip().lower()
+    aliases = {
+        "off": "none",
+        "on": "medium",
+        "max": "xhigh",
+    }
+    cleaned = aliases.get(cleaned, cleaned)
+    return cleaned if cleaned in {"none", "minimal", "low", "medium", "high", "xhigh"} else ""
+
+
+def _responses_reasoning_effort_options(values: Any) -> list[str]:
+    if not isinstance(values, list):
+        return []
+    return _dedupe(
+        [
+            normalized
+            for value in values
+            if (normalized := _normalize_responses_reasoning_effort(str(value)))
+        ]
+    )
 
 
 def _dedupe(models: list[str]) -> list[str]:

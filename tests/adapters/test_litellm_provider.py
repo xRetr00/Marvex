@@ -447,6 +447,23 @@ def test_reasoning_options_are_sent_as_non_null_responses_reasoning(monkeypatch)
     assert calls[0]["reasoning"] == {"effort": "high", "summary": "auto"}
 
 
+def test_reasoning_effort_aliases_are_normalized_before_responses_request(monkeypatch):
+    from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.adapters.providers.litellm import litellm_provider
+
+    calls: list[dict[str, object]] = []
+
+    def fake_responses(**kwargs):
+        calls.append(kwargs)
+        return make_responses_response()
+
+    monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
+
+    LiteLLMProvider().send(make_request(provider_options={"reasoning_effort": "on"}))
+
+    assert calls[0]["reasoning"] == {"effort": "medium"}
+
+
 def test_no_tools_mcp_or_streaming_fields_sent(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider
     from packages.adapters.providers.litellm import litellm_provider
