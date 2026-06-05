@@ -519,6 +519,11 @@ class VoiceWorkerController:
                 ),
                 "last": "",
             }
+            _diag({
+                "event": "stt_stream",
+                "stage": "opened" if stream_state["session"] is not None else "unavailable",
+                "backend": self.config.active_stt_backend_id,
+            })
 
             def _on_frame(frame: Any) -> None:
                 session = stream_state["session"]
@@ -526,8 +531,9 @@ class VoiceWorkerController:
                     return
                 try:
                     partial = session.feed(frame)
-                except Exception:
+                except Exception as exc:
                     stream_state["session"] = None
+                    _diag({"event": "stt_stream", "stage": "feed_error", "reason": type(exc).__name__})
                     return
                 if partial and partial != stream_state["last"]:
                     stream_state["last"] = partial
@@ -612,8 +618,10 @@ class VoiceWorkerController:
             if session is not None:
                 try:
                     transcription = session.finish()
-                except Exception:
+                    _diag({"event": "stt_stream", "stage": "final", "text_present": bool(transcription.text)})
+                except Exception as exc:
                     transcription = None
+                    _diag({"event": "stt_stream", "stage": "finish_error_fallback", "reason": type(exc).__name__})
                 stream_state["session"] = None
             if transcription is None:
                 transcription = self.backend_runtime.test_stt(

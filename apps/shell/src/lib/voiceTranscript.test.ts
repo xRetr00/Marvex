@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transcriptFromStatus, voiceRejectionFromStatus } from "./voiceControlClient";
+import { transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus } from "./voiceControlClient";
 
 describe("transcriptFromStatus", () => {
   it("returns the latest transcription_completed normalized_transcript_text", () => {
@@ -68,5 +68,27 @@ describe("voiceRejectionFromStatus", () => {
   it("handles missing/!array recent_events safely", () => {
     expect(voiceRejectionFromStatus(null)).toBeNull();
     expect(voiceRejectionFromStatus({} as never)).toBeNull();
+  });
+});
+
+describe("partialTranscriptFromStatus", () => {
+  it("returns the latest live partial while still transcribing", () => {
+    const status = {
+      recent_events: [
+        { event_id: "e1", event_type: "transcription_partial", summary: { partial_transcript_text: "what time" } },
+        { event_id: "e2", event_type: "transcription_partial", summary: { partial_transcript_text: "what time is it" } },
+      ],
+    } as never;
+    expect(partialTranscriptFromStatus(status)).toBe("what time is it");
+  });
+
+  it("returns null once the turn has completed", () => {
+    const status = {
+      recent_events: [
+        { event_id: "e1", event_type: "transcription_partial", summary: { partial_transcript_text: "what time" } },
+        { event_id: "e2", event_type: "transcription_completed", summary: { normalized_transcript_text: "what time is it" } },
+      ],
+    } as never;
+    expect(partialTranscriptFromStatus(status)).toBeNull();
   });
 });

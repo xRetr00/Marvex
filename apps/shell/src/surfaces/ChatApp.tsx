@@ -11,7 +11,7 @@ import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 import { voiceProgressSpeech, pickListeningCue } from "@/lib/voiceFillers";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
@@ -679,6 +679,10 @@ export function ChatApp() {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
           if (!transcript) {
+            // Surface the live streaming partial on the listening cue so the user
+            // sees their words appear while speaking, then handle a non-English drop.
+            const partial = partialTranscriptFromStatus(status);
+            if (partial) setVoiceSessionCue(partial);
             maybeNoticeNonEnglish(status);
             return;
           }

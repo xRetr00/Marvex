@@ -163,6 +163,28 @@ export function voiceRejectionFromStatus(status: VoiceWorkerStatus | null | unde
   return null;
 }
 
+/**
+ * Latest live partial transcript while the user is still speaking (Moonshine
+ * streaming). Returns null once the turn completes — a `transcription_completed`
+ * seen before any partial means there's no active partial to show.
+ */
+export function partialTranscriptFromStatus(status: VoiceWorkerStatus | null | undefined): string | null {
+  const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event || typeof event !== "object") continue;
+    const type = (event as { event_type?: unknown }).event_type;
+    if (type === "transcription_completed") return null;
+    if (type === "transcription_partial") {
+      const summary = (event as { summary?: Record<string, unknown> }).summary;
+      const text = summary && typeof summary.partial_transcript_text === "string" ? summary.partial_transcript_text.trim() : "";
+      return text || null;
+    }
+  }
+  return null;
+}
+
 export function downloadVoiceModel(asset: VoiceModelCatalogAsset): Promise<unknown> {
   const body: Record<string, unknown> = {
     model_id: asset.model_id,

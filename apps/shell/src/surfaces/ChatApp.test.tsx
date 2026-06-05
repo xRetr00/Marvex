@@ -58,7 +58,7 @@ describe("ChatApp module boundary", () => {
     render(<ChatApp />);
 
     await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
-    expect(screen.getByLabelText("Marvex version")).toHaveTextContent("v0.2.5");
+    expect(screen.getByLabelText("Marvex version")).toHaveTextContent("v0.3.0");
   });
 
   it("does not let the optional orb renderer break the chat surface import", async () => {
