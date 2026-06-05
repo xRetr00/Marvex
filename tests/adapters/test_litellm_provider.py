@@ -41,6 +41,8 @@ def make_responses_response() -> SimpleNamespace:
 class _FakeResponsesClient:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
+        self.cancel_calls: list[str] = []
+        self.delete_calls: list[str] = []
 
     @property
     def responses(self) -> "_FakeResponsesClient":
@@ -49,6 +51,14 @@ class _FakeResponsesClient:
     def create(self, **kwargs: object) -> SimpleNamespace:
         self.calls.append(kwargs)
         return make_responses_response()
+
+    def cancel(self, response_id: str) -> SimpleNamespace:
+        self.cancel_calls.append(response_id)
+        return SimpleNamespace(id=response_id, status="cancelled")
+
+    def delete(self, response_id: str) -> dict[str, object]:
+        self.delete_calls.append(response_id)
+        return {"id": response_id, "object": "response", "deleted": True}
 
 
 def test_adapter_satisfies_provider_port():
@@ -148,6 +158,33 @@ def test_litellm_proxy_mode_uses_openai_responses_client_and_preserves_model(mon
     assert client.calls[0]["previous_response_id"] == "prev-001"
     assert "api_base" not in client.calls[0]
     assert "messages" not in client.calls[0]
+
+
+def test_litellm_proxy_response_cancel_and_delete_use_openai_responses_client():
+    from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
+
+    client = _FakeResponsesClient()
+
+    def fake_client_factory(**kwargs: object) -> _FakeResponsesClient:
+        return client
+
+    provider = LiteLLMProvider(
+        LiteLLMProviderConfig(
+            base_url="http://127.0.0.1:4000/v1",
+            api_key="litellm-key",
+            provider_mode="litellm_proxy",
+        ),
+        client_factory=fake_client_factory,
+    )
+
+    cancelled = provider.cancel_response("resp-cancel")
+    deleted = provider.delete_response("resp-delete")
+
+    assert client.cancel_calls == ["resp-cancel"]
+    assert client.delete_calls == ["resp-delete"]
+    assert cancelled["id"] == "resp-cancel"
+    assert cancelled["status"] == "cancelled"
+    assert deleted == {"id": "resp-delete", "object": "response", "deleted": True}
 
 
 def test_litellm_proxy_stream_uses_responses_streaming_client():

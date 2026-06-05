@@ -21,6 +21,7 @@ from packages.contracts import (
 from packages.contracts.streaming_models import (
     StreamCompleted,
     StreamError,
+    StreamStarted,
     StreamTextDelta,
 )
 from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
@@ -205,6 +206,7 @@ class LiteLLMProvider:
             return
 
         response_id: str | None = None
+        response_started = False
         finish_reason = "stop"
         final_text_parts: list[str] = []
         completed_response: object | None = None
@@ -217,6 +219,9 @@ class LiteLLMProvider:
                 chunk_id = self._read_attr(event, "id") or self._read_attr(response_obj, "id")
                 if isinstance(chunk_id, str) and chunk_id:
                     response_id = chunk_id
+                    if not response_started:
+                        response_started = True
+                        yield StreamStarted(response_id=chunk_id)
                 event_type = str(self._read_attr(event, "type") or "")
                 if _is_reasoning_delta(event_type):
                     content = _event_text_delta(event)
@@ -340,6 +345,26 @@ class LiteLLMProvider:
             tool_calls=tool_calls or None,
         )
 
+    def cancel_response(self, response_id: str) -> dict[str, Any]:
+        """Cancel a background Responses API response by id."""
+
+        cleaned = _clean_response_id(response_id)
+        if not self._proxy_mode():
+            raise NotImplementedError("LiteLLM SDK mode does not expose Responses cancel.")
+        client = self._client_factory(**self._client_kwargs())
+        result = self._read_attr(client, "responses").cancel(cleaned)
+        return self._to_plain_mapping(result) or {"id": cleaned, "status": "cancelled"}
+
+    def delete_response(self, response_id: str) -> dict[str, Any]:
+        """Delete a stored Responses API response by id."""
+
+        cleaned = _clean_response_id(response_id)
+        if not self._proxy_mode():
+            raise NotImplementedError("LiteLLM SDK mode does not expose Responses delete.")
+        client = self._client_factory(**self._client_kwargs())
+        result = self._read_attr(client, "responses").delete(cleaned)
+        return self._to_plain_mapping(result) or {"id": cleaned, "object": "response", "deleted": True}
+
     def _stream_via_openai_responses(self, request: ProviderRequest):
         call_args = self._openai_responses_call_args(request)
         call_args["stream"] = True
@@ -353,6 +378,7 @@ class LiteLLMProvider:
             return
 
         response_id: str | None = None
+        response_started = False
         final_text_parts: list[str] = []
         reasoning_open = False
         output_delta_keys: set[tuple[object, ...]] = set()
@@ -363,6 +389,9 @@ class LiteLLMProvider:
                 chunk_id = self._read_attr(event, "id") or self._read_attr(response_obj, "id")
                 if isinstance(chunk_id, str) and chunk_id:
                     response_id = chunk_id
+                    if not response_started:
+                        response_started = True
+                        yield StreamStarted(response_id=chunk_id)
                 event_type = str(self._read_attr(event, "type") or "")
                 if _is_reasoning_delta(event_type):
                     content = _event_text_delta(event)
@@ -746,3 +775,10 @@ def _read_event_attr(value: object, name: str) -> object:
     if isinstance(value, dict):
         return value.get(name)
     return getattr(value, name, None)
+
+
+def _clean_response_id(response_id: str) -> str:
+    cleaned = response_id.strip()
+    if not cleaned:
+        raise ValueError("response_id must be non-empty")
+    return cleaned

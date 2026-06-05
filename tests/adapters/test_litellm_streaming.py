@@ -7,7 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from packages.contracts import ProviderRequest
-from packages.contracts.streaming_models import StreamCompleted, StreamError, StreamTextDelta
+from packages.contracts.streaming_models import StreamCompleted, StreamError, StreamStarted, StreamTextDelta
 from packages.core.orchestration.streaming import run_streaming_turn
 from packages.adapters.providers.litellm import litellm_provider
 from packages.adapters.providers.litellm import LiteLLMProvider
@@ -78,8 +78,9 @@ def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag(monkeypat
 
     events = list(LiteLLMProvider().stream_send(_request()))
     assert captured["stream"] is True
-    assert isinstance(events[0], StreamTextDelta) and events[0].text == "Hel"
-    assert isinstance(events[1], StreamTextDelta) and events[1].text == "lo"
+    assert isinstance(events[0], StreamStarted) and events[0].response_id == "resp-1"
+    deltas = [event.text for event in events if isinstance(event, StreamTextDelta)]
+    assert deltas == ["Hel", "lo"]
     assert isinstance(events[-1], StreamCompleted)
     assert events[-1].response_id == "resp-1"
     assert events[-1].output_text == "Hello"

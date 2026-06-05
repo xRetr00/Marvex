@@ -20,6 +20,13 @@ class StreamTextDelta:
 
 
 @dataclass(frozen=True)
+class StreamStarted:
+    """Provider response id observed before terminal completion."""
+
+    response_id: str
+
+
+@dataclass(frozen=True)
 class StreamCompleted:
     """Terminal event. ``output_text`` is the provider's authoritative full text.
 
@@ -43,10 +50,11 @@ class StreamError:
     message: str
 
 
-StreamEvent = StreamTextDelta | StreamCompleted | StreamError
+StreamEvent = StreamStarted | StreamTextDelta | StreamCompleted | StreamError
 
 
 __all__ = [
+    "StreamStarted",
     "StreamTextDelta",
     "StreamCompleted",
     "StreamError",

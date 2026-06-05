@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from packages.contracts import ProviderRequest
-from packages.contracts.streaming_models import StreamCompleted, StreamError, StreamTextDelta
+from packages.contracts.streaming_models import StreamCompleted, StreamError, StreamStarted, StreamTextDelta
 from packages.core.orchestration.streaming import run_streaming_turn
 from packages.adapters.providers.lmstudio_responses.lmstudio_responses_provider import (
     LMStudioResponsesProvider,
@@ -71,6 +71,13 @@ def _completed(response_id: str, text: str) -> object:
     )
 
 
+def _created(response_id: str) -> object:
+    return SimpleNamespace(
+        type="response.created",
+        response=SimpleNamespace(id=response_id),
+    )
+
+
 def _completed_with_sdk_sequences(response_id: str, text: str) -> object:
     return SimpleNamespace(
         type="response.completed",
@@ -95,6 +102,17 @@ def test_stream_send_yields_deltas_then_completed_and_sets_stream_flag():
     assert isinstance(events[-1], StreamCompleted)
     assert events[-1].response_id == "resp-9"
     assert events[-1].output_text == "Hello"
+
+
+def test_stream_send_yields_started_when_response_created_arrives():
+    provider, _ = _provider([_created("resp-start"), _delta("Hi"), _completed("resp-start", "Hi")])
+
+    events = list(provider.stream_send(_request()))
+
+    assert isinstance(events[0], StreamStarted)
+    assert events[0].response_id == "resp-start"
+    assert isinstance(events[-1], StreamCompleted)
+    assert events[-1].response_id == "resp-start"
 
 
 def test_stream_send_reads_completed_text_from_sdk_sequence_collections():

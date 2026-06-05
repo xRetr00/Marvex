@@ -18,6 +18,7 @@ from packages.contracts.streaming_models import (
     StreamCompleted,
     StreamError,
     StreamEvent,
+    StreamStarted,
     StreamTextDelta,
 )
 from packages.provider_structured_output import map_adapter_raw_output_to_structured_result
@@ -145,6 +146,7 @@ class LMStudioResponsesProvider:
             return
 
         response_id: str | None = None
+        response_started = False
         final_text_parts: list[str] = []
         # LM Studio exposes model reasoning as Responses-style reasoning_text
         # deltas. Keep it inside the existing <think> channel so the shell can
@@ -155,7 +157,14 @@ class LMStudioResponsesProvider:
         try:
             for event in stream:
                 event_type = str(getattr(event, "type", "") or "")
-                if _is_reasoning_delta(event_type):
+                if event_type.endswith("response.created") or event_type == "response.created":
+                    response_obj = getattr(event, "response", None)
+                    created_id = self._read_optional_string(response_obj, "id") if response_obj is not None else None
+                    if created_id and not response_started:
+                        response_id = created_id
+                        response_started = True
+                        yield StreamStarted(response_id=created_id)
+                elif _is_reasoning_delta(event_type):
                     delta = _event_text_delta(event)
                     if delta:
                         reasoning_delta_keys.add(_event_part_key(event))
@@ -246,6 +255,22 @@ class LMStudioResponsesProvider:
             target_model=target_model,
             include_raw_preview=include_raw_preview,
         )
+
+    def cancel_response(self, response_id: str) -> dict[str, Any]:
+        """Cancel a background Responses API response by id."""
+
+        cleaned = _clean_response_id(response_id)
+        client = self._client_factory(**self._client_kwargs())
+        result = self._read_attr(client, "responses").cancel(cleaned)
+        return self._to_plain_mapping(result) or {"id": cleaned, "status": "cancelled"}
+
+    def delete_response(self, response_id: str) -> dict[str, Any]:
+        """Delete a stored Responses API response by id."""
+
+        cleaned = _clean_response_id(response_id)
+        client = self._client_factory(**self._client_kwargs())
+        result = self._read_attr(client, "responses").delete(cleaned)
+        return self._to_plain_mapping(result) or {"id": cleaned, "object": "response", "deleted": True}
 
     def _client_kwargs(self) -> dict[str, object]:
         kwargs: dict[str, object] = {
@@ -491,3 +516,10 @@ def _responses_function_outputs(tool_messages: list[dict[str, Any]] | None) -> l
             }
         )
     return items
+
+
+def _clean_response_id(response_id: str) -> str:
+    cleaned = response_id.strip()
+    if not cleaned:
+        raise ValueError("response_id must be non-empty")
+    return cleaned

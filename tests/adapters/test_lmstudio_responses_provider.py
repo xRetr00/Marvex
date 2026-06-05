@@ -47,6 +47,8 @@ def make_response(
 class RecordingResponses:
     def __init__(self, response: object | None = None, exception: Exception | None = None) -> None:
         self.calls: list[dict[str, object]] = []
+        self.cancel_calls: list[str] = []
+        self.delete_calls: list[str] = []
         self._response = response or make_response()
         self._exception = exception
 
@@ -55,6 +57,14 @@ class RecordingResponses:
         if self._exception is not None:
             raise self._exception
         return self._response
+
+    def cancel(self, response_id: str):
+        self.cancel_calls.append(response_id)
+        return make_response(response_id=response_id, status="cancelled")
+
+    def delete(self, response_id: str):
+        self.delete_calls.append(response_id)
+        return {"id": response_id, "object": "response", "deleted": True}
 
 
 class RecordingClient:
@@ -259,6 +269,22 @@ def test_reasoning_options_are_sent_only_when_configured():
     )
 
     assert client.responses.calls[0]["reasoning"] == {"effort": "high", "summary": "auto"}
+
+
+def test_response_cancel_and_delete_call_responses_endpoints():
+    from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
+
+    client = RecordingClient()
+    provider = LMStudioResponsesProvider(client_factory=RecordingClientFactory(client))
+
+    cancelled = provider.cancel_response("resp-cancel")
+    deleted = provider.delete_response("resp-delete")
+
+    assert client.responses.cancel_calls == ["resp-cancel"]
+    assert client.responses.delete_calls == ["resp-delete"]
+    assert cancelled["id"] == "resp-cancel"
+    assert cancelled["status"] == "cancelled"
+    assert deleted == {"id": "resp-delete", "object": "response", "deleted": True}
 
 
 def test_adapter_source_has_no_forbidden_boundary_or_raw_http_imports():

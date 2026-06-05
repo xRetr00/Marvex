@@ -29,6 +29,7 @@ from packages.contracts.streaming_models import (
     StreamCompleted,
     StreamError,
     StreamEvent,
+    StreamStarted,
     StreamTextDelta,
 )
 
@@ -75,7 +76,10 @@ def run_streaming_turn(
     finish_reason = "stop"
 
     for event in events:
-        if isinstance(event, StreamTextDelta):
+        if isinstance(event, StreamStarted):
+            if event.response_id:
+                response_id = event.response_id
+        elif isinstance(event, StreamTextDelta):
             if not event.text:
                 continue
             accumulated.append(event.text)
