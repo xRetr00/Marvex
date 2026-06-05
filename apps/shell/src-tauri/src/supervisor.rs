@@ -339,11 +339,15 @@ fn venv_create_args(venv: &Path, clear_existing: bool) -> Vec<String> {
     args
 }
 
-/// Resolve an installed sidecar console-script path inside a venv, returning
-/// `None` when the venv is absent or the script is not present on disk (so the
-/// caller falls back to the dev `uv run` path).
+/// Resolve an installed sidecar console-script path inside a venv.
+#[cfg(test)]
 fn sidecar_path(venv: Option<&Path>, name: &str) -> Option<PathBuf> {
     venv.map(|root| venv_script(root, name))
+        .filter(|path| path.is_file())
+}
+
+fn venv_python_path(venv: Option<&Path>) -> Option<PathBuf> {
+    venv.map(|root| venv_script(root, "python"))
         .filter(|path| path.is_file())
 }
 
@@ -719,14 +723,20 @@ fn write_runtime_manifest(
         .map(|spec| {
             let exe = venv
                 .as_ref()
-                .map(|root| venv_script(root, spec.sidecar).to_string_lossy().to_string())
+                .map(|root| {
+                    format!(
+                        "{} -m {}",
+                        venv_script(root, "python").to_string_lossy(),
+                        spec.module
+                    )
+                })
                 .unwrap_or_else(|| format!("uv run python -m {}", spec.module));
             json!({
                 "name": spec.name,
                 "module": spec.module,
                 "console_script": spec.sidecar,
                 "exe": exe,
-                "runtime_tier": if venv.is_some() { "tier1_setuptools" } else { "tier3_uv_run" },
+                "runtime_tier": if venv.is_some() { "tier1_venv_python_module" } else { "tier3_uv_run" },
                 "kind": service_kind_label(&spec.kind),
                 "port": if matches!(spec.kind, ServiceKind::Core) { Some(CORE_PORT) } else { None::<u16> },
             })
@@ -736,7 +746,7 @@ fn write_runtime_manifest(
         "schema_version": MANIFEST_SCHEMA_VERSION,
         "marvex_version": MARVEX_VERSION,
         "runtime_phase": phase,
-        "runtime_architecture": "tier1_setuptools_console_scripts",
+        "runtime_architecture": "tier1_setuptools_venv_python_modules",
         "created_at_unix_ms": now_unix_ms(),
         "venv": venv.as_ref().map(|p| p.to_string_lossy().to_string()),
         "python": venv.as_ref().map(|p| venv_script(p, "python").to_string_lossy().to_string()),
@@ -823,10 +833,13 @@ fn spawn_service(
     resource_dir: Option<&Path>,
     venv: Option<&Path>,
 ) -> Result<Box<dyn ChildWrapper>, String> {
-    // Tier 1: Setuptools console scripts (preferred, production)
+    // Tier 1: venv Python module execution (preferred, production). We keep
+    // setuptools console scripts as install markers, but do not execute their
+    // launcher EXEs because they are console-subsystem binaries on Windows.
     // Tier 3: Dev fallback `uv run python -m <module>` (source checkout)
-    let mut command = if let Some(exe) = sidecar_path(venv, spec.sidecar) {
-        let mut command = Command::new(exe);
+    let mut command = if let Some(python) = venv_python_path(venv) {
+        let mut command = Command::new(python);
+        command.args(["-m", spec.module]);
         command.args(&spec.args);
         command.current_dir(data_dir);
         command
