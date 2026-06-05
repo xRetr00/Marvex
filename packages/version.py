@@ -1,3 +1,3 @@
 """Packaged Marvex runtime version."""
 
-MARVEX_VERSION = "0.2.5"
+MARVEX_VERSION = "0.3.0"

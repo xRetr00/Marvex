@@ -1,6 +1,6 @@
 [package]
 name = "marvex-shell"
-version = "0.2.5"
+version = "0.3.0"
 description = "Marvex Windows Shell"
 authors = ["Marvex"]
 edition = "2021"
