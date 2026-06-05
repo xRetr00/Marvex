@@ -27,6 +27,7 @@ class VoiceWorkerEventType(str, Enum):
     VAD_SPEECH_STARTED = "vad_speech_started"
     VAD_SPEECH_ENDED = "vad_speech_ended"
     TRANSCRIPTION_STARTED = "transcription_started"
+    TRANSCRIPTION_PARTIAL = "transcription_partial"
     TRANSCRIPTION_COMPLETED = "transcription_completed"
     ASSISTANT_TURN_STARTED = "assistant_turn_started"
     TTS_STARTED = "tts_started"

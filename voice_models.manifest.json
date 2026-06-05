@@ -174,6 +174,66 @@
       "checksum_sha256": null,
       "required": false,
       "bundled": false
+    },
+    {
+      "model_id": "speechbrain-langid",
+      "backend_id": "speechbrain-langid",
+      "model_kind": "langid",
+      "relative_path": "langid/voxlingua107-ecapa/hyperparams.yaml",
+      "install_relative_path": "langid/voxlingua107-ecapa",
+      "source_uri": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa/resolve/main/hyperparams.yaml",
+      "extract": false,
+      "checksum_sha256": null,
+      "required": false,
+      "bundled": false
+    },
+    {
+      "model_id": "speechbrain-langid",
+      "backend_id": "speechbrain-langid",
+      "model_kind": "langid",
+      "relative_path": "langid/voxlingua107-ecapa/embedding_model.ckpt",
+      "install_relative_path": "langid/voxlingua107-ecapa",
+      "source_uri": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa/resolve/main/embedding_model.ckpt",
+      "extract": false,
+      "checksum_sha256": null,
+      "required": false,
+      "bundled": false
+    },
+    {
+      "model_id": "speechbrain-langid",
+      "backend_id": "speechbrain-langid",
+      "model_kind": "langid",
+      "relative_path": "langid/voxlingua107-ecapa/classifier.ckpt",
+      "install_relative_path": "langid/voxlingua107-ecapa",
+      "source_uri": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa/resolve/main/classifier.ckpt",
+      "extract": false,
+      "checksum_sha256": null,
+      "required": false,
+      "bundled": false
+    },
+    {
+      "model_id": "speechbrain-langid",
+      "backend_id": "speechbrain-langid",
+      "model_kind": "langid",
+      "relative_path": "langid/voxlingua107-ecapa/label_encoder.txt",
+      "install_relative_path": "langid/voxlingua107-ecapa",
+      "source_uri": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa/resolve/main/label_encoder.txt",
+      "extract": false,
+      "checksum_sha256": null,
+      "required": false,
+      "bundled": false
+    },
+    {
+      "model_id": "speechbrain-langid",
+      "backend_id": "speechbrain-langid",
+      "model_kind": "langid",
+      "relative_path": "langid/voxlingua107-ecapa/mean_var_norm_emb.ckpt",
+      "install_relative_path": "langid/voxlingua107-ecapa",
+      "source_uri": "https://huggingface.co/speechbrain/lang-id-voxlingua107-ecapa/resolve/main/mean_var_norm_emb.ckpt",
+      "extract": false,
+      "checksum_sha256": null,
+      "required": false,
+      "bundled": false
     }
   ]
 }

@@ -127,6 +127,12 @@ _NOISE_TRANSCRIPTS = {
     "umm",
 }
 
+# Language-ID gate (English-only Moonshine path). A verdict must clear this
+# confidence before a non-English utterance is dropped, so low-confidence
+# misfires fall through to "assume English" rather than wrongly ignoring speech.
+_ENGLISH_LANGUAGE_CODES = {"en", "eng", "english"}
+_LANGUAGE_ID_MIN_CONFIDENCE = 0.6
+
 
 def _normalized_transcript_or_reject_reason(text: str) -> tuple[str, str | None]:
     stripped = " ".join(text.split()).strip()
@@ -395,6 +401,7 @@ class VoiceWorkerController:
         vad_decider: "Callable[[Any], bool]",
         read_frame: "Callable[[], Any] | None" = None,
         capture_stats: "dict[str, float] | None" = None,
+        on_frame: "Callable[[Any], None] | None" = None,
     ) -> tuple[tuple[Any, ...], str]:
         """VAD-endpointed incremental capture of a single user utterance.
 
@@ -415,6 +422,13 @@ class VoiceWorkerController:
         max_leading_silence = max(silence_to_end, 25)
         reader = read_frame or self._default_frame_reader()
 
+        def _emit(fr: Any) -> None:
+            if on_frame is not None:
+                try:
+                    on_frame(fr)
+                except Exception:
+                    pass
+
         pre_roll: deque = deque(maxlen=pre_roll_keep)
         captured: list[Any] = []
         speech_started = False
@@ -432,6 +446,8 @@ class VoiceWorkerController:
                     speech_frame_count += 1
                     captured.extend(pre_roll)
                     captured.append(frame)
+                    for buffered in (*pre_roll, frame):
+                        _emit(buffered)
                     trailing_silence = 0
                 else:
                     pre_roll.append(frame)
@@ -440,6 +456,7 @@ class VoiceWorkerController:
                         return tuple(captured), "no_speech"
                 continue
             captured.append(frame)
+            _emit(frame)
             if is_speech:
                 speech_frame_count += 1
                 trailing_silence = 0
@@ -492,13 +509,53 @@ class VoiceWorkerController:
             vad_stats: dict[str, float] = {}
             vad_decider = self._resolve_vad_decider(ambient_rms=ambient_rms, stats=vad_stats)
             capture_stats: dict[str, float] = {}
-            frames, reason = self._capture_utterance(vad_decider=vad_decider, read_frame=read_frame, capture_stats=capture_stats)
+            # Live streaming partials (Moonshine only). Feed each captured frame to
+            # the stream and emit TRANSCRIPTION_PARTIAL as the text grows, so the
+            # shell shows words as the user speaks instead of silence-then-dump.
+            # Any streaming hiccup disables the session and we fall back to one-shot.
+            stream_state: dict[str, Any] = {
+                "session": self.backend_runtime.open_stt_stream(
+                    backend_id=self.config.active_stt_backend_id, trace_id=parent_trace_id
+                ),
+                "last": "",
+            }
+
+            def _on_frame(frame: Any) -> None:
+                session = stream_state["session"]
+                if session is None:
+                    return
+                try:
+                    partial = session.feed(frame)
+                except Exception:
+                    stream_state["session"] = None
+                    return
+                if partial and partial != stream_state["last"]:
+                    stream_state["last"] = partial
+                    self._record(
+                        VoiceWorkerEventType.TRANSCRIPTION_PARTIAL,
+                        trace_id=parent_trace_id,
+                        summary={"partial_transcript_text": partial, "post_wake_capture": True},
+                    )
+
+            def _discard_stream() -> None:
+                session = stream_state["session"]
+                stream_state["session"] = None
+                if session is not None:
+                    try:
+                        session.finish()
+                    except Exception:
+                        pass
+
+            frames, reason = self._capture_utterance(
+                vad_decider=vad_decider, read_frame=read_frame, capture_stats=capture_stats, on_frame=_on_frame
+            )
             # Decisive endpoint diagnostic: the captured frame count, the reason,
             # the energy floor used, the max RMS the VAD actually saw, and which
             # path (silero vs energy) carried detection. With this, a no_speech on
             # a clearly-spoken utterance tells us exactly where the gate failed.
             _diag({"event": "post_wake_capture", "stage": "endpoint", "reason": reason, "frame_count": len(frames), **vad_stats, **capture_stats})
             if not frames or reason == "no_speech":
+                _discard_stream()
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
                     trace_id=parent_trace_id,
@@ -511,6 +568,7 @@ class VoiceWorkerController:
             capture_rms = float(capture_stats.get("capture_rms", 0.0))
             if speech_ms < min_speech_ms or capture_rms < min_capture_rms:
                 reject_reason = "speech_too_short" if speech_ms < min_speech_ms else "speech_energy_too_low"
+                _discard_stream()
                 self._record(
                     VoiceWorkerEventType.VAD_SPEECH_ENDED,
                     trace_id=parent_trace_id,
@@ -543,16 +601,26 @@ class VoiceWorkerController:
                     "audio_ref_present": True,
                 },
             )
+            streaming_active = stream_state["session"] is not None
             self._record(
                 VoiceWorkerEventType.TRANSCRIPTION_STARTED,
                 trace_id=parent_trace_id,
-                summary={"backend_id": self.config.active_stt_backend_id},
+                summary={"backend_id": self.config.active_stt_backend_id, "streaming": streaming_active},
             )
-            transcription = self.backend_runtime.test_stt(
-                trace_id=parent_trace_id,
-                backend_id=self.config.active_stt_backend_id,
-                audio_ref_id=audio_ref_id,
-            )
+            transcription = None
+            session = stream_state["session"]
+            if session is not None:
+                try:
+                    transcription = session.finish()
+                except Exception:
+                    transcription = None
+                stream_state["session"] = None
+            if transcription is None:
+                transcription = self.backend_runtime.test_stt(
+                    trace_id=parent_trace_id,
+                    backend_id=self.config.active_stt_backend_id,
+                    audio_ref_id=audio_ref_id,
+                )
             summary = {
                 **transcription_summary(transcription),
                 "audio_ref_present": True,
@@ -561,9 +629,17 @@ class VoiceWorkerController:
             }
             if transcription.status == "succeeded" and transcription.text:
                 normalized_text, reject_reason = _normalized_transcript_or_reject_reason(transcription.text)
-                if normalized_text:
+                detected_non_english = self._non_english_language_code(frames) if normalized_text else None
+                if normalized_text and detected_non_english is None:
                     summary["normalized_transcript_text"] = normalized_text
                     summary["accepted_transcript_present"] = True
+                elif detected_non_english is not None:
+                    # English-only path heard another language: drop the turn and
+                    # let the shell surface a brief one-time notice.
+                    summary["text_present"] = False
+                    summary["accepted_transcript_present"] = False
+                    summary["transcript_rejected_reason"] = "non_english_ignored"
+                    summary["detected_language"] = detected_non_english
                 else:
                     summary["text_present"] = False
                     summary["accepted_transcript_present"] = False
@@ -592,6 +668,27 @@ class VoiceWorkerController:
                 trace_id=parent_trace_id,
                 summary={"post_wake_capture": True, "reason_code": "post_wake_capture_failed"},
             )
+
+    def _non_english_language_code(self, frames: tuple[Any, ...]) -> str | None:
+        """Return a non-English language code to reject on, or ``None`` to allow.
+
+        Only the English-only Moonshine backend needs this gate; multilingual
+        backends (SenseVoice) transcribe other languages themselves. Fail-open and
+        confidence-gated: an absent verdict or a low-confidence one allows the
+        turn, so real English speech is never wrongly dropped.
+        """
+
+        if self.config.active_stt_backend_id != "moonshine-v2":
+            return None
+        verdict = self.backend_runtime.detect_language(frames=frames)
+        if verdict is None:
+            return None
+        code, confidence = verdict
+        if code in _ENGLISH_LANGUAGE_CODES:
+            return None
+        if confidence < _LANGUAGE_ID_MIN_CONFIDENCE:
+            return None
+        return code
 
     def _effective_wake_backend_id(self) -> str:
         """Wake backend to actually use this session.

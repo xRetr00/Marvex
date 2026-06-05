@@ -53,6 +53,24 @@ export function VoiceMode() {
   }, []);
 
   const required = useMemo(() => status?.model_assets?.required ?? [], [status]);
+  const requiredIds = useMemo(() => new Set(required.map((asset) => String((asset as { model_id?: unknown }).model_id ?? ""))), [required]);
+  const installedIds = useMemo(
+    () => new Set((status?.model_assets?.installed ?? []).map((asset) => String((asset as { model_id?: unknown }).model_id ?? ""))),
+    [status],
+  );
+  // Optional, non-bundled models (SenseVoice multilingual STT, language-ID, etc.)
+  // the user can download on demand — bundled assets and the required cards above
+  // are excluded so each model appears once.
+  const optionalModels = useMemo(() => {
+    const seen = new Set<string>();
+    const out: VoiceModelCatalogAsset[] = [];
+    for (const asset of catalog) {
+      if (asset.bundled || requiredIds.has(asset.model_id) || seen.has(asset.model_id)) continue;
+      seen.add(asset.model_id);
+      out.push(asset);
+    }
+    return out;
+  }, [catalog, requiredIds]);
   const catalogByModel = useMemo(() => {
     const map = new Map<string, VoiceModelCatalogAsset[]>();
     for (const asset of catalog) {
@@ -174,6 +192,40 @@ export function VoiceMode() {
             );
           })}
           {required.length === 0 && <span style={{ color: "var(--muted-foreground)", fontSize: 12 }}>No voice assets reported.</span>}
+        </div>
+      </section>
+
+      <section style={panelStyle}>
+        <h3 style={{ margin: "0 0 10px", fontSize: 13, color: "var(--foreground)", fontWeight: 750 }}>Optional models</h3>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {optionalModels.map((asset) => {
+            const modelId = String(asset.model_id ?? "");
+            const downloadTargets = catalogByModel.get(modelId) ?? [asset];
+            const downloadState = downloads[modelId];
+            const installed = installedIds.has(modelId);
+            const statusLabel = downloadState?.state === "downloading"
+              ? `Downloading ${downloadState.completed}/${downloadState.total}`
+              : downloadState?.state === "failed"
+                ? "failed"
+                : (downloadState?.state === "complete" || installed)
+                  ? "installed"
+                  : "download";
+            const disabled = downloadTargets.length === 0 || Boolean(busy) || installed;
+            return (
+              <div key={modelId} style={assetRowStyle}>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: 650 }}>{modelId}</div>
+                  <div style={{ color: "var(--muted-foreground)", fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                    {String(asset.backend_id ?? "")} / {String(asset.model_kind ?? "")} / {downloadTargets.length || 0} files
+                  </div>
+                </div>
+                <TextButton aria-label={`Download ${modelId}`} disabled={disabled} onClick={() => void runModelDownload(modelId, downloadTargets)}>
+                  <Download size={14} /> {statusLabel}
+                </TextButton>
+              </div>
+            );
+          })}
+          {optionalModels.length === 0 && <span style={{ color: "var(--muted-foreground)", fontSize: 12 }}>No optional models.</span>}
         </div>
       </section>
     </div>

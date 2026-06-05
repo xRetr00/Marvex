@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transcriptFromStatus } from "./voiceControlClient";
+import { transcriptFromStatus, voiceRejectionFromStatus } from "./voiceControlClient";
 
 describe("transcriptFromStatus", () => {
   it("returns the latest transcription_completed normalized_transcript_text", () => {
@@ -45,5 +45,28 @@ describe("transcriptFromStatus", () => {
     expect(transcriptFromStatus(null)).toBeNull();
     expect(transcriptFromStatus(undefined)).toBeNull();
     expect(transcriptFromStatus({} as never)).toBeNull();
+  });
+});
+
+describe("voiceRejectionFromStatus", () => {
+  it("surfaces a non_english_ignored rejection with its event id", () => {
+    const status = {
+      recent_events: [
+        { event_id: "e1", event_type: "transcription_completed", summary: { transcript_rejected_reason: "non_english_ignored", detected_language: "ar" } },
+      ],
+    } as never;
+    expect(voiceRejectionFromStatus(status)).toEqual({ reason: "non_english_ignored", eventId: "e1" });
+  });
+
+  it("returns null when the latest transcript was accepted (no reject reason)", () => {
+    const status = {
+      recent_events: [{ event_id: "e1", event_type: "transcription_completed", summary: { normalized_transcript_text: "hello" } }],
+    } as never;
+    expect(voiceRejectionFromStatus(status)).toBeNull();
+  });
+
+  it("handles missing/!array recent_events safely", () => {
+    expect(voiceRejectionFromStatus(null)).toBeNull();
+    expect(voiceRejectionFromStatus({} as never)).toBeNull();
   });
 });

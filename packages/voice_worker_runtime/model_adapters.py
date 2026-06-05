@@ -22,6 +22,32 @@ class MoonshineSttRunner:
         self._transcriber_key: tuple[str, str] | None = None
         self._transcriber: Any | None = None
 
+    def _resolve_transcriber(self, path: Path) -> Any:
+        factory = self.transcriber_factory or import_module("moonshine_voice.transcriber").Transcriber
+        model_arch = _moonshine_model_arch(path)
+        # On Windows, moonshine-c-api builds the tokenizer path with a ``\\?\``
+        # extended-length prefix and a ``/`` separator, which the Win32 file APIs
+        # reject literally even when the file is on disk. Resolving +
+        # str-converting to a plain absolute path with the prefix stripped lets
+        # moonshine concatenate "/tokenizer.bin" without the broken interaction.
+        import os as _os
+
+        path_str = _os.path.abspath(str(path))
+        if path_str.startswith("\\\\?\\"):
+            path_str = path_str[4:]
+        key = (path_str, str(model_arch or ""))
+        if self._transcriber is None or self._transcriber_key != key:
+            if self._transcriber is not None:
+                close = getattr(self._transcriber, "close", None)
+                if callable(close):
+                    close()
+            try:
+                self._transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
+            except TypeError:
+                self._transcriber = factory(path_str)
+            self._transcriber_key = key
+        return self._transcriber
+
     def __call__(self, request: TranscriptionRequest, asset: VoiceModelInstallResult) -> TranscriptionResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
         frames = self.audio_refs.resolve(request.audio_ref_id)
@@ -29,45 +55,79 @@ class MoonshineSttRunner:
         if blocker:
             return _stt_failed(request, asset.backend_id, blocker)
         try:
-            factory = self.transcriber_factory or import_module("moonshine_voice.transcriber").Transcriber
-            model_arch = _moonshine_model_arch(path)
-            # On Windows, moonshine-c-api builds the tokenizer path with a
-            # ``\\?\`` extended-length prefix and a ``/`` separator, which the
-            # Win32 file APIs reject literally even when the file is on disk.
-            # Resolving + str-converting the path yields a pure-backslash
-            # absolute form that moonshine concatenates without the broken
-            # prefix interaction.
-            # moonshine-c-api appends "/tokenizer.bin" to this base. Win32
-            # rejects a forward slash only under a \\?\ extended-length base, and
-            # Path.resolve() on Windows can RETURN that \\?\ form - which is what
-            # produced "Required tokenizer file does not exist" even though the
-            # file is on disk. Use a plain absolute path with the prefix stripped.
-            import os as _os
-
-            if path is not None:
-                path_str = _os.path.abspath(str(path))
-                if path_str.startswith("\\\\?\\"):
-                    path_str = path_str[4:]
-            else:
-                path_str = str(path)
-            key = (path_str, str(model_arch or ""))
-            if self._transcriber is None or self._transcriber_key != key:
-                if self._transcriber is not None:
-                    close = getattr(self._transcriber, "close", None)
-                    if callable(close):
-                        close()
-                try:
-                    self._transcriber = factory(path_str, model_arch=model_arch) if model_arch is not None else factory(path_str)
-                except TypeError:
-                    self._transcriber = factory(path_str)
-                self._transcriber_key = key
-            transcript = self._transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
+            transcriber = self._resolve_transcriber(path)  # type: ignore[arg-type]
+            transcript = transcriber.transcribe_without_streaming(_frames_to_float_samples(frames), sample_rate=frames[0].sample_rate)
             text, segments = _transcript_text_and_segments(transcript)
             return TranscriptionResult.succeeded(trace_id=request.trace_id, text=text, backend_id=asset.backend_id, duration_ms=_duration_ms(frames, request.duration_ms), language=request.language_hint or "en", segments=segments)
         except Exception as exc:
             detail = type(exc).__name__
             reason = f"moonshine_stt_runtime_error:{detail}"
             return _stt_failed(request, asset.backend_id, reason[:240])
+
+    def open_stream(self, *, trace_id: str) -> "MoonshineStreamSession | None":
+        """Open a live streaming session, or ``None`` if the model isn't ready."""
+
+        path = self.asset_manager.resolve_installed_path("moonshine-v2")
+        if path is None:
+            return None
+        try:
+            transcriber = self._resolve_transcriber(path)
+            stream = transcriber.create_stream()
+            start = getattr(stream, "start", None)
+            if callable(start):
+                start()
+            return MoonshineStreamSession(stream=stream, backend_id="moonshine-v2", trace_id=trace_id)
+        except Exception:
+            return None
+
+
+class MoonshineStreamSession:
+    """Incremental Moonshine transcription: feed frames, read partials, finish.
+
+    Wraps a moonshine ``Stream`` (``add_audio`` / ``update_transcription``). Used
+    by the capture loop to emit live partial transcripts while the user speaks,
+    then a final on endpoint. Any error mid-stream is the caller's signal to fall
+    back to the one-shot path.
+    """
+
+    def __init__(self, *, stream: Any, backend_id: str, trace_id: str) -> None:
+        self._stream = stream
+        self._backend_id = backend_id
+        self._trace_id = trace_id
+        self._frames: list[AudioFrame] = []
+        self._last_text = ""
+
+    def feed(self, frame: AudioFrame) -> str | None:
+        """Add one frame; return the updated partial text if it changed, else None."""
+
+        self._frames.append(frame)
+        self._stream.add_audio(_frames_to_float_samples((frame,)), frame.sample_rate)
+        text, _segments = _transcript_text_and_segments(self._stream.update_transcription())
+        if text and text != self._last_text:
+            self._last_text = text
+            return text
+        return None
+
+    def finish(self) -> TranscriptionResult:
+        try:
+            text, segments = _transcript_text_and_segments(self._stream.update_transcription())
+            text = text or self._last_text
+        finally:
+            for method in ("stop", "close"):
+                fn = getattr(self._stream, method, None)
+                if callable(fn):
+                    try:
+                        fn()
+                    except Exception:
+                        pass
+        return TranscriptionResult.succeeded(
+            trace_id=self._trace_id,
+            text=text,
+            backend_id=self._backend_id,
+            duration_ms=_duration_ms(tuple(self._frames), 0),
+            language="en",
+            segments=segments if text else (),
+        )
 
 
 class SenseVoiceSttRunner:
@@ -95,6 +155,66 @@ class SenseVoiceSttRunner:
             return TranscriptionResult.succeeded(trace_id=request.trace_id, text=text, backend_id=asset.backend_id, duration_ms=_duration_ms(frames, request.duration_ms), language=request.language_hint, segments=segments)
         except Exception:
             return _stt_failed(request, asset.backend_id, "sensevoice_stt_runtime_error")
+
+
+class LanguageIdRunner:
+    """Spoken-language identification over a final utterance clip.
+
+    Lightweight endpoint validator (SpeechBrain ECAPA / VoxLingua107) whose only
+    job is to classify the language of the captured utterance, so the
+    English-only Moonshine path can ignore non-English speech. Run ONCE at
+    endpoint, never on live mic audio. Fail-open: a missing model, an import
+    error, or any failure returns ``None`` so the turn is allowed through.
+    """
+
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        classifier_factory: "Callable[[str], Callable[[list[float], int], tuple[str, float]]] | None" = None,
+    ) -> None:
+        self.asset_manager = asset_manager
+        self.classifier_factory = classifier_factory
+        self._classify: "Callable[[list[float], int], tuple[str, float]] | None" = None
+        self._key: str | None = None
+
+    def detect(self, frames: tuple[AudioFrame, ...]) -> tuple[str, float] | None:
+        path = self.asset_manager.resolve_installed_path("speechbrain-langid")
+        if path is None or not frames:
+            return None
+        try:
+            factory = self.classifier_factory or _default_langid_classifier
+            key = str(path)
+            if self._classify is None or self._key != key:
+                self._classify = factory(key)
+                self._key = key
+            code, confidence = self._classify(_frames_to_float_samples(frames), frames[0].sample_rate)
+            return str(code).strip().lower(), float(confidence)
+        except Exception:
+            return None
+
+
+def _default_langid_classifier(model_dir: str) -> "Callable[[list[float], int], tuple[str, float]]":
+    classifiers = import_module("speechbrain.inference.classifiers")
+    torch = import_module("torch")
+    model = classifiers.EncoderClassifier.from_hparams(source=model_dir, savedir=model_dir)
+
+    def classify(samples: list[float], sample_rate: int) -> tuple[str, float]:
+        del sample_rate  # ECAPA frontend resamples internally; clips are already 16k.
+        signal = torch.tensor(samples, dtype=torch.float32).unsqueeze(0)
+        out_prob, score, _index, text_lab = model.classify_batch(signal)
+        label = str(text_lab[0]) if len(text_lab) else ""
+        code = label.split(":")[0].strip().lower() or "und"
+        try:
+            confidence = float(out_prob.exp().max().item())
+        except Exception:
+            try:
+                confidence = float(score[0])
+            except Exception:
+                confidence = 0.0
+        return code, confidence
+
+    return classify
 
 
 class KokoroOnnxTtsRunner:
@@ -535,6 +655,13 @@ class VoiceWorkerSttModelRunner:
         if runner is None:
             return _stt_failed(request, asset.backend_id, "stt_backend_model_adapter_not_implemented")
         return runner(request, asset)
+
+    def open_stream(self, *, backend_id: str, trace_id: str) -> Any:
+        runner = self._runners.get(backend_id)
+        opener = getattr(runner, "open_stream", None)
+        if not callable(opener):
+            return None
+        return opener(trace_id=trace_id)
 
 
 class VoiceWorkerTtsModelRunner:

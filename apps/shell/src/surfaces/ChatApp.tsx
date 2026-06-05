@@ -11,7 +11,7 @@ import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 import { voiceProgressSpeech, pickListeningCue } from "@/lib/voiceFillers";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
@@ -232,6 +232,7 @@ export function ChatApp() {
   }, []);
 
   const lastVoiceEventRef = useRef<string>("");
+  const lastNonEnglishNoticeRef = useRef<string>("");
 
   const send = useCallback(async (text: string, options: { appendUser?: boolean; previousResponseId?: string; onProgress?: (text: string) => void } = {}): Promise<SendResult> => {
     if (!text.trim() || pendingRef.current) return { text: "", speechText: "" };
@@ -515,6 +516,17 @@ export function ChatApp() {
     });
   }, [send]);
 
+  // When the language gate drops a non-English utterance, the turn produces no
+  // transcript and nothing happens — speak a brief one-time notice so the silence
+  // isn't confusing. Deduped per worker event so it never repeats or spams.
+  const maybeNoticeNonEnglish = useCallback((status: VoiceWorkerStatus | null | undefined) => {
+    const rejection = voiceRejectionFromStatus(status);
+    if (!rejection || rejection.reason !== "non_english_ignored") return;
+    if (rejection.eventId === lastNonEnglishNoticeRef.current) return;
+    lastNonEnglishNoticeRef.current = rejection.eventId;
+    void speakVoiceWorker("Sorry, I only understand English right now.", { bargeIn: false }).catch(() => undefined);
+  }, []);
+
   const consumeVoiceTranscript = useCallback(async (transcript: WorkerTranscript): Promise<boolean> => {
     if (transcript.eventId === lastVoiceEventRef.current) return false;
     lastVoiceEventRef.current = transcript.eventId;
@@ -587,6 +599,7 @@ export function ChatApp() {
         await consumeVoiceTranscript(transcript);
         return;
       }
+      maybeNoticeNonEnglish(status);
       if (manualListenQueued(status)) return;
       voiceListenPendingRef.current = false;
       voiceCaptureTargetRef.current = null;
@@ -596,7 +609,7 @@ export function ChatApp() {
       voiceCaptureTargetRef.current = null;
       setVoiceSessionListening(false);
     }
-  }, [consumeVoiceTranscript, pending]);
+  }, [consumeVoiceTranscript, maybeNoticeNonEnglish, pending]);
 
   useEffect(() => {
     requestVoiceListenRef.current = (withCue = false, generation = voiceSessionGenerationRef.current) => {
@@ -615,6 +628,7 @@ export function ChatApp() {
           await consumeVoiceTranscript(transcript);
           return;
         }
+        maybeNoticeNonEnglish(status);
         if (manualListenQueued(status)) return;
         setDictationActive(false);
         if (voiceCaptureTargetRef.current === "dictation") voiceCaptureTargetRef.current = null;
@@ -623,7 +637,7 @@ export function ChatApp() {
         setDictationActive(false);
         if (voiceCaptureTargetRef.current === "dictation") voiceCaptureTargetRef.current = null;
       });
-  }, [consumeVoiceTranscript, dictationActive, pending]);
+  }, [consumeVoiceTranscript, maybeNoticeNonEnglish, dictationActive, pending]);
 
   const toggleVoiceSession = useCallback(() => {
     if (voiceSessionActiveRef.current) {
@@ -664,7 +678,10 @@ export function ChatApp() {
         .then(async (status) => {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
-          if (!transcript) return;
+          if (!transcript) {
+            maybeNoticeNonEnglish(status);
+            return;
+          }
           await consumeVoiceTranscript(transcript);
         })
         .catch(() => undefined)
@@ -676,7 +693,7 @@ export function ChatApp() {
       cancelled = true;
       clearInterval(timer);
     };
-  }, [consumeVoiceTranscript, voiceBridgeActive]);
+  }, [consumeVoiceTranscript, maybeNoticeNonEnglish, voiceBridgeActive]);
 
   const navItems = useMemo(() => [
     { id: "chat" as TabId, icon: <MessageSquare />, label: "Chat", onClick: () => setActiveTab("chat") },

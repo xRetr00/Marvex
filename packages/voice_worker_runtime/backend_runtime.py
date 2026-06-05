@@ -10,7 +10,7 @@ from packages.voice_runtime.base import VoiceRuntimeModel
 from packages.voice_runtime.errors import VoiceErrorEnvelope
 
 from .assets import VoiceAssetManager, VoiceModelInstallResult
-from .model_adapters import SherpaOnnxKwsRunner, VoiceWorkerSttModelRunner, VoiceWorkerTtsModelRunner
+from .model_adapters import LanguageIdRunner, SherpaOnnxKwsRunner, VoiceWorkerSttModelRunner, VoiceWorkerTtsModelRunner
 
 
 class VoiceWorkerAudioRef(VoiceRuntimeModel):
@@ -119,6 +119,7 @@ class VoiceWorkerBackendRuntime:
         stt_runner: SttRunner | None = None,
         tts_runner: TtsRunner | None = None,
         wakeword_runner: WakewordRunner | None = None,
+        langid_runner: Any | None = None,
         audio_refs: VoiceWorkerAudioRefStore | None = None,
         generated_audio: VoiceWorkerGeneratedAudioSink | None = None,
         module_loader: ModuleLoader | None = None,
@@ -150,6 +151,9 @@ class VoiceWorkerBackendRuntime:
         # local-wake backend (DTW over speech embeddings) routed by backend_id.
         # Lazily built so the sherpa path is unaffected when local-wake is unused.
         self._local_wake_runner: Any | None = None
+        # Optional spoken-language-ID validator (SpeechBrain). Used only to let
+        # the English-only Moonshine path ignore non-English utterances.
+        self._langid_runner: Any = langid_runner or LanguageIdRunner(asset_manager=self.asset_manager)
 
     def _wakeword_runner_for(self, backend_id: str) -> Any:
         if self._custom_wakeword_runner or backend_id != "local-wake":
@@ -265,6 +269,36 @@ class VoiceWorkerBackendRuntime:
             return self._stt_runner(request, asset)
         except Exception:
             return TranscriptionResult.failed(trace_id=trace_id, backend_id=backend_id, duration_ms=duration_ms, error=VoiceErrorEnvelope.backend_error(trace_id=trace_id, backend_id=backend_id, reason_code="stt_backend_runtime_error"))
+
+    def open_stt_stream(self, *, backend_id: str, trace_id: str) -> Any:
+        """Open a live streaming STT session, or ``None`` for non-streaming backends.
+
+        Streaming partials are a Moonshine-only feature; everything else (and any
+        failure) returns ``None`` so the caller falls back to one-shot ``test_stt``.
+        """
+
+        if backend_id != "moonshine-v2":
+            return None
+        opener = getattr(self._stt_runner, "open_stream", None)
+        if not callable(opener):
+            return None
+        try:
+            return opener(backend_id=backend_id, trace_id=trace_id)
+        except Exception:
+            return None
+
+    def detect_language(self, *, frames: tuple[AudioFrame, ...]) -> tuple[str, float] | None:
+        """Classify the spoken language of a final utterance clip, or ``None``.
+
+        Fail-open: returns ``None`` (no verdict) when the language-ID model is not
+        installed or anything goes wrong, so a missing optional model never blocks
+        a turn. A non-``None`` result is ``(language_code, confidence)``.
+        """
+
+        try:
+            return self._langid_runner.detect(tuple(frames))
+        except Exception:
+            return None
 
     def test_tts(self, *, trace_id: str, backend_id: str, voice_id: str, text: str) -> SpeechSynthesisResult:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)

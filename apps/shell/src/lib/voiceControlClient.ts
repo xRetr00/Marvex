@@ -1,6 +1,6 @@
 import { controlRequest } from "./shellCommands";
 
-export type VoiceModelKind = "stt" | "tts_voice" | "wakeword" | "vad";
+export type VoiceModelKind = "stt" | "tts_voice" | "wakeword" | "vad" | "langid";
 
 export type VoiceModelCatalogAsset = {
   schema_version?: string;
@@ -13,6 +13,8 @@ export type VoiceModelCatalogAsset = {
   extract?: boolean;
   checksum_sha256?: string | null;
   required?: boolean;
+  /** Bundled assets ship in the installer; they're selectable but not downloadable. */
+  bundled?: boolean;
   explicit_user_triggered: true;
   raw_payload_persisted?: false;
 };
@@ -137,6 +139,26 @@ export function transcriptFromStatus(status: VoiceWorkerStatus | null | undefine
     if (!text) return null;
     const eventId = String((event as { event_id?: unknown }).event_id ?? "");
     return { text, eventId };
+  }
+  return null;
+}
+
+/**
+ * Surface the most recent *rejected* capture and its reason (e.g. the language
+ * gate's `non_english_ignored`) so the shell can show a brief one-time notice
+ * when a turn was dropped on purpose and nothing else happens.
+ */
+export function voiceRejectionFromStatus(status: VoiceWorkerStatus | null | undefined): { reason: string; eventId: string } | null {
+  const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event || typeof event !== "object") continue;
+    if ((event as { event_type?: unknown }).event_type !== "transcription_completed") continue;
+    const summary = (event as { summary?: Record<string, unknown> }).summary;
+    const reason = summary && typeof summary.transcript_rejected_reason === "string" ? summary.transcript_rejected_reason : "";
+    if (!reason) return null;
+    return { reason, eventId: String((event as { event_id?: unknown }).event_id ?? "") };
   }
   return null;
 }

@@ -84,6 +84,8 @@ class VoiceWorkerControlPlaneFacade:
             return self.assets.registry().model_dump(mode="json")
 
     def model_catalog(self) -> dict[str, object]:
+        # Full catalog including bundled assets (they carry ``bundled: true`` so the
+        # UI can keep them selectable as backends while hiding the download action).
         return self._model_catalog_loader().model_dump(mode="json")
 
     def start_wakeword_supervisor(self) -> dict[str, object]:

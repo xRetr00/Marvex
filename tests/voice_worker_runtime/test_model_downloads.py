@@ -12,8 +12,44 @@ from packages.voice_worker_runtime.assets import (
     VoiceModelCatalog,
     VoiceModelCatalogAsset,
     VoiceModelDownloadRequest,
+    bundled_install_relative_paths,
+    downloadable_voice_model_catalog,
     load_voice_model_catalog,
 )
+
+
+def test_shipped_manifest_bundles_stt_and_wakeword_only() -> None:
+    catalog = load_voice_model_catalog()
+    bundled = {asset.model_id for asset in catalog.assets if asset.bundled}
+    downloadable = {asset.model_id for asset in catalog.assets if not asset.bundled}
+    # STT + wakeword ship in the installer; everything else downloads at runtime.
+    assert bundled == {"moonshine-v2", "hey-marvex"}
+    assert {"kokoro-af-heart", "kokoro-voices", "sensevoice-small"} <= downloadable
+    assert "moonshine-v2" not in downloadable
+
+
+def test_bundled_install_relative_paths_are_the_seeded_dirs() -> None:
+    paths = bundled_install_relative_paths()
+    assert "stt/moonshine-v2" in paths
+    assert "wakeword/hey-marvex" in paths
+    # Each bundled install dir appears once even though moonshine has many files.
+    assert len(paths) == len(set(paths))
+
+
+def test_downloadable_catalog_excludes_bundled_assets() -> None:
+    downloadable = downloadable_voice_model_catalog()
+    assert downloadable.assets, "expected runtime-downloadable assets to remain"
+    assert all(asset.bundled is False for asset in downloadable.assets)
+    assert not any(asset.model_id == "moonshine-v2" for asset in downloadable.assets)
+
+
+def test_facade_model_catalog_marks_bundled_but_keeps_them_selectable() -> None:
+    facade = VoiceWorkerControlPlaneFacade(assets=VoiceAssetManager(asset_root=Path(".marvex") / "voice-assets"))
+    assets = {asset["model_id"]: asset for asset in facade.model_catalog()["assets"]}
+    # Bundled backends stay in the catalog (so the STT picker keeps them) but are
+    # flagged so the UI can hide their download action.
+    assert assets["moonshine-v2"]["bundled"] is True
+    assert assets["kokoro-af-heart"]["bundled"] is False
 
 
 def test_asset_manager_downloads_file_source_into_safe_asset_root_and_registers_it(tmp_path: Path) -> None:
