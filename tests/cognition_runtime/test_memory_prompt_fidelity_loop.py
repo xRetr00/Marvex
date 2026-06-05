@@ -61,8 +61,8 @@ def test_cognition_adaptive_prompt_carries_real_question_and_recalled_memory(tmp
     assert "User preferred project codename is Cedar." in joined
     assert "Approved memory ref is available." not in joined
     assert "User requested a simple assistant response." not in joined
-    assert result.prompt_result.plan.route_profile.total_context_budget == 800
-    assert result.context_pack.budget.max_context_tokens == 800
+    assert result.prompt_result.plan.route_profile.total_context_budget == 6000
+    assert result.context_pack.budget.max_context_tokens == 6000
     assert "system_policy" in result.prompt_projection.section_kinds
     assert result.raw_prompt_persisted is False
 

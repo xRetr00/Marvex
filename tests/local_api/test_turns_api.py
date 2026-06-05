@@ -46,6 +46,15 @@ class ExplodingHandler:
         raise RuntimeError("provider backend exploded with secret details")
 
 
+class RecordingResponseControlHandler:
+    def __init__(self):
+        self.calls = []
+
+    def __call__(self, action: str, response_id: str):
+        self.calls.append((action, response_id))
+        return {"id": response_id, "action": action, "ok": True}
+
+
 def make_provider() -> HealthVersionProvider:
     started_at = datetime(2026, 5, 14, 12, 0, tzinfo=UTC)
     return HealthVersionProvider(
@@ -138,10 +147,12 @@ def make_app(
     *,
     token: str | None = EXPECTED_TOKEN,
     accepted_turn_execution_modes=None,
+    response_control_handler=None,
 ):
     kwargs = {
         "turn_handler": handler,
         "local_auth_token": token,
+        "response_control_handler": response_control_handler,
     }
     if accepted_turn_execution_modes is not None:
         kwargs["accepted_turn_execution_modes"] = accepted_turn_execution_modes
@@ -187,6 +198,30 @@ def test_version_remains_public_and_unchanged():
     assert status == "200 OK"
     assert version.service == "marvex-local-api"
     assert version.service_version == "0.1.0"
+
+
+def test_response_cancel_and_delete_routes_call_response_control_handler():
+    handler = RecordingResponseControlHandler()
+    app = make_app(response_control_handler=handler)
+
+    cancel_status, _cancel_headers, cancel_payload = call_app(
+        app,
+        "/v1/responses/resp_123/cancel",
+        method="POST",
+        auth=f"Bearer {EXPECTED_TOKEN}",
+    )
+    delete_status, _delete_headers, delete_payload = call_app(
+        app,
+        "/v1/responses/resp_456",
+        method="DELETE",
+        auth=f"Bearer {EXPECTED_TOKEN}",
+    )
+
+    assert cancel_status == "200 OK"
+    assert cancel_payload == {"id": "resp_123", "action": "cancel", "ok": True}
+    assert delete_status == "200 OK"
+    assert delete_payload == {"id": "resp_456", "action": "delete", "ok": True}
+    assert handler.calls == [("cancel", "resp_123"), ("delete", "resp_456")]
 
 
 def test_turns_rejects_missing_auth_before_body_read_or_handler_call():

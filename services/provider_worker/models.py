@@ -35,7 +35,7 @@ class ProviderWorkerSelectionProjection(ProviderWorkerModel):
 
 class ProviderWorkerCommandResult(ProviderWorkerModel):
     schema_version: str = SCHEMA_VERSION
-    command: Literal["start", "stop", "status", "health", "version", "send", "structured_output"]
+    command: Literal["start", "stop", "status", "health", "version", "send", "stream", "structured_output", "cancel_response", "delete_response"]
     ok: bool
     trace_id: str
     state: str | None = None

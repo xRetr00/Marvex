@@ -175,10 +175,11 @@ def test_stream_consumes_frames_until_terminal_final():
 
 def test_provider_worker_process_provider_stream_send_assembles_response():
     from packages.contracts import ProviderRequest
-    from services.core.main import _ProviderWorkerProcessProvider
+    from services.core.main import _ProviderWorkerProcessProvider, _set_live_event_sink
 
     class _FakeClient:
         def stream(self, command, *, on_frame, timeout_seconds=None):
+            on_frame({"type": "response", "response_id": "r1"})
             on_frame({"type": "delta", "text": "Mar"})
             on_frame({"type": "delta", "text": "vex"})
             on_frame({
@@ -204,9 +205,15 @@ def test_provider_worker_process_provider_stream_send_assembles_response():
         input_text="hi", instructions=None, previous_response_id=None, provider_options={},
     )
     deltas: list[str] = []
-    response = provider.stream_send(request, on_delta=deltas.append)
+    live_events: list[dict[str, object]] = []
+    _set_live_event_sink(live_events.append)
+    try:
+        response = provider.stream_send(request, on_delta=deltas.append)
+    finally:
+        _set_live_event_sink(None)
 
     assert deltas == ["Mar", "vex"]
+    assert live_events == [{"type": "response", "response_id": "r1"}]
     assert response.output_text == "Marvex"
     assert response.response_id == "r1"
 
@@ -254,6 +261,49 @@ def test_send_streams_when_live_sink_active_else_uses_request():
     finally:
         _set_live_token_sink(None)
     assert deltas == ["live"]
+
+
+def test_provider_worker_process_provider_cancel_and_delete_response_commands():
+    from services.core.main import _ProviderWorkerProcessProvider
+
+    class _FakeClient:
+        def __init__(self):
+            self.commands = []
+
+        def request(self, command, *, timeout_seconds=None):
+            self.commands.append((command, timeout_seconds))
+            return {
+                "ok": True,
+                "metadata": {
+                    "response_control": {
+                        "id": command["response_id"],
+                        "action": command["command"],
+                    }
+                },
+            }
+
+    client = _FakeClient()
+    provider = _ProviderWorkerProcessProvider(
+        provider_name="lmstudio_responses",
+        base_url="http://127.0.0.1:1234",
+        timeout_seconds=9,
+        provider_secret="secret-token",
+        worker_client=client,
+    )
+
+    assert provider.cancel_response(" resp_cancel ") == {"id": "resp_cancel", "action": "cancel_response"}
+    assert provider.delete_response("resp_delete") == {"id": "resp_delete", "action": "delete_response"}
+
+    cancel_command, cancel_timeout = client.commands[0]
+    delete_command, delete_timeout = client.commands[1]
+    assert cancel_command["command"] == "cancel_response"
+    assert cancel_command["response_id"] == "resp_cancel"
+    assert cancel_command["base_url"] == "http://127.0.0.1:1234"
+    assert cancel_command["lmstudio_responses_api_key"] == "secret-token"
+    assert delete_command["command"] == "delete_response"
+    assert delete_command["response_id"] == "resp_delete"
+    assert cancel_timeout == 9
+    assert delete_timeout == 9
 
 
 def test_model_aware_idle_timeout_scales_and_respects_explicit_config():

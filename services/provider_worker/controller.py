@@ -221,6 +221,7 @@ class ProviderWorkerController:
         from packages.contracts.streaming_models import (
             StreamCompleted,
             StreamError,
+            StreamStarted,
             StreamTextDelta,
         )
 
@@ -241,7 +242,9 @@ class ProviderWorkerController:
                 return
             accumulated: list[str] = []
             for event in stream_send(request):
-                if isinstance(event, StreamTextDelta):
+                if isinstance(event, StreamStarted):
+                    yield {"type": "response", "response_id": event.response_id}
+                elif isinstance(event, StreamTextDelta):
                     if event.text:
                         accumulated.append(event.text)
                         yield {"type": "delta", "text": event.text}
@@ -286,6 +289,123 @@ class ProviderWorkerController:
             yield {"type": "final", "response": response.model_dump(mode="json")}
         except Exception:
             yield {"type": "error", "message": "Provider stream failed."}
+
+    def cancel_response(
+        self,
+        *,
+        provider_name: str,
+        trace_id: str,
+        response_id: str,
+        base_url: str | None = None,
+        provider_mode: str | None = None,
+        timeout_seconds: float | None = None,
+        lmstudio_responses_api_key: str | None = None,
+        litellm_api_key: str | None = None,
+    ) -> ProviderWorkerCommandResult:
+        return self._response_control(
+            command="cancel_response",
+            provider_name=provider_name,
+            trace_id=trace_id,
+            response_id=response_id,
+            base_url=base_url,
+            provider_mode=provider_mode,
+            timeout_seconds=timeout_seconds,
+            lmstudio_responses_api_key=lmstudio_responses_api_key,
+            litellm_api_key=litellm_api_key,
+        )
+
+    def delete_response(
+        self,
+        *,
+        provider_name: str,
+        trace_id: str,
+        response_id: str,
+        base_url: str | None = None,
+        provider_mode: str | None = None,
+        timeout_seconds: float | None = None,
+        lmstudio_responses_api_key: str | None = None,
+        litellm_api_key: str | None = None,
+    ) -> ProviderWorkerCommandResult:
+        return self._response_control(
+            command="delete_response",
+            provider_name=provider_name,
+            trace_id=trace_id,
+            response_id=response_id,
+            base_url=base_url,
+            provider_mode=provider_mode,
+            timeout_seconds=timeout_seconds,
+            lmstudio_responses_api_key=lmstudio_responses_api_key,
+            litellm_api_key=litellm_api_key,
+        )
+
+    def _response_control(
+        self,
+        *,
+        command: str,
+        provider_name: str,
+        trace_id: str,
+        response_id: str,
+        base_url: str | None,
+        provider_mode: str | None,
+        timeout_seconds: float | None,
+        lmstudio_responses_api_key: str | None,
+        litellm_api_key: str | None,
+    ) -> ProviderWorkerCommandResult:
+        cleaned = response_id.strip()
+        if not cleaned:
+            return self._error_result(
+                command=command,
+                trace_id=trace_id,
+                error=ErrorEnvelope(
+                    schema_version=SCHEMA_VERSION,
+                    trace_id=trace_id,
+                    error_id=f"{trace_id}:provider-worker:invalid_response_id",
+                    code=ErrorCode.VALIDATION_ERROR,
+                    message="Provider response id is required.",
+                    recoverable=False,
+                    source="provider_worker",
+                    details={"reason": "invalid_response_id"},
+                ),
+            )
+        try:
+            provider = self.provider_factory(
+                _provider_runtime_config(
+                    provider_name=provider_name,
+                    base_url=base_url,
+                    provider_mode=provider_mode,
+                    timeout_seconds=timeout_seconds,
+                    lmstudio_responses_api_key=lmstudio_responses_api_key,
+                    litellm_api_key=litellm_api_key,
+                )
+            )
+            method_name = "cancel_response" if command == "cancel_response" else "delete_response"
+            method = getattr(provider, method_name)
+            result = method(cleaned)
+        except Exception:
+            return self._error_result(
+                command=command,
+                trace_id=trace_id,
+                error=ErrorEnvelope(
+                    schema_version=SCHEMA_VERSION,
+                    trace_id=trace_id,
+                    error_id=f"{trace_id}:provider-worker:{command}_failed",
+                    code=ErrorCode.PROVIDER_ERROR,
+                    message="Provider response control request failed.",
+                    recoverable=True,
+                    source="provider_worker",
+                    details={"reason": f"{command}_failed"},
+                ),
+            )
+        return self._result(
+            command=command,
+            ok=True,
+            trace_id=trace_id,
+            metadata={
+                "response_control": result if isinstance(result, dict) else {},
+                "response_id": cleaned,
+                "payload_persisted": False,
+            },
+        )
 
     def _selected_provider_ids(
         self,

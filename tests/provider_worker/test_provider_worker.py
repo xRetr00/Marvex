@@ -69,12 +69,13 @@ def test_emit_line_writes_chunked_utf8_bytes_for_large_nonascii_payload(monkeypa
 
 
 def test_stream_command_emits_delta_frames_then_final_with_tool_calls():
-    from packages.contracts.streaming_models import StreamCompleted, StreamTextDelta
+    from packages.contracts.streaming_models import StreamCompleted, StreamStarted, StreamTextDelta
     from services.provider_worker.controller import ProviderWorkerController
     from services.provider_worker.main import handle_stream_command
 
     class _FakeStreamingProvider:
         def stream_send(self, request):
+            yield StreamStarted("resp-stream")
             yield StreamTextDelta("<think>go</think>")
             yield StreamTextDelta("Done")
             yield StreamCompleted(
@@ -96,6 +97,8 @@ def test_stream_command_emits_delta_frames_then_final_with_tool_calls():
 
     assert all(frame["command"] == "stream" for frame in frames)
     assert all(frame["trace_id"] == "trace-stream-cmd" for frame in frames)
+    assert frames[0]["type"] == "response"
+    assert frames[0]["response_id"] == "resp-stream"
     deltas = [frame["text"] for frame in frames if frame["type"] == "delta"]
     assert deltas == ["<think>go</think>", "Done"]
     final = frames[-1]
@@ -520,3 +523,43 @@ def test_provider_worker_maps_fake_raw_output_to_structured_result_offline():
     assert structured["parsed_payload"]["text"] == "Validated structured worker response."
     assert structured["raw_preview"] is None
     assert "raw_output_text" not in json.dumps(responses[0]).lower()
+
+
+def test_provider_worker_response_control_commands_call_provider_methods():
+    from services.provider_worker.controller import ProviderWorkerController
+
+    class Provider:
+        def __init__(self):
+            self.cancel_calls = []
+            self.delete_calls = []
+
+        def cancel_response(self, response_id):
+            self.cancel_calls.append(response_id)
+            return {"id": response_id, "status": "cancelled"}
+
+        def delete_response(self, response_id):
+            self.delete_calls.append(response_id)
+            return {"id": response_id, "deleted": True}
+
+    provider = Provider()
+    controller = ProviderWorkerController(provider_factory=lambda _config: provider)
+
+    cancel = controller.cancel_response(
+        provider_name="lmstudio_responses",
+        trace_id="trace-cancel-response",
+        response_id=" resp_cancel ",
+    )
+    delete = controller.delete_response(
+        provider_name="lmstudio_responses",
+        trace_id="trace-delete-response",
+        response_id="resp_delete",
+    )
+
+    assert cancel.ok is True
+    assert cancel.command == "cancel_response"
+    assert cancel.metadata["response_control"] == {"id": "resp_cancel", "status": "cancelled"}
+    assert delete.ok is True
+    assert delete.command == "delete_response"
+    assert delete.metadata["response_control"] == {"id": "resp_delete", "deleted": True}
+    assert provider.cancel_calls == ["resp_cancel"]
+    assert provider.delete_calls == ["resp_delete"]

@@ -149,6 +149,32 @@ def handle_jsonl_command(
                 ),
                 litellm_api_key=_optional_string(payload.get("litellm_api_key")),
             )
+        if command == "cancel_response":
+            return controller.cancel_response(
+                provider_name=_provider_name(payload),
+                trace_id=trace_id,
+                response_id=_optional_string(payload.get("response_id")) or "",
+                base_url=_optional_string(payload.get("base_url")),
+                provider_mode=_optional_string(payload.get("provider_mode")),
+                timeout_seconds=_optional_float(payload.get("timeout_seconds")),
+                lmstudio_responses_api_key=_optional_string(
+                    payload.get("lmstudio_responses_api_key")
+                ),
+                litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+            )
+        if command == "delete_response":
+            return controller.delete_response(
+                provider_name=_provider_name(payload),
+                trace_id=trace_id,
+                response_id=_optional_string(payload.get("response_id")) or "",
+                base_url=_optional_string(payload.get("base_url")),
+                provider_mode=_optional_string(payload.get("provider_mode")),
+                timeout_seconds=_optional_float(payload.get("timeout_seconds")),
+                lmstudio_responses_api_key=_optional_string(
+                    payload.get("lmstudio_responses_api_key")
+                ),
+                litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+            )
         if command == "structured_output":
             return controller.map_structured_output(
                 provider_name=_provider_name(payload),

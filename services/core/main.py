@@ -750,6 +750,14 @@ class _ProviderWorkerProcessProvider:
                 text = frame.get("text")
                 if isinstance(text, str) and text:
                     on_delta(text)
+            elif kind == "response":
+                response_id = frame.get("response_id")
+                sink = _active_live_event_sink()
+                if sink is not None and isinstance(response_id, str) and response_id.strip():
+                    try:
+                        sink({"type": "response", "response_id": response_id.strip()})
+                    except Exception:
+                        pass
             elif kind == "final":
                 response = frame.get("response")
                 if isinstance(response, dict):
@@ -765,6 +773,43 @@ class _ProviderWorkerProcessProvider:
         if final.get("response") is not None:
             return ProviderResponse.model_validate(final["response"])
         raise RuntimeError(str(error.get("message") or "ProviderWorker stream produced no final frame."))
+
+    def cancel_response(self, response_id: str) -> dict[str, object]:
+        return self._response_control(command="cancel_response", response_id=response_id)
+
+    def delete_response(self, response_id: str) -> dict[str, object]:
+        return self._response_control(command="delete_response", response_id=response_id)
+
+    def _response_control(self, *, command: str, response_id: str) -> dict[str, object]:
+        cleaned = response_id.strip()
+        if not cleaned:
+            raise ValueError("response_id must be non-empty")
+        payload: dict[str, object] = {
+            "command": command,
+            "trace_id": f"trace-provider-{command}",
+            "provider_name": self._provider_name,
+            "response_id": cleaned,
+        }
+        if self._base_url is not None:
+            payload["base_url"] = self._base_url
+        if self._provider_mode is not None:
+            payload["provider_mode"] = self._provider_mode
+        if self._timeout_seconds is not None:
+            payload["timeout_seconds"] = self._timeout_seconds
+        if self._provider_secret:
+            if self._provider_name == "lmstudio_responses":
+                payload["lmstudio_responses_api_key"] = self._provider_secret
+            elif self._provider_name == "litellm":
+                payload["litellm_api_key"] = self._provider_secret
+        result = self._worker_client.request(payload, timeout_seconds=self._timeout_seconds)
+        if not isinstance(result, dict) or result.get("ok") is not True:
+            raise RuntimeError(f"ProviderWorker {command} failed.")
+        metadata = result.get("metadata")
+        if isinstance(metadata, dict):
+            control = metadata.get("response_control")
+            if isinstance(control, dict):
+                return dict(control)
+        return {"id": cleaned}
 
     def map_raw_output_to_structured_result(
         self,
@@ -1143,6 +1188,12 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     shutdown()
                 except Exception:
                     pass
+
+    def cancel_response(self, response_id: str) -> dict[str, object]:
+        return self._provider.cancel_response(response_id)
+
+    def delete_response(self, response_id: str) -> dict[str, object]:
+        return self._provider.delete_response(response_id)
 
     def configure_provider(
         self,
@@ -5356,6 +5407,7 @@ def create_core_service_app(
             )
         ),
         stream_turn_handler=lambda request: _stream_turn_events(service, request),
+        response_control_handler=lambda action, response_id: _provider_response_control(service, action, response_id),
         trace_reader=effective_reader,
         local_auth_token=config.local_auth_token,
         accepted_turn_execution_modes=(
@@ -5364,6 +5416,20 @@ def create_core_service_app(
         ),
     )
     return app, service
+
+
+def _provider_response_control(service: CoreService, action: str, response_id: str) -> dict[str, object]:
+    executor = getattr(service, "_turn_executor", None)
+    if action == "cancel":
+        method = getattr(executor, "cancel_response", None)
+    elif action == "delete":
+        method = getattr(executor, "delete_response", None)
+    else:
+        raise ValueError("unsupported response control action")
+    if not callable(method):
+        raise RuntimeError("response control unavailable")
+    result = method(response_id)
+    return dict(result) if isinstance(result, dict) else {"id": response_id, "action": action}
 
 
 def _apply_ui_directives(result: AssistantTurnResult) -> AssistantTurnResult:

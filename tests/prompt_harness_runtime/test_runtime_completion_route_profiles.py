@@ -87,6 +87,30 @@ def test_simple_chat_route_stays_lean() -> None:
 
     assert result.plan.route_profile.route == "provider_simple_chat"
     assert result.plan.route_profile.evidence_token_budget == 0
-    assert result.plan.route_profile.memory_token_budget == 0
+    assert result.plan.route_profile.memory_token_budget > 0
     assert result.plan.route_profile.tool_schema_token_budget == 0
     assert [section.kind for section in result.plan.sections] == [PromptSectionKind.SYSTEM_POLICY, PromptSectionKind.RESPONSE_CONTRACT]
+
+
+def test_route_profiles_leave_room_for_local_context() -> None:
+    cases = (
+        IntentKind.PROVIDER_SIMPLE_CHAT,
+        IntentKind.WEB_SEARCH,
+        IntentKind.MEMORY_TREE_NEEDED,
+        IntentKind.CAPABILITY_TOOL,
+        IntentKind.BROWSER_COMPUTER_USE,
+        IntentKind.MCP_NEEDED,
+    )
+    for intent_kind in cases:
+        result = assemble_prompt_harness(
+            PromptAssemblyRequest(
+                schema_version="1",
+                trace_id=f"trace-{intent_kind.value}",
+                turn_id=f"turn-{intent_kind.value}",
+                intent_ref=IntentRef(intent_id=f"intent.{intent_kind.value}", intent_kind=intent_kind),
+                context_pack=_pack(intent_kind, ()),
+            )
+        )
+
+        assert result.plan.route_profile.total_context_budget >= 6000
+        assert result.plan.route_profile.max_context_candidates >= 16
