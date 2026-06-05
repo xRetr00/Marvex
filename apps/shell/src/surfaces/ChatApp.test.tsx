@@ -131,6 +131,132 @@ describe("ChatApp module boundary", () => {
     expect(within(newChatButton).queryByText("New chat")).not.toBeInTheDocument();
   });
 
+  it("clears stale working state after final response and accumulates session usage", async () => {
+    vi.doMock("@/lib/backendStatus", () => ({
+      FAILED_PHASES: new Set<string>(),
+      serviceOk: () => true,
+      useBackendStatus: () => ({ ready: true, phase: "ready", services: {}, wakeword: "disabled" }),
+    }));
+    vi.doMock("@/components/marvex/StartupScreen", async () => {
+      const React = await import("react");
+      return {
+        StartupScreen: ({ onHelloDone }: { onHelloDone?: () => void }) => {
+          React.useEffect(() => {
+            onHelloDone?.();
+          }, [onHelloDone]);
+          return <div>startup</div>;
+        },
+      };
+    });
+    vi.doMock("@/components/ui/background-plus", () => ({
+      BackgroundPlus: () => <div data-testid="chat-plus-background" />,
+    }));
+    vi.doMock("@/components/chat-messages-for-ui/agent-simple-orb", () => ({
+      Orb: () => <div data-testid="agent-orb" />,
+    }));
+    let assistantStateHandler: ((event: { payload: unknown }) => void) | undefined;
+    vi.doMock("@/lib/tauriBridge", () => ({
+      listen: vi.fn(async (channel: string, handler: (event: { payload: unknown }) => void) => {
+        if (channel === "assistant-state") assistantStateHandler = handler;
+        return vi.fn();
+      }),
+    }));
+    let turn = 0;
+    const turnResolvers: Array<() => void> = [];
+    const submitChatTurnStream = vi.fn(async (_text, _metadata, _previousResponseId, handlers) => {
+      turn += 1;
+      handlers.onDelta?.(`Answer ${turn}`);
+      await new Promise<void>((resolve) => {
+        turnResolvers.push(resolve);
+      });
+      return {
+        assistant_final_response: { text: `Answer ${turn}` },
+        metadata: {
+          provider_usage: {
+            input_tokens: turn * 100,
+            output_tokens: turn * 10,
+            total_tokens: turn * 110,
+          },
+        },
+      };
+    });
+    vi.doMock("@/lib/shellCommands", () => ({
+      createChatSession: vi.fn(async () => ({ session: { session_ref: { ref_id: "session-1" }, title: "New chat", updated_at_unix_ms: 0 } })),
+      getShellRuntimeConfig: vi.fn(async () => ({ core_base_url: "http://localhost:8765" })),
+      listChatSessions: vi.fn(async () => ({ sessions: [] })),
+      cancelActiveChatTurn: vi.fn(),
+      deleteChatSession: vi.fn(),
+      marvexRestart: vi.fn(),
+      marvexShutdown: vi.fn(),
+      renameChatSession: vi.fn(),
+      resumeApprovalTurn: vi.fn(),
+      showOverlay: vi.fn(),
+      startBackend: vi.fn(),
+      submitChatTurnStream,
+    }));
+    vi.doMock("@/lib/voiceControlClient", () => ({
+      fetchVoiceWorkerStatus: vi.fn(),
+      listenVoiceWorker: vi.fn(),
+      speakVoiceWorker: vi.fn(),
+      startVoiceWorker: vi.fn(),
+      stopVoiceWorker: vi.fn(),
+      transcriptFromStatus: vi.fn(),
+    }));
+
+    const { ChatApp } = await import("./ChatApp");
+    render(<ChatApp />);
+    await waitFor(() => expect(screen.queryByText("startup")).not.toBeInTheDocument());
+
+    await userEvent.type(screen.getByPlaceholderText("Ask anything..."), "First");
+    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(submitChatTurnStream).toHaveBeenCalledTimes(1));
+    act(() => {
+      assistantStateHandler?.({
+        payload: {
+          schema_version: "1",
+          ts: new Date().toISOString(),
+          status: "thinking",
+          detail: "planning",
+          audio_level: 0,
+          raw_audio_persisted: false,
+        },
+      });
+    });
+    expect(screen.getByText("Planning")).toBeInTheDocument();
+
+    await act(async () => {
+      turnResolvers.shift()?.();
+    });
+    expect(await screen.findByText("Answer 1")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByText("Ready")).toBeInTheDocument());
+    expect(screen.getByLabelText("Input tokens: 100")).toHaveTextContent("100");
+
+    act(() => {
+      assistantStateHandler?.({
+        payload: {
+          schema_version: "1",
+          ts: new Date().toISOString(),
+          status: "working",
+          detail: "planning",
+          audio_level: 0,
+          raw_audio_persisted: false,
+        },
+      });
+    });
+    expect(screen.getByText("Ready")).toBeInTheDocument();
+    expect(screen.queryByText("Planning")).not.toBeInTheDocument();
+
+    await userEvent.type(screen.getByPlaceholderText("Ask anything..."), "Second");
+    await userEvent.click(screen.getByRole("button", { name: "Send message" }));
+    await waitFor(() => expect(submitChatTurnStream).toHaveBeenCalledTimes(2));
+    await act(async () => {
+      turnResolvers.shift()?.();
+    });
+    expect(await screen.findByText("Answer 2")).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText("Input tokens: 300")).toHaveTextContent("300"));
+    expect(screen.getByLabelText("Output tokens: 30")).toHaveTextContent("30");
+  });
+
   it("keeps approval resume output in the same assistant turn without exposing raw ids", async () => {
     vi.doMock("@/lib/backendStatus", () => ({
       FAILED_PHASES: new Set<string>(),

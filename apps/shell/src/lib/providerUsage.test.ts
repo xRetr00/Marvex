@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { formatTokenCount, providerUsageFromTurnResult } from "./providerUsage";
+import { addProviderUsage, formatTokenCount, providerUsageFromTurnResult } from "./providerUsage";
 
 describe("provider usage", () => {
   it("reads Responses API usage from turn metadata", () => {
@@ -25,5 +25,18 @@ describe("provider usage", () => {
   it("formats compact context counts", () => {
     expect(formatTokenCount(1240)).toBe("1.2K");
     expect(formatTokenCount(128000)).toBe("128K");
+  });
+
+  it("adds usage across a whole chat session", () => {
+    expect(addProviderUsage(
+      { inputTokens: 100, outputTokens: 20, totalTokens: 120, cachedInputTokens: 10, reasoningTokens: 5 },
+      { inputTokens: 300, outputTokens: 40, totalTokens: 340, cachedInputTokens: 30, reasoningTokens: 7 },
+    )).toEqual({
+      inputTokens: 400,
+      outputTokens: 60,
+      totalTokens: 460,
+      cachedInputTokens: 40,
+      reasoningTokens: 12,
+    });
   });
 });

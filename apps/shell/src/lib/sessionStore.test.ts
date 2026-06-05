@@ -21,6 +21,7 @@ describe("sessionStore", () => {
       title: "Backend",
       updatedAt: 100,
       lastProviderResponseId: "resp-001",
+      providerUsage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cachedInputTokens: 1, reasoningTokens: 0 },
     });
 
     saveCachedMessages("session-backend-1", [{ role: "user", text: "next" }]);
@@ -28,6 +29,7 @@ describe("sessionStore", () => {
     expect(listCachedSessions()[0]).toMatchObject({
       id: "session-backend-1",
       lastProviderResponseId: "resp-001",
+      providerUsage: { inputTokens: 10, outputTokens: 2, totalTokens: 12, cachedInputTokens: 1, reasoningTokens: 0 },
     });
   });
 });

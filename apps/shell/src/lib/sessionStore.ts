@@ -1,3 +1,5 @@
+import type { ProviderUsage } from "./providerUsage";
+
 export interface StoredMessage {
   id?: string;
   role: "user" | "assistant" | "system";
@@ -20,6 +22,7 @@ export interface SessionMeta {
   title: string;
   lastProviderResponseId?: string;
   tokenCount?: number;
+  providerUsage?: ProviderUsage;
 }
 
 const INDEX_KEY = "marvex.session.cache.index";

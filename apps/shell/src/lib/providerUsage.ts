@@ -6,13 +6,21 @@ export type ProviderUsage = {
   reasoningTokens: number;
 };
 
+export const emptyProviderUsage: ProviderUsage = {
+  inputTokens: 0,
+  outputTokens: 0,
+  totalTokens: 0,
+  cachedInputTokens: 0,
+  reasoningTokens: 0,
+};
+
 function numberValue(value: unknown): number {
   return typeof value === "number" && Number.isFinite(value) && value >= 0 ? value : 0;
 }
 
 export function providerUsageFromTurnResult(payload: unknown): ProviderUsage {
   if (!payload || typeof payload !== "object") {
-    return { inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 };
+    return { ...emptyProviderUsage };
   }
   const metadata = (payload as { metadata?: unknown }).metadata;
   const usage = metadata && typeof metadata === "object"
@@ -31,6 +39,16 @@ export function providerUsageFromTurnResult(payload: unknown): ProviderUsage {
     totalTokens: numberValue(row.total_tokens),
     cachedInputTokens: numberValue(inputDetails.cached_tokens ?? row.cache_read_input_tokens),
     reasoningTokens: numberValue(outputDetails.reasoning_tokens),
+  };
+}
+
+export function addProviderUsage(current: ProviderUsage, next: ProviderUsage): ProviderUsage {
+  return {
+    inputTokens: current.inputTokens + next.inputTokens,
+    outputTokens: current.outputTokens + next.outputTokens,
+    totalTokens: current.totalTokens + next.totalTokens,
+    cachedInputTokens: current.cachedInputTokens + next.cachedInputTokens,
+    reasoningTokens: current.reasoningTokens + next.reasoningTokens,
   };
 }
 

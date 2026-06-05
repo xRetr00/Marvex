@@ -15,7 +15,7 @@ import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoice
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 import { voiceProgressSpeech, pickListeningCue } from "@/lib/voiceFillers";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
-import { providerUsageFromTurnResult, type ProviderUsage } from "@/lib/providerUsage";
+import { addProviderUsage, emptyProviderUsage, providerUsageFromTurnResult, type ProviderUsage } from "@/lib/providerUsage";
 import { MARVEX_APP_VERSION } from "@/lib/appVersion";
 
 import { LimelightNav } from "@/components/dock";
@@ -99,6 +99,7 @@ function agentStateFromStatus(status: AssistantStatusKind): AgentOrbState {
 }
 
 const COMMENTARY_STATUSES = new Set(["thinking", "working", "using_tools", "mcp", "skills", "searching_web", "asking", "needs_approval"]);
+const TURN_WORK_STATUSES = new Set<AssistantStatusKind>(["thinking", "working", "using_tools", "mcp", "skills", "searching_web"]);
 const RESPONSES_REASONING_EFFORTS = new Set(["none", "minimal", "low", "medium", "high", "xhigh"]);
 
 function statusActivityName(event: ChatStatusEvent): string | null {
@@ -156,6 +157,10 @@ function dedupeStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)));
 }
 
+function idleStateNow(): AssistantStateEvent {
+  return { ...idleAssistantState, ts: new Date().toISOString() };
+}
+
 export function ChatApp() {
   const [config, setConfig] = useState<ShellRuntimeConfig | null>(null);
   const [state, setState] = useState<AssistantStateEvent>(idleAssistantState);
@@ -164,7 +169,7 @@ export function ChatApp() {
   const [messages, setMessages] = useState<ChatMessage[]>([{ role: "system", text: "Marvex is ready." }]);
   const [sessions, setSessions] = useState<SessionMeta[]>(() => listCachedSessions());
   const [providers, setProviders] = useState<ProviderCatalog | null>(null);
-  const [providerUsage, setProviderUsage] = useState<ProviderUsage>({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
+  const [providerUsage, setProviderUsage] = useState<ProviderUsage>({ ...emptyProviderUsage });
   const [pending, setPending] = useState(false);
   const [dictationActive, setDictationActive] = useState(false);
   const [composerText, setComposerText] = useState("");
@@ -195,7 +200,7 @@ export function ChatApp() {
     rememberSession({ id, title: session.title, updatedAt: session.updated_at_unix_ms });
     const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
-    setProviderUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
+    setProviderUsage(cached?.providerUsage ?? { ...emptyProviderUsage });
     setSessions(listCachedSessions());
   }, []);
 
@@ -210,7 +215,11 @@ export function ChatApp() {
     void getShellRuntimeConfig().then(setConfig).catch(() => setConfig(null));
     let cleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
-      try { setState(normalizeAssistantState(event.payload)); }
+      try {
+        const next = normalizeAssistantState(event.payload);
+        if (!pendingRef.current && TURN_WORK_STATUSES.has(next.status)) return;
+        setState(next);
+      }
       catch { setState(idleAssistantState); }
     }).then((unlisten) => { cleanup = unlisten; });
     return () => cleanup?.();
@@ -377,7 +386,21 @@ export function ChatApp() {
         });
       }
       const outcome = outcomeFromTurnResult(result);
-      setProviderUsage(providerUsageFromTurnResult(result));
+      const turnUsage = providerUsageFromTurnResult(result);
+      setProviderUsage((current) => {
+        const cumulative = addProviderUsage(current, turnUsage);
+        const cached = listCachedSessions().find((item) => item.id === sessionId);
+        const anchor = nextProviderResponseId ?? previousResponseIdsRef.current[sessionId];
+        const sessionPatch: SessionMeta = {
+          id: sessionId,
+          title: (cached?.title ?? text.slice(0, 48)) || "New chat",
+          updatedAt: Date.now(),
+          providerUsage: cumulative,
+        };
+        if (anchor) sessionPatch.lastProviderResponseId = anchor;
+        rememberSession(sessionPatch);
+        return cumulative;
+      });
       replyText = outcome.text;
       speechText = speechTextFromTurnResult(result);
       // Reconcile with the authoritative final result (text + stages + refs).
@@ -392,6 +415,7 @@ export function ChatApp() {
     } finally {
       pendingRef.current = false;
       setPending(false);
+      setState(idleStateNow());
     }
     return { text: replyText, speechText };
   }, [ensureBackendSession, updateLastAssistant]);
@@ -422,6 +446,7 @@ export function ChatApp() {
     if (activeResponseId) void cancelProviderResponse(activeResponseId).catch(() => undefined);
     pendingRef.current = false;
     setPending(false);
+    setState(idleStateNow());
     setMessages((prev) => prev.filter((message) => !(message.role === "assistant" && !message.text.trim() && message.streaming)));
   }, []);
 
@@ -454,6 +479,7 @@ export function ChatApp() {
       setMessages((prev) => [...prev, { role: "assistant", text: outcome.text }]);
     } finally {
       setPending(false);
+      setState(idleStateNow());
     }
   }, []);
 
@@ -866,7 +892,7 @@ export function ChatApp() {
     }
     const restored = restoreMessages(loadCachedMessages(id));
     setMessages(restored.length ? restored : [{ role: "system", text: "Marvex is ready." }]);
-    setProviderUsage({ inputTokens: 0, outputTokens: 0, totalTokens: 0, cachedInputTokens: 0, reasoningTokens: 0 });
+    setProviderUsage(cached?.providerUsage ?? { ...emptyProviderUsage });
     setSidebarOpen(false);
     setActiveTab("chat");
   }, []);

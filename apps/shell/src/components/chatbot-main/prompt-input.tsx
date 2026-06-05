@@ -268,7 +268,7 @@ function ContextUsageRing({ used, total }: { used: number; total: number }) {
   return (
     <span
       className="hidden items-center text-muted-foreground sm:inline-flex"
-      title={`Context window: ${pct}% used by last response (${used} / ${total} tokens)`}
+      title={`Context window: ${pct}% session usage (${used} / ${total} tokens)`}
       aria-label={`Context window ${pct}% used`}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" className="-rotate-90">

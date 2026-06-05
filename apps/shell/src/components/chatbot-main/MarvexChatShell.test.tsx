@@ -251,7 +251,7 @@ describe("MarvexChatShell", () => {
 
     expect(screen.getByLabelText("Context window 30% used")).toHaveAttribute(
       "title",
-      "Context window: 30% used by last response (3000 / 10000 tokens)",
+      "Context window: 30% session usage (3000 / 10000 tokens)",
     );
   });
 
