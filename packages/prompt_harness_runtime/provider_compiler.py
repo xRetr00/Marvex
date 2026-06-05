@@ -80,7 +80,7 @@ def compile_provider_prompt(
 def _marvex_identity_block() -> str:
     return (
         "You are Marvex, a local-first assistant-AGENT OS companion. "
-        "Keep answers concise, direct, and compatible with spoken output."
+        "Answer directly with enough detail to complete the user's request, and keep spoken output natural."
     )
 
 
@@ -105,17 +105,14 @@ def _temporal_block(now: dt.datetime | None = None) -> str:
 
 def _reasoning_format_block() -> str:
     # Give the model a single, deterministic reasoning channel so the shell can
-    # stream "thinking" separately from the answer. It also bounds runaway
-    # chain-of-thought: a weak local model that narrates its reasoning forever
-    # (and never emits the answer or tool call) is told to close </think> and
-    # commit. The shell also understands a provider's native reasoning channel,
-    # so models that emit reasoning natively still render correctly.
+    # stream "thinking" separately from the answer. The shell also understands
+    # a provider's native reasoning channel, so models that emit reasoning
+    # natively still render correctly.
     return (
         "Thinking format: put any step-by-step private reasoning inside a single "
         "<think>...</think> block, then write the user-facing answer (or make the tool call) "
-        "AFTER the closing </think> tag. Keep the reasoning brief and never place the final "
-        "answer or a tool call inside <think>. If no reasoning is needed, skip the block and "
-        "answer directly."
+        "AFTER the closing </think> tag. Do not place the final answer or a tool call inside "
+        "<think>. If no reasoning is needed, skip the block and answer directly."
     )
 
 
