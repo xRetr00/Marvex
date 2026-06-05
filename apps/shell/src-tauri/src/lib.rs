@@ -86,7 +86,7 @@ fn get_setup_status(state: tauri::State<Mutex<ShellState>>) -> Result<Value, Str
     let runtime_ok = matches!(runtime_phase.as_str(), "ready" | "dev");
     let core_running = snapshot
         .get("core")
-        .map(|s| s.starts_with("running"))
+        .map(|s| s.starts_with("running pid "))
         .unwrap_or(false)
         || loopback_port_open(8765);
     let manifest = std::fs::read_to_string(state.supervisor.runtime_manifest_path())

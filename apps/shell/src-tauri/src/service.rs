@@ -12,7 +12,14 @@
 //!   marvex-service --console     run the backend in the foreground (debugging)
 //!   marvex-service               (no args) entry point invoked by the SCM
 
-use std::{ffi::OsString, path::PathBuf, sync::mpsc, time::Duration};
+use std::{
+    ffi::OsString,
+    fs::{self, OpenOptions},
+    io::Write,
+    path::PathBuf,
+    sync::mpsc,
+    time::Duration,
+};
 
 use windows_service::{
     define_windows_service,
@@ -30,10 +37,10 @@ const SERVICE_DISPLAY_NAME: &str = "Marvex Backend";
 const SERVICE_TYPE: ServiceType = ServiceType::OWN_PROCESS;
 
 pub fn main() {
-    let args: Vec<String> = std::env::args().collect();
-    match args.get(1).map(String::as_str) {
+    let args: Vec<OsString> = std::env::args_os().collect();
+    match args.get(1).and_then(|arg| arg.to_str()) {
         Some("--install") => {
-            if let Err(err) = install() {
+            if let Err(err) = install(parse_service_options(&args[2..])) {
                 eprintln!("marvex-service install failed: {err}");
                 std::process::exit(1);
             }
@@ -46,7 +53,7 @@ pub fn main() {
             }
             println!("Marvex backend service removed.");
         }
-        Some("--console") => run_console(),
+        Some("--console") => run_console(parse_service_options(&args[2..])),
         _ => {
             if let Err(err) = service_dispatcher::start(SERVICE_NAME, ffi_service_main) {
                 eprintln!("marvex-service dispatcher failed: {err}");
@@ -58,11 +65,16 @@ pub fn main() {
 
 define_windows_service!(ffi_service_main, service_main);
 
-fn service_main(_arguments: Vec<OsString>) {
-    let _ = run_service();
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+struct ServiceOptions {
+    app_data_dir: Option<PathBuf>,
 }
 
-fn run_service() -> windows_service::Result<()> {
+fn service_main(arguments: Vec<OsString>) {
+    let _ = run_service(parse_service_options(&arguments));
+}
+
+fn run_service(options: ServiceOptions) -> windows_service::Result<()> {
     let (shutdown_tx, shutdown_rx) = mpsc::channel::<()>();
     let event_handler = move |control| -> ServiceControlHandlerResult {
         match control {
@@ -91,7 +103,7 @@ fn run_service() -> windows_service::Result<()> {
         ServiceControlAccept::STOP | ServiceControlAccept::SHUTDOWN,
     ))?;
 
-    let supervisor = start_backend();
+    let supervisor = start_backend(&options);
 
     loop {
         match shutdown_rx.recv_timeout(Duration::from_secs(1)) {
@@ -109,8 +121,8 @@ fn run_service() -> windows_service::Result<()> {
     Ok(())
 }
 
-fn run_console() {
-    let supervisor = start_backend();
+fn run_console(options: ServiceOptions) {
+    let supervisor = start_backend(&options);
     let stop_file = console_stop_file_path();
     println!("Marvex backend running in console mode. Press Ctrl+C to stop.");
     loop {
@@ -133,9 +145,50 @@ fn console_stop_requested(stop_file: Option<&PathBuf>) -> bool {
     stop_file.is_some_and(|path| path.is_file())
 }
 
+fn parse_service_options(args: &[OsString]) -> ServiceOptions {
+    let mut options = ServiceOptions::default();
+    let mut index = 0;
+    while index < args.len() {
+        if args[index].to_str() == Some("--app-data-dir") {
+            if let Some(value) = args.get(index + 1).filter(|value| !value.is_empty()) {
+                options.app_data_dir = Some(PathBuf::from(value));
+                index += 2;
+                continue;
+            }
+        }
+        index += 1;
+    }
+    options
+}
+
+fn service_launch_arguments(options: &ServiceOptions) -> Vec<OsString> {
+    let mut arguments = Vec::new();
+    if let Some(root) = &options.app_data_dir {
+        arguments.push(OsString::from("--app-data-dir"));
+        arguments.push(root.as_os_str().to_os_string());
+    }
+    arguments
+}
+
+fn installed_service_options(options: ServiceOptions) -> ServiceOptions {
+    if options.app_data_dir.is_some() {
+        return options;
+    }
+    ServiceOptions {
+        app_data_dir: std::env::var_os("LOCALAPPDATA")
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .map(|root| root.join("com.marvex.shell")),
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{app_data_root_from_env, console_stop_requested};
+    use super::{
+        app_data_root_from_env, console_stop_requested, installed_service_options,
+        parse_service_options, service_launch_arguments, ServiceOptions,
+    };
+    use std::ffi::OsString;
     use std::path::PathBuf;
     use std::{
         fs,
@@ -183,11 +236,44 @@ mod tests {
         assert_eq!(root, local_app_data.join("com.marvex.shell"));
         assert!(!root.to_string_lossy().contains("ProgramData"));
     }
+
+    #[test]
+    fn service_options_parse_and_round_trip_app_data_dir() {
+        let root = PathBuf::from(r"C:\Users\MarvexUser\AppData\Local\com.marvex.shell");
+        let options = parse_service_options(&[
+            OsString::from("--app-data-dir"),
+            root.as_os_str().to_os_string(),
+        ]);
+
+        assert_eq!(
+            options,
+            ServiceOptions {
+                app_data_dir: Some(root.clone())
+            }
+        );
+        assert_eq!(
+            service_launch_arguments(&options),
+            vec![
+                OsString::from("--app-data-dir"),
+                root.as_os_str().to_os_string()
+            ]
+        );
+    }
+
+    #[test]
+    fn installed_service_options_preserves_explicit_user_data_root() {
+        let root = PathBuf::from("explicit-user-data-root");
+        let options = installed_service_options(ServiceOptions {
+            app_data_dir: Some(root.clone()),
+        });
+
+        assert_eq!(options.app_data_dir, Some(root));
+    }
 }
 
-fn app_data_root() -> PathBuf {
+fn app_data_root(explicit_root: Option<PathBuf>) -> PathBuf {
     app_data_root_from_env(
-        std::env::var_os("MARVEX_APP_DATA_DIR").map(PathBuf::from),
+        explicit_root.or_else(|| std::env::var_os("MARVEX_APP_DATA_DIR").map(PathBuf::from)),
         std::env::var_os("LOCALAPPDATA").map(PathBuf::from),
         std::env::var_os("ProgramData").map(PathBuf::from),
     )
@@ -217,22 +303,56 @@ fn exe_dir() -> Option<PathBuf> {
 
 /// Mint a fresh loopback token, publish an in-memory lease broker so the shell
 /// can attach, and launch the supervised backend stack.
-fn start_backend() -> Option<crate::supervisor::Supervisor> {
-    let token = crate::token::generate_local_bearer_token().ok()?;
+fn start_backend(options: &ServiceOptions) -> Option<crate::supervisor::Supervisor> {
+    let root = app_data_root(options.app_data_dir.clone());
+    append_service_log(&root, "starting Marvex backend service");
+    let token = match crate::token::generate_local_bearer_token() {
+        Ok(token) => token,
+        Err(err) => {
+            append_service_log(&root, &format!("token generation failed: {err}"));
+            return None;
+        }
+    };
     crate::token_handoff::delete_legacy_shared_token();
-    let root = app_data_root();
     let log_dir = root.join("logs");
     let data_dir = root;
-    let supervisor =
-        crate::supervisor::Supervisor::start(token.clone(), log_dir, data_dir, exe_dir()).ok()?;
+    let supervisor = match crate::supervisor::Supervisor::start(
+        token.clone(),
+        log_dir,
+        data_dir.clone(),
+        exe_dir(),
+    ) {
+        Ok(supervisor) => supervisor,
+        Err(err) => {
+            append_service_log(&data_dir, &format!("supervisor start failed: {err}"));
+            return None;
+        }
+    };
     let _broker = crate::token_handoff::start_token_broker(token, supervisor.shutdown_flag());
+    append_service_log(&data_dir, "backend supervisor started");
     Some(supervisor)
 }
 
-fn install() -> windows_service::Result<()> {
+fn append_service_log(root: &PathBuf, message: &str) {
+    let log_dir = root.join("logs");
+    if fs::create_dir_all(&log_dir).is_err() {
+        return;
+    }
+    let Ok(mut file) = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(log_dir.join("service.log"))
+    else {
+        return;
+    };
+    let _ = writeln!(file, "{message}");
+}
+
+fn install(options: ServiceOptions) -> windows_service::Result<()> {
     let manager =
         ServiceManager::local_computer(None::<&str>, ServiceManagerAccess::CREATE_SERVICE)?;
     let executable_path = std::env::current_exe().map_err(windows_service::Error::Winapi)?;
+    let options = installed_service_options(options);
     let info = ServiceInfo {
         name: OsString::from(SERVICE_NAME),
         display_name: OsString::from(SERVICE_DISPLAY_NAME),
@@ -240,7 +360,7 @@ fn install() -> windows_service::Result<()> {
         start_type: ServiceStartType::AutoStart,
         error_control: ServiceErrorControl::Normal,
         executable_path,
-        launch_arguments: vec![],
+        launch_arguments: service_launch_arguments(&options),
         dependencies: vec![],
         account_name: None,
         account_password: None,

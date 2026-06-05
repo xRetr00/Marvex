@@ -4,7 +4,7 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   DetailPrint "Registering Marvex backend service (Hey Marvex, 24/7)..."
-  nsExec::ExecToLog '"$INSTDIR\marvex-service.exe" --install'
+  nsExec::ExecToLog '"$INSTDIR\marvex-service.exe" --install --app-data-dir "$LOCALAPPDATA\com.marvex.shell"'
   Pop $0
   DetailPrint "marvex-service --install exit code: $0"
 !macroend

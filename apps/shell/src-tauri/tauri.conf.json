@@ -63,7 +63,7 @@
     "windows": {
       "nsis": {
         "installerIcon": "../../assets/icon.ico",
-        "installMode": "perMachine",
+        "installMode": "currentUser",
         "displayLanguageSelector": false,
         "installerHooks": "./installer-hooks.nsh"
       },
