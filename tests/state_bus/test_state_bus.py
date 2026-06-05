@@ -26,9 +26,9 @@ def test_state_bus_snapshot_starts_idle() -> None:
 
 def test_state_bus_publish_updates_snapshot() -> None:
     bus = _make_bus()
-    bus.publish_status(AssistantStatusKind.THINKING, detail="planning")
+    bus.publish_status(AssistantStatusKind.THINKING, detail="reasoning")
     assert bus.snapshot.status == AssistantStatusKind.THINKING
-    assert bus.snapshot.detail == "planning"
+    assert bus.snapshot.detail == "reasoning"
 
 
 def test_state_bus_subscriber_receives_event() -> None:

@@ -38,13 +38,13 @@ def test_state_snapshot_without_bus_returns_idle() -> None:
 
 def test_state_snapshot_with_bus_returns_current_status() -> None:
     bus = AssistantStateBus()
-    bus.publish_status(AssistantStatusKind.THINKING, detail="planning", trace_id="trace-1")
+    bus.publish_status(AssistantStatusKind.THINKING, detail="reasoning", trace_id="trace-1")
     app = _make_app(state_bus=bus)
     status, headers, body = _call(app, "/control/state")
     assert status == "200 OK"
     payload = json.loads(body)
     assert payload["status"] == "thinking"
-    assert payload["detail"] == "planning"
+    assert payload["detail"] == "reasoning"
     assert payload["raw_audio_persisted"] is False
 
 

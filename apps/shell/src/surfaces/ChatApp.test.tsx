@@ -216,13 +216,13 @@ describe("ChatApp module boundary", () => {
           schema_version: "1",
           ts: new Date().toISOString(),
           status: "thinking",
-          detail: "planning",
+          detail: null,
           audio_level: 0,
           raw_audio_persisted: false,
         },
       });
     });
-    expect(screen.getByText("Planning")).toBeInTheDocument();
+    expect(screen.getByText("Thinking")).toBeInTheDocument();
 
     await act(async () => {
       turnResolvers.shift()?.();
@@ -237,14 +237,14 @@ describe("ChatApp module boundary", () => {
           schema_version: "1",
           ts: new Date().toISOString(),
           status: "working",
-          detail: "planning",
+          detail: null,
           audio_level: 0,
           raw_audio_persisted: false,
         },
       });
     });
     expect(screen.getByText("Ready")).toBeInTheDocument();
-    expect(screen.queryByText("Planning")).not.toBeInTheDocument();
+    expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
 
     await userEvent.type(screen.getByPlaceholderText("Ask anything..."), "Second");
     await userEvent.click(screen.getByRole("button", { name: "Send message" }));

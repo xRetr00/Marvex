@@ -2066,7 +2066,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "Core agentic turn received.",
             {"status": "received"},
         )
-        self._publish(AssistantStatusKind.THINKING, detail="planning", trace_id=turn_input.trace_id)
+        self._publish(AssistantStatusKind.THINKING, trace_id=turn_input.trace_id)
         # Persist TURN_RECEIVED event to durable store (safe events only)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         intent_response = None

@@ -68,14 +68,14 @@ def test_assistant_state_event_raw_audio_persisted_cannot_be_true() -> None:
 def test_assistant_state_event_with_trace_and_session() -> None:
     ev = AssistantStateEvent(**_make_event(
         status=AssistantStatusKind.THINKING,
-        detail="planning",
+        detail="reasoning",
         audio_level=0.0,
         trace_id="trace-123",
         session_ref="session-abc",
     ))
     assert ev.trace_id == "trace-123"
     assert ev.session_ref == "session-abc"
-    assert ev.detail == "planning"
+    assert ev.detail == "reasoning"
 
 
 def test_assistant_state_event_schema_version() -> None:
