@@ -284,6 +284,9 @@ export function ChatApp() {
 
   const lastVoiceEventRef = useRef<string>("");
   const lastNonEnglishNoticeRef = useRef<string>("");
+  // Tracks the live streaming partial we last previewed in the composer, so we
+  // only overwrite/clear our own preview and never clobber text the user typed.
+  const lastPartialRef = useRef<string>("");
 
   const send = useCallback(async (text: string, options: { appendUser?: boolean; previousResponseId?: string; onProgress?: (text: string) => void } = {}): Promise<SendResult> => {
     if (!text.trim() || pendingRef.current) return { text: "", speechText: "" };
@@ -589,11 +592,20 @@ export function ChatApp() {
         voiceCaptureTargetRef.current = null;
         return false;
       }
-      setComposerText((current) => [current.trim(), transcript.text].filter(Boolean).join(" "));
+      setComposerText((current) => {
+        // Drop our streaming preview before folding in the final text.
+        const base = current === lastPartialRef.current ? "" : current;
+        return [base.trim(), transcript.text].filter(Boolean).join(" ");
+      });
+      lastPartialRef.current = "";
       setDictationActive(false);
       voiceCaptureTargetRef.current = null;
       return true;
     }
+    // Sent voice turns: clear our streaming preview so the words don't linger in
+    // the box after the message is sent.
+    setComposerText((cur) => (cur === lastPartialRef.current ? "" : cur));
+    lastPartialRef.current = "";
     if (target === "voice") {
       const generation = voiceSessionGenerationRef.current;
       const stillCurrent = () => voiceSessionGenerationRef.current === generation;
@@ -730,10 +742,14 @@ export function ChatApp() {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
           if (!transcript) {
-            // Surface the live streaming partial on the listening cue so the user
-            // sees their words appear while speaking, then handle a non-English drop.
+            // Preview the live streaming partial in the composer so the user sees
+            // their words appear while speaking. Only overwrite our own preview
+            // (or an empty box) so typed text is never clobbered.
             const partial = partialTranscriptFromStatus(status);
-            if (partial) setVoiceSessionCue(partial);
+            if (partial) {
+              setComposerText((cur) => (cur === "" || cur === lastPartialRef.current ? partial : cur));
+              lastPartialRef.current = partial;
+            }
             maybeNoticeNonEnglish(status);
             return;
           }
@@ -743,7 +759,7 @@ export function ChatApp() {
         .finally(() => {
           busy = false;
         });
-    }, 1500);
+    }, 700);
     return () => {
       cancelled = true;
       clearInterval(timer);
