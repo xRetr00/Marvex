@@ -12,7 +12,7 @@ class SessionContextItem(BaseModel):
     role: Literal["user", "assistant", "tool"]
     trace_id: str = Field(..., min_length=1)
     turn_id: str = Field(..., min_length=1)
-    safe_summary: str = Field(..., min_length=1, max_length=260)
+    safe_summary: str = Field(..., min_length=1, max_length=1200)
     tool_result_refs: tuple[str, ...] = ()
     memory_refs: tuple[str, ...] = ()
     entity_refs: tuple[str, ...] = ()
@@ -32,9 +32,9 @@ class SessionContextItem(BaseModel):
 
 
 class SessionContextStore:
-    """Bounded provider-independent recent context for one local session."""
+    """Provider-independent recent context for one local session."""
 
-    def __init__(self, *, max_items_per_session: int = 12, max_sessions: int = 256) -> None:
+    def __init__(self, *, max_items_per_session: int = 32, max_sessions: int = 256) -> None:
         if max_items_per_session < 1 or max_sessions < 1:
             raise ValueError("bounds must be >= 1")
         self._max_items_per_session = max_items_per_session
@@ -103,7 +103,7 @@ class SessionContextStore:
         cls,
         payload: dict[str, object],
         *,
-        max_items_per_session: int = 12,
+        max_items_per_session: int = 32,
         max_sessions: int = 256,
     ) -> "SessionContextStore":
         store = cls(max_items_per_session=max_items_per_session, max_sessions=max_sessions)
@@ -123,7 +123,7 @@ class SessionContextStore:
                             role=str(row.get("role") or "user"),  # type: ignore[arg-type]
                             trace_id=str(row.get("trace_id") or "trace-restored"),
                             turn_id=str(row.get("turn_id") or "turn-restored"),
-                            safe_summary=str(row.get("safe_summary") or "Restored context.")[:260],
+                            safe_summary=str(row.get("safe_summary") or "Restored context.")[:1200],
                             tool_result_refs=tuple(str(value) for value in row.get("tool_result_refs", ()) if value),
                             memory_refs=tuple(str(value) for value in row.get("memory_refs", ()) if value),
                             entity_refs=tuple(str(value) for value in row.get("entity_refs", ()) if value),
@@ -137,7 +137,7 @@ class SessionContextStore:
         items = self.recent(session_id)
         if not items:
             return ""
-        lines = ["Recent session context:"]
+        lines = ["Recent chat context:"]
         for item in items:
             refs: list[str] = []
             if item.tool_result_refs:
@@ -167,8 +167,8 @@ def _summarize(text: str, *, prefix: str) -> str:
     value = " ".join((text or "").strip().split())
     if not value:
         value = "empty turn"
-    if len(value) > 180:
-        value = value[:177].rstrip() + "..."
+    if len(value) > 1000:
+        value = value[:997].rstrip() + "..."
     return f"{prefix}: {value}"
 
 

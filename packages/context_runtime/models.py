@@ -10,6 +10,7 @@ from packages.capability_runtime.models import CapabilityRuntimeModel
 from packages.intent_runtime import IntentKind, IntentRef
 
 _SAFE_ID_CHARS = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789.:-_")
+_MAX_CONTEXT_TOKENS = 2_000_000
 
 
 class ContextSourceKind(str, Enum):
@@ -55,7 +56,7 @@ class ContextSourceRef(CapabilityRuntimeModel):
 
 
 class ContextBudget(CapabilityRuntimeModel):
-    max_context_tokens: int = Field(..., ge=0, le=200_000)
+    max_context_tokens: int = Field(..., ge=0, le=_MAX_CONTEXT_TOKENS)
     reserved_response_tokens: int = Field(..., ge=0, le=200_000)
 
 
@@ -72,7 +73,7 @@ class ContextDeliveryPolicy(CapabilityRuntimeModel):
 class ContextCandidate(CapabilityRuntimeModel):
     source_ref: ContextSourceRef
     safe_summary: str = Field(..., min_length=1, max_length=1200)
-    token_estimate: int = Field(..., ge=0, le=200_000)
+    token_estimate: int = Field(..., ge=0, le=_MAX_CONTEXT_TOKENS)
     intent_tags: tuple[str, ...] = ()
     trust_level: ContextSourceTrustLevel = ContextSourceTrustLevel.INTERNAL_SAFE_PROJECTION
     raw_content_persisted: Literal[False] = False

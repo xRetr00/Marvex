@@ -1,4 +1,4 @@
-import { AudioLines, Brain, ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
+import { ArrowDown, ArrowUp, AudioLines, Brain, ChevronDown, Mic, MicOff, Plus, SendHorizontal, Square } from "lucide-react";
 import type { FormEvent, KeyboardEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
@@ -216,11 +216,21 @@ export function ChatbotPromptInput({
                 );
               })()
             ) : null}
+            {contextWindow ? (
+              <ContextUsageRing used={totalTokens || contextInputTokens} total={contextWindow} />
+            ) : null}
             <span
-              className="hidden rounded-full border border-border/45 bg-secondary/45 px-2 py-1 text-[11px] tabular-nums text-muted-foreground sm:inline"
+              className="hidden items-center gap-2 rounded-full border border-border/45 bg-secondary/45 px-2 py-1 text-[11px] tabular-nums text-muted-foreground sm:inline-flex"
               title={`Input ${contextInputTokens} tokens, output ${outputTokens}, total ${totalTokens}${cachedInputTokens ? `, ${cachedInputTokens} cached` : ""}${reasoningTokens ? `, ${reasoningTokens} reasoning` : ""}${contextWindow ? `, ${contextWindow} context window` : ""}`}
             >
-              {formatTokenCount(contextInputTokens)} / {contextWindow ? formatTokenCount(contextWindow) : "?"}
+              <span className="flex items-center gap-0.5" aria-label={`Input tokens: ${contextInputTokens}`}>
+                <ArrowDown size={11} className="opacity-70" />
+                {formatTokenCount(contextInputTokens)}
+              </span>
+              <span className="flex items-center gap-0.5" aria-label={`Output tokens: ${outputTokens}`}>
+                <ArrowUp size={11} className="opacity-70" />
+                {formatTokenCount(outputTokens)}
+              </span>
             </span>
           </div>
           {generating ? (
@@ -240,6 +250,38 @@ export function ChatbotPromptInput({
 
 function prettyEffort(effort: string): string {
   return effort.charAt(0).toUpperCase() + effort.slice(1);
+}
+
+/** Small donut gauge showing how much of the last request's context window was used. */
+function ContextUsageRing({ used, total }: { used: number; total: number }) {
+  const ratio = total > 0 ? Math.min(1, Math.max(0, used / total)) : 0;
+  const pct = Math.round(ratio * 100);
+  const radius = 6;
+  const circumference = 2 * Math.PI * radius;
+  // Warm the ring as the window fills: muted -> amber -> red past ~90%.
+  const stroke = ratio >= 0.9 ? "var(--destructive, #ef4444)" : ratio >= 0.7 ? "#f59e0b" : "currentColor";
+  return (
+    <span
+      className="hidden items-center text-muted-foreground sm:inline-flex"
+      title={`Context window: ${pct}% used by last response (${used} / ${total} tokens)`}
+      aria-label={`Context window ${pct}% used`}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" className="-rotate-90">
+        <circle cx="8" cy="8" r={radius} fill="none" stroke="currentColor" strokeWidth="2" className="opacity-25" />
+        <circle
+          cx="8"
+          cy="8"
+          r={radius}
+          fill="none"
+          stroke={stroke}
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={circumference * (1 - ratio)}
+        />
+      </svg>
+    </span>
+  );
 }
 
 function ListeningBars() {

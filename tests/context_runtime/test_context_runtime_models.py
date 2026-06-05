@@ -57,3 +57,25 @@ def test_context_runtime_excludes_browser_tools_by_default_until_intent_allows()
     assert pack.included == ()
     assert pack.excluded[0].reason_code == "excluded.intent_mismatch"
     assert "browser.click" in pack.safe_projection().model_dump_json()
+
+
+def test_context_runtime_accepts_large_model_context_windows() -> None:
+    intent_ref = IntentRef(intent_id="intent.large", intent_kind=IntentKind.PROVIDER_SIMPLE_CHAT)
+    candidate = ContextCandidate.from_safe_summary(
+        ContextSourceRef(kind=ContextSourceKind.USER_INPUT_SUMMARY, identifier="input.large"),
+        "Large context model request",
+        token_estimate=250_000,
+    )
+
+    pack = build_context_pack(
+        schema_version="1",
+        trace_id="trace-large-context",
+        turn_id="turn-large-context",
+        intent_ref=intent_ref,
+        candidates=(candidate,),
+        budget=ContextBudget(max_context_tokens=1_047_576, reserved_response_tokens=128_000),
+        policy=ContextDeliveryPolicy(max_candidates=4, allowed_source_kinds=(ContextSourceKind.USER_INPUT_SUMMARY,)),
+    )
+
+    assert pack.used_context_tokens == 250_000
+    assert pack.safe_projection().max_context_tokens == 1_047_576
