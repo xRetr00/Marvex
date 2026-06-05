@@ -322,7 +322,7 @@ call :WriteSuccess "Wheel copied to %RuntimeDir%\%WheelFileName%"
 
 set "RuntimeWheels=%RuntimeDir%\wheels"
 if not exist "%RuntimeWheels%" mkdir "%RuntimeWheels%"
-del /q "%RuntimeWheels%\*.whl" >nul 2>nul
+del /q "%RuntimeWheels%\*" >nul 2>nul
 set "RequirementsFile=%TEMP%\marvex-runtime-requirements.txt"
 echo   Exporting locked runtime requirements...
 uv export --format requirements.txt --no-dev --no-emit-project --no-hashes --output-file "%RequirementsFile%"
@@ -331,10 +331,16 @@ if errorlevel 1 (
     exit /b 1
 )
 echo   Downloading locked dependency wheels...
-uv run python -m pip download --find-links "%RepoRoot%\dist" --index-url https://pypi.org/simple --dest "%RuntimeWheels%" --requirement "%RequirementsFile%"
+uv run python -m pip download --only-binary=:all: --find-links "%RepoRoot%\dist" --index-url https://pypi.org/simple --dest "%RuntimeWheels%" --requirement "%RequirementsFile%"
 if errorlevel 1 (
     call :Die "Failed to download dependency wheels"
     exit /b 1
+)
+for %%F in ("%RuntimeWheels%\*") do (
+    if exist "%%~fF" if /I not "%%~xF"==".whl" (
+        call :Die "Runtime wheelhouse contains non-wheel artifact: %%~nxF"
+        exit /b 1
+    )
 )
 del /q "%RequirementsFile%" >nul 2>nul
 call :WriteSuccess "Locked dependency wheels downloaded to %RuntimeWheels%"

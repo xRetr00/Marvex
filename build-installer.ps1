@@ -340,7 +340,7 @@ function Prepare-Runtime-Resources {
     if (-not (Test-Path $runtimeWheels)) {
         New-Item -Type Directory -Path $runtimeWheels | Out-Null
     }
-    Get-ChildItem -Path $runtimeWheels -Filter "*.whl" -ErrorAction SilentlyContinue |
+    Get-ChildItem -Path $runtimeWheels -File -ErrorAction SilentlyContinue |
         Remove-Item -Force -ErrorAction SilentlyContinue
     $requirementsFile = Join-Path $env:TEMP "marvex-runtime-requirements.txt"
     Write-Host "  Exporting locked runtime requirements..."
@@ -350,9 +350,15 @@ function Prepare-Runtime-Resources {
     }
     $distWheelhouse = Join-Path $RepoRoot "dist"
     Write-Host "  Downloading locked dependency wheels..."
-    $downloadOutput = uv run python -m pip download --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $requirementsFile 2>&1
+    $downloadOutput = uv run python -m pip download --only-binary=:all: --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $requirementsFile 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Exit "Failed to download dependency wheels: $downloadOutput"
+    }
+    $nonWheelArtifacts = Get-ChildItem -Path $runtimeWheels -File -ErrorAction SilentlyContinue |
+        Where-Object { $_.Extension -ne ".whl" }
+    if ($nonWheelArtifacts) {
+        $names = ($nonWheelArtifacts | Select-Object -ExpandProperty Name) -join ", "
+        Write-Error-Exit "Runtime wheelhouse contains non-wheel artifacts: $names"
     }
     Remove-Item -Path $requirementsFile -Force -ErrorAction SilentlyContinue
     Write-Success "Locked dependency wheels downloaded to $runtimeWheels"
