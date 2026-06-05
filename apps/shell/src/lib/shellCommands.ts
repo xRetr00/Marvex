@@ -110,6 +110,7 @@ type ChatStreamEvent = {
   turn_id: string;
   event:
     | { type: "delta"; text?: string }
+    | { type: "response"; response_id?: string }
     | { type: "final"; result?: unknown }
     | { type: "error"; message?: string; reason?: string }
     | ChatToolEvent
@@ -125,6 +126,8 @@ export interface ChatStreamHandlers {
   onStatus?: (event: ChatStatusEvent) => void;
   /** Model-authored user-visible text emitted before a tool call. */
   onCommentary?: (event: ChatCommentaryEvent) => void;
+  /** Provider response id observed before completion, used for cancel/delete. */
+  onResponse?: (responseId: string) => void;
 }
 
 /**
@@ -157,6 +160,8 @@ export async function submitChatTurnStream(
     if (!event) return;
     if (event.type === "delta" && typeof event.text === "string") {
       resolved.onDelta(event.text);
+    } else if (event.type === "response" && typeof event.response_id === "string") {
+      resolved.onResponse?.(event.response_id);
     } else if (event.type === "tool") {
       resolved.onTool?.(event);
     } else if (event.type === "status") {
@@ -184,6 +189,14 @@ export async function submitChatTurnStream(
 
 export async function cancelActiveChatTurn(): Promise<{ schema_version: string; cancel_requested: boolean }> {
   return invoke("cancel_active_chat_turn");
+}
+
+export async function cancelProviderResponse(responseId: string): Promise<unknown> {
+  return invoke("cancel_provider_response", { responseId });
+}
+
+export async function deleteProviderResponse(responseId: string): Promise<unknown> {
+  return invoke("delete_provider_response", { responseId });
 }
 
 export async function resumeApprovalTurn(args: {

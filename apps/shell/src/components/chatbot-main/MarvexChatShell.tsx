@@ -8,9 +8,12 @@ import { QuestionTool } from "@/components/question-tool";
 import {
   ChatbotAssistantFrame,
   ChatbotCopyAction,
+  ChatbotDeleteAction,
+  ChatbotEditAction,
   ChatbotMessage,
   ChatbotMessageActions,
   ChatbotMessageContent,
+  ChatbotRetryAction,
 } from "./message";
 import {
   ChatbotConversation,
@@ -32,8 +35,12 @@ export type MarvexChatClarification = {
 };
 
 export type MarvexChatMessage = {
+  id?: string;
   role: "user" | "assistant" | "system";
   text: string;
+  providerResponseId?: string;
+  previousResponseId?: string;
+  editedAt?: number;
   commentary?: string[];
   stages?: TurnStage[];
   citations?: CitationRef[];
@@ -52,6 +59,9 @@ export type MarvexChatShellProps = {
   pending: boolean;
   onSubmit: (text: string) => void | Promise<void>;
   onStop?: () => void;
+  onDeleteMessage?: (messageId: string) => void | Promise<void>;
+  onEditUserMessage?: (messageId: string, currentText: string) => void | Promise<void>;
+  onRetryAssistantMessage?: (messageId: string) => void | Promise<void>;
   onApprovalDecision?: (approval: NonNullable<MarvexChatMessage["approval"]>, decision: "approve" | "deny" | "cancel") => void | Promise<void>;
   onClarificationAnswer?: (clarification: MarvexChatClarification, answerText: string) => void | Promise<void>;
   onToggleVoice?: () => void;
@@ -83,6 +93,9 @@ export function MarvexChatShell({
   pending,
   onSubmit,
   onStop,
+  onDeleteMessage,
+  onEditUserMessage,
+  onRetryAssistantMessage,
   onApprovalDecision,
   onClarificationAnswer,
   onToggleVoice,
@@ -139,8 +152,9 @@ export function MarvexChatShell({
               return null;
             }
             const visibleAssistantText = message.clarification ? "" : message.text;
+            const messageId = message.id ?? `${message.role}-${index}`;
             return (
-            <ChatbotMessage key={`${message.role}-${index}`} from={message.role}>
+            <ChatbotMessage key={messageId} from={message.role}>
               {message.role === "assistant" ? (
                 <ChatbotAssistantFrame orb={renderAssistantOrb(assistantOrbState)}>
                   <ChatbotMessageContent from="assistant">
@@ -203,10 +217,20 @@ export function MarvexChatShell({
                   </ChatbotMessageContent>
                   <ChatbotMessageActions className="mt-2">
                     {stripReasoning(message.text).trim() ? <ChatbotCopyAction text={stripReasoning(message.text)} /> : null}
+                    {!message.streaming ? <ChatbotRetryAction onRetry={onRetryAssistantMessage ? () => void onRetryAssistantMessage(messageId) : undefined} /> : null}
+                    {!message.streaming ? <ChatbotDeleteAction label="Delete response" onDelete={onDeleteMessage ? () => void onDeleteMessage(messageId) : undefined} /> : null}
                   </ChatbotMessageActions>
                 </ChatbotAssistantFrame>
               ) : (
-                <ChatbotMessageContent from={message.role}>{message.text}</ChatbotMessageContent>
+                <>
+                  <ChatbotMessageContent from={message.role}>{message.text}</ChatbotMessageContent>
+                  {message.role === "user" ? (
+                    <ChatbotMessageActions className="mt-1">
+                      <ChatbotEditAction onEdit={onEditUserMessage ? () => void onEditUserMessage(messageId, message.text) : undefined} />
+                      <ChatbotDeleteAction onDelete={onDeleteMessage ? () => void onDeleteMessage(messageId) : undefined} />
+                    </ChatbotMessageActions>
+                  ) : null}
+                </>
               )}
             </ChatbotMessage>
           );})}

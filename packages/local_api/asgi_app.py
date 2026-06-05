@@ -24,12 +24,15 @@ from .contracts import (
     TurnHandler,
 )
 
+ResponseControlHandler = Any
+
 
 def create_local_api_asgi_app(
     provider: HealthVersionProvider,
     *,
     turn_handler: TurnHandler | None = None,
     stream_turn_handler: StreamTurnHandler | None = None,
+    response_control_handler: ResponseControlHandler | None = None,
     trace_reader: TraceReader | None = None,
     local_auth_token: str | None = None,
     accepted_turn_execution_modes: tuple[str, ...] = (LOCAL_TURNS_EXECUTION_MODE,),
@@ -132,6 +135,26 @@ def create_local_api_asgi_app(
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive", "X-Accel-Buffering": "no"},
         )
 
+    @app.post("/v1/responses/{response_id}/cancel", response_model=None)
+    async def cancel_response(response_id: str, request: Request) -> JSONResponse:
+        return await _response_control(
+            request,
+            response_id=response_id,
+            action="cancel",
+            response_control_handler=response_control_handler,
+            local_auth_token=local_auth_token,
+        )
+
+    @app.delete("/v1/responses/{response_id}", response_model=None)
+    async def delete_response(response_id: str, request: Request) -> JSONResponse:
+        return await _response_control(
+            request,
+            response_id=response_id,
+            action="delete",
+            response_control_handler=response_control_handler,
+            local_auth_token=local_auth_token,
+        )
+
     @app.get(f"{LOCAL_TRACES_PREFIX}{{trace_id:path}}", response_model=None)
     async def trace(trace_id: str, request: Request) -> JSONResponse:
         auth_error = validate_local_bearer_token(
@@ -226,6 +249,62 @@ def create_local_api_asgi_app(
     return app
 
 
+async def _response_control(
+    request: Request,
+    *,
+    response_id: str,
+    action: str,
+    response_control_handler: ResponseControlHandler | None,
+    local_auth_token: str | None,
+) -> JSONResponse:
+    auth_error = validate_local_bearer_token(
+        authorization_header=request.headers.get("authorization"),
+        expected_token=local_auth_token or "",
+        trace_id="trace-local-api-auth-required",
+    )
+    if auth_error is not None:
+        return _json(auth_error.model_dump(mode="json"), status_code=401)
+    if not _valid_response_id(response_id):
+        return _json(
+            _error_envelope(
+                trace_id="trace-local-api-validation-error",
+                error_id="local-api-response-validation-error",
+                code=ErrorCode.VALIDATION_ERROR,
+                message="Local API response control request validation failed.",
+                recoverable=False,
+                reason="invalid_response_id",
+            ).model_dump(mode="json"),
+            status_code=400,
+        )
+    if response_control_handler is None:
+        return _json(
+            _error_envelope(
+                trace_id="trace-local-api-response-control-unavailable",
+                error_id="local-api-response-control-unavailable",
+                code=ErrorCode.SERVICE_UNHEALTHY,
+                message="Local API response control handler unavailable.",
+                recoverable=True,
+                reason="handler_unavailable",
+            ).model_dump(mode="json"),
+            status_code=503,
+        )
+    try:
+        result = response_control_handler(action, response_id)
+    except Exception:
+        return _json(
+            _error_envelope(
+                trace_id="trace-local-api-response-control-failed",
+                error_id=f"local-api-response-{action}-failed",
+                code=ErrorCode.PROVIDER_ERROR,
+                message="Provider response control request failed.",
+                recoverable=True,
+                reason=f"{action}_failed",
+            ).model_dump(mode="json"),
+            status_code=502,
+        )
+    return _json(result if isinstance(result, dict) else {"id": response_id, "action": action})
+
+
 async def _parse_turn_request(
     request: Request,
     *,
@@ -287,6 +366,12 @@ def _valid_trace_id(trace_id: str) -> bool:
     if not trace_id.strip():
         return False
     return all(character.isalnum() or character in ".:-_" for character in trace_id)
+
+
+def _valid_response_id(response_id: str) -> bool:
+    if not response_id.strip():
+        return False
+    return all(character.isalnum() or character in ".:-_" for character in response_id)
 
 
 def _validation_error(reason: str) -> ErrorEnvelope:

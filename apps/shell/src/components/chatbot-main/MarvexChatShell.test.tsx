@@ -207,11 +207,79 @@ describe("MarvexChatShell", () => {
     );
 
     expect(screen.getByRole("button", { name: "Select model" })).toBeInTheDocument();
-    expect(screen.getByText("1.2K / 128K")).toHaveAttribute("title", "Input 1240 tokens, output 320, total 1560, 240 cached, 64 reasoning, 128000 context window");
+    expect(screen.getByLabelText("Input tokens: 1240")).toHaveTextContent("1.2K");
+    expect(screen.getByLabelText("Output tokens: 320")).toHaveTextContent("320");
+    expect(screen.getByLabelText("Context window 1% used")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Reasoning effort: High" }));
     await userEvent.click(screen.getByRole("button", { name: "Medium" }));
     expect(onSelectReasoningEffort).toHaveBeenCalledWith("medium");
     await userEvent.click(screen.getByRole("button", { name: "Stop generation" }));
     expect(onStop).toHaveBeenCalledTimes(1);
+  });
+
+  it("uses total response tokens for context-window usage when available", () => {
+    render(
+      <MarvexChatShell
+        messages={[]}
+        pending={false}
+        onSubmit={vi.fn()}
+        contextInputTokens={1000}
+        outputTokens={2000}
+        totalTokens={3000}
+        contextWindow={10000}
+        renderAssistantOrb={() => <span />}
+      />,
+    );
+
+    expect(screen.getByLabelText("Context window 30% used")).toHaveAttribute(
+      "title",
+      "Context window: 30% used by last response (3000 / 10000 tokens)",
+    );
+  });
+
+  it("falls back to input tokens for context-window usage before total usage exists", () => {
+    render(
+      <MarvexChatShell
+        messages={[]}
+        pending={false}
+        onSubmit={vi.fn()}
+        contextInputTokens={1000}
+        outputTokens={0}
+        totalTokens={0}
+        contextWindow={10000}
+        renderAssistantOrb={() => <span />}
+      />,
+    );
+
+    expect(screen.getByLabelText("Context window 10% used")).toBeInTheDocument();
+  });
+
+  it("shows edit retry and delete actions for completed transcript messages", async () => {
+    const onEditUserMessage = vi.fn();
+    const onRetryAssistantMessage = vi.fn();
+    const onDeleteMessage = vi.fn();
+    render(
+      <MarvexChatShell
+        messages={[
+          { id: "user-1", role: "user", text: "Original prompt" },
+          { id: "assistant-1", role: "assistant", text: "Original answer.", providerResponseId: "resp-1" },
+        ]}
+        pending={false}
+        onSubmit={vi.fn()}
+        onEditUserMessage={onEditUserMessage}
+        onRetryAssistantMessage={onRetryAssistantMessage}
+        onDeleteMessage={onDeleteMessage}
+        renderAssistantOrb={() => <span />}
+      />,
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Edit message" }));
+    expect(onEditUserMessage).toHaveBeenCalledWith("user-1", "Original prompt");
+
+    await userEvent.click(screen.getByRole("button", { name: "Retry response" }));
+    expect(onRetryAssistantMessage).toHaveBeenCalledWith("assistant-1");
+
+    await userEvent.click(screen.getByRole("button", { name: "Delete response" }));
+    expect(onDeleteMessage).toHaveBeenCalledWith("assistant-1");
   });
 });

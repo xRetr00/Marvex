@@ -1,6 +1,10 @@
 export interface StoredMessage {
+  id?: string;
   role: "user" | "assistant" | "system";
   text: string;
+  providerResponseId?: string;
+  previousResponseId?: string;
+  editedAt?: number;
   commentary?: string[];
   stages?: unknown;
   directives?: unknown;

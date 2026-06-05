@@ -1,5 +1,5 @@
 import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
-import { Copy, RotateCcw } from "lucide-react";
+import { Copy, Pencil, RotateCcw, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -74,8 +74,26 @@ export function ChatbotCopyAction({ text }: { text: string }) {
 export function ChatbotRetryAction({ onRetry }: { onRetry?: () => void }) {
   if (!onRetry) return null;
   return (
-    <Button aria-label="Retry message" size="icon" type="button" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={onRetry}>
+    <Button aria-label="Retry response" title="Retry response" size="icon" type="button" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={onRetry}>
       <RotateCcw size={13} />
+    </Button>
+  );
+}
+
+export function ChatbotEditAction({ onEdit }: { onEdit?: () => void }) {
+  if (!onEdit) return null;
+  return (
+    <Button aria-label="Edit message" title="Edit message" size="icon" type="button" variant="ghost" className="h-7 w-7 text-muted-foreground" onClick={onEdit}>
+      <Pencil size={13} />
+    </Button>
+  );
+}
+
+export function ChatbotDeleteAction({ onDelete, label = "Delete message" }: { onDelete?: () => void; label?: string }) {
+  if (!onDelete) return null;
+  return (
+    <Button aria-label={label} title={label} size="icon" type="button" variant="ghost" className="h-7 w-7 text-muted-foreground hover:text-destructive" onClick={onDelete}>
+      <Trash2 size={13} />
     </Button>
   );
 }

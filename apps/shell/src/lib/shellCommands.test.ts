@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { controlPlaneEntryUrl, createChatSession, listChatSessions, resumeApprovalTurn, submitChatTurn, submitChatTurnStream } from "./shellCommands";
+import { cancelProviderResponse, controlPlaneEntryUrl, createChatSession, deleteProviderResponse, listChatSessions, resumeApprovalTurn, submitChatTurn, submitChatTurnStream } from "./shellCommands";
 import { invoke, listen } from "./tauriBridge";
 
 vi.mock("./tauriBridge", () => ({
@@ -71,6 +71,14 @@ describe("shell command bridge", () => {
     expect(mockedInvoke).toHaveBeenCalledWith("control_plane_entry_url");
   });
 
+  it("passes provider response cancel and delete through the shell bridge", async () => {
+    await cancelProviderResponse("resp-cancel");
+    await deleteProviderResponse("resp-delete");
+
+    expect(mockedInvoke).toHaveBeenCalledWith("cancel_provider_response", { responseId: "resp-cancel" });
+    expect(mockedInvoke).toHaveBeenCalledWith("delete_provider_response", { responseId: "resp-delete" });
+  });
+
   it("resolves a streaming turn from its terminal final event even if invoke is still pending", async () => {
     let streamHandler: ((event: { payload: unknown }) => void) | undefined;
     mockedListen.mockImplementationOnce(async (_event, handler) => {
@@ -86,6 +94,31 @@ describe("shell command bridge", () => {
     streamHandler?.({ payload: { request_id: invokeArgs?.requestId, turn_id: "turn-1", event: { type: "final", result } } });
 
     await expect(pending).resolves.toEqual(result);
+  });
+
+  it("forwards live provider response ids from streaming turns", async () => {
+    let streamHandler: ((event: { payload: unknown }) => void) | undefined;
+    mockedListen.mockImplementationOnce(async (_event, handler) => {
+      streamHandler = handler as (event: { payload: unknown }) => void;
+      return () => undefined;
+    });
+    mockedInvoke.mockImplementationOnce(() => new Promise(() => undefined));
+    const onResponse = vi.fn();
+    const result = { assistant_final_response: { text: "Done" } };
+
+    const pending = submitChatTurnStream(
+      "hello",
+      { session_id: "session-1" },
+      undefined,
+      { onDelta: () => undefined, onResponse },
+    );
+    await vi.waitFor(() => expect(streamHandler).toBeDefined());
+    const invokeArgs = mockedInvoke.mock.calls.at(-1)?.[1] as { requestId?: string } | undefined;
+    streamHandler?.({ payload: { request_id: invokeArgs?.requestId, turn_id: "turn-1", event: { type: "response", response_id: "resp-live" } } });
+    streamHandler?.({ payload: { request_id: invokeArgs?.requestId, turn_id: "turn-1", event: { type: "final", result } } });
+
+    await expect(pending).resolves.toEqual(result);
+    expect(onResponse).toHaveBeenCalledWith("resp-live");
   });
 
   it("ignores terminal events emitted for another streaming turn", async () => {

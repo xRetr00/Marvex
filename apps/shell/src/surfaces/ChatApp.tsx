@@ -3,7 +3,7 @@ import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText,
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localTurn";
-import { cancelActiveChatTurn, deleteChatSession, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ChatStatusEvent, type ShellRuntimeConfig } from "@/lib/shellCommands";
+import { cancelActiveChatTurn, cancelProviderResponse, deleteChatSession, deleteProviderResponse, getShellRuntimeConfig, renameChatSession, showOverlay, submitChatTurnStream, resumeApprovalTurn, startBackend, marvexShutdown, marvexRestart, createChatSession, listChatSessions, type BackendSession, type ChatStatusEvent, type ShellRuntimeConfig } from "@/lib/shellCommands";
 import { getPersistedMode, persistMode } from "@/lib/modeStore";
 import { displayDetail, idleAssistantState, normalizeAssistantState, type AssistantStateEvent, type AssistantStatusKind } from "@/lib/assistantState";
 import { outcomeFromTurnResult, outcomeFromError, speechTextFromTurnResult } from "@/lib/turnOutcome";
@@ -32,7 +32,7 @@ import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
-type ChatMessage = { role: "user" | "assistant" | "system"; text: string; commentary?: string[]; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
+type ChatMessage = { id?: string; role: "user" | "assistant" | "system"; text: string; providerResponseId?: string; previousResponseId?: string; editedAt?: number; commentary?: string[]; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
 type TabId = "chat" | "voice" | "status" | "logs" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
@@ -48,14 +48,27 @@ function randomListeningCue(): string {
   return cue;
 }
 
+function messageId(prefix: string): string {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function lastProviderResponseId(messages: ChatMessage[]): string | undefined {
+  for (let index = messages.length - 1; index >= 0; index -= 1) {
+    const id = messages[index]?.providerResponseId?.trim();
+    if (id) return id;
+  }
+  return undefined;
+}
+
 // Restored sessions must never resume in a live "Working…" state: a turn that
 // was interrupted mid-stream persists streaming=true, so settle it on load.
 function restoreMessages(stored: StoredMessage[]): ChatMessage[] {
-  return (stored as ChatMessage[]).map((message) =>
-    message.role === "assistant" && message.streaming
-      ? { ...message, streaming: false, activityEndedAt: message.activityEndedAt ?? message.activityStartedAt ?? Date.now() }
-      : message,
-  );
+  return (stored as ChatMessage[]).map((message, index) => {
+    const withId = { ...message, id: message.id ?? `restored-${index}` };
+    return withId.role === "assistant" && withId.streaming
+      ? { ...withId, streaming: false, activityEndedAt: withId.activityEndedAt ?? withId.activityStartedAt ?? Date.now() }
+      : withId;
+  });
 }
 
 function manualListenQueued(status: unknown): boolean {
@@ -113,6 +126,7 @@ export function ChatApp() {
   const backend = useBackendStatus();
   const [helloDone, setHelloDone] = useState(false);
   const [booted, setBooted] = useState(false);
+  const messagesRef = useRef<ChatMessage[]>(messages);
   const voiceSessionActiveRef = useRef(false);
   const pendingRef = useRef(false);
   const voiceListenPendingRef = useRef(false);
@@ -143,13 +157,6 @@ export function ChatApp() {
 
   useEffect(() => {
     void getShellRuntimeConfig().then(setConfig).catch(() => setConfig(null));
-    void fetchProviders()
-      .then((catalog) => {
-        setProviders(catalog);
-        return refreshProviderModels(catalog.active_provider_id);
-      })
-      .then(setProviders)
-      .catch(() => undefined);
     let cleanup: VoidFunction | undefined;
     void listen("assistant-state", (event) => {
       try { setState(normalizeAssistantState(event.payload)); }
@@ -157,6 +164,27 @@ export function ChatApp() {
     }).then((unlisten) => { cleanup = unlisten; });
     return () => cleanup?.();
   }, []);
+
+  // Load the provider catalog once the control plane is reachable, and keep
+  // retrying until it lands. Fetching only once on mount raced the runtime
+  // starting up: a single early failure left `providers` null forever, which
+  // showed as an endless "Connecting runtime" in the model selector.
+  useEffect(() => {
+    if (providers) return;
+    let active = true;
+    const attempt = () =>
+      fetchProviders()
+        .then((catalog) => {
+          if (!active) return undefined;
+          setProviders(catalog);
+          return refreshProviderModels(catalog.active_provider_id);
+        })
+        .then((refreshed) => { if (active && refreshed) setProviders(refreshed); })
+        .catch(() => undefined);
+    void attempt();
+    const timer = window.setInterval(() => { if (active) void attempt(); }, 2000);
+    return () => { active = false; window.clearInterval(timer); };
+  }, [providers, backend?.ready]);
 
   useEffect(() => {
     if (!backend?.ready || sessionIdRef.current) return;
@@ -178,6 +206,7 @@ export function ChatApp() {
   }, [backend?.ready, helloDone, booted]);
 
   useEffect(() => {
+    messagesRef.current = messages;
     if (sessionIdRef.current) {
       saveCachedMessages(sessionIdRef.current, messages as StoredMessage[]);
       setSessions(listCachedSessions());
@@ -191,24 +220,29 @@ export function ChatApp() {
       const next = [...prev];
       for (let i = next.length - 1; i >= 0; i--) {
         if (next[i].role === "assistant") {
-          next[i] = patch;
+          next[i] = { ...next[i], ...patch };
+          messagesRef.current = next;
           return next;
         }
       }
-      next.push(patch);
+      next.push({ ...patch, id: patch.id ?? messageId("assistant") });
+      messagesRef.current = next;
       return next;
     });
   }, []);
 
   const lastVoiceEventRef = useRef<string>("");
 
-  const send = useCallback(async (text: string, options: { appendUser?: boolean; onProgress?: (text: string) => void } = {}): Promise<SendResult> => {
+  const send = useCallback(async (text: string, options: { appendUser?: boolean; previousResponseId?: string; onProgress?: (text: string) => void } = {}): Promise<SendResult> => {
     if (!text.trim() || pendingRef.current) return { text: "", speechText: "" };
     const appendUser = options.appendUser ?? true;
     pendingRef.current = true;
     setPending(true);
     // Timer anchor for the "Working…/Worked for …" trace.
     const startedAt = Date.now();
+    const userMessageId = messageId("user");
+    const assistantMessageId = messageId("assistant");
+    let turnPreviousResponseId = options.previousResponseId;
     // Append a user message only for direct user turns. Follow-up UI controls
     // such as clarification answers and approvals update the active assistant
     // turn instead of creating transcript noise.
@@ -217,9 +251,9 @@ export function ChatApp() {
       if (turnPlaceholderAppended) return;
       turnPlaceholderAppended = true;
       if (appendUser) {
-        setMessages((prev) => [...prev, { role: "user", text }, { role: "assistant", text: "", streaming: true, activityStartedAt: startedAt }]);
+        setMessages((prev) => [...prev, { id: userMessageId, role: "user", text, previousResponseId: turnPreviousResponseId }, { id: assistantMessageId, role: "assistant", text: "", previousResponseId: turnPreviousResponseId, streaming: true, activityStartedAt: startedAt }]);
       } else {
-        updateLastAssistant({ role: "assistant", text: "", streaming: true, activityStartedAt: startedAt });
+        updateLastAssistant({ id: assistantMessageId, role: "assistant", text: "", previousResponseId: turnPreviousResponseId, streaming: true, activityStartedAt: startedAt });
       }
     };
     let replyText = "";
@@ -230,15 +264,19 @@ export function ChatApp() {
     let modelCommentarySeen = false;
     try {
       const sessionId = await ensureBackendSession();
+      turnPreviousResponseId = options.previousResponseId ?? previousResponseIdsRef.current[sessionId];
       appendTurnPlaceholder();
       const result = await submitChatTurnStream(
         text,
         { session_id: sessionId },
-        previousResponseIdsRef.current[sessionId],
+        turnPreviousResponseId,
         {
           onDelta: (chunk) => {
             streamed += chunk;
-            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ id: assistantMessageId, role: "assistant", text: streamed, commentary, previousResponseId: turnPreviousResponseId, streaming: true, activity, activityStartedAt: startedAt });
+          },
+          onResponse: (responseId) => {
+            updateLastAssistant({ id: assistantMessageId, role: "assistant", text: streamed, providerResponseId: responseId, commentary, previousResponseId: turnPreviousResponseId, streaming: true, activity, activityStartedAt: startedAt });
           },
           onTool: (event) => {
             const id = event.id || event.name || String(activity.length);
@@ -249,7 +287,7 @@ export function ChatApp() {
               activity = [...activity, step];
               if (!modelCommentarySeen) options.onProgress?.(activityLabel(step));
             }
-            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ id: assistantMessageId, role: "assistant", text: streamed, commentary, previousResponseId: turnPreviousResponseId, streaming: true, activity, activityStartedAt: startedAt });
           },
           onStatus: (event) => {
             const name = statusActivityName(event);
@@ -259,7 +297,7 @@ export function ChatApp() {
               activity = [...activity, step];
               if (!modelCommentarySeen) options.onProgress?.(activityLabel(step));
             }
-            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ id: assistantMessageId, role: "assistant", text: streamed, commentary, previousResponseId: turnPreviousResponseId, streaming: true, activity, activityStartedAt: startedAt });
           },
           onCommentary: (event) => {
             const modelText = String(event.text ?? "").trim();
@@ -268,7 +306,7 @@ export function ChatApp() {
             commentary = [...commentary, modelText];
             if (streamed.trim() === modelText) streamed = "";
             options.onProgress?.(modelText);
-            updateLastAssistant({ role: "assistant", text: streamed, commentary, streaming: true, activity, activityStartedAt: startedAt });
+            updateLastAssistant({ id: assistantMessageId, role: "assistant", text: streamed, commentary, previousResponseId: turnPreviousResponseId, streaming: true, activity, activityStartedAt: startedAt });
           },
         },
       );
@@ -290,12 +328,12 @@ export function ChatApp() {
       // Reconcile with the authoritative final result (text + stages + refs).
       // Settle any still-active tool steps so the chain-of-thought stops shimmering.
       const settledActivity = activity.map((step) => (step.active ? { ...step, active: false } : step));
-      updateLastAssistant({ role: "assistant", text: outcome.text, commentary: commentary.length ? commentary : undefined, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined, activityStartedAt: startedAt, activityEndedAt: Date.now() });
+      updateLastAssistant({ id: assistantMessageId, role: "assistant", text: outcome.text, providerResponseId: nextProviderResponseId, previousResponseId: turnPreviousResponseId, commentary: commentary.length ? commentary : undefined, stages: outcome.stages, citations: outcome.citations, directives: outcome.directives, approval: approvalFromTurnResult(result, text), clarification: clarificationFromTurnResult(result, text), activity: settledActivity.length ? settledActivity : undefined, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } catch (error) {
       appendTurnPlaceholder();
       const outcome = outcomeFromError(error);
       replyText = outcome.text;
-      updateLastAssistant({ role: "assistant", text: outcome.text, activityStartedAt: startedAt, activityEndedAt: Date.now() });
+      updateLastAssistant({ id: assistantMessageId, role: "assistant", text: outcome.text, previousResponseId: turnPreviousResponseId, activityStartedAt: startedAt, activityEndedAt: Date.now() });
     } finally {
       pendingRef.current = false;
       setPending(false);
@@ -322,7 +360,11 @@ export function ChatApp() {
   }, [send]);
 
   const stopChatTurn = useCallback(() => {
+    const activeResponseId = [...messagesRef.current]
+      .reverse()
+      .find((message) => message.role === "assistant" && message.streaming && message.providerResponseId)?.providerResponseId;
     void cancelActiveChatTurn().catch(() => undefined);
+    if (activeResponseId) void cancelProviderResponse(activeResponseId).catch(() => undefined);
     pendingRef.current = false;
     setPending(false);
     setMessages((prev) => prev.filter((message) => !(message.role === "assistant" && !message.text.trim() && message.streaming)));
@@ -359,6 +401,83 @@ export function ChatApp() {
       setPending(false);
     }
   }, []);
+
+  const syncSessionResponseAnchor = useCallback((nextMessages: ChatMessage[]) => {
+    const sessionId = sessionIdRef.current;
+    if (!sessionId) return;
+    const nextResponseId = lastProviderResponseId(nextMessages);
+    if (nextResponseId) {
+      previousResponseIdsRef.current[sessionId] = nextResponseId;
+    } else {
+      delete previousResponseIdsRef.current[sessionId];
+    }
+    const cached = listCachedSessions().find((item) => item.id === sessionId);
+    rememberSession({
+      id: sessionId,
+      title: cached?.title ?? nextMessages.find((message) => message.role === "user")?.text.slice(0, 48) ?? "New chat",
+      updatedAt: Date.now(),
+      lastProviderResponseId: nextResponseId,
+    });
+  }, []);
+
+  const deleteMessage = useCallback((messageId: string) => {
+    if (pendingRef.current) return;
+    const current = messagesRef.current;
+    const index = current.findIndex((message) => message.id === messageId);
+    if (index < 0) return;
+    const target = current[index];
+    let removeThrough = index;
+    if (target.role === "user" && current[index + 1]?.role === "assistant") removeThrough = index + 1;
+    const removed = current.slice(index, removeThrough + 1);
+    const next = [...current.slice(0, index), ...current.slice(removeThrough + 1)];
+    messagesRef.current = next;
+    setMessages(next);
+    syncSessionResponseAnchor(next);
+    for (const message of removed) {
+      if (message.providerResponseId) void deleteProviderResponse(message.providerResponseId).catch(() => undefined);
+    }
+  }, [syncSessionResponseAnchor]);
+
+  const editUserMessage = useCallback((messageId: string, currentText: string) => {
+    if (pendingRef.current) return;
+    const edited = window.prompt("Edit message", currentText)?.trim();
+    if (!edited || edited === currentText.trim()) return;
+    const current = messagesRef.current;
+    const index = current.findIndex((message) => message.id === messageId && message.role === "user");
+    if (index < 0) return;
+    const previousResponseId = current[index].previousResponseId;
+    const removedAssistantResponseIds = current.slice(index).flatMap((message) => message.providerResponseId ? [message.providerResponseId] : []);
+    const next = current.slice(0, index);
+    messagesRef.current = next;
+    setMessages(next);
+    syncSessionResponseAnchor(next);
+    for (const responseId of removedAssistantResponseIds) void deleteProviderResponse(responseId).catch(() => undefined);
+    void send(edited, { appendUser: true, previousResponseId });
+  }, [send, syncSessionResponseAnchor]);
+
+  const retryAssistantMessage = useCallback((messageId: string) => {
+    if (pendingRef.current) return;
+    let retryText = "";
+    let previousResponseId: string | undefined;
+    const current = messagesRef.current;
+    const index = current.findIndex((message) => message.id === messageId && message.role === "assistant");
+    if (index < 0) return;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      if (current[cursor].role === "user") {
+        retryText = current[cursor].text;
+        previousResponseId = current[cursor].previousResponseId;
+        break;
+      }
+    }
+    if (!retryText.trim()) return;
+    const removedResponseIds = current.slice(index).flatMap((message) => message.providerResponseId ? [message.providerResponseId] : []);
+    const next = current.slice(0, index);
+    messagesRef.current = next;
+    setMessages(next);
+    syncSessionResponseAnchor(next);
+    for (const responseId of removedResponseIds) void deleteProviderResponse(responseId).catch(() => undefined);
+    void send(retryText, { appendUser: false, previousResponseId });
+  }, [send, syncSessionResponseAnchor]);
 
   const stopManualVoiceSession = useCallback(() => {
     voiceSessionGenerationRef.current += 1;
@@ -781,6 +900,9 @@ export function ChatApp() {
                 onToggleVoiceSession={toggleVoiceSession}
                 onApprovalDecision={decideChatApproval}
                 onClarificationAnswer={answerClarification}
+                onDeleteMessage={deleteMessage}
+                onEditUserMessage={editUserMessage}
+                onRetryAssistantMessage={retryAssistantMessage}
                 onStop={stopChatTurn}
                 pending={pending}
                 modelLabel={activeModelOption?.name ?? (providers ? "Select model" : "Connecting runtime")}
