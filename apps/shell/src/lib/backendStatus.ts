@@ -16,6 +16,7 @@ export const FAILED_PHASES = new Set([
   "install_failed",
   "install_incomplete",
   "uv_unavailable",
+  "wheelhouse_missing",
   "failed",
 ]);
 

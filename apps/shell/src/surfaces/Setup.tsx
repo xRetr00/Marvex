@@ -14,7 +14,12 @@ const RUNTIME_PHASE_TEXT: Record<string, string> = {
 };
 
 function isFailedPhase(phase: string): boolean {
-  return phase.endsWith("_failed") || phase.endsWith("_incomplete") || phase === "uv_unavailable";
+  return (
+    phase.endsWith("_failed") ||
+    phase.endsWith("_incomplete") ||
+    phase === "uv_unavailable" ||
+    phase === "wheelhouse_missing"
+  );
 }
 
 /**
@@ -91,8 +96,8 @@ export function SetupPage({ onComplete }: SetupProps) {
       try {
         // First launch: wait for the uv venv bootstrap before reaching Core.
         const runtime = await waitForRuntimeReady(setBootText);
-        if (runtime.endsWith("_failed") || runtime.endsWith("_incomplete") || runtime === "uv_unavailable") {
-          setError("Runtime setup failed. See logs (runtime.bootstrap.log).");
+        if (isFailedPhase(runtime)) {
+          setError("Runtime setup failed. Restart Marvex or reinstall the packaged runtime.");
           setPhase("error");
           return;
         }
@@ -126,7 +131,7 @@ export function SetupPage({ onComplete }: SetupProps) {
 
         const finalStatus = await fetchDeps();
         if (finalStatus.deps.some((dep) => !dep.installed)) {
-          setError("Runtime setup failed. See logs (runtime.bootstrap.log).");
+          setError("Runtime setup failed. Restart Marvex or reinstall the packaged runtime.");
           setPhase("error");
           return;
         }

@@ -645,21 +645,35 @@ fn ensure_runtime(
         },
     );
     let python = venv_script(&venv, "python");
-    let mut args: Vec<String> = vec!["pip".to_string(), "install".to_string()];
+    let mut args: Vec<String> = vec![
+        "pip".to_string(),
+        "install".to_string(),
+        "--no-build".to_string(),
+        "--only-binary".to_string(),
+        ":all:".to_string(),
+    ];
     if existing_console_script {
         args.push("--reinstall-package".to_string());
         args.push(MARVEX_PACKAGE_NAME.to_string());
     }
     args.push("--python".to_string());
     args.push(python.to_string_lossy().to_string());
-    // Prefer bundled wheels (offline) when present, with PyPI fallback.
+    // Packaged runtime must be fully offline and wheel-only. Falling back to
+    // PyPI or building sdists on a customer machine leaks noisy build output
+    // and can fail without a compiler/toolchain.
     if let Some(dir) = resource_dir {
         let wheels = dir.join("wheels");
-        if wheels.is_dir() {
-            args.push("--no-index".to_string());
-            args.push("--find-links".to_string());
-            args.push(wheels.to_string_lossy().to_string());
+        if !wheels.is_dir() {
+            status.set("runtime", "wheelhouse_missing");
+            write_bootstrap_status(
+                &bootstrap_log,
+                "runtime install failed: packaged wheelhouse is missing",
+            );
+            return RuntimeOutcome::Failed;
         }
+        args.push("--no-index".to_string());
+        args.push("--find-links".to_string());
+        args.push(wheels.to_string_lossy().to_string());
     }
     args.push(wheel.to_string_lossy().to_string());
     if !run_tool(&uv, &args, data_dir, &bootstrap_log) {
@@ -677,12 +691,16 @@ fn ensure_runtime(
     }
 }
 
-/// Run a one-shot tool (uv) windowless, appending combined output to a log.
+/// Run a one-shot tool (uv) windowless. Raw tool output is suppressed by
+/// default because third-party package build logs include local user paths and
+/// huge noisy traces. Set MARVEX_VERBOSE_BOOTSTRAP_LOG=1 for local debugging.
 fn run_tool(tool: &Path, args: &[String], cwd: &Path, log_path: &Path) -> bool {
     let mut command = Command::new(tool);
     command.args(args);
     command.current_dir(cwd);
     command.env("UV_CACHE_DIR", runtime_uv_cache_dir(cwd));
+    command.env("UV_NO_PROGRESS", "1");
+    command.env("PIP_DISABLE_PIP_VERSION_CHECK", "1");
     command.stdin(Stdio::null());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::piped());
@@ -692,11 +710,69 @@ fn run_tool(tool: &Path, args: &[String], cwd: &Path, log_path: &Path) -> bool {
         Ok(output) => output,
         Err(_) => return false,
     };
-    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
-        let _ = file.write_all(&output.stdout);
-        let _ = file.write_all(&output.stderr);
+    let success = output.status.success();
+    if verbose_bootstrap_log_enabled() {
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+            let _ = file.write_all(sanitize_bootstrap_bytes(&output.stdout).as_bytes());
+            let _ = file.write_all(sanitize_bootstrap_bytes(&output.stderr).as_bytes());
+        }
+    } else if !success {
+        write_bootstrap_status(
+            log_path,
+            &format!(
+                "runtime bootstrap command failed: {} {} (exit={})",
+                tool.file_name()
+                    .and_then(|name| name.to_str())
+                    .unwrap_or("tool"),
+                sanitized_bootstrap_args(args),
+                output
+                    .status
+                    .code()
+                    .map(|code| code.to_string())
+                    .unwrap_or_else(|| "terminated".to_string())
+            ),
+        );
     }
-    output.status.success()
+    success
+}
+
+fn verbose_bootstrap_log_enabled() -> bool {
+    std::env::var("MARVEX_VERBOSE_BOOTSTRAP_LOG")
+        .map(|value| matches!(value.trim(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+fn write_bootstrap_status(log_path: &Path, message: &str) {
+    if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(log_path) {
+        let _ = writeln!(file, "{message}");
+    }
+}
+
+fn sanitized_bootstrap_args(args: &[String]) -> String {
+    args.iter()
+        .map(|arg| {
+            if arg.contains('\\') || arg.contains('/') {
+                "<path>".to_string()
+            } else {
+                arg.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+fn sanitize_bootstrap_bytes(bytes: &[u8]) -> String {
+    let text = String::from_utf8_lossy(bytes);
+    let mut sanitized = text.to_string();
+    for var in ["USERPROFILE", "LOCALAPPDATA", "APPDATA", "HOME"] {
+        if let Some(value) = std::env::var_os(var).and_then(|value| {
+            let text = value.to_string_lossy().to_string();
+            (!text.is_empty()).then_some(text)
+        }) {
+            sanitized = sanitized.replace(&value, &format!("<{var}>"));
+        }
+    }
+    sanitized
 }
 
 /// Write `<data_dir>/runtime/manifest.json` describing the live runtime so the
@@ -959,9 +1035,10 @@ mod tests {
         console_script_can_be_updated, default_file_capability_root, default_product_model,
         default_product_provider, find_uv, first_marvex_wheel, record_installed_runtime_wheel,
         resource_env_paths, runtime_uv_cache_dir, runtime_venv_is_current, sanitize_log_line,
-        service_kind_label, service_specs, sidecar_path, venv_create_args, venv_root, venv_script,
-        write_runtime_manifest, RuntimeConfig, RuntimeOutcome, ServiceKind, Supervisor,
-        SupervisorStatus, PYTHON_RUNTIME_VERSION,
+        sanitize_bootstrap_bytes, sanitized_bootstrap_args, service_kind_label, service_specs,
+        sidecar_path, venv_create_args, venv_root, venv_script, write_runtime_manifest,
+        RuntimeConfig, RuntimeOutcome, ServiceKind, Supervisor, SupervisorStatus,
+        PYTHON_RUNTIME_VERSION,
     };
     use serde_json::Value;
     use std::{
@@ -1165,6 +1242,26 @@ mod tests {
             sanitize_log_line("request failed Authorization: Bearer secret-token trace=trace-1"),
             "request failed Authorization: Bearer [redacted] trace=trace-1"
         );
+    }
+
+    #[test]
+    fn bootstrap_log_helpers_hide_local_paths() {
+        let args = vec![
+            "pip".to_string(),
+            "install".to_string(),
+            "C:\\Users\\Example\\AppData\\Local\\com.marvex.shell\\runtime\\marvex.whl"
+                .to_string(),
+        ];
+
+        assert_eq!(sanitized_bootstrap_args(&args), "pip install <path>");
+
+        let user_profile = std::env::var("USERPROFILE").ok();
+        if let Some(profile) = user_profile {
+            let raw = format!("failed inside {profile}\\runtime\\uv-cache");
+            let sanitized = sanitize_bootstrap_bytes(raw.as_bytes());
+            assert!(!sanitized.contains(&profile));
+            assert!(sanitized.contains("<USERPROFILE>"));
+        }
     }
 
     #[test]

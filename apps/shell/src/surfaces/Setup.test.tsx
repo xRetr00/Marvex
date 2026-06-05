@@ -68,7 +68,7 @@ describe("SetupPage", () => {
       await Promise.resolve();
       await Promise.resolve();
     });
-    screen.getByText("Runtime setup failed. See logs (runtime.bootstrap.log).");
+    screen.getByText("Runtime setup failed. Restart Marvex or reinstall the packaged runtime.");
 
     expect(mockedMarkSetupDone).not.toHaveBeenCalled();
     expect(onComplete).not.toHaveBeenCalled();
