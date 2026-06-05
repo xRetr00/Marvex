@@ -56,7 +56,9 @@
       "../runtime/marvex-*.whl": ".",
       "../runtime/wheels": "wheels",
       "../../control_plane_web/dist": "control_plane_web",
-      "../../../voice_models.manifest.json": "voice_models.manifest.json"
+      "../../../voice_models.manifest.json": "voice_models.manifest.json",
+      "../voice-assets/stt/moonshine-v2": "voice-assets/stt/moonshine-v2",
+      "../voice-assets/wakeword/hey-marvex": "voice-assets/wakeword/hey-marvex"
     },
     "windows": {
       "nsis": {

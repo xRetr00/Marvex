@@ -546,6 +546,74 @@ function Prepare-Service-Binary {
 }
 
 # ============================================================================
+# Step 4c: Bundled voice assets (STT + wakeword embedded in the installer)
+# ============================================================================
+
+function Stage-Bundled-Voice-Assets {
+    Write-Section "Step 4c: Bundled Voice Assets"
+    # Assets flagged "bundled": true in the manifest (moonshine-v2 STT + the
+    # hey-marvex wakeword) ship inside the installer. Download them into
+    # apps/shell/voice-assets so Tauri's resources can embed them; the rest of
+    # the models stay as post-install downloads. Idempotent: existing files are
+    # left untouched, so a populated working tree skips the network entirely.
+    $manifestPath = Join-Path $RepoRoot "voice_models.manifest.json"
+    if (-not (Test-Path $manifestPath)) {
+        Write-Error-Exit "voice_models.manifest.json not found at $manifestPath"
+    }
+    $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+    $bundled = @($manifest.assets | Where-Object { $_.bundled -eq $true })
+    if ($bundled.Count -eq 0) {
+        Write-Step "No bundled voice assets in manifest; nothing to stage." 4 6
+        return
+    }
+    $assetRoot = Join-Path $ShellDir "voice-assets"
+    $prevProgress = $ProgressPreference
+    $ProgressPreference = 'SilentlyContinue'
+    try {
+        foreach ($asset in $bundled) {
+            $rel = $asset.relative_path -replace '/', '\'
+            $target = Join-Path $assetRoot $rel
+            if ($asset.extract -eq $true) {
+                $hasContent = (Test-Path $target) -and `
+                    ($null -ne (Get-ChildItem -Path $target -Recurse -File -ErrorAction SilentlyContinue | Select-Object -First 1))
+                if ($hasContent) {
+                    Write-Step "Have $($asset.model_id) ($($asset.relative_path))" 4 6
+                    continue
+                }
+                New-Item -ItemType Directory -Force -Path $target | Out-Null
+                $tmp = Join-Path $env:TEMP ("marvex-voice-" + [System.IO.Path]::GetFileName($asset.source_uri))
+                Write-Step "Downloading $($asset.model_id) archive..." 4 6
+                Invoke-WebRequest -Uri $asset.source_uri -OutFile $tmp -UseBasicParsing
+                Write-Step "Extracting $($asset.model_id)..." 4 6
+                & tar -xf $tmp -C $target
+                if ($LASTEXITCODE -ne 0) { Write-Error-Exit "Failed to extract $($asset.source_uri)" }
+                Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+            }
+            else {
+                if ((Test-Path $target) -and ((Get-Item $target).Length -gt 0)) {
+                    Write-Step "Have $($asset.relative_path)" 4 6
+                    continue
+                }
+                $parent = Split-Path -Parent $target
+                New-Item -ItemType Directory -Force -Path $parent | Out-Null
+                Write-Step "Downloading $($asset.relative_path)..." 4 6
+                Invoke-WebRequest -Uri $asset.source_uri -OutFile $target -UseBasicParsing
+                if ($asset.checksum_sha256) {
+                    $digest = (Get-FileHash -Algorithm SHA256 -Path $target).Hash.ToLower()
+                    if ($digest -ne ([string]$asset.checksum_sha256).ToLower()) {
+                        Write-Error-Exit "Checksum mismatch for $($asset.relative_path)"
+                    }
+                }
+            }
+        }
+        Write-Success "Bundled voice assets staged at $assetRoot"
+    }
+    finally {
+        $ProgressPreference = $prevProgress
+    }
+}
+
+# ============================================================================
 # Step 5: Build Tauri App + Installers
 # ============================================================================
 
@@ -700,7 +768,8 @@ function Main {
     Build-Frontend
     Verify-Frontend-Assets
     Prepare-Service-Binary
-    
+    Stage-Bundled-Voice-Assets
+
     if ($SkipInstaller) {
         Build-Tauri-App -NoBundle
         Write-Section "Build Summary (Skip Installer Mode)"

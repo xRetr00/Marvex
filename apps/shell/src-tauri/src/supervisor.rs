@@ -490,24 +490,38 @@ fn resource_env_paths(
             path.to_string_lossy().to_string(),
         ));
     }
-    let voice_assets = resource_dir
+    // The voice asset root must be WRITABLE: the bundled STT + wakeword models
+    // ship read-only in the resource dir and are seeded into this root, while the
+    // remaining models (Kokoro TTS, etc.) are downloaded into it at runtime via
+    // the manifest. So always resolve to a writable location, then seed the
+    // bundled assets into it without clobbering anything already downloaded.
+    let bundled_voice_assets = resource_dir
         .map(|dir| dir.join("voice-assets"))
-        .filter(|path| path.is_dir())
-        .or_else(|| {
-            if resource_dir.is_some() {
-                return Some(data_dir.join("voice-assets"));
-            }
-            let path = repo_root.join("apps").join("shell").join("voice-assets");
-            path.is_dir()
-                .then_some(path)
-                .or_else(|| Some(data_dir.join("voice-assets")))
-        });
-    if let Some(path) = voice_assets {
-        env.push((
-            "MARVEX_VOICE_ASSET_ROOT".to_string(),
-            path.to_string_lossy().to_string(),
-        ));
+        .filter(|path| path.is_dir());
+    let voice_root = if resource_dir.is_some() {
+        data_dir.join("voice-assets")
+    } else {
+        let repo_assets = repo_root.join("apps").join("shell").join("voice-assets");
+        if repo_assets.is_dir() {
+            repo_assets
+        } else {
+            data_dir.join("voice-assets")
+        }
+    };
+    if let Err(err) = fs::create_dir_all(&voice_root) {
+        eprintln!(
+            "[marvex] failed to create voice asset root {voice_root:?}: {err}"
+        );
     }
+    if let Some(bundled) = bundled_voice_assets.as_ref() {
+        if let Err(err) = seed_dir_missing(bundled, &voice_root) {
+            eprintln!("[marvex] failed to seed bundled voice assets: {err}");
+        }
+    }
+    env.push((
+        "MARVEX_VOICE_ASSET_ROOT".to_string(),
+        voice_root.to_string_lossy().to_string(),
+    ));
     let voice_manifest = resource_dir
         .map(|dir| dir.join("voice_models.manifest.json"))
         .filter(|path| path.is_file())
@@ -522,6 +536,32 @@ fn resource_env_paths(
         ));
     }
     env
+}
+
+/// Recursively copy files from `src` into `dst`, creating directories as needed
+/// and skipping any destination file that already exists. Used to seed the
+/// bundled (read-only) voice assets into the writable asset root on startup
+/// without clobbering models the user has already downloaded there.
+fn seed_dir_missing(src: &Path, dst: &Path) -> std::io::Result<()> {
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if file_type.is_dir() {
+            fs::create_dir_all(&to)?;
+            seed_dir_missing(&from, &to)?;
+        } else if file_type.is_file() {
+            if to.exists() {
+                continue;
+            }
+            if let Some(parent) = to.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&from, &to)?;
+        }
+    }
+    Ok(())
 }
 
 fn default_product_provider() -> String {
