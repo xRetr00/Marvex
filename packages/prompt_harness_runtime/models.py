@@ -73,13 +73,13 @@ class PromptSection(CapabilityRuntimeModel):
 
 class PromptRouteProfile(CapabilityRuntimeModel):
     route: str = "simple_chat"
-    total_context_budget: int = Field(default=800, ge=0)
+    total_context_budget: int = Field(default=8000, ge=0)
     evidence_token_budget: int = Field(default=0, ge=0)
     memory_token_budget: int = Field(default=0, ge=0)
     tool_schema_token_budget: int = Field(default=0, ge=0)
     skill_token_budget: int = Field(default=0, ge=0)
-    reserved_response_tokens: int = Field(default=300, ge=0)
-    max_context_candidates: int = Field(default=4, ge=0)
+    reserved_response_tokens: int = Field(default=1200, ge=0)
+    max_context_candidates: int = Field(default=16, ge=0)
 
 
 class PromptBlockSuppression(CapabilityRuntimeModel):
@@ -217,16 +217,16 @@ def _section_order(intent_kind: IntentKind) -> dict[PromptSectionKind, int]:
 def _route_profile(intent_kind: IntentKind) -> PromptRouteProfile:
     base = {"route": intent_kind.value}
     if intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}:
-        return PromptRouteProfile(**base, total_context_budget=1600, evidence_token_budget=900, memory_token_budget=300, tool_schema_token_budget=120, reserved_response_tokens=500, max_context_candidates=8)
+        return PromptRouteProfile(**base, total_context_budget=16000, evidence_token_budget=8000, memory_token_budget=2000, tool_schema_token_budget=1200, reserved_response_tokens=3000, max_context_candidates=32)
     if intent_kind in {IntentKind.MEMORY, IntentKind.MEMORY_TREE_NEEDED}:
-        return PromptRouteProfile(**base, total_context_budget=1200, evidence_token_budget=160, memory_token_budget=700, reserved_response_tokens=400, max_context_candidates=6)
+        return PromptRouteProfile(**base, total_context_budget=14000, evidence_token_budget=1800, memory_token_budget=7000, reserved_response_tokens=2500, max_context_candidates=32)
     if intent_kind in {IntentKind.CAPABILITY_TOOL, IntentKind.BROWSER_COMPUTER_USE, IntentKind.MCP_NEEDED, IntentKind.MCP_SKILL}:
-        return PromptRouteProfile(**base, total_context_budget=1200, tool_schema_token_budget=700, skill_token_budget=120, reserved_response_tokens=350, max_context_candidates=6)
+        return PromptRouteProfile(**base, total_context_budget=12000, tool_schema_token_budget=6000, skill_token_budget=1200, reserved_response_tokens=2500, max_context_candidates=32)
     if intent_kind == IntentKind.SKILL_NEEDED:
-        return PromptRouteProfile(**base, total_context_budget=1100, tool_schema_token_budget=200, skill_token_budget=600, reserved_response_tokens=350, max_context_candidates=6)
+        return PromptRouteProfile(**base, total_context_budget=12000, tool_schema_token_budget=1200, skill_token_budget=6000, reserved_response_tokens=2500, max_context_candidates=32)
     if intent_kind == IntentKind.RISKY_ACTION:
-        return PromptRouteProfile(**base, total_context_budget=1000, tool_schema_token_budget=400, reserved_response_tokens=350, max_context_candidates=5)
-    return PromptRouteProfile(route=intent_kind.value, total_context_budget=400, reserved_response_tokens=250, max_context_candidates=2)
+        return PromptRouteProfile(**base, total_context_budget=10000, tool_schema_token_budget=4000, reserved_response_tokens=2500, max_context_candidates=24)
+    return PromptRouteProfile(route=intent_kind.value, total_context_budget=6000, memory_token_budget=1000, skill_token_budget=800, reserved_response_tokens=1500, max_context_candidates=16)
 
 
 def _suppression_for_route(intent_kind: IntentKind) -> PromptBlockSuppression:

@@ -25,10 +25,22 @@ def test_session_context_summary_is_safe_prompt_context() -> None:
 
     context = store.prompt_context("s1")
 
-    assert "Recent session context:" in context
+    assert "Recent chat context:" in context
     assert "turn-1" in context
     assert "memory.concise" in context
     assert "raw transcript" not in context.lower()
+
+
+def test_session_context_keeps_useful_local_detail_before_projection_limit() -> None:
+    store = SessionContextStore()
+    detail = " ".join(f"detail-{index}" for index in range(120))
+    store.record_user_turn("s1", trace_id="trace-1", turn_id="turn-1", text=detail)
+
+    context = store.prompt_context("s1")
+
+    assert "detail-0" in context
+    assert "detail-119" in context
+    assert len(context) > 900
 
 
 def test_session_context_store_round_trips_safe_snapshot() -> None:

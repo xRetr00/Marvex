@@ -137,14 +137,14 @@ def tool_schema_context_candidate(
 
 def _profile_for_route(route: AdaptivePromptRoute) -> PromptRouteProfile:
     profiles = {
-        AdaptivePromptRoute.GROUNDED_LOOKUP: PromptRouteProfile(route=route.value, total_context_budget=2400, evidence_token_budget=1000, memory_token_budget=240, tool_schema_token_budget=120, skill_token_budget=160, reserved_response_tokens=700, max_context_candidates=12),
-        AdaptivePromptRoute.MEMORY_QUERY: PromptRouteProfile(route=route.value, total_context_budget=2200, evidence_token_budget=350, memory_token_budget=900, tool_schema_token_budget=80, skill_token_budget=160, reserved_response_tokens=600, max_context_candidates=12),
-        AdaptivePromptRoute.TOOL_USE: PromptRouteProfile(route=route.value, total_context_budget=1800, evidence_token_budget=160, memory_token_budget=120, tool_schema_token_budget=800, skill_token_budget=180, reserved_response_tokens=500, max_context_candidates=10),
-        AdaptivePromptRoute.BROWSER: PromptRouteProfile(route=route.value, total_context_budget=1900, evidence_token_budget=180, memory_token_budget=120, tool_schema_token_budget=700, skill_token_budget=140, reserved_response_tokens=500, max_context_candidates=10),
-        AdaptivePromptRoute.MCP: PromptRouteProfile(route=route.value, total_context_budget=1900, evidence_token_budget=160, memory_token_budget=120, tool_schema_token_budget=850, skill_token_budget=140, reserved_response_tokens=500, max_context_candidates=10),
-        AdaptivePromptRoute.CLARIFICATION: PromptRouteProfile(route=route.value, total_context_budget=500, evidence_token_budget=0, memory_token_budget=0, tool_schema_token_budget=0, skill_token_budget=0, reserved_response_tokens=200, max_context_candidates=2),
+        AdaptivePromptRoute.GROUNDED_LOOKUP: PromptRouteProfile(route=route.value, total_context_budget=16000, evidence_token_budget=8000, memory_token_budget=2000, tool_schema_token_budget=1200, skill_token_budget=1000, reserved_response_tokens=3000, max_context_candidates=32),
+        AdaptivePromptRoute.MEMORY_QUERY: PromptRouteProfile(route=route.value, total_context_budget=14000, evidence_token_budget=1800, memory_token_budget=7000, tool_schema_token_budget=800, skill_token_budget=1000, reserved_response_tokens=2500, max_context_candidates=32),
+        AdaptivePromptRoute.TOOL_USE: PromptRouteProfile(route=route.value, total_context_budget=12000, evidence_token_budget=1000, memory_token_budget=1000, tool_schema_token_budget=6000, skill_token_budget=1200, reserved_response_tokens=2500, max_context_candidates=32),
+        AdaptivePromptRoute.BROWSER: PromptRouteProfile(route=route.value, total_context_budget=12000, evidence_token_budget=1200, memory_token_budget=1000, tool_schema_token_budget=5000, skill_token_budget=1200, reserved_response_tokens=2500, max_context_candidates=32),
+        AdaptivePromptRoute.MCP: PromptRouteProfile(route=route.value, total_context_budget=12000, evidence_token_budget=1000, memory_token_budget=1000, tool_schema_token_budget=6000, skill_token_budget=1200, reserved_response_tokens=2500, max_context_candidates=32),
+        AdaptivePromptRoute.CLARIFICATION: PromptRouteProfile(route=route.value, total_context_budget=3000, evidence_token_budget=0, memory_token_budget=600, tool_schema_token_budget=0, skill_token_budget=0, reserved_response_tokens=1000, max_context_candidates=8),
     }
-    return profiles.get(route, PromptRouteProfile(route=AdaptivePromptRoute.SIMPLE_CHAT.value, total_context_budget=800, evidence_token_budget=0, memory_token_budget=80, tool_schema_token_budget=0, skill_token_budget=80, reserved_response_tokens=300, max_context_candidates=4))
+    return profiles.get(route, PromptRouteProfile(route=AdaptivePromptRoute.SIMPLE_CHAT.value, total_context_budget=6000, evidence_token_budget=0, memory_token_budget=1000, tool_schema_token_budget=0, skill_token_budget=800, reserved_response_tokens=1500, max_context_candidates=16))
 
 
 def _route_for_intent(kind: IntentKind) -> AdaptivePromptRoute:

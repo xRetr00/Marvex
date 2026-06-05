@@ -12,7 +12,7 @@ class SessionContextItem(BaseModel):
     role: Literal["user", "assistant", "tool"]
     trace_id: str = Field(..., min_length=1)
     turn_id: str = Field(..., min_length=1)
-    safe_summary: str = Field(..., min_length=1, max_length=1200)
+    safe_summary: str = Field(..., min_length=1, max_length=2400)
     tool_result_refs: tuple[str, ...] = ()
     memory_refs: tuple[str, ...] = ()
     entity_refs: tuple[str, ...] = ()
@@ -123,7 +123,7 @@ class SessionContextStore:
                             role=str(row.get("role") or "user"),  # type: ignore[arg-type]
                             trace_id=str(row.get("trace_id") or "trace-restored"),
                             turn_id=str(row.get("turn_id") or "turn-restored"),
-                            safe_summary=str(row.get("safe_summary") or "Restored context.")[:1200],
+                            safe_summary=str(row.get("safe_summary") or "Restored context.")[:2400],
                             tool_result_refs=tuple(str(value) for value in row.get("tool_result_refs", ()) if value),
                             memory_refs=tuple(str(value) for value in row.get("memory_refs", ()) if value),
                             entity_refs=tuple(str(value) for value in row.get("entity_refs", ()) if value),
@@ -167,8 +167,8 @@ def _summarize(text: str, *, prefix: str) -> str:
     value = " ".join((text or "").strip().split())
     if not value:
         value = "empty turn"
-    if len(value) > 1000:
-        value = value[:997].rstrip() + "..."
+    if len(value) > 2000:
+        value = value[:1997].rstrip() + "..."
     return f"{prefix}: {value}"
 
 

@@ -238,9 +238,9 @@ def test_control_plane_voice_worker_exposes_safe_model_catalog() -> None:
 
     assert status == "200 OK"
     assert catalog["raw_payload_persisted"] is False
-    # Runtime download catalog: downloadable models are present, but bundled
-    # assets (STT + wakeword, shipped in the installer) are filtered out.
-    assert any(asset["model_id"] == "kokoro-af-heart" for asset in catalog["assets"])
-    assert not any(asset["model_id"] == "moonshine-v2" for asset in catalog["assets"])
-    assert not any(asset["model_id"] == "hey-marvex" for asset in catalog["assets"])
+    # Full catalog: bundled backends stay selectable but are flagged so the UI can
+    # hide their download action; downloadable models carry bundled=false.
+    by_id = {asset["model_id"]: asset for asset in catalog["assets"]}
+    assert by_id["moonshine-v2"]["bundled"] is True
+    assert by_id["kokoro-af-heart"]["bundled"] is False
     assert all(asset["explicit_user_triggered"] is True for asset in catalog["assets"])

@@ -83,7 +83,7 @@ class CognitionRuntime:
             grounding_required=grounding_required,
         )
         adaptive_policy = adaptive_context_policy_for_route(_adaptive_route_for_intent(intent_ref.intent_kind))
-        candidates = _compact_candidates(candidates, max_tokens=max(120, adaptive_policy.profile.total_context_budget // 3))
+        candidates = _compact_candidates(candidates, max_tokens=max(1200, adaptive_policy.profile.total_context_budget // 2))
         context_pack = adaptive_policy.build_pack(
             schema_version=turn_input.schema_version,
             trace_id=turn_input.trace_id,
@@ -362,11 +362,11 @@ def _route_summary(text: str | None, intent_kind: IntentKind) -> str:
 
 def _bounded_input_summary(text: str | None) -> str:
     value = (text or "").strip() or "empty turn"
-    return value[:600]
+    return value[:1200]
 
 
 def _estimate_tokens(text: str) -> int:
-    return max(4, min(300, len(text.split()) + 4))
+    return max(4, min(1200, len(text.split()) + 4))
 
 
 def _adaptive_route_for_intent(intent_kind: IntentKind) -> AdaptivePromptRoute:
@@ -410,7 +410,7 @@ def _compact_candidates(candidates: list[ContextCandidate], *, max_tokens: int) 
             compacted.append(
                 candidate.model_copy(
                     update={
-                        "safe_summary": candidate.safe_summary[:600],
+                        "safe_summary": candidate.safe_summary[:1200],
                         "token_estimate": min(candidate.token_estimate, max_tokens),
                     }
                 )

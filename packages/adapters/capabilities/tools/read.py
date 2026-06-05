@@ -1,6 +1,6 @@
 """Read-file tool (file.read).
 
-Reads a sandboxed text or PDF file and returns a bounded preview. PDF support
+Reads a text or PDF file inside the configured root and returns content. PDF support
 (via pypdf, already a dependency) addresses the field case where reading a
 named report on the Desktop returned nothing because the reader was text-only.
 """
@@ -34,7 +34,7 @@ class ReadFileParams(BaseModel):
 class ReadFileTool(Tool):
     id: ClassVar[str] = "read"
     name: ClassVar[str] = "Read file"
-    description: ClassVar[str] = "Read the contents of a text or PDF file and return a bounded preview."
+    description: ClassVar[str] = "Read the contents of a text or PDF file inside the configured root."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.READ_ONLY
     params_model: ClassVar[type[BaseModel]] = ReadFileParams
