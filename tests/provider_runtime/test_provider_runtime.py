@@ -131,6 +131,24 @@ def test_create_litellm_provider_receives_base_url_timeout_and_api_key():
     assert provider._config.timeout_seconds == 9
 
 
+def test_create_litellm_provider_normalizes_google_ai_studio_openai_base_url_to_sdk_mode():
+    from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(
+        ProviderRuntimeConfig(
+            provider_name="litellm",
+            litellm_api_key="gemini-api-key-for-test",
+            base_url="https://generativelanguage.googleapis.com/v1beta/openai/",
+        )
+    )
+
+    assert isinstance(provider, LiteLLMProvider)
+    assert provider._config.api_key == "gemini-api-key-for-test"
+    assert provider._config.base_url is None
+    assert provider._config.provider_mode == "litellm_sdk"
+
+
 def test_non_litellm_provider_rejects_litellm_api_key():
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 

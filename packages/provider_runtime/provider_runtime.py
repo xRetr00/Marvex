@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from urllib.parse import urlparse
 
 from packages.ports.provider import ProviderPort
 
@@ -45,10 +46,18 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         provider_class = _litellm_provider_class()
         config_class = _litellm_provider_config_class()
         store = _litellm_conversation_store()
+        base_url = _clean_optional_string(config.base_url)
+        provider_mode = _clean_optional_string(config.provider_mode)
+        if _is_google_ai_studio_openai_base_url(base_url):
+            # Google's OpenAI-compatible endpoint documents chat/completions.
+            # Marvex's LiteLLM path must stay Responses-API based, so route
+            # Google AI Studio through LiteLLM SDK translation instead.
+            base_url = None
+            provider_mode = "litellm_sdk"
         provider_config_kwargs = {
             "api_key": _clean_optional_string(config.litellm_api_key),
-            "base_url": _clean_optional_string(config.base_url),
-            "provider_mode": _clean_optional_string(config.provider_mode),
+            "base_url": base_url,
+            "provider_mode": provider_mode,
             "timeout_seconds": config.timeout_seconds,
         }
         if provider_config_kwargs["base_url"] is not None and provider_config_kwargs["provider_mode"] is None:
@@ -170,6 +179,17 @@ def _clean_optional_string(value: str | None) -> str | None:
         return None
     stripped = value.strip()
     return stripped or None
+
+
+def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
+    if value is None:
+        return False
+    parsed = urlparse(value.strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.netloc.lower() == "generativelanguage.googleapis.com"
+        and "openai" in parsed.path.rstrip("/").lower().split("/")
+    )
 
 
 def map_provider_raw_output_to_structured_result(

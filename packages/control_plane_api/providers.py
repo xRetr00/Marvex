@@ -185,6 +185,9 @@ class InMemoryProviderControl:
         cleaned_base_url = str(base_url or "").strip()
         if cleaned_base_url and not _safe_provider_base_url(cleaned_base_url):
             raise ValueError("invalid_base_url")
+        if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
+            cleaned_base_url = ""
+            provider_mode = "litellm_sdk"
         row.base_url = cleaned_base_url
         if provider_mode is not None:
             cleaned_mode = _clean_provider_mode(str(provider_mode))
@@ -347,6 +350,9 @@ class InMemoryProviderControl:
                 cleaned_mode = _clean_provider_mode(provider_mode)
                 if cleaned_mode:
                     row.provider_mode = cleaned_mode
+            if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(row.base_url):
+                row.base_url = ""
+                row.provider_mode = "litellm_sdk"
             if provider_id == "litellm" and row.base_url and row.provider_mode == "litellm_sdk":
                 row.provider_mode = "litellm_proxy"
             models = row_data.get("models")
@@ -546,6 +552,17 @@ def _clean_provider_mode(value: str) -> str:
 def _safe_provider_base_url(value: str) -> bool:
     parsed = urlparse(value.strip())
     return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
+
+
+def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
+    if value is None:
+        return False
+    parsed = urlparse(value.strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.netloc.lower() == "generativelanguage.googleapis.com"
+        and "openai" in parsed.path.rstrip("/").lower().split("/")
+    )
 
 
 def _model_id_suggests_vision(model: str) -> bool:
