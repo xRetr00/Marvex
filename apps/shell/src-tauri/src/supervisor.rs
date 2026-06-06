@@ -648,7 +648,6 @@ fn ensure_runtime(
     let mut args: Vec<String> = vec![
         "pip".to_string(),
         "install".to_string(),
-        "--no-build".to_string(),
         "--only-binary".to_string(),
         ":all:".to_string(),
     ];
