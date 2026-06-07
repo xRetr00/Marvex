@@ -125,11 +125,12 @@ def test_memory_remember_explicit_user_signal_mirrors_to_memory_service() -> Non
     assert service.records[0].content == "User prefers concise answers."
 
 
-def test_memory_remember_without_explicit_signal_returns_pending_candidate() -> None:
+def test_memory_remember_without_explicit_signal_auto_approves_and_writes() -> None:
     store = CurrentProcessMemoryStore()
+    session_ref = SessionRef(ref_type="session", ref_id="session-memory-tool")
     tool = MemoryRememberTool(
         memory_store=store,
-        session_ref=SessionRef(ref_type="session", ref_id="session-memory-tool"),
+        session_ref=session_ref,
     )
 
     result = tool.execute(
@@ -140,9 +141,13 @@ def test_memory_remember_without_explicit_signal_returns_pending_candidate() -> 
     )
 
     assert result.status == "succeeded"
-    assert result.safe_result["written"] is False
-    assert result.safe_result["policy_status"] == "pending"
-    assert store.safe_inspect() == ()
+    assert result.safe_result["written"] is True
+    assert result.safe_result["policy_status"] == "approved"
+    assert "candidate" not in result.safe_result
+    remembered = store.read_by_session(session_ref)
+    assert remembered.record_count == 1
+    assert remembered.records[0].content == "User likes terse answers."
+    assert remembered.records[0].write_authorization == "policy_approved"
 
 
 def test_memory_search_returns_safe_previews_from_store() -> None:

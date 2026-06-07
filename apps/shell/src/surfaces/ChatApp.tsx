@@ -1,5 +1,5 @@
 import { Component, lazy, Suspense, useEffect, useMemo, useRef, useState, useCallback, type ReactNode } from "react";
-import { MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2, Pencil, Trash2 } from "lucide-react";
+import { BrainCircuit, MessageSquare, Settings, Radio, History, X, Plus, Activity, ScrollText, Power, RotateCcw, Ear, Volume2, Pencil, Trash2 } from "lucide-react";
 import { AnimatePresence, motion } from "framer-motion";
 import { listen } from "@/lib/tauriBridge";
 import { type CitationRef, type TurnStage, type UiDirective } from "@/lib/localTurn";
@@ -30,10 +30,11 @@ import { WakeEnrollment } from "@/components/marvex/WakeEnrollment";
 import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
+import { MemorySettings } from "./MemorySettings";
 
 type ChatApproval = { approvalId: string; traceId: string; turnId: string; text: string; status: "pending" | "approved" | "denied" | "cancelled" };
 type ChatMessage = { id?: string; role: "user" | "assistant" | "system"; text: string; providerResponseId?: string; previousResponseId?: string; editedAt?: number; commentary?: string[]; stages?: TurnStage[]; citations?: CitationRef[]; directives?: UiDirective[]; approval?: ChatApproval; clarification?: MarvexChatClarification; streaming?: boolean; activity?: ActivityStep[]; activityStartedAt?: number; activityEndedAt?: number };
-type TabId = "chat" | "voice" | "status" | "logs" | "settings";
+type TabId = "chat" | "voice" | "status" | "logs" | "memories" | "settings";
 type AgentOrbState = "thinking" | "listening" | "talking" | null;
 type SendResult = { text: string; speechText: string };
 type VoiceCaptureTarget = "dictation" | "voice";
@@ -797,6 +798,7 @@ export function ChatApp() {
     { id: "voice" as TabId, icon: <Volume2 />, label: "Voice Mode", onClick: () => setActiveTab("voice") },
     { id: "status" as TabId, icon: <Activity />, label: "Status", onClick: () => setActiveTab("status") },
     { id: "logs" as TabId, icon: <ScrollText />, label: "Logs", onClick: () => setActiveTab("logs") },
+    { id: "memories" as TabId, icon: <BrainCircuit />, label: "Memories", onClick: () => setActiveTab("memories") },
     { id: "settings" as TabId, icon: <Settings />, label: "Settings", onClick: () => setActiveTab("settings") },
   ], []);
   const activeNavIndex = Math.max(0, navItems.findIndex((n) => n.id === activeTab));
@@ -903,7 +905,7 @@ export function ChatApp() {
     return <StartupScreen backend={backend} onHelloDone={() => setHelloDone(true)} onRetry={() => void startBackend().catch(() => undefined)} />;
   }
 
-  const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry", settings: "Settings" };
+  const TAB_TITLES: Record<TabId, string> = { chat: "Assistant Chat", voice: "Voice Mode", status: "Status", logs: "Logs / Traces / Telemetry", memories: "Memories", settings: "Settings" };
   const activeSession = sessions.find((session) => session.id === sessionIdRef.current);
   const headerSubtitle = activeTab === "chat"
     ? `${activeSession?.title || "Current chat"} • ${backend?.phase ?? "runtime"}`
@@ -1044,6 +1046,9 @@ export function ChatApp() {
             )}
             {activeTab === "logs" && (
               <div style={{ flex: 1, overflow: "auto", padding: 20 }}><LogsView /></div>
+            )}
+            {activeTab === "memories" && (
+              <div style={{ flex: 1, overflow: "auto", padding: 20 }}><MemorySettings /></div>
             )}
             {activeTab === "settings" && (
               <div style={{ flex: 1, overflow: "auto", padding: 20 }}><ControlPlaneSettings /></div>
