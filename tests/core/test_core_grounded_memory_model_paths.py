@@ -57,6 +57,12 @@ class FixedIntentClassifier:
         }
 
 
+def _lightweight_intent_planner():
+    from packages.intent_runtime.hybrid import DeterministicLocalIntentEncoder, HybridIntentRuntime
+
+    return HybridIntentRuntime(semantic_encoder=DeterministicLocalIntentEncoder())
+
+
 class RealSearchProvider:
     provider_name = "real_fixture_search"
 
@@ -118,6 +124,7 @@ def _executor(provider: RecordingProvider, *, intent_kind: str, web_search_provi
         web_search_provider=web_search_provider,
         memory_tree_runtime=memory_tree_runtime,
         memory_loop=memory_loop,
+        intent_planner=_lightweight_intent_planner(),
     )
     executor._provider = provider
     executor._intent_classifier = FixedIntentClassifier(intent_kind)

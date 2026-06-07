@@ -39,6 +39,8 @@ from packages.adapters.connectors.github_connector import (
 from packages.adapters.connectors.scheduler import AutoFetchScheduler, FetchClient
 from packages.adapters.memory.agentmemory_backend import AgentMemoryBackend
 from packages.adapters.memory.config import AgentMemoryBackendConfig
+from packages.adapters.memory.graphiti_backend import GraphitiBackendConfig, GraphitiMemoryGraphStore
+from packages.adapters.memory.qdrant_backend import QdrantMemoryBackendConfig, QdrantMemoryVectorStore
 from packages.assistant_runtime.input_normalization import (
     build_text_input_event,
     build_turn_input_from_event,
@@ -111,6 +113,8 @@ from packages.memory_tree_runtime import (
     canonicalize_source_document as canonicalize_memory_tree_document,
     chunk_document as chunk_memory_tree_document,
 )
+from packages.memory_service_runtime import MemoryService, MemoryServiceConfig
+from packages.memory_runtime import SQLiteMemoryStore
 from packages.provider_selection_runtime import (
     ModelCapabilityRequirement,
     ProviderCandidate,
@@ -200,6 +204,30 @@ class CoreServiceEntrypointConfig:
     agentmemory_daemon_url: str = "http://localhost:3111"
     agentmemory_namespace: str = "marvex"
     agentmemory_bearer_token: str | None = None
+    memory_namespace: str = "marvex"
+    graphiti_graph_backend: str = "falkordb"
+    falkordb_host: str = "localhost"
+    falkordb_port: int = 6379
+    falkordb_username: str | None = None
+    falkordb_password: str | None = None
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "password"
+    memory_llm_api_key: str | None = None
+    memory_llm_base_url: str | None = None
+    memory_llm_model: str | None = None
+    memory_llm_small_model: str | None = None
+    memory_llm_client_kind: str = "openai_responses"
+    memory_embedding_api_key: str | None = None
+    memory_embedding_base_url: str | None = None
+    graphiti_embedding_model: str = "text-embedding-3-small"
+    graphiti_embedding_dim: int = 1024
+    memory_reranker_api_key: str | None = None
+    memory_reranker_base_url: str | None = None
+    memory_reranker_model: str | None = None
+    qdrant_path: str = ".marvex-memory/qdrant"
+    qdrant_collection: str = "marvex_memory"
+    memory_embedding_model: str = "BAAI/bge-small-en-v1.5"
     desktop_agent_enabled: bool = False
     autonomy_mode: str = AutonomyMode.AUTO_MARVEX.value
 
@@ -1101,6 +1129,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         model: str,
         trace_reader: InMemoryTraceReader,
         web_search_provider: object | None = None,
+        memory_service: MemoryService | None = None,
         memory_tree_runtime: object | None = None,
         memory_loop: LocalMemoryLoop | None = None,
         file_capability_root: str | None = None,
@@ -1120,6 +1149,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         structured_output_required: bool = False,
         desktop_agent_enabled: bool = False,
         autonomy_policy: AutonomyPolicy | None = None,
+        intent_planner: object | None = None,
     ) -> None:
         self._provider_name = provider_name
         self._base_url = base_url
@@ -1147,6 +1177,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._intent_classifier = _IntentWorkerProcessClassifier(
             timeout_seconds=timeout_seconds,
         )
+        self._intent_planner = intent_planner
         self._tool_executor = _ToolWorkerProcessExecutor(
             timeout_seconds=timeout_seconds,
         )
@@ -1155,6 +1186,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         self._persistent_trace_store = persistent_trace_store
         _attach_persistent_trace_store(self._trace_reader, self._persistent_trace_store)
         self._web_search_provider = web_search_provider
+        self._memory_service = memory_service
         self._memory_tree_runtime = memory_tree_runtime
         self._memory_loop = memory_loop
         self._file_capability_root = file_capability_root
@@ -1816,7 +1848,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
         provider_turn_input: AssistantTurnInput | None = None,
         provider_instructions: str | None = None,
     ) -> AssistantTurnResult:
-        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        memory_write, memory_service_projection = self._memory_writeback(turn_input, assistant_text=text)
         learning_projection = _run_learning_hook(
             self._learning_pipeline,
             turn_input,
@@ -1830,6 +1862,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             "assistant_turn_spine": "used",
             "cognition": cognition.safe_projection().model_dump(mode="json"),
             "memory_loop": _memory_write_projection(memory_write),
+            "memory_service": memory_service_projection,
             "learning": learning_projection,
             "session": session_projection,
             "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
@@ -1923,10 +1956,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 tools.extend(dynamic_registry.tools())
             except Exception:
                 pass
-        if self._memory_loop is not None:
+        if self._memory_loop is not None or self._memory_service is not None:
             tools.extend(
                 memory_tools_registry(
-                    memory_store=self._memory_loop.memory_store,
+                    memory_store=self._memory_loop.memory_store if self._memory_loop is not None else getattr(self._memory_service, "compatibility_store", None),
+                    memory_service=self._memory_service,
                     memory_tree_runtime=self._memory_tree_runtime,
                     session_ref=getattr(self, "_current_turn_session_ref", None),
                 ).tools()
@@ -2017,6 +2051,30 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         _emit_live_status_event(status, detail=detail, trace_id=trace_id)
 
+    def _memory_writeback(self, turn_input: AssistantTurnInput, *, assistant_text: str | None = None) -> tuple[object | None, dict[str, object]]:
+        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        episodes = ()
+        if self._memory_service is not None and hasattr(self._memory_service, "ingest_turn"):
+            try:
+                episodes = self._memory_service.ingest_turn(turn_input=turn_input, assistant_text=assistant_text)
+            except Exception as exc:  # noqa: BLE001
+                return memory_write, {
+                    "enabled": True,
+                    "ingested_episode_count": 0,
+                    "error": str(exc)[:240],
+                    "raw_content_persisted": False,
+                }
+        return memory_write, {
+            "enabled": self._memory_service is not None,
+            "ingested_episode_count": len(tuple(episodes)),
+            "episodes": [
+                episode.safe_projection()
+                for episode in tuple(episodes)[:4]
+                if hasattr(episode, "safe_projection")
+            ],
+            "raw_content_persisted": False,
+        }
+
     def submit_turn(
         self,
         turn_input: AssistantTurnInput,
@@ -2092,6 +2150,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
         )
         cognition = CognitionRuntime(
             intent_classifier=_fixed_intent_classifier(intent_response["classification"]),
+            intent_planner=self._intent_planner,
+            memory_service=self._memory_service,
             memory_store=self._memory_loop.memory_store if self._memory_loop is not None else None,
             memory_tree_runtime=self._memory_tree_runtime,
             web_search_provider=self._web_search_provider,
@@ -2494,6 +2554,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "cognition": cognition.safe_projection().model_dump(mode="json"),
                 "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
                 "memory_loop": _memory_write_projection(memory_write),
+                "memory_service": memory_service_projection,
                 "session": session_projection,
                 "session_context": self._session_context.safe_projection(self._session_id_of(turn_input)),
                 "provider_selection": selection_projection,
@@ -2506,10 +2567,6 @@ class _CoreServiceProviderWorkerTurnExecutor:
         metadata = _with_loop_metadata(metadata, loop, self._trace_reader, turn_input)
         _persist_trace_events(self._persistent_trace_store, self._trace_reader, turn_input.trace_id)
         self._publish(AssistantStatusKind.IDLE, detail="turn_complete", trace_id=turn_input.trace_id)
-        final_text = ""
-        final = getattr(result, "assistant_final_response", None)
-        if final is not None and isinstance(getattr(final, "text", None), str):
-            final_text = str(final.text)
         self._session_context.record_assistant_turn(
             self._session_id_of(turn_input),
             trace_id=turn_input.trace_id,
@@ -2684,6 +2741,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                         "self_correction_attempted": True,
                         "self_correction_succeeded": False,
                         "fabricated": False,
+                        "memory_evidence_refs": _safe_memory_evidence_projections(cognition.memory_evidence_refs),
                     },
                 }
                 return _entrypoint_text_result(
@@ -2720,6 +2778,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     "fabricated": False,
                     "evidence_ref_count": len(cognition.evidence_refs),
                     "evidence_refs": [ref.safe_projection() for ref in web_refs],
+                    "memory_evidence_refs": _safe_memory_evidence_projections(cognition.memory_evidence_refs),
                 },
             }
             return _entrypoint_text_result(
@@ -2737,6 +2796,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "self_correction_applied": correction_applied,
                 "evidence_ref_count": len(cognition.evidence_refs),
                 "evidence_refs": [ref.safe_projection() for ref in web_refs],
+                "memory_evidence_refs": _safe_memory_evidence_projections(cognition.memory_evidence_refs),
+                "memory_context": cognition.memory_context_bundle.safe_projection() if cognition.memory_context_bundle is not None and hasattr(cognition.memory_context_bundle, "safe_projection") else None,
             },
         }
         return provider_result.model_copy(update={"metadata": metadata})
@@ -2830,7 +2891,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             )
         memory_projection = {
             "memory_records_recalled": _included_context_count(cognition, "memory_projection"),
-            "memory_store_available": self._memory_loop is not None,
+            "memory_store_available": self._memory_loop is not None or self._memory_service is not None,
             "raw_memory_content_persisted": False,
         }
         return self._run_provider_answer_path(
@@ -2894,7 +2955,11 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 result,
                 target_contract=str(effective_provider_options.get("structured_output_target_contract") or ""),
             )
-        memory_write = self._memory_loop.write_from_turn(turn_input) if self._memory_loop is not None else None
+        final_text = ""
+        final = getattr(result, "assistant_final_response", None)
+        if final is not None and isinstance(getattr(final, "text", None), str):
+            final_text = str(final.text)
+        memory_write, memory_service_projection = self._memory_writeback(turn_input, assistant_text=final_text)
         if result.error is not None:
             loop.step("finalize", stop_reason="failed")
         else:
@@ -2907,6 +2972,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 "prompt_fidelity": _prompt_fidelity_projection(cognition, provider_turn_input, provider_instructions),
                 "model_answer_stage": stage_name,
                 "memory_loop": _memory_write_projection(memory_write),
+                "memory_service": memory_service_projection,
             }
         )
         updated = result.model_copy(
@@ -4696,9 +4762,40 @@ def _approval_request(turn_input: AssistantTurnInput) -> CapabilityApprovalReque
 
 
 def _memory_citation_id(ref: object) -> str:
+    citation_id = getattr(ref, "citation_id", None)
+    if isinstance(citation_id, str) and citation_id:
+        return citation_id
+    evidence_id = getattr(ref, "evidence_id", None)
+    if isinstance(evidence_id, str) and evidence_id.startswith("memory.evidence."):
+        return evidence_id
+    if isinstance(evidence_id, str) and evidence_id:
+        safe_evidence = re.sub(r"[^A-Za-z0-9_.-]+", "-", evidence_id).strip("-")
+        return f"memory.evidence.{safe_evidence}"
     chunk_id = str(getattr(ref, "chunk_id", "unknown"))
     safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", chunk_id).strip("-")
     return f"memory.evidence.{safe}"
+
+
+def _safe_memory_evidence_projections(refs: object) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for ref in tuple(refs or ()):
+        if hasattr(ref, "safe_projection"):
+            projection = ref.safe_projection()
+            if isinstance(projection, dict):
+                rows.append(projection)
+                continue
+        rows.append(
+            {
+                "evidence_id": _memory_citation_id(ref),
+                "source_id": str(getattr(ref, "source_id", "memory")),
+                "domain": "memory",
+                "title": str(getattr(ref, "title", "Memory evidence")),
+                "quote_preview": str(getattr(ref, "quote_preview", ""))[:240],
+                "snippet": str(getattr(ref, "quote_preview", ""))[:240],
+                "raw_content_persisted": False,
+            }
+        )
+    return rows
 
 
 def _citation_ids_from_text(text: str, *, allowed: tuple[str, ...]) -> tuple[str, ...]:
@@ -4755,6 +4852,53 @@ def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | No
         return MemoryTreeRuntime.from_sqlite_index(index)
     except Exception:
         return None
+
+
+def _memory_service_from_config(config: CoreServiceEntrypointConfig) -> MemoryService | None:
+    if not config.memory_vault_root:
+        return None
+    if config.memory_backend != "graphiti_qdrant":
+        return None
+    root = Path(config.memory_vault_root).expanduser().resolve()
+    root.mkdir(parents=True, exist_ok=True)
+    graph_store = GraphitiMemoryGraphStore(
+        GraphitiBackendConfig(
+            backend=config.graphiti_graph_backend,
+            namespace=config.memory_namespace,
+            falkordb_host=config.falkordb_host,
+            falkordb_port=config.falkordb_port,
+            falkordb_username=config.falkordb_username,
+            falkordb_password=config.falkordb_password,
+            neo4j_uri=config.neo4j_uri,
+            neo4j_user=config.neo4j_user,
+            neo4j_password=config.neo4j_password,
+            llm_api_key=config.memory_llm_api_key,
+            llm_base_url=config.memory_llm_base_url,
+            llm_model=config.memory_llm_model,
+            llm_small_model=config.memory_llm_small_model,
+            llm_client_kind=config.memory_llm_client_kind,
+            embedding_api_key=config.memory_embedding_api_key,
+            embedding_base_url=config.memory_embedding_base_url,
+            embedding_model=config.graphiti_embedding_model,
+            embedding_dim=config.graphiti_embedding_dim,
+            reranker_api_key=config.memory_reranker_api_key,
+            reranker_base_url=config.memory_reranker_base_url,
+            reranker_model=config.memory_reranker_model,
+        )
+    )
+    vector_store = QdrantMemoryVectorStore(
+        QdrantMemoryBackendConfig(
+            collection_name=config.qdrant_collection,
+            path=str((root / "qdrant").resolve()) if config.qdrant_path == ".marvex-memory/qdrant" else config.qdrant_path,
+            embedding_model=config.memory_embedding_model,
+        )
+    )
+    return MemoryService(
+        config=MemoryServiceConfig(namespace=config.memory_namespace),
+        graph_store=graph_store,
+        vector_store=vector_store,
+        compatibility_store=SQLiteMemoryStore(memory_db_path=root / "memory.sqlite", local_user_root=root),
+    )
 
 
 def _memory_loop_from_config(config: CoreServiceEntrypointConfig) -> LocalMemoryLoop | None:
@@ -5315,6 +5459,7 @@ def _create_turn_executor(
         model=config.foundation_model,
         trace_reader=trace_reader,
         web_search_provider=_web_search_provider_from_config(config),
+        memory_service=_memory_service_from_config(config),
         memory_tree_runtime=_memory_tree_from_config(config),
         memory_loop=_memory_loop_from_config(config),
         file_capability_root=_effective_file_capability_root(config),
@@ -5585,6 +5730,8 @@ def create_control_plane_service_app(
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
     from packages.voice_worker_runtime import VoiceWorkerControlPlaneFacade
 
+    memory_service = _memory_service_from_config(config)
+    memory_loop = _memory_loop_from_config(config)
     return ControlPlaneRuntime(
         approval_store=approval_store or InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
@@ -5598,6 +5745,9 @@ def create_control_plane_service_app(
         autonomy_policy=_autonomy_policy_from_config(config),
         mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
         skills_root=str(_skills_root_from_config(config)),
+        memory_service=memory_service,
+        memory_store=memory_loop.memory_store if memory_loop is not None else None,
+        memory_tree_runtime=_memory_tree_from_config(config),
         voice_worker_control=VoiceWorkerControlPlaneFacade(),
     )
 
@@ -5981,9 +6131,133 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument(
         "--memory-backend",
-        choices=("local", "agentmemory"),
+        choices=("local", "agentmemory", "graphiti_qdrant"),
         default="local",
-        help="Memory backend selector. agentmemory is optional, loopback-oriented, and disabled by default.",
+        help="Memory backend selector. graphiti_qdrant enables Graphiti/FalkorDB plus Qdrant/FastEmbed memory.",
+    )
+    parser.add_argument(
+        "--memory-namespace",
+        default="marvex",
+        help="Base namespace for Graphiti/Qdrant memory groups.",
+    )
+    parser.add_argument(
+        "--graphiti-graph-backend",
+        choices=("falkordb", "neo4j"),
+        default="falkordb",
+        help="Graph database backend used by Graphiti memory.",
+    )
+    parser.add_argument(
+        "--falkordb-host",
+        default="localhost",
+        help="FalkorDB host for --memory-backend graphiti_qdrant.",
+    )
+    parser.add_argument(
+        "--falkordb-port",
+        type=int,
+        default=6379,
+        help="FalkorDB Redis protocol port for --memory-backend graphiti_qdrant.",
+    )
+    parser.add_argument(
+        "--falkordb-username",
+        default=None,
+        help="Optional FalkorDB username.",
+    )
+    parser.add_argument(
+        "--falkordb-password",
+        default=None,
+        help="Optional FalkorDB password.",
+    )
+    parser.add_argument(
+        "--neo4j-uri",
+        default="bolt://localhost:7687",
+        help="Neo4j URI when --graphiti-graph-backend neo4j is selected.",
+    )
+    parser.add_argument(
+        "--neo4j-user",
+        default="neo4j",
+        help="Neo4j user when --graphiti-graph-backend neo4j is selected.",
+    )
+    parser.add_argument(
+        "--neo4j-password",
+        default="password",
+        help="Neo4j password when --graphiti-graph-backend neo4j is selected.",
+    )
+    parser.add_argument(
+        "--memory-llm-api-key",
+        default=None,
+        help="Runtime-only OpenAI-compatible API key for Graphiti extraction. Falls back to MARVEX_MEMORY_LLM_API_KEY or OPENAI_API_KEY.",
+    )
+    parser.add_argument(
+        "--memory-llm-base-url",
+        default=None,
+        help="OpenAI-compatible base URL for Graphiti extraction, e.g. local model gateway.",
+    )
+    parser.add_argument(
+        "--memory-llm-model",
+        default=None,
+        help="Graphiti extraction model name.",
+    )
+    parser.add_argument(
+        "--memory-llm-small-model",
+        default=None,
+        help="Graphiti small extraction/reranking model name.",
+    )
+    parser.add_argument(
+        "--memory-llm-client-kind",
+        choices=("openai_responses", "openai_generic"),
+        default=None,
+        help="Graphiti OpenAI-compatible LLM client mode. Use openai_generic for LM Studio/local gateways.",
+    )
+    parser.add_argument(
+        "--memory-embedding-api-key",
+        default=None,
+        help="Runtime-only OpenAI-compatible API key for Graphiti embeddings. Falls back to memory LLM key.",
+    )
+    parser.add_argument(
+        "--memory-embedding-base-url",
+        default=None,
+        help="OpenAI-compatible base URL for Graphiti embeddings.",
+    )
+    parser.add_argument(
+        "--graphiti-embedding-model",
+        default="text-embedding-3-small",
+        help="Graphiti OpenAI-compatible embedding model.",
+    )
+    parser.add_argument(
+        "--graphiti-embedding-dim",
+        type=int,
+        default=1024,
+        help="Graphiti embedding dimension stored in FalkorDB/Neo4j.",
+    )
+    parser.add_argument(
+        "--memory-reranker-api-key",
+        default=None,
+        help="Runtime-only API key for Graphiti reranker. Falls back to memory LLM key.",
+    )
+    parser.add_argument(
+        "--memory-reranker-base-url",
+        default=None,
+        help="OpenAI-compatible base URL for Graphiti reranker.",
+    )
+    parser.add_argument(
+        "--memory-reranker-model",
+        default=None,
+        help="Graphiti reranker model name.",
+    )
+    parser.add_argument(
+        "--qdrant-path",
+        default=".marvex-memory/qdrant",
+        help="Local Qdrant storage path for Graphiti/Qdrant memory.",
+    )
+    parser.add_argument(
+        "--qdrant-collection",
+        default="marvex_memory",
+        help="Qdrant collection name for Marvex memory.",
+    )
+    parser.add_argument(
+        "--memory-embedding-model",
+        default="BAAI/bge-small-en-v1.5",
+        help="FastEmbed model name used by Qdrant memory.",
     )
     parser.add_argument(
         "--agentmemory-url",
@@ -6104,6 +6378,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         demo_memory_evidence=args.demo_memory_evidence,
         memory_vault_root=args.memory_vault_root,
         memory_backend=args.memory_backend,
+        memory_namespace=args.memory_namespace,
+        graphiti_graph_backend=args.graphiti_graph_backend,
+        falkordb_host=args.falkordb_host,
+        falkordb_port=args.falkordb_port,
+        falkordb_username=args.falkordb_username,
+        falkordb_password=args.falkordb_password,
+        neo4j_uri=args.neo4j_uri,
+        neo4j_user=args.neo4j_user,
+        neo4j_password=args.neo4j_password,
+        memory_llm_api_key=args.memory_llm_api_key or os.environ.get("MARVEX_MEMORY_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY"),
+        memory_llm_base_url=args.memory_llm_base_url or os.environ.get("MARVEX_MEMORY_LLM_BASE_URL"),
+        memory_llm_model=args.memory_llm_model or os.environ.get("MARVEX_MEMORY_LLM_MODEL"),
+        memory_llm_small_model=args.memory_llm_small_model or os.environ.get("MARVEX_MEMORY_LLM_SMALL_MODEL"),
+        memory_llm_client_kind=args.memory_llm_client_kind or os.environ.get("MARVEX_MEMORY_LLM_CLIENT_KIND") or "openai_responses",
+        memory_embedding_api_key=args.memory_embedding_api_key or os.environ.get("MARVEX_MEMORY_EMBEDDING_API_KEY") or args.memory_llm_api_key or os.environ.get("MARVEX_MEMORY_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY"),
+        memory_embedding_base_url=args.memory_embedding_base_url or os.environ.get("MARVEX_MEMORY_EMBEDDING_BASE_URL") or args.memory_llm_base_url or os.environ.get("MARVEX_MEMORY_LLM_BASE_URL"),
+        graphiti_embedding_model=args.graphiti_embedding_model,
+        graphiti_embedding_dim=args.graphiti_embedding_dim,
+        memory_reranker_api_key=args.memory_reranker_api_key or os.environ.get("MARVEX_MEMORY_RERANKER_API_KEY") or args.memory_llm_api_key or os.environ.get("MARVEX_MEMORY_LLM_API_KEY") or os.environ.get("OPENAI_API_KEY"),
+        memory_reranker_base_url=args.memory_reranker_base_url or os.environ.get("MARVEX_MEMORY_RERANKER_BASE_URL") or args.memory_llm_base_url or os.environ.get("MARVEX_MEMORY_LLM_BASE_URL"),
+        memory_reranker_model=args.memory_reranker_model or os.environ.get("MARVEX_MEMORY_RERANKER_MODEL"),
+        qdrant_path=args.qdrant_path,
+        qdrant_collection=args.qdrant_collection,
+        memory_embedding_model=args.memory_embedding_model,
         agentmemory_daemon_url=args.agentmemory_url,
         agentmemory_namespace=args.agentmemory_namespace,
         agentmemory_bearer_token=args.agentmemory_bearer_token,
