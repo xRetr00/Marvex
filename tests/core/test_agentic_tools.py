@@ -14,6 +14,7 @@ from packages.capability_runtime import (
     ToolRiskLevel,
     ToolSideEffectLevel,
 )
+from packages.contracts import SessionRef
 from packages.core.orchestration.agentic_tools import (
     ProviderStep,
     execute_tool_calls,
@@ -113,17 +114,58 @@ def test_risky_tool_requires_approval_and_does_not_execute(tmp_path: Path):
     assert not (tmp_path / "x.txt").exists()  # never written
 
 
-def test_write_local_memory_tools_require_approval_and_do_not_auto_execute():
-    registry = memory_tools_registry(memory_store=CurrentProcessMemoryStore())
-    outcome = execute_tool_calls(
-        [_call("memory.remember", '{"content": "remember this: I prefer short answers"}')],
+def test_memory_tools_auto_execute_without_approval():
+    store = CurrentProcessMemoryStore()
+    session_ref = SessionRef(ref_type="session", ref_id="session-memory-agentic")
+    registry = memory_tools_registry(memory_store=store, session_ref=session_ref)
+    calls = [
+        _call("memory.remember", '{"content": "User prefers short answers.", "scope": "session"}', "remember"),
+        _call("memory.search", '{"query": "short answers", "scope": "session"}', "search"),
+        _call("memory.forget", '{"memory_ref": "memory.missing"}', "forget"),
+        _call("memory.list_recent", '{"scope": "session"}', "list"),
+    ]
+
+    outcome = execute_tool_calls(calls, registry=registry, request_builder=_builder())
+
+    assert outcome.needs_approval == []
+    assert outcome.pending_tool_calls == []
+    assert outcome.executed_tool_ids == ["memory.remember", "memory.search", "memory.forget", "memory.list_recent"]
+    assert [result.status for result in outcome.results] == ["succeeded", "succeeded", "succeeded", "succeeded"]
+    remembered = store.read_by_session(session_ref)
+    assert remembered.record_count == 1
+    assert remembered.records[0].write_authorization == "policy_approved"
+
+
+def test_loop_never_pauses_for_model_authored_memory_operation():
+    store = CurrentProcessMemoryStore()
+    session_ref = SessionRef(ref_type="session", ref_id="session-memory-loop")
+    registry = memory_tools_registry(memory_store=store, session_ref=session_ref)
+    seen_tool_messages = []
+
+    def send(_input_text, tool_messages, _prev):
+        seen_tool_messages.append(tool_messages)
+        if len(seen_tool_messages) == 1:
+            return ProviderStep(
+                output_text="",
+                tool_calls=[_call("memory.remember", '{"content": "User prefers short answers.", "scope": "session"}')],
+                response_id="r-memory-tool",
+                error=False,
+            )
+        return ProviderStep(output_text="Saved it.", tool_calls=[], response_id="r-final", error=False)
+
+    result = run_tool_loop(
+        send=send,
         registry=registry,
         request_builder=_builder(),
+        max_steps=5,
+        initial_input="remember this: I prefer short answers",
     )
 
-    assert outcome.results[0].status == "needs_approval"
-    assert outcome.executed_tool_ids == []
-    assert outcome.pending_tool_calls[0].pending_tool["capability_id"] == "memory.remember"
+    assert result.status == "final"
+    assert result.needs_approval_tool_ids == []
+    assert result.executed_tool_ids == ["memory.remember"]
+    assert result.text == "Saved it."
+    assert store.read_by_session(session_ref).record_count == 1
 
 
 def test_safe_network_web_search_executes_without_approval():

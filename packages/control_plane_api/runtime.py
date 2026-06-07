@@ -45,6 +45,10 @@ ControlPlaneDispatcher = Callable[[str, str, str, dict[str, str], bytes], Contro
 
 class ControlPlaneRuntime:
     def __init__(self, **kwargs: Any) -> None:
+        if kwargs.get("approval_store") is None:
+            kwargs["approval_store"] = InMemoryApprovalStore()
+        if kwargs.get("snapshot") is None:
+            kwargs["snapshot"] = ControlPlaneSnapshot.foundation_default(schema_version=SCHEMA_VERSION)
         if kwargs.get("browser_session_manager") is None:
             kwargs["browser_session_manager"] = BrowserSessionManager()
         self.local_auth_token = str(kwargs.get("local_auth_token") or "")
@@ -111,6 +115,8 @@ def _create_control_plane_dispatcher(
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
     provider_control: Any | None = None,
+    web_search_settings: Any | None = None,
+    web_search_update_callback: Any | None = None,
 ) -> ControlPlaneDispatcher:
     runtime_policy = autonomy_policy or AutonomyPolicy.for_mode(AutonomyMode.ASK_BEFORE_RISKY)
     proposal_store = marketplace_proposal_store or MarketplaceProposalStore()
@@ -222,6 +228,24 @@ def _create_control_plane_dispatcher(
         if provider_response is not None:
             status, payload = provider_response
             return _json_response(None, status, payload)
+
+        if path == f"{CONTROL_PREFIX}/web-search":
+            if web_search_settings is None:
+                return _json_response(None, "404 Not Found", _error("web_search_settings_not_configured", path))
+            if method == "GET":
+                settings = web_search_settings.load()
+                return _json_response(None, "200 OK", _safe_nested_mapping(settings.safe_projection()))
+            if method == "POST":
+                try:
+                    payload = json.loads(_read_request_body(environ) or "{}")
+                    if not isinstance(payload, dict):
+                        raise ValueError("payload must be an object")
+                    settings = web_search_settings.update(payload)
+                    if callable(web_search_update_callback):
+                        web_search_update_callback(settings)
+                    return _json_response(None, "200 OK", _safe_nested_mapping(settings.safe_projection()))
+                except Exception:
+                    return _json_response(None, "400 Bad Request", _error("invalid_web_search_settings", path))
 
         if method == "GET" and path == f"{CONTROL_PREFIX}/approvals":
             return _json_response(None, "200 OK", approval_store.list_pending().model_dump(mode="json"))

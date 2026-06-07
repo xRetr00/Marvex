@@ -145,6 +145,7 @@ from packages.web_search_runtime import (
     DDGSWebSearchAdapter,
     MultiProviderWebSearch,
     SearXNGWebSearchAdapter,
+    TrafilaturaWebFetchAdapter,
     WebSearchEvidenceRef,
     WebSearchFreshness,
     WebSearchGroundingBundle,
@@ -152,6 +153,7 @@ from packages.web_search_runtime import (
     WebSearchResult,
     WikipediaWebSearchAdapter,
 )
+from packages.web_search_runtime.config import DEFAULT_SEARXNG_BASE_URL, WebSearchSettings, WebSearchSettingsStore
 from services.core.safe_state import (
     automation_pending_state_path as _automation_pending_state_path,
     conversation_entity_state_path as _conversation_entity_state_path,
@@ -1296,6 +1298,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 )
             )
 
+    def configure_web_search(self, settings: WebSearchSettings) -> None:
+        self._web_search_provider = _web_search_provider_from_settings(settings)
+
     def _generate_file_body(self, turn_input: AssistantTurnInput, content_prompt: str) -> str:
         """Ask the configured provider to compose file content for a write.
 
@@ -1748,8 +1753,40 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     previous_response_id=previous_response_id,
                     provider_result=provider_result,
                 )
-            # Grounded/search routes without evidence still finish through the
-            # grounded path so missing-evidence behavior remains deterministic.
+            # Preserve the model's tool-loop answer even when search returned no
+            # citeable evidence refs. The final response is still marked as
+            # evidence-missing, but the user sees the model's useful explanation
+            # plus a small warning instead of a canceled answer.
+            if loop_result.status == "final":
+                loop.step("finalize", stop_reason="finalized")
+                provider_result = self._finalize_agentic_turn(
+                    turn_input,
+                    text=_append_no_evidence_warning(loop_result.text or "(no response)"),
+                    loop=loop,
+                    intent_projection=intent_projection,
+                    intent_response=intent_response,
+                    session_projection=session_projection,
+                    selection_projection=selection_projection,
+                    desktop_context=desktop_context,
+                    cognition=cognition,
+                    executed_tool_ids=loop_result.executed_tool_ids,
+                    provider_response_id=loop_result.response_id,
+                    model_commentary=loop_result.commentary,
+                    provider_usage=loop_result.usage,
+                    provider_turn_input=provider_turn_input,
+                    provider_instructions=provider_instructions,
+                )
+                grounding = dict(provider_result.metadata.get("grounding", {}))
+                grounding.update(
+                    {
+                        "citation_validation": "citation.evidence_missing",
+                        "evidence_ref_count": 0,
+                        "web_search_executed": bool(cognition.web_search_required),
+                        "model_response_preserved_without_evidence": True,
+                    }
+                )
+                provider_result.metadata["grounding"] = grounding
+                return provider_result
             return None
         if (
             loop_result.status == "final"
@@ -1921,6 +1958,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
 
         from packages.adapters.capabilities.tools import (
             ToolRegistry,
+            WebFetchTool,
             WebSearchTool,
             default_registry,
             file_tools_registry,
@@ -1946,6 +1984,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
             BrowserUseTool(),
             ComputerUseTool(),
             PlaywrightBrowserTool(),
+            WebFetchTool(fetcher=TrafilaturaWebFetchAdapter()),
         ]
         if self._mcp_runtime_registry is not None:
             try:
@@ -1976,9 +2015,9 @@ class _CoreServiceProviderWorkerTurnExecutor:
         """Return a request_builder closure for the agentic tool engine.
 
         Captures the turn ids/schema for the execution request, injects the
-        sandbox root for file tools, and marks SAFE tools auto-approved (the
-        engine only ever calls this for SAFE tools; risky ones are routed to
-        the human approval path before reaching here).
+        sandbox root for file tools, and marks engine-approved tools as
+        auto-approved. Memory tools are owner-policy approved; other risky
+        tools are routed to the human approval path before reaching here.
         """
 
         from packages.capability_runtime import (
@@ -2017,7 +2056,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                 decision_id=f"agentic.{turn_input.turn_id}.{tool_id}.permission",
                 capability_ref=ref,
                 decision="approved",
-                reason_code="policy_allowlisted_safe_tool",
+                reason_code="policy_owner_approved_memory_tool" if tool_id.startswith("memory.") else "policy_allowlisted_safe_tool",
                 human_approval=HumanApprovalRequirement(required=False, reason_code="not_required", prompt_user_visible=False),
             )
             return CapabilityExecutionRequest(
@@ -4815,25 +4854,32 @@ def _included_context_count(cognition: CognitionTurnAssembly, kind: str) -> int:
 
 
 def _web_search_provider_from_config(config: CoreServiceEntrypointConfig) -> object | None:
+    settings = WebSearchSettingsStore(path=_web_search_state_path()).load()
+    searxng_base_url = config.web_base_url or settings.searxng_base_url or DEFAULT_SEARXNG_BASE_URL
     if config.web_search == "none":
         return None
     if config.web_search == "ddgs":
         return DDGSWebSearchAdapter()
     if config.web_search == "searxng":
-        if not config.web_base_url:
-            raise ValueError("web_base_url is required for searxng web search")
-        return SearXNGWebSearchAdapter(base_url=config.web_base_url)
+        return SearXNGWebSearchAdapter(base_url=searxng_base_url)
     if config.web_search == "wikipedia":
         return WikipediaWebSearchAdapter()
     if config.web_search == "multi":
         # Ordered fallback for general web search. Wikipedia is intentionally
         # excluded here; it is only used when explicitly selected as its own
         # provider so encyclopedic lookup does not mask broader search failures.
-        ordered: list[object] = [DDGSWebSearchAdapter()]
-        if config.web_base_url:
-            ordered.append(SearXNGWebSearchAdapter(base_url=config.web_base_url))
+        ordered: list[object] = [SearXNGWebSearchAdapter(base_url=searxng_base_url), DDGSWebSearchAdapter()]
         return MultiProviderWebSearch(providers=tuple(ordered))
     return _FakeCoreWebSearchProvider()
+
+
+def _web_search_provider_from_settings(settings: WebSearchSettings) -> object:
+    return MultiProviderWebSearch(
+        providers=(
+            SearXNGWebSearchAdapter(base_url=settings.searxng_base_url),
+            DDGSWebSearchAdapter(),
+        )
+    )
 
 
 def _memory_tree_from_config(config: CoreServiceEntrypointConfig) -> object | None:
@@ -5254,6 +5300,16 @@ def _fixed_intent_classifier(classification: object) -> Callable[[object], objec
         )
 
     return classify
+
+
+def _append_no_evidence_warning(text: str) -> str:
+    warning = "Warning: web search returned no citeable evidence refs."
+    cleaned = text.strip()
+    if warning.lower() in cleaned.lower():
+        return cleaned
+    if not cleaned:
+        return warning
+    return f"{cleaned}\n\n{warning}"
 
 
 def _session_projection(
@@ -5725,6 +5781,7 @@ def create_control_plane_service_app(
     session_coordinator: BackendSessionCoordinator | None = None,
     browser_session_manager: BrowserSessionManager | None = None,
     provider_control: Any | None = None,
+    core_service: CoreService | None = None,
 ) -> ControlPlaneRuntime:
     log_dir = os.environ.get("MARVEX_LOG_DIR")
     log_reader = LocalLogReader((log_dir,)) if log_dir else None
@@ -5732,6 +5789,7 @@ def create_control_plane_service_app(
 
     memory_service = _memory_service_from_config(config)
     memory_loop = _memory_loop_from_config(config)
+    web_search_settings = WebSearchSettingsStore(path=_web_search_state_path())
     return ControlPlaneRuntime(
         approval_store=approval_store or InMemoryApprovalStore(),
         snapshot=ControlPlaneSnapshot.foundation_default(schema_version="1"),
@@ -5742,6 +5800,8 @@ def create_control_plane_service_app(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control or InMemoryProviderControl(),
+        web_search_settings=web_search_settings,
+        web_search_update_callback=(lambda settings: _apply_web_search_settings(core_service, settings)) if core_service is not None else None,
         autonomy_policy=_autonomy_policy_from_config(config),
         mcp_runtime_registry=_mcp_runtime_registry_from_config(config),
         skills_root=str(_skills_root_from_config(config)),
@@ -5819,6 +5879,20 @@ def _provider_control_state_path() -> str | None:
     return os.path.join(base, "com.marvex.shell", "provider_control.json")
 
 
+def _web_search_state_path() -> str:
+    explicit = os.environ.get("MARVEX_WEB_SEARCH_STATE", "").strip()
+    if explicit:
+        return explicit
+    base = (
+        os.environ.get("MARVEX_DATA_DIR", "").strip()
+        or os.environ.get("LOCALAPPDATA", "").strip()
+        or os.environ.get("APPDATA", "").strip()
+        or os.environ.get("XDG_DATA_HOME", "").strip()
+        or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
+    )
+    return os.path.join(base, "com.marvex.shell", "web_search.json")
+
+
 def _mcp_runtime_state_path() -> str:
     explicit = os.environ.get("MARVEX_MCP_RUNTIME_STATE", "").strip()
     if explicit:
@@ -5831,6 +5905,13 @@ def _mcp_runtime_state_path() -> str:
         or os.path.join(os.environ.get("HOME", "") or os.environ.get("USERPROFILE", "") or os.getcwd(), ".marvex")
     )
     return os.path.join(base, "com.marvex.shell", "mcp_runtime.json")
+
+
+def _apply_web_search_settings(service: CoreService, settings: WebSearchSettings) -> None:
+    executor = getattr(service, "_turn_executor", None)
+    configure = getattr(executor, "configure_web_search", None)
+    if callable(configure):
+        configure(settings)
 
 
 def _apply_provider_control(service: CoreService, catalog: dict[str, Any], provider_control: Any | None = None) -> None:
@@ -5969,6 +6050,7 @@ def run_core_service(
         session_coordinator=session_coordinator,
         browser_session_manager=browser_session_manager,
         provider_control=provider_control,
+        core_service=service,
     )
     asgi_config = AsgiHostConfig(
         host=local_api_config.host,

@@ -36,6 +36,7 @@ from .ripgrep import RipgrepTool
 from .search import SearchFilesTool
 from .time_date import TimeDateTool
 from .web_search import WebSearchTool
+from .web_fetch import WebFetchTool
 from .write import WriteFileTool
 
 
@@ -207,6 +208,7 @@ __all__ = [
     "WriteFileTool",
     "PatchFileTool",
     "WebSearchTool",
+    "WebFetchTool",
     "MemorySearchTool",
     "MemoryRememberTool",
     "MemoryForgetTool",

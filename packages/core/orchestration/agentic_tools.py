@@ -8,8 +8,9 @@ provider for continuation.
 Design constraints honored here:
 
 * **Approval boundary intact.** Safe read/network tools auto-execute inside the
-  loop. A risky or local/browser/desktop side-effect tool call is reported as
-  ``needs_approval`` so the caller can route it through policy/human approval.
+  loop. Memory tools are owner-policy approved and also auto-execute. Other
+  risky or local/browser/desktop side-effect tool calls are reported as
+  ``needs_approval`` so the caller can route them through policy/human approval.
 * **No fabrication of capabilities.** Unknown tool names produce a tool-result
   message saying the tool does not exist, rather than guessing.
 * **Pure + testable.** This module does not import the provider, fastapi, or the
@@ -334,6 +335,8 @@ def execute_tool_calls(
 
 
 def _tool_requires_approval(tool: Tool) -> bool:
+    if tool.tool_id().startswith("memory."):
+        return False
     if tool.risk_level is not ToolRiskLevel.SAFE:
         return True
     return tool.side_effect_level in _APPROVAL_SIDE_EFFECTS

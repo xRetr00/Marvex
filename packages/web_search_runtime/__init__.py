@@ -5,6 +5,8 @@
 from __future__ import annotations
 
 import json
+import ipaddress
+import re
 import time
 import urllib.parse
 import urllib.request
@@ -74,6 +76,80 @@ class WebSearchProvider(Protocol):
 
     def search(self, query: WebSearchQuery) -> WebSearchGroundingBundle:
         ...
+
+
+class WebFetchResult(CapabilityRuntimeModel):
+    url: str = Field(..., min_length=1, max_length=1200)
+    final_url: str = Field(..., min_length=1, max_length=1200)
+    domain: str = Field(..., min_length=1, max_length=300)
+    title: str = Field(default="", max_length=300)
+    text_preview: str = Field(default="", max_length=8000)
+    text_character_count: int = Field(default=0, ge=0)
+    status_code: int | None = None
+    content_type: str | None = None
+    raw_html_persisted: bool = False
+    raw_page_text_persisted: bool = False
+
+    def safe_projection(self) -> dict[str, object]:
+        return {
+            "url": self.url,
+            "final_url": self.final_url,
+            "domain": self.domain,
+            "title": self.title,
+            "text_preview": self.text_preview,
+            "text_character_count": self.text_character_count,
+            "status_code": self.status_code,
+            "content_type": self.content_type,
+            "raw_html_persisted": False,
+            "raw_page_text_persisted": False,
+        }
+
+
+class WebFetchProvider(Protocol):
+    def fetch(self, url: str, *, max_chars: int) -> WebFetchResult:
+        ...
+
+
+class TrafilaturaWebFetchAdapter(CapabilityRuntimeModel):
+    timeout_seconds: float = 10.0
+    user_agent: str = "Marvex-Assistant-OS/1.0"
+    fetch_html: Any | None = None
+    extract_text: Any | None = None
+
+    def fetch(self, url: str, *, max_chars: int = 4000) -> WebFetchResult:
+        cleaned = _validate_fetch_url(url)
+        html = self._fetch_html(cleaned)
+        extracted = self._extract_text(html)
+        text = _bounded_text(extracted or "", max(max_chars, 1))
+        return WebFetchResult(
+            url=cleaned,
+            final_url=cleaned,
+            domain=_domain(cleaned),
+            title=_html_title(html),
+            text_preview=text,
+            text_character_count=len(extracted or ""),
+        )
+
+    def _fetch_html(self, url: str) -> str:
+        if self.fetch_html is not None:
+            return str(self.fetch_html(url))
+        from trafilatura.downloads import fetch_url
+
+        html = fetch_url(url, timeout=self.timeout_seconds)
+        return html or ""
+
+    def _extract_text(self, html: str) -> str:
+        if self.extract_text is not None:
+            return str(self.extract_text(html))
+        import trafilatura
+
+        extracted = trafilatura.extract(
+            html,
+            output_format="txt",
+            include_comments=False,
+            include_tables=True,
+        )
+        return extracted or ""
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +368,39 @@ def _domain(url: str) -> str:
 def _bounded_text(value: object, limit: int) -> str:
     text = str(value)
     return text[:limit]
+
+
+def _validate_fetch_url(url: str) -> str:
+    cleaned = url.strip()
+    parsed = urlparse(cleaned)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise ValueError("web.fetch only supports absolute http(s) URLs")
+    host = parsed.hostname or ""
+    if _is_private_host(host):
+        raise ValueError("web.fetch cannot fetch loopback or private-network URLs")
+    return cleaned
+
+
+def _is_private_host(host: str) -> bool:
+    lowered = host.lower()
+    if lowered in {"localhost", "localhost.localdomain"} or lowered.endswith(".local"):
+        return True
+    try:
+        ip = ipaddress.ip_address(lowered)
+    except ValueError:
+        return False
+    return ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved
+
+
+_TITLE_RE = re.compile(r"<title[^>]*>(.*?)</title>", re.IGNORECASE | re.DOTALL)
+
+
+def _html_title(html: str) -> str:
+    match = _TITLE_RE.search(html or "")
+    if not match:
+        return ""
+    title = re.sub(r"\s+", " ", match.group(1)).strip()
+    return _bounded_text(title, 300)
 
 
 # ---------------------------------------------------------------------------

@@ -58,6 +58,85 @@ class _BrowserIntentClassifier:
         }
 
 
+class _WebSearchIntentClassifier:
+    def classify(self, turn_input: Any) -> dict[str, Any]:
+        return {
+            "backend_name": "test.fixed",
+            "classification": {
+                "schema_version": turn_input.schema_version,
+                "trace_id": turn_input.trace_id,
+                "turn_id": turn_input.turn_id,
+                "selected_intent": {
+                    "intent_id": "intent.web_search",
+                    "intent_kind": "web_search",
+                },
+                "confidence_bucket": "high",
+                "risk_signal": "none",
+                "clarification_needed": "not_needed",
+                "route_reason_code": "test.fixed",
+                "raw_input_persisted": False,
+            },
+        }
+
+
+class _ProviderWebSearchNoEvidence:
+    def __init__(self) -> None:
+        self.requests: list[ProviderRequest] = []
+
+    def send(self, request: ProviderRequest) -> ProviderResponse:
+        self.requests.append(request)
+        if request.tool_messages:
+            return ProviderResponse(
+                schema_version=request.schema_version,
+                trace_id=request.trace_id,
+                turn_id=request.turn_id,
+                provider_name="fake",
+                response_id="resp-web-final",
+                output_text="I found search results, but none included citeable evidence refs.",
+                finish_reason=FinishReason.STOP,
+                usage={},
+                raw_metadata={},
+                error=None,
+            )
+        return ProviderResponse(
+            schema_version=request.schema_version,
+            trace_id=request.trace_id,
+            turn_id=request.turn_id,
+            provider_name="fake",
+            response_id="resp-web-tool",
+            output_text="",
+            finish_reason=FinishReason.STOP,
+            usage={},
+            raw_metadata={},
+            error=None,
+            tool_calls=[
+                {
+                    "id": "call-web-search",
+                    "type": "function",
+                    "function": {
+                        "name": "web.search",
+                        "arguments": '{"query": "latest private unreleased fact"}',
+                    },
+                }
+            ],
+        )
+
+
+class _WebProviderWithoutEvidenceRefs:
+    provider_name = "fake-web-no-evidence"
+
+    def search(self, query: Any) -> Any:
+        from packages.web_search_runtime import WebSearchGroundingBundle, WebSearchResult
+
+        result = WebSearchResult(
+            title="Unciteable result",
+            url="https://example.test/no-ref",
+            domain="example.test",
+            snippet="Search result exists, but no evidence refs were produced.",
+        )
+        return WebSearchGroundingBundle(query=query, provider=self.provider_name, results=(result,), evidence_refs=())
+
+
 class _ProviderErrorThenFileWrite:
     def __init__(self) -> None:
         self.requests: list[ProviderRequest] = []
@@ -274,6 +353,29 @@ def test_auto_marvex_auto_approves_model_file_write_and_executes(tmp_path: Path)
     assert "approval-turn-auto-marvex-file-write" not in executor._pending_automation
 
 
+def test_core_request_builder_owner_approves_memory_without_human_gate(tmp_path: Path) -> None:
+    provider = _RecordingPlainProvider()
+    executor = _executor(tmp_path, provider)
+    request_builder = executor._make_tool_request_builder(
+        _turn_input(
+            "Remember User likes terse answers.",
+            trace_id="trace-memory-owner-approved",
+            turn_id="turn-memory-owner-approved",
+        )
+    )
+
+    request = request_builder(
+        "memory.remember",
+        {"content": "User likes terse answers.", "scope": "session"},
+    )
+
+    assert request is not None
+    assert request.permission_decision.decision == "approved"
+    assert request.permission_decision.reason_code == "policy_owner_approved_memory_tool"
+    assert request.permission_decision.human_approval.required is False
+    assert request.permission_decision.human_approval.prompt_user_visible is False
+
+
 def test_browser_intent_tool_catalog_includes_existing_browser_playwright_mcp(tmp_path: Path) -> None:
     provider = _RecordingPlainProvider()
     executor = _CoreServiceProviderWorkerTurnExecutor(
@@ -304,6 +406,33 @@ def test_browser_intent_tool_catalog_includes_existing_browser_playwright_mcp(tm
     assert "builtin.computer_use" in tool_names
     assert provider.requests
     assert provider.requests[0].provider_options["parallel_tool_calls"] is False
+
+
+def test_web_search_tool_no_evidence_preserves_model_answer_with_warning(tmp_path: Path) -> None:
+    provider = _ProviderWebSearchNoEvidence()
+    executor = _CoreServiceProviderWorkerTurnExecutor(
+        provider_name="fake",
+        model="fake-model",
+        trace_reader=InMemoryTraceReader(),
+        file_capability_root=str(tmp_path),
+        web_search_provider=_WebProviderWithoutEvidenceRefs(),
+    )
+    executor._provider = provider
+    executor._intent_classifier = _WebSearchIntentClassifier()
+
+    result = executor.submit_turn(
+        _turn_input(
+            "Search for the latest private unreleased fact",
+            trace_id="trace-web-no-evidence-preserve",
+            turn_id="turn-web-no-evidence-preserve",
+        )
+    )
+
+    assert result.error is None
+    assert result.assistant_final_response is not None
+    assert "I found search results" in result.assistant_final_response.text
+    assert "Warning: web search returned no citeable evidence refs." in result.assistant_final_response.text
+    assert result.metadata["grounding"]["citation_validation"] == "citation.evidence_missing"
 
 
 def test_browser_intent_retries_missing_required_tool_call_before_real_failure(tmp_path: Path) -> None:

@@ -256,11 +256,13 @@ def test_web_search_provider_from_config_multi_no_searxng() -> None:
     provider = _web_search_provider_from_config(config)
 
     assert isinstance(provider, MultiProviderWebSearch)
-    assert len(provider.providers) == 1
-    assert isinstance(provider.providers[0], DDGSWebSearchAdapter)
+    assert len(provider.providers) == 2
+    assert isinstance(provider.providers[0], SearXNGWebSearchAdapter)
+    assert provider.providers[0].base_url == "http://127.0.0.1:8888"
+    assert isinstance(provider.providers[1], DDGSWebSearchAdapter)
 
 
-def test_web_search_provider_from_config_multi_with_searxng() -> None:
+def test_web_search_provider_from_config_multi_with_searxng_prefers_searxng() -> None:
     from services.core.main import CoreServiceEntrypointConfig, _web_search_provider_from_config
 
     config = CoreServiceEntrypointConfig(web_search="multi", web_base_url="https://searxng.local")
@@ -268,6 +270,7 @@ def test_web_search_provider_from_config_multi_with_searxng() -> None:
 
     assert isinstance(provider, MultiProviderWebSearch)
     assert len(provider.providers) == 2
-    assert isinstance(provider.providers[0], DDGSWebSearchAdapter)
-    assert isinstance(provider.providers[1], SearXNGWebSearchAdapter)
+    assert isinstance(provider.providers[0], SearXNGWebSearchAdapter)
+    assert provider.providers[0].base_url == "https://searxng.local"
+    assert isinstance(provider.providers[1], DDGSWebSearchAdapter)
     assert not any(isinstance(item, WikipediaWebSearchAdapter) for item in provider.providers)

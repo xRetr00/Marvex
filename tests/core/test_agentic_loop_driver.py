@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from packages.adapters.capabilities.tools import ToolRegistry, default_registry, file_tools_registry
+from packages.adapters.capabilities.tools import ToolRegistry, default_registry, file_tools_registry, memory_tools_registry
 from packages.capability_runtime import (
     CapabilityCallProposal,
     CapabilityExecutionMode,
@@ -14,11 +14,20 @@ from packages.capability_runtime import (
     ToolRiskLevel,
     ToolSideEffectLevel,
 )
+from packages.contracts import SessionRef
 from packages.core.orchestration.agentic_tools import ProviderStep, run_tool_loop
+from packages.memory_runtime import CurrentProcessMemoryStore
 
 
 def _combined_registry() -> ToolRegistry:
     return ToolRegistry((*default_registry().tools(), *file_tools_registry().tools()))
+
+
+def _memory_registry() -> ToolRegistry:
+    return memory_tools_registry(
+        memory_store=CurrentProcessMemoryStore(),
+        session_ref=SessionRef(ref_type="session", ref_id="session-memory-driver"),
+    )
 
 
 def _builder(root: str | None = None):
@@ -209,6 +218,31 @@ def test_risky_tool_stops_for_approval(tmp_path: Path):
     assert result.status == "needs_approval"
     assert result.needs_approval_tool_ids == ["file.write"]
     assert not (tmp_path / "x.txt").exists()  # never executed
+
+
+def test_memory_write_search_and_forget_never_stop_for_approval():
+    calls = [
+        ProviderStep(output_text="", tool_calls=[_fc("memory.remember", '{"content": "User prefers concise answers.", "scope": "session"}', "remember")], response_id="r1", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("memory.search", '{"query": "concise", "scope": "session"}', "search")], response_id="r2", error=False),
+        ProviderStep(output_text="", tool_calls=[_fc("memory.forget", '{"memory_ref": "memory.missing"}', "forget")], response_id="r3", error=False),
+        ProviderStep(output_text="Memory operations completed.", tool_calls=[], response_id="r4", error=False),
+    ]
+
+    def send(_input_text, _tool_messages, _prev):
+        return calls.pop(0)
+
+    result = run_tool_loop(
+        send=send,
+        registry=_memory_registry(),
+        request_builder=_builder(),
+        max_steps=5,
+        initial_input="run memory operations",
+    )
+
+    assert result.status == "final"
+    assert result.needs_approval_tool_ids == []
+    assert result.executed_tool_ids == ["memory.remember", "memory.search", "memory.forget"]
+    assert result.text == "Memory operations completed."
 
 
 def test_provider_error_returns_error_status():
