@@ -133,10 +133,16 @@ class TrafilaturaWebFetchAdapter(CapabilityRuntimeModel):
     def _fetch_html(self, url: str) -> str:
         if self.fetch_html is not None:
             return str(self.fetch_html(url))
-        from trafilatura.downloads import fetch_url
-
-        html = fetch_url(url, timeout=self.timeout_seconds)
-        return html or ""
+        request = urllib.request.Request(
+            url,
+            headers={
+                "User-Agent": self.user_agent,
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        with urllib.request.urlopen(request, timeout=self.timeout_seconds) as response:
+            charset = response.headers.get_content_charset() or "utf-8"
+            return response.read(2_000_000).decode(charset, errors="replace")
 
     def _extract_text(self, html: str) -> str:
         if self.extract_text is not None:

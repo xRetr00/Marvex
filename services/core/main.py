@@ -1781,7 +1781,8 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     {
                         "citation_validation": "citation.evidence_missing",
                         "evidence_ref_count": 0,
-                        "web_search_executed": bool(cognition.web_search_required),
+                        "web_search_executed": bool(cognition.web_search_required)
+                        or "web.search" in set(loop_result.executed_tool_ids),
                         "model_response_preserved_without_evidence": True,
                     }
                 )
