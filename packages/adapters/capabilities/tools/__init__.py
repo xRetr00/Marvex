@@ -125,6 +125,7 @@ def file_tools_registry() -> ToolRegistry:
 def memory_tools_registry(
     *,
     memory_store: object,
+    memory_service: object | None = None,
     memory_tree_runtime: object | None = None,
     session_ref: object | None = None,
     conversation_ref: object | None = None,
@@ -135,24 +136,28 @@ def memory_tools_registry(
         (
             MemorySearchTool(
                 memory_store=memory_store,
+                memory_service=memory_service,
                 memory_tree_runtime=memory_tree_runtime,
                 session_ref=session_ref,
                 conversation_ref=conversation_ref,
             ),
             MemoryRememberTool(
                 memory_store=memory_store,
+                memory_service=memory_service,
                 memory_tree_runtime=memory_tree_runtime,
                 session_ref=session_ref,
                 conversation_ref=conversation_ref,
             ),
             MemoryForgetTool(
                 memory_store=memory_store,
+                memory_service=memory_service,
                 memory_tree_runtime=memory_tree_runtime,
                 session_ref=session_ref,
                 conversation_ref=conversation_ref,
             ),
             MemoryListRecentTool(
                 memory_store=memory_store,
+                memory_service=memory_service,
                 memory_tree_runtime=memory_tree_runtime,
                 session_ref=session_ref,
                 conversation_ref=conversation_ref,

@@ -85,6 +85,46 @@ def test_memory_remember_explicit_user_signal_writes_safe_record() -> None:
     assert remembered.records[0].content == "User prefers concise answers."
 
 
+def test_memory_remember_explicit_user_signal_mirrors_to_memory_service() -> None:
+    class Service:
+        def __init__(self) -> None:
+            self.records = []
+
+        def ingest_memory_record(self, record):
+            self.records.append(record)
+
+            class Episode:
+                def safe_projection(self):
+                    return {
+                        "episode_id": "episode.saved.memory",
+                        "kind": "saved_memory",
+                        "raw_content_persisted": False,
+                    }
+
+            return Episode()
+
+    store = CurrentProcessMemoryStore()
+    service = Service()
+    session_ref = SessionRef(ref_type="session", ref_id="session-memory-tool")
+    tool = MemoryRememberTool(memory_store=store, memory_service=service, session_ref=session_ref)
+
+    result = tool.execute(
+        _request(
+            "memory.remember",
+            {
+                "content": "remember this: User prefers concise answers.",
+                "memory_kind": "preference",
+                "scope": "session",
+            },
+        )
+    )
+
+    assert result.status == "succeeded"
+    assert result.safe_result["written"] is True
+    assert result.safe_result["memory_service_episode"]["kind"] == "saved_memory"
+    assert service.records[0].content == "User prefers concise answers."
+
+
 def test_memory_remember_without_explicit_signal_returns_pending_candidate() -> None:
     store = CurrentProcessMemoryStore()
     tool = MemoryRememberTool(

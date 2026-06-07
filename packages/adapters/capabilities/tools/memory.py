@@ -79,11 +79,13 @@ class _MemoryTool(Tool):
         self,
         *,
         memory_store: Any,
+        memory_service: Any | None = None,
         memory_tree_runtime: Any | None = None,
         session_ref: SessionRef | None = None,
         conversation_ref: ConversationRef | None = None,
     ) -> None:
         self._memory_store = memory_store
+        self._memory_service = memory_service
         self._memory_tree_runtime = memory_tree_runtime
         self._session_ref = session_ref
         self._conversation_ref = conversation_ref
@@ -126,6 +128,13 @@ class MemorySearchTool(_MemoryTool):
 
     def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
         params = MemorySearchParams.model_validate(request.arguments)
+        service_results = _safe_service_results(
+            self._memory_service,
+            params.query,
+            params.max_results,
+            session_ref=self._session_ref,
+            conversation_ref=self._conversation_ref,
+        )
         records = self._read_records(scope=params.scope, max_results=params.max_results)
         query = params.query.lower()
         tags = {tag.lower() for tag in params.tags}
@@ -142,8 +151,8 @@ class MemorySearchTool(_MemoryTool):
                 "operation": "memory_search",
                 "query": params.query,
                 "scope": params.scope,
-                "result_count": len(results) + len(tree_results),
-                "results": results,
+                "result_count": len(service_results) + len(results) + len(tree_results),
+                "results": service_results + results,
                 "memory_tree_results": tree_results,
                 "raw_memory_content_persisted": False,
             },
@@ -236,6 +245,12 @@ class MemoryRememberTool(_MemoryTool):
                 },
             )
         self._memory_store.write_record(record)
+        service_episode = None
+        if self._memory_service is not None and hasattr(self._memory_service, "ingest_memory_record"):
+            try:
+                service_episode = self._memory_service.ingest_memory_record(record)
+            except Exception:
+                service_episode = None
         return succeeded_result(
             request,
             {
@@ -244,6 +259,7 @@ class MemoryRememberTool(_MemoryTool):
                 "policy_status": "approved",
                 "memory_ref": record.memory_ref.ref_id,
                 "content_preview": record.safe_projection()["content_preview"],
+                "memory_service_episode": service_episode.safe_projection() if service_episode is not None and hasattr(service_episode, "safe_projection") else None,
                 "raw_transcript_persisted": False,
             },
         )
@@ -260,6 +276,9 @@ class MemoryForgetTool(_MemoryTool):
     def execute(self, request: CapabilityExecutionRequest) -> CapabilityResultEnvelope:
         params = MemoryForgetParams.model_validate(request.arguments)
         memory_ref = MemoryRef(ref_type="memory", ref_id=params.memory_ref)
+        service_forgotten = False
+        if self._memory_service is not None and hasattr(self._memory_service, "forget"):
+            service_forgotten = bool(self._memory_service.forget(memory_ref.ref_id))
         if self._memory_store is None or not hasattr(self._memory_store, "forget_by_request"):
             forgotten = False
         else:
@@ -275,7 +294,7 @@ class MemoryForgetTool(_MemoryTool):
             {
                 "operation": "memory_forget",
                 "memory_ref": memory_ref.ref_id,
-                "forgotten": forgotten,
+                "forgotten": forgotten or service_forgotten,
                 "raw_memory_content_persisted": False,
             },
         )
@@ -317,6 +336,32 @@ def _record_projection(record: MemoryRecord) -> dict[str, object]:
         "turn_id": record.turn_id,
         "raw_transcript_persisted": False,
     }
+
+
+def _safe_service_results(
+    memory_service: Any | None,
+    query: str,
+    max_results: int,
+    *,
+    session_ref: SessionRef | None,
+    conversation_ref: ConversationRef | None,
+) -> list[dict[str, object]]:
+    if memory_service is None or not hasattr(memory_service, "retrieve_context"):
+        return []
+    try:
+        bundle = memory_service.retrieve_context(
+            query,
+            session_ref=session_ref,
+            conversation_ref=conversation_ref,
+            max_results=max_results,
+        )
+    except Exception:
+        return []
+    rows: list[dict[str, object]] = []
+    for ref in tuple(getattr(bundle, "evidence_refs", ()) or ())[:max_results]:
+        projection = ref.safe_projection() if hasattr(ref, "safe_projection") else {}
+        rows.append(dict(projection) if isinstance(projection, dict) else {"evidence": str(ref)[:160]})
+    return rows
 
 
 def _record_matches(record: MemoryRecord, *, query: str, tags: set[str]) -> bool:
