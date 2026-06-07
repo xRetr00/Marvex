@@ -54,6 +54,8 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
             # Google AI Studio through LiteLLM SDK translation instead.
             base_url = None
             provider_mode = "litellm_sdk"
+        elif provider_mode == "litellm_openrouter":
+            base_url = None
         elif base_url is not None and provider_mode in {None, "native", "litellm_sdk"}:
             provider_mode = "litellm_proxy"
         provider_config_kwargs = {

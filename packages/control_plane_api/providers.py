@@ -188,6 +188,8 @@ class InMemoryProviderControl:
         if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
             cleaned_base_url = ""
             provider_mode = "litellm_sdk"
+        elif provider_id == "litellm" and provider_mode == "litellm_openrouter":
+            cleaned_base_url = ""
         elif provider_id == "litellm" and cleaned_base_url and provider_mode in {None, "native", "litellm_sdk"}:
             provider_mode = "litellm_proxy"
         row.base_url = cleaned_base_url
@@ -355,6 +357,8 @@ class InMemoryProviderControl:
             if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(row.base_url):
                 row.base_url = ""
                 row.provider_mode = "litellm_sdk"
+            if provider_id == "litellm" and row.provider_mode == "litellm_openrouter":
+                row.base_url = ""
             if provider_id == "litellm" and row.base_url and row.provider_mode in {"litellm_sdk", "native"}:
                 row.provider_mode = "litellm_proxy"
             models = row_data.get("models")
@@ -548,7 +552,7 @@ def _mask_secret(value: str) -> str:
 
 def _clean_provider_mode(value: str) -> str:
     cleaned = value.strip()
-    return cleaned if cleaned in {"native", "litellm_sdk", "litellm_proxy", "openai_compatible"} else ""
+    return cleaned if cleaned in {"native", "litellm_sdk", "litellm_proxy", "litellm_openrouter", "openai_compatible"} else ""
 
 
 def _safe_provider_base_url(value: str) -> bool:

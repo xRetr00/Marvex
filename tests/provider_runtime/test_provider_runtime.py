@@ -167,6 +167,25 @@ def test_create_litellm_provider_normalizes_google_ai_studio_openai_base_url_to_
     assert provider._config.provider_mode == "litellm_sdk"
 
 
+def test_create_litellm_provider_openrouter_mode_uses_sdk_without_base_url():
+    from packages.adapters.providers.litellm import LiteLLMProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(
+        ProviderRuntimeConfig(
+            provider_name="litellm",
+            litellm_api_key="sk-or-test",
+            base_url="https://openrouter.ai/api/v1/",
+            provider_mode="litellm_openrouter",
+        )
+    )
+
+    assert isinstance(provider, LiteLLMProvider)
+    assert provider._config.api_key == "sk-or-test"
+    assert provider._config.base_url is None
+    assert provider._config.provider_mode == "litellm_openrouter"
+
+
 def test_non_litellm_provider_rejects_litellm_api_key():
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 

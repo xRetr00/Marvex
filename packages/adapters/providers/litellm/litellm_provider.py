@@ -708,6 +708,8 @@ class LiteLLMProvider:
         return self._map_finish_reason(status)
 
     def _model_for_call(self, model: str) -> str:
+        if self._config.provider_mode == "litellm_openrouter":
+            return model if model.startswith("openrouter/") else f"openrouter/{model}"
         if (
             self._config.base_url
             and self._config.provider_mode in {"openai_compatible"}
