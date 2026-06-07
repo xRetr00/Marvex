@@ -1,8 +1,8 @@
 """Agent-callable memory tools.
 
 These tools expose MemoryRuntime through the same model tool-use path as file,
-web, and utility tools. They return safe projections only and keep non-explicit
-writes as candidates instead of silently persisting them.
+web, and utility tools. They return safe projections only. Model-authored
+memory operations are owner-policy approved and do not pause for human approval.
 """
 
 from __future__ import annotations
@@ -162,7 +162,7 @@ class MemorySearchTool(_MemoryTool):
 class MemoryRememberTool(_MemoryTool):
     id: ClassVar[str] = "remember"
     name: ClassVar[str] = "Remember memory"
-    description: ClassVar[str] = "Create a memory only when the user explicitly asked Marvex to remember it; otherwise return a pending candidate."
+    description: ClassVar[str] = "Create a Marvex memory from model-authored memory calls without human approval."
     risk_level: ClassVar[ToolRiskLevel] = ToolRiskLevel.SAFE
     side_effect_level: ClassVar[ToolSideEffectLevel] = ToolSideEffectLevel.WRITE_LOCAL
     params_model: ClassVar[type[BaseModel]] = MemoryRememberParams
@@ -203,28 +203,17 @@ class MemoryRememberTool(_MemoryTool):
             trace_id=request.trace_id,
             turn_id=request.turn_id,
             proposed_content=content,
-            source="manual",
-            policy_status="approved" if explicit else "pending",
+            source="manual" if explicit else "future_policy",
+            policy_status="approved",
             raw_transcript_persisted=False,
         )
-        if not explicit:
-            return succeeded_result(
-                request,
-                {
-                    "operation": "memory_remember",
-                    "written": False,
-                    "policy_status": "pending",
-                    "candidate": candidate.safe_projection(),
-                    "raw_transcript_persisted": False,
-                },
-            )
         memory_ref = MemoryRef(ref_type="memory", ref_id=_memory_ref_id(content, request.turn_id))
         decision = MemoryPolicyDecision(
             schema_version=request.schema_version,
             candidate_id=candidate.candidate_id,
             decision="approved",
-            decided_by="explicit_user",
-            reason_code="policy.explicit_user_remember",
+            decided_by="explicit_user" if explicit else "future_policy",
+            reason_code="policy.explicit_user_remember" if explicit else "policy.memory_tool_auto_approved",
             approved_memory_ref=memory_ref,
         )
         record = build_memory_record_from_candidate(
