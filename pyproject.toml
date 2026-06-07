@@ -20,6 +20,7 @@ dependencies = [
   "local-wake>=0.1.2",
   "llama-index-core>=0.14.22",
   "ddgs>=9.14.4",
+  "trafilatura>=2.0.0,<3",
   "fastembed>=0.4.0,<1",
   "graphiti-core[falkordb]>=0.29.0,<1",
   "qdrant-client[fastembed]>=1.18.0,<2",
@@ -62,6 +63,9 @@ include = ["packages*", "services*"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+  "live: tests that call external provider APIs and require real credentials",
+]
 
 [dependency-groups]
 dev = [

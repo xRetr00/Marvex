@@ -1,0 +1,15 @@
+use_default_settings: true
+
+search:
+  formats:
+    - html
+    - json
+
+server:
+  bind_address: "0.0.0.0"
+  port: 8080
+  base_url: "http://127.0.0.1:8888/"
+  secret_key: "marvex-local-personal-searxng"
+  limiter: false
+  public_instance: false
+  method: "GET"
