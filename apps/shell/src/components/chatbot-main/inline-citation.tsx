@@ -1,9 +1,12 @@
 import type { CitationRef } from "@/lib/localTurn";
 
 export function InlineCitation({ index, citation }: { index: number; citation?: CitationRef }) {
-  const label = citation?.domain || hostname(citation?.url) || `source ${index}`;
+  const isMemory = citation?.id?.startsWith("memory.evidence.");
+  const label = citation?.domain || hostname(citation?.url) || (isMemory ? citation?.sourceType || "memory" : `source ${index}`);
   const openSource = () => {
-    if (citation?.url) window.open(citation.url, "_blank", "noopener,noreferrer");
+    if (citation?.url && !citation.url.startsWith("local://") && !citation.url.startsWith("graphiti://") && !citation.url.startsWith("qdrant://")) {
+      window.open(citation.url, "_blank", "noopener,noreferrer");
+    }
   };
   return (
     <span className="group relative inline-flex align-baseline">
@@ -13,11 +16,15 @@ export function InlineCitation({ index, citation }: { index: number; citation?: 
         aria-label={`Citation ${index}: ${label}`}
         onClick={openSource}
       >
-        {citation?.domain || citation?.url ? label : index}
+        {citation?.domain || citation?.url || isMemory ? label : index}
       </button>
       <span className="pointer-events-none absolute bottom-full left-1/2 z-20 mb-2 hidden w-72 -translate-x-1/2 rounded-lg border border-border bg-popover p-3 text-left text-xs text-popover-foreground shadow-[var(--shadow-float)] group-hover:block group-focus-within:block">
         <strong className="block truncate text-foreground">{citation?.title || label}</strong>
         {citation?.url ? <span className="mt-1 block truncate text-muted-foreground">{citation.url}</span> : null}
+        {citation?.sourceType ? <span className="mt-1 block truncate text-muted-foreground">Type: {citation.sourceType}</span> : null}
+        {citation?.sourceId ? <span className="mt-1 block truncate text-muted-foreground">Source: {citation.sourceId}</span> : null}
+        {citation?.validAt ? <span className="mt-1 block truncate text-muted-foreground">Valid: {citation.validAt}</span> : null}
+        {citation?.invalidAt ? <span className="mt-1 block truncate text-muted-foreground">Invalid: {citation.invalidAt}</span> : null}
         {citation?.snippet ? <span className="mt-2 block leading-relaxed text-muted-foreground">{citation.snippet}</span> : null}
       </span>
     </span>

@@ -25,6 +25,10 @@ export interface CitationRef {
   url?: string;
   domain?: string;
   snippet?: string;
+  sourceType?: string;
+  sourceId?: string;
+  validAt?: string;
+  invalidAt?: string;
 }
 
 /** Read backend UI directives from assistant_final_response.metadata.ui_directives. */
@@ -65,18 +69,22 @@ export function citationsFromTurnResult(payload: unknown): CitationRef[] {
     if (!metadata || typeof metadata !== "object") continue;
     const grounding = (metadata as { grounding?: unknown }).grounding;
     const webRefs = grounding && typeof grounding === "object" ? (grounding as { evidence_refs?: unknown; web_evidence_refs?: unknown }).evidence_refs ?? (grounding as { web_evidence_refs?: unknown }).web_evidence_refs : undefined;
-    if (!Array.isArray(webRefs)) continue;
-    for (const entry of webRefs) {
+    const memoryRefs = grounding && typeof grounding === "object" ? (grounding as { memory_evidence_refs?: unknown }).memory_evidence_refs : undefined;
+    for (const entry of [...(Array.isArray(webRefs) ? webRefs : []), ...(Array.isArray(memoryRefs) ? memoryRefs : [])]) {
       if (!entry || typeof entry !== "object") continue;
-      const ref = entry as { evidence_id?: unknown; source_url?: unknown; url?: unknown; title?: unknown; domain?: unknown; snippet?: unknown };
-      const id = typeof ref.evidence_id === "string" ? ref.evidence_id : "";
+      const ref = entry as { evidence_id?: unknown; citation_id?: unknown; source_url?: unknown; url?: unknown; uri?: unknown; title?: unknown; domain?: unknown; snippet?: unknown; quote_preview?: unknown; source_type?: unknown; source_id?: unknown; valid_at?: unknown; invalid_at?: unknown };
+      const id = typeof ref.evidence_id === "string" ? ref.evidence_id : typeof ref.citation_id === "string" ? ref.citation_id : "";
       if (!id) continue;
       refs.push({
         id,
-        url: typeof ref.source_url === "string" ? ref.source_url : typeof ref.url === "string" ? ref.url : undefined,
+        url: typeof ref.source_url === "string" ? ref.source_url : typeof ref.url === "string" ? ref.url : typeof ref.uri === "string" ? ref.uri : undefined,
         title: typeof ref.title === "string" ? ref.title : undefined,
         domain: typeof ref.domain === "string" ? ref.domain : undefined,
-        snippet: typeof ref.snippet === "string" ? ref.snippet : undefined,
+        snippet: typeof ref.snippet === "string" ? ref.snippet : typeof ref.quote_preview === "string" ? ref.quote_preview : undefined,
+        sourceType: typeof ref.source_type === "string" ? ref.source_type : undefined,
+        sourceId: typeof ref.source_id === "string" ? ref.source_id : undefined,
+        validAt: typeof ref.valid_at === "string" ? ref.valid_at : undefined,
+        invalidAt: typeof ref.invalid_at === "string" ? ref.invalid_at : undefined,
       });
     }
   }
