@@ -87,6 +87,7 @@ class CognitionTurnAssembly(CapabilityRuntimeModel):
     evidence_refs: tuple[CognitionEvidenceRef, ...] = ()
     web_evidence_refs: tuple[WebSearchEvidenceRef, ...] = ()
     memory_evidence_refs: tuple[Any, ...] = ()
+    memory_context_bundle: Any | None = None
     web_search_bundle: WebSearchGroundingBundle | None = None
     web_search_required: bool = False
     grounding_required: bool = False

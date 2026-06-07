@@ -48,6 +48,7 @@ class CognitionRuntime:
         *,
         intent_classifier: Any | None = None,
         intent_planner: Any | None = None,
+        memory_service: Any | None = None,
         memory_store: Any | None = None,
         memory_tree_runtime: Any | None = None,
         web_search_provider: Any | None = None,
@@ -57,6 +58,7 @@ class CognitionRuntime:
     ) -> None:
         self._intent_classifier = intent_classifier or classify_intent
         self._intent_planner = intent_planner
+        self._memory_service = memory_service
         self._memory_store = memory_store
         self._memory_tree_runtime = memory_tree_runtime
         self._web_search_provider = web_search_provider
@@ -76,7 +78,7 @@ class CognitionRuntime:
         intent_ref = intent.selected_intent
         grounding_required = intent_ref.intent_kind in {IntentKind.GROUNDED_ANSWER, IntentKind.WEB_SEARCH}
         web_search_required = _web_search_required(intent_ref, intent.hybrid_details)
-        candidates, web_bundle, web_refs, memory_refs = self._context_candidates(
+        candidates, web_bundle, web_refs, memory_refs, memory_bundle = self._context_candidates(
             turn_input,
             intent_ref,
             web_search_required=web_search_required,
@@ -138,6 +140,7 @@ class CognitionRuntime:
             evidence_refs=evidence_refs,
             web_evidence_refs=web_refs,
             memory_evidence_refs=memory_refs,
+            memory_context_bundle=memory_bundle,
             web_search_bundle=web_bundle,
             web_search_required=web_search_required,
             grounding_required=grounding_required,
@@ -150,7 +153,7 @@ class CognitionRuntime:
         *,
         web_search_required: bool,
         grounding_required: bool,
-    ) -> tuple[list[ContextCandidate], Any | None, tuple[Any, ...], tuple[Any, ...]]:
+    ) -> tuple[list[ContextCandidate], Any | None, tuple[Any, ...], tuple[Any, ...], Any | None]:
         candidates = [
             ContextCandidate.from_safe_summary(
                 ContextSourceRef(kind=ContextSourceKind.USER_INPUT_SUMMARY, identifier=f"input.{turn_input.turn_id}"),
@@ -171,15 +174,20 @@ class CognitionRuntime:
             )
             candidates.append(ContextCandidate.from_capability_schema(eligibility, token_estimate=8))
         candidates.extend(self._skill_context_candidates(turn_input, intent_ref))
-        for memory_record in self._memory_context_records(turn_input):
-            candidates.append(_safe_memory_candidate(turn_input, intent_ref, memory_record))
-        memory_refs = self._memory_tree_refs(turn_input) if grounding_required or intent_ref.intent_kind == IntentKind.MEMORY_TREE_NEEDED else ()
-        for ref in memory_refs[:2]:
+        memory_bundle = self._memory_context_bundle(turn_input)
+        memory_refs = tuple(getattr(memory_bundle, "evidence_refs", ()) or ())
+        if memory_bundle is not None:
+            candidates.append(_safe_memory_bundle_candidate(turn_input, intent_ref, memory_bundle))
+        else:
+            for memory_record in self._memory_context_records(turn_input):
+                candidates.append(_safe_memory_candidate(turn_input, intent_ref, memory_record))
+            memory_refs = self._memory_tree_refs(turn_input) if grounding_required or intent_ref.intent_kind == IntentKind.MEMORY_TREE_NEEDED else ()
+        for ref in memory_refs[:4]:
             candidates.append(
                 ContextCandidate.from_safe_summary(
-                    ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=f"memory_tree.node.{getattr(ref, 'chunk_id', 'unknown')}"),
+                    ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=_memory_citation_id(ref)),
                     _bounded_input_summary(
-                        f"Memory evidence from {getattr(ref, 'source_id', 'memory')} [{getattr(ref, 'chunk_id', 'unknown')}]: {getattr(ref, 'quote_preview', '')}"
+                        f"Memory evidence from {getattr(ref, 'source_id', 'memory')} [{_memory_citation_id(ref)}]: {getattr(ref, 'quote_preview', '')}"
                     ),
                     token_estimate=_estimate_tokens(str(getattr(ref, "quote_preview", ""))) + 12,
                     intent_tags=(intent_ref.intent_kind.value,),
@@ -189,7 +197,7 @@ class CognitionRuntime:
         web_refs = tuple(getattr(web_bundle, "evidence_refs", ()) or ())
         if web_bundle is not None:
             candidates.append(web_search_bundle_to_context_candidate(web_bundle))
-        return candidates, web_bundle, web_refs, memory_refs
+        return candidates, web_bundle, web_refs, memory_refs, memory_bundle
 
     def _skill_context_candidates(
         self,
@@ -235,6 +243,18 @@ class CognitionRuntime:
     def _memory_context_ref(self, turn_input: Any) -> str | None:
         records = self._memory_context_records(turn_input)
         return records[0].memory_ref.ref_id if records else None
+
+    def _memory_context_bundle(self, turn_input: Any) -> Any | None:
+        if self._memory_service is None or not hasattr(self._memory_service, "retrieve_context"):
+            return None
+        try:
+            return self._memory_service.retrieve_context(
+                _bounded_input_summary(turn_input.user_visible_input),
+                session_ref=getattr(turn_input, "session_ref", None),
+                conversation_ref=getattr(turn_input, "conversation_ref", None),
+            )
+        except Exception:
+            return None
 
     def _memory_context_records(self, turn_input: Any) -> tuple[Any, ...]:
         if self._memory_store is None or not hasattr(self._memory_store, "read") or turn_input.session_ref is None:
@@ -347,6 +367,16 @@ def _safe_memory_candidate(turn_input: Any, intent_ref: IntentRef, record: Any) 
     )
 
 
+def _safe_memory_bundle_candidate(turn_input: Any, intent_ref: IntentRef, bundle: Any) -> ContextCandidate:
+    content = _bounded_input_summary(str(getattr(bundle, "injected_context", "Memory context unavailable.")))
+    return ContextCandidate.from_safe_summary(
+        ContextSourceRef(kind=ContextSourceKind.MEMORY_PROJECTION, identifier=f"memory.bundle.{turn_input.turn_id}"),
+        content,
+        token_estimate=_estimate_tokens(content),
+        intent_tags=(),
+    )
+
+
 def _route_summary(text: str | None, intent_kind: IntentKind) -> str:
     actual = _bounded_input_summary(text)
     if intent_kind in {IntentKind.WEB_SEARCH, IntentKind.GROUNDED_ANSWER}:
@@ -430,4 +460,12 @@ def _freshness_for(text: str | None) -> WebSearchFreshness:
 
 
 def _memory_citation_id(ref: Any) -> str:
+    citation_id = getattr(ref, "citation_id", None)
+    if isinstance(citation_id, str) and citation_id:
+        return citation_id
+    evidence_id = getattr(ref, "evidence_id", None)
+    if isinstance(evidence_id, str) and evidence_id.startswith("memory.evidence."):
+        return evidence_id
+    if isinstance(evidence_id, str) and evidence_id:
+        return "memory.evidence." + evidence_id.replace(":", "-")
     return "memory.evidence." + str(getattr(ref, "chunk_id", "unknown")).replace(":", "-")

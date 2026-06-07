@@ -44,13 +44,19 @@ def _seed_record(store: SQLiteMemoryStore, *, content: str) -> None:
     )
 
 
+def _lightweight_intent_planner():
+    from packages.intent_runtime.hybrid import DeterministicLocalIntentEncoder, HybridIntentRuntime
+
+    return HybridIntentRuntime(semantic_encoder=DeterministicLocalIntentEncoder())
+
+
 def test_cognition_adaptive_prompt_carries_real_question_and_recalled_memory(tmp_path) -> None:
     from packages.cognition_runtime import CognitionRuntime
 
     store = SQLiteMemoryStore(memory_db_path=tmp_path / "memory.sqlite", local_user_root=tmp_path)
     _seed_record(store, content="User preferred project codename is Cedar.")
 
-    result = CognitionRuntime(memory_store=store).assemble_turn(
+    result = CognitionRuntime(memory_store=store, intent_planner=_lightweight_intent_planner()).assemble_turn(
         _turn_input("What project codename do I prefer?")
     )
 
@@ -65,6 +71,52 @@ def test_cognition_adaptive_prompt_carries_real_question_and_recalled_memory(tmp
     assert result.context_pack.budget.max_context_tokens == 6000
     assert "system_policy" in result.prompt_projection.section_kinds
     assert result.raw_prompt_persisted is False
+
+
+def test_cognition_runtime_prefers_unified_memory_service_context() -> None:
+    from packages.cognition_runtime import CognitionRuntime
+    from packages.memory_service_runtime import MemoryContextBundle, MemoryEvidenceRef, MemoryRankingSignal, MemorySourceAttribution, MemorySynthesis
+
+    class Service:
+        def retrieve_context(self, query, *, session_ref=None, conversation_ref=None):
+            source = MemorySourceAttribution(
+                source_id="graph.fact.codename",
+                source_type="synthesis",
+                title="Graphiti temporal fact",
+                uri="graphiti://graph.fact.codename",
+                captured_at=datetime.now(UTC),
+                trust_level="synthesis",
+            )
+            evidence = MemoryEvidenceRef(
+                evidence_id="memory.evidence.graph.fact.codename",
+                source=source,
+                quote_preview="User prefers Cedar as the project codename.",
+                fact="User prefers Cedar as the project codename.",
+                ranking=MemoryRankingSignal(semantic_score=0.8, graph_score=1.0, recency_score=0.8, trust_score=0.8, explicit_importance=0.7),
+            )
+            return MemoryContextBundle(
+                query=query,
+                namespace="marvex.session.test",
+                evidence_refs=(evidence,),
+                synthesis=MemorySynthesis(
+                    synthesis_id="memory.evidence.synthesis.codename",
+                    namespace="marvex.session.test",
+                    summary="Relevant memory: User prefers Cedar as the project codename.",
+                    evidence_ids=(evidence.citation_id,),
+                    generated_at=datetime.now(UTC),
+                ),
+                injected_context="Memory context for query: codename\n1. [memory.evidence.graph.fact.codename] User prefers Cedar as the project codename.",
+            )
+
+    result = CognitionRuntime(memory_service=Service(), intent_planner=_lightweight_intent_planner()).assemble_turn(
+        _turn_input("What project codename do I prefer?")
+    )
+    sections = tuple(section.safe_content for section in result.prompt_result.plan.sections if section.included)
+    joined = "\n".join(sections)
+
+    assert "User prefers Cedar as the project codename." in joined
+    assert result.memory_context_bundle is not None
+    assert result.memory_evidence_refs[0].citation_id == "memory.evidence.graph.fact.codename"
 
 
 def test_local_memory_loop_policy_write_recall_restart_and_belief_revision(tmp_path) -> None:

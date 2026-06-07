@@ -10,7 +10,6 @@ from packages.capability_runtime.models import CapabilityRuntimeModel
 from packages.context_runtime import ContextCandidate, ContextSourceKind, ContextSourceRef, ContextSourceTrustLevel
 from packages.intent_runtime import IntentKind
 from packages.web_search_runtime import WebSearchEvidenceRef, WebSearchGroundingBundle
-from packages.memory_tree_runtime.models import EvidenceLink
 
 
 class GroundedAnswerDraft(CapabilityRuntimeModel):
@@ -31,7 +30,7 @@ def validate_grounded_citations(
     draft: GroundedAnswerDraft,
     *,
     evidence_refs: tuple[WebSearchEvidenceRef, ...],
-    memory_evidence_refs: tuple[EvidenceLink, ...] = (),
+    memory_evidence_refs: tuple[object, ...] = (),
     citations_required: bool = False,
 ) -> CitationValidationResult:
     allowed = {ref.evidence_id for ref in evidence_refs} | {_memory_citation_id(ref) for ref in memory_evidence_refs}
@@ -73,6 +72,15 @@ def _bounded_text(value: str, limit: int) -> str:
     return value[:limit]
 
 
-def _memory_citation_id(ref: EvidenceLink) -> str:
-    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", ref.chunk_id).strip("-")
+def _memory_citation_id(ref: object) -> str:
+    citation_id = getattr(ref, "citation_id", None)
+    if isinstance(citation_id, str) and citation_id:
+        return citation_id
+    evidence_id = getattr(ref, "evidence_id", None)
+    if isinstance(evidence_id, str) and evidence_id.startswith("memory.evidence."):
+        return evidence_id
+    if isinstance(evidence_id, str) and evidence_id:
+        safe_evidence = re.sub(r"[^A-Za-z0-9_.-]+", "-", evidence_id).strip("-")
+        return f"memory.evidence.{safe_evidence}"
+    safe = re.sub(r"[^A-Za-z0-9_.-]+", "-", str(getattr(ref, "chunk_id", "unknown"))).strip("-")
     return f"memory.evidence.{safe}"
