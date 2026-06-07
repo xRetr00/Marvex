@@ -478,7 +478,7 @@ def _skill_manifest() -> SkillManifest:
     )
 
 
-def _expanded_app(tmp_path=None):
+def _expanded_app(tmp_path=None, memory_service=None):
     store = InMemoryApprovalStore.from_requests((_approval_request(),))
     store.approve("approval-request-1", reason="record approval history")
     approval_store = InMemoryApprovalStore.from_requests((_approval_request(),))
@@ -532,6 +532,7 @@ def _expanded_app(tmp_path=None):
         skills_marketplace=skills_catalog,
         mcp_runtime_registry=McpServerRuntimeRegistry(state_path=(tmp_path or Path.cwd()) / "mcp-runtime.json") if tmp_path is not None else None,
         memory_store=memory_store,
+        memory_service=memory_service,
         trace_reader=trace_reader,
         trace_ids=("trace-1",),
         policy_views=({"policy_id": "browser-actions", "risk_level": "high", "approval_required": True},),
@@ -611,6 +612,31 @@ def test_control_plane_memory_inspect_and_forget_are_safe() -> None:
     assert payload["records"][0]["raw_transcript_persisted"] is False
     assert forget_status == "200 OK"
     assert forget_payload["forgotten"] is True
+
+
+def test_control_plane_memory_health_is_safe() -> None:
+    class MemoryServiceWithHealth:
+        def health(self):
+            return {
+                "schema_version": "1",
+                "status": "configured",
+                "backend_count": 2,
+                "backends": (
+                    {"backend": "graphiti", "status": "configured", "api_key": "must-not-leak"},
+                    {"backend": "qdrant", "status": "configured"},
+                ),
+                "raw_content_persisted": False,
+            }
+
+    app = _expanded_app(memory_service=MemoryServiceWithHealth())
+
+    status, _headers, payload = _call(app, "/control/memory/health")
+
+    assert status == "200 OK"
+    assert payload["status"] == "configured"
+    assert payload["backend_count"] == 2
+    assert payload["raw_content_persisted"] is False
+    assert "must-not-leak" not in json.dumps(payload)
 
 
 def test_control_plane_trace_search_history_policies_and_diagnostics_are_safe() -> None:

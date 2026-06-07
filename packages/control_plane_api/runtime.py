@@ -87,6 +87,7 @@ def _create_control_plane_dispatcher(
     mcp_runtime_registry: Any | None = None,
     skills_root: str | None = None,
     memory_store: Any | None = None,
+    memory_service: Any | None = None,
     trace_reader: Any | None = None,
     trace_ids: tuple[str, ...] = (),
     policy_views: tuple[dict[str, Any], ...] = (),
@@ -327,11 +328,32 @@ def _create_control_plane_dispatcher(
                 return _json_response(None, "404 Not Found", _error("skill_marketplace_entry_not_found", path))
             proposal = proposal_store.propose_skill_enablement(entry, requested_by="control_plane")
             return _json_response(None, "200 OK", proposal.safe_projection())
+        if method == "GET" and path == f"{CONTROL_PREFIX}/memory/health":
+            if memory_service is not None and hasattr(memory_service, "health"):
+                payload = _safe_nested_mapping(memory_service.health())
+            else:
+                payload = {
+                    "schema_version": SCHEMA_VERSION,
+                    "status": "configured" if memory_store is not None else "unavailable",
+                    "backend_count": 1 if memory_store is not None else 0,
+                    "backends": ({"backend": "compatibility", "status": "configured", "raw_transcript_persisted": False},) if memory_store is not None else (),
+                    "raw_content_persisted": False,
+                }
+            return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, **payload, "raw_content_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/memory":
-            records = tuple(memory_store.safe_inspect()) if memory_store is not None and hasattr(memory_store, "safe_inspect") else ()
+            records = (
+                tuple(memory_service.safe_inspect())
+                if memory_service is not None and hasattr(memory_service, "safe_inspect")
+                else tuple(memory_store.safe_inspect())
+                if memory_store is not None and hasattr(memory_store, "safe_inspect")
+                else ()
+            )
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, "records": records, "record_count": len(records), "raw_transcript_persisted": False})
         if method == "POST" and path.startswith(f"{CONTROL_PREFIX}/memory/") and path.endswith("/forget"):
             memory_id = path.removeprefix(f"{CONTROL_PREFIX}/memory/").removesuffix("/forget").strip("/")
+            if memory_service is not None and hasattr(memory_service, "forget"):
+                forgotten = bool(memory_service.forget(memory_id))
+                return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, "memory_ref": {"ref_type": "memory", "ref_id": memory_id}, "forgotten": forgotten, "raw_content_persisted": False})
             if memory_store is None:
                 return _json_response(None, "404 Not Found", _error("memory_store_not_configured", path))
             result = memory_store.forget(MemoryRef(ref_type="memory", ref_id=memory_id))
@@ -352,7 +374,13 @@ def _create_control_plane_dispatcher(
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, "connector_id": connector_id, "requested_state": "enabled" if action == "enable" else action + "d", "sync_started": False, "raw_payload_persisted": False})
         if method == "GET" and path == f"{CONTROL_PREFIX}/memory/tree/search":
             query = _first(parse_qs(query_string, keep_blank_values=False), "q") or ""
-            result = memory_tree_runtime.memory_tree_search(query) if memory_tree_runtime is not None else None
+            result = (
+                memory_service.search(query)
+                if memory_service is not None and hasattr(memory_service, "search") and query
+                else memory_tree_runtime.memory_tree_search(query)
+                if memory_tree_runtime is not None
+                else None
+            )
             payload = result.safe_projection() if result is not None else {"query": query, "results": []}
             return _json_response(None, "200 OK", {"schema_version": SCHEMA_VERSION, **payload})
         if method == "GET" and path.startswith(f"{CONTROL_PREFIX}/memory/tree/source/"):
