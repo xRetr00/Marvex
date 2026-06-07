@@ -188,6 +188,8 @@ class InMemoryProviderControl:
         if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
             cleaned_base_url = ""
             provider_mode = "litellm_sdk"
+        elif provider_id == "litellm" and cleaned_base_url and provider_mode in {None, "native", "litellm_sdk"}:
+            provider_mode = "litellm_proxy"
         row.base_url = cleaned_base_url
         if provider_mode is not None:
             cleaned_mode = _clean_provider_mode(str(provider_mode))
@@ -353,7 +355,7 @@ class InMemoryProviderControl:
             if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(row.base_url):
                 row.base_url = ""
                 row.provider_mode = "litellm_sdk"
-            if provider_id == "litellm" and row.base_url and row.provider_mode == "litellm_sdk":
+            if provider_id == "litellm" and row.base_url and row.provider_mode in {"litellm_sdk", "native"}:
                 row.provider_mode = "litellm_proxy"
             models = row_data.get("models")
             if isinstance(models, list):

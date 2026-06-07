@@ -54,14 +54,14 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
             # Google AI Studio through LiteLLM SDK translation instead.
             base_url = None
             provider_mode = "litellm_sdk"
+        elif base_url is not None and provider_mode in {None, "native", "litellm_sdk"}:
+            provider_mode = "litellm_proxy"
         provider_config_kwargs = {
             "api_key": _clean_optional_string(config.litellm_api_key),
             "base_url": base_url,
             "provider_mode": provider_mode,
             "timeout_seconds": config.timeout_seconds,
         }
-        if provider_config_kwargs["base_url"] is not None and provider_config_kwargs["provider_mode"] is None:
-            provider_config_kwargs["provider_mode"] = "litellm_proxy"
         provider_config_kwargs = {
             key: value for key, value in provider_config_kwargs.items() if value is not None
         }

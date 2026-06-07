@@ -118,3 +118,29 @@ def test_persistence_migrates_litellm_proxy_base_url_from_sdk_mode(tmp_path: Pat
 
     assert row["base_url"] == "http://localhost:4000/v1"
     assert row["provider_mode"] == "litellm_proxy"
+
+
+def test_persistence_migrates_litellm_proxy_base_url_from_native_mode(tmp_path: Path) -> None:
+    state = tmp_path / "providers.json"
+    state.write_text(
+        json.dumps(
+            {
+                "active_provider_id": "litellm",
+                "providers": [
+                    {
+                        "provider_id": "litellm",
+                        "base_url": "https://openrouter.ai/api/v1/",
+                        "provider_mode": "native",
+                        "configured": True,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    control = InMemoryProviderControl(persistence_path=str(state))
+    row = next(item for item in control.provider_catalog()["providers"] if item["provider_id"] == "litellm")
+
+    assert row["base_url"] == "https://openrouter.ai/api/v1/"
+    assert row["provider_mode"] == "litellm_proxy"
