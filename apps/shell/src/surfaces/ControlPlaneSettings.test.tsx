@@ -61,6 +61,16 @@ describe("ControlPlaneSettings", () => {
       }
       if (path === "/deps") return { deps: [{ id: "browser", label: "Browser automation", group: "browser", installed: false, feature: "browser" }], features: { tts: true, stt: true, wakeword: true, web_search: true, browser: false, mcp: false, computer_use: false, embeddings: false } };
       if (path === "/deps/install") return { id: "browser", status: "installed", detail: "pip_install_succeeded" };
+      if (path === "/web-search") {
+        return {
+          schema_version: "1",
+          primary_provider: "searxng",
+          fallback_provider: "ddgs",
+          provider_order: ["searxng", "ddgs"],
+          searxng_base_url: method === "POST" ? String((body as { searxng_base_url: string }).searxng_base_url) : "http://127.0.0.1:8888",
+          raw_payload_persisted: false,
+        };
+      }
       if (path === "/logs") return { schema_version: "1", logs: [{ name: "core.stderr.log", source: "control", lines: ["service ready"] }], raw_log_payload_persisted: false };
       if (path === "/snapshot") return { schema_version: "1", traces: [{ trace_id: "trace-1", event_count: 2 }], telemetry: { trace_count: 1 }, raw_payload_persisted: false };
       if (path === "/marketplace/mcp") return { schema_version: "1", entries: [{ server_id: "local-mcp", install_allowed: true, required_dep_group_id: "mcp" }], read_only_browse: true, raw_payload_persisted: false };
@@ -77,6 +87,8 @@ describe("ControlPlaneSettings", () => {
     expect(await screen.findByText("Model routing")).toBeInTheDocument();
     expect(await screen.findByText("Automation readiness")).toBeInTheDocument();
     expect(await screen.findByText("Runtime policy")).toBeInTheDocument();
+    expect(await screen.findByText("Web search")).toBeInTheDocument();
+    expect(await screen.findByLabelText("SearXNG URL")).toHaveValue("http://127.0.0.1:8888");
     expect(await screen.findByLabelText("Multi-model candidate")).toBeInTheDocument();
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
@@ -98,6 +110,9 @@ describe("ControlPlaneSettings", () => {
     await userEvent.click(screen.getByRole("button", { name: /Save automation model/i }));
     await userEvent.selectOptions(screen.getByLabelText("Tool approval mode"), "auto_marvex");
     await userEvent.click(screen.getByRole("button", { name: /Save mode/i }));
+    await userEvent.clear(screen.getByLabelText("SearXNG URL"));
+    await userEvent.type(screen.getByLabelText("SearXNG URL"), "http://127.0.0.1:7777");
+    await userEvent.click(screen.getByRole("button", { name: /Save SearXNG URL/i }));
     await userEvent.type(screen.getByLabelText("Provider API key"), "sk-plain-text-secret");
     await userEvent.click(screen.getByRole("button", { name: /Save key/i }));
     await userEvent.click(screen.getByRole("button", { name: /Install Browser automation/i }));
@@ -108,6 +123,7 @@ describe("ControlPlaneSettings", () => {
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/models/multi", "POST", { models: ["qwen2.5-coder-7b", "llama-3.1-8b"] });
     expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/automation", "POST", { model: "gpt-4o", supports_vision: true, vision_required: true });
     expect(mockedControlRequest).toHaveBeenCalledWith("/runtime-policy", "POST", { mode: "auto_marvex" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/web-search", "POST", { searxng_base_url: "http://127.0.0.1:7777" });
     await waitFor(() => expect(mockedControlRequest).toHaveBeenCalledWith("/providers/lmstudio_responses/secret", "POST", { secret: "sk-plain-text-secret" }));
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "browser" });
     expect(mockedControlRequest).toHaveBeenCalledWith("/deps/install", "POST", { id: "mcp" });
@@ -115,5 +131,5 @@ describe("ControlPlaneSettings", () => {
     expect(screen.queryByText("sk-plain-text-secret")).not.toBeInTheDocument();
     expect(await screen.findByText("sk-p****cret")).toBeInTheDocument();
     expect(screen.getByText("core.stderr.log")).toBeInTheDocument();
-  }, 10000);
+  }, 20000);
 });

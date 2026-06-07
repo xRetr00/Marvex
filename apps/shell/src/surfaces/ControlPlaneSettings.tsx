@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Copy, Database, ExternalLink, Eye, EyeOff, KeyRound, PlugZap, Plus, RefreshCw, Save, Server, Trash2, Wrench } from "lucide-react";
+import { Copy, Database, ExternalLink, Eye, EyeOff, KeyRound, PlugZap, Plus, RefreshCw, Save, Search, Server, Trash2, Wrench } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ModernLogViewer } from "@/components/marvex/ModernLogViewer";
 import { controlRequest, openControlPlane, type LogTail } from "@/lib/shellCommands";
@@ -32,6 +32,14 @@ type RegistryPayload = {
   entries?: Record<string, unknown>[];
 };
 
+type WebSearchPayload = {
+  schema_version?: string;
+  primary_provider?: string;
+  fallback_provider?: string;
+  provider_order?: string[];
+  searxng_base_url?: string;
+};
+
 export function ControlPlaneSettings() {
   const [providers, setProviders] = useState<ProviderCatalog | null>(null);
   const [deps, setDeps] = useState<Dep[]>([]);
@@ -42,6 +50,8 @@ export function ControlPlaneSettings() {
   const [runtimeModeDraft, setRuntimeModeDraft] = useState<RuntimePolicyMode>("auto_marvex");
   const [mcp, setMcp] = useState<Record<string, unknown>[]>([]);
   const [skills, setSkills] = useState<Record<string, unknown>[]>([]);
+  const [webSearch, setWebSearch] = useState<WebSearchPayload | null>(null);
+  const [searxngUrlDraft, setSearxngUrlDraft] = useState("http://127.0.0.1:8888");
   const [keyDraft, setKeyDraft] = useState("");
   const [modelDraft, setModelDraft] = useState("");
   const [connectionUrlDraft, setConnectionUrlDraft] = useState("");
@@ -61,7 +71,7 @@ export function ControlPlaneSettings() {
 
   const load = useCallback(async () => {
     setError(null);
-    const [providerResult, depsResult, snapshotResult, logsResult, runtimePolicyResult, mcpResult, skillsResult] = await Promise.allSettled([
+    const [providerResult, depsResult, snapshotResult, logsResult, runtimePolicyResult, mcpResult, skillsResult, webSearchResult] = await Promise.allSettled([
       fetchProviders(),
       fetchDeps(),
       controlRequest("/snapshot", "GET") as Promise<Snapshot>,
@@ -69,6 +79,7 @@ export function ControlPlaneSettings() {
       fetchRuntimePolicy(),
       controlRequest("/marketplace/mcp", "GET") as Promise<RegistryPayload>,
       controlRequest("/marketplace/skills", "GET") as Promise<RegistryPayload>,
+      controlRequest("/web-search", "GET") as Promise<WebSearchPayload>,
     ]);
     if (providerResult.status === "fulfilled") setProviders(providerResult.value);
     else setError("Provider controls unavailable.");
@@ -84,6 +95,10 @@ export function ControlPlaneSettings() {
     }
     if (mcpResult.status === "fulfilled") setMcp(mcpResult.value.entries ?? []);
     if (skillsResult.status === "fulfilled") setSkills(skillsResult.value.entries ?? []);
+    if (webSearchResult.status === "fulfilled") {
+      setWebSearch(webSearchResult.value);
+      setSearxngUrlDraft(webSearchResult.value.searxng_base_url || "http://127.0.0.1:8888");
+    }
   }, []);
 
   useEffect(() => {
@@ -146,6 +161,14 @@ export function ControlPlaneSettings() {
   };
   const onSaveRuntimePolicy = () => {
     void run("runtime policy", () => setRuntimePolicyMode(runtimeModeDraft));
+  };
+  const onSaveSearxngUrl = () => {
+    void run("web search", async () => {
+      const result = await controlRequest("/web-search", "POST", { searxng_base_url: searxngUrlDraft.trim() }) as WebSearchPayload;
+      setWebSearch(result);
+      setSearxngUrlDraft(result.searxng_base_url || searxngUrlDraft.trim());
+      return result;
+    });
   };
   const onAddMultiModel = () => {
     if (!activeProvider || !multiModelDraft) return;
@@ -296,6 +319,21 @@ export function ControlPlaneSettings() {
             <Chip label={runtimePolicy?.mode === "auto_marvex" ? "no approval prompts" : `active: ${runtimePolicy?.mode ?? "unknown"}`} ok={runtimePolicy?.mode === "auto_marvex"} />
           </div>
           <Muted>Auto Marvex runs model-authored tools without approval prompts for local debugging.</Muted>
+        </Panel>
+
+        <Panel icon={<Search size={16} />} title="Web search">
+          <div style={chips}>
+            <Chip label={`primary: ${webSearch?.primary_provider ?? "searxng"}`} ok />
+            <Chip label={`fallback: ${webSearch?.fallback_provider ?? "ddgs"}`} ok />
+          </div>
+          <label style={field}>
+            <span>SearXNG URL</span>
+            <input aria-label="SearXNG URL" value={searxngUrlDraft} onChange={(event) => setSearxngUrlDraft(event.target.value)} placeholder="http://127.0.0.1:8888" style={input} />
+          </label>
+          <div style={actions}>
+            <Button size="sm" onClick={onSaveSearxngUrl} disabled={!searxngUrlDraft.trim() || Boolean(busy)}><Save size={14} />Save SearXNG URL</Button>
+            <Chip label={(webSearch?.provider_order ?? ["searxng", "ddgs"]).join(" -> ")} ok />
+          </div>
         </Panel>
       </section>
 

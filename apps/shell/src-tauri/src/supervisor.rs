@@ -280,6 +280,48 @@ fn service_specs(token: &str) -> Vec<ServiceSpec> {
                 model,
                 "--web-search".into(),
                 "multi".into(),
+                "--web-base-url".into(),
+                "http://127.0.0.1:8888".into(),
+                "--memory-backend".into(),
+                "graphiti_qdrant".into(),
+                "--memory-namespace".into(),
+                "marvex".into(),
+                "--graphiti-graph-backend".into(),
+                "falkordb".into(),
+                "--falkordb-host".into(),
+                "127.0.0.1".into(),
+                "--falkordb-port".into(),
+                "6379".into(),
+                "--memory-llm-api-key".into(),
+                "lm-studio".into(),
+                "--memory-llm-base-url".into(),
+                "http://127.0.0.1:1234/v1".into(),
+                "--memory-llm-model".into(),
+                "google/gemma-4-e2b".into(),
+                "--memory-llm-small-model".into(),
+                "google/gemma-4-e2b".into(),
+                "--memory-llm-client-kind".into(),
+                "openai_generic".into(),
+                "--memory-embedding-api-key".into(),
+                "lm-studio".into(),
+                "--memory-embedding-base-url".into(),
+                "http://127.0.0.1:1234/v1".into(),
+                "--graphiti-embedding-model".into(),
+                "text-embedding-nomic-embed-text-v1.5".into(),
+                "--graphiti-embedding-dim".into(),
+                "768".into(),
+                "--memory-reranker-api-key".into(),
+                "lm-studio".into(),
+                "--memory-reranker-base-url".into(),
+                "http://127.0.0.1:1234/v1".into(),
+                "--memory-reranker-model".into(),
+                "google/gemma-4-e2b".into(),
+                "--qdrant-path".into(),
+                ".marvex-memory/qdrant".into(),
+                "--qdrant-collection".into(),
+                "marvex_memory".into(),
+                "--memory-embedding-model".into(),
+                "BAAI/bge-small-en-v1.5".into(),
             ],
             env: vec![("MARVEX_LOCAL_AUTH_TOKEN".into(), token.into())],
             kind: ServiceKind::Core,
@@ -1047,6 +1089,11 @@ mod tests {
         time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
+    fn has_arg_pair(args: &[String], name: &str, value: &str) -> bool {
+        args.windows(2)
+            .any(|window| window[0] == name && window[1] == value)
+    }
+
     #[test]
     fn core_command_receives_token_without_logging_it_in_status() {
         let specs = service_specs("secret-token");
@@ -1091,6 +1138,10 @@ mod tests {
             .args
             .windows(2)
             .any(|pair| pair == ["--web-search", "multi"]));
+        assert!(core
+            .args
+            .windows(2)
+            .any(|pair| pair == ["--web-base-url", "http://127.0.0.1:8888"]));
     }
 
     #[test]
@@ -1290,6 +1341,23 @@ mod tests {
         assert!(!names.contains(&"provider_worker"));
         assert!(!names.contains(&"intent_worker"));
         assert!(!names.contains(&"tool_worker"));
+    }
+
+    #[test]
+    fn core_starts_with_local_graphiti_qdrant_memory_defaults() {
+        let specs = service_specs("token");
+        let core = specs.iter().find(|spec| spec.name == "core").expect("core");
+
+        assert!(has_arg_pair(&core.args, "--memory-backend", "graphiti_qdrant"));
+        assert!(has_arg_pair(&core.args, "--graphiti-graph-backend", "falkordb"));
+        assert!(has_arg_pair(&core.args, "--falkordb-host", "127.0.0.1"));
+        assert!(has_arg_pair(&core.args, "--falkordb-port", "6379"));
+        assert!(has_arg_pair(&core.args, "--memory-llm-base-url", "http://127.0.0.1:1234/v1"));
+        assert!(has_arg_pair(&core.args, "--memory-llm-client-kind", "openai_generic"));
+        assert!(has_arg_pair(&core.args, "--memory-llm-model", "google/gemma-4-e2b"));
+        assert!(has_arg_pair(&core.args, "--graphiti-embedding-model", "text-embedding-nomic-embed-text-v1.5"));
+        assert!(has_arg_pair(&core.args, "--graphiti-embedding-dim", "768"));
+        assert!(has_arg_pair(&core.args, "--qdrant-collection", "marvex_memory"));
     }
 
     #[test]

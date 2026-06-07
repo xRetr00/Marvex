@@ -352,6 +352,8 @@ describe("Control Plane settings", () => {
     expect(screen.getByLabelText("Active model")).toHaveValue("local/qwen");
     await userEvent.selectOptions(screen.getByLabelText("Provider"), "litellm");
     expect(screen.getByLabelText("Provider mode")).toHaveValue("litellm_sdk");
+    await userEvent.selectOptions(screen.getByLabelText("Provider mode"), "litellm_openrouter");
+    expect(screen.getByLabelText("Provider mode")).toHaveValue("litellm_openrouter");
     await userEvent.click(screen.getByRole("button", { name: /Set Provider/i }));
     await userEvent.click(screen.getByRole("button", { name: /Set Model/i }));
     await userEvent.click(screen.getByRole("button", { name: /Set Endpoint/i }));
@@ -361,6 +363,8 @@ describe("Control Plane settings", () => {
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/providers/active"), expect.objectContaining({ method: "POST" })));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/providers/litellm/models/active"), expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/providers/litellm/connection"), expect.objectContaining({ method: "POST" }));
+    const endpointCall = fetchMock.mock.calls.find(([input]) => String(input).includes("/control/providers/litellm/connection"));
+    expect(JSON.parse(String(endpointCall?.[1]?.body))).toMatchObject({ provider_mode: "litellm_openrouter" });
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/providers/litellm/automation"), expect.objectContaining({ method: "POST" }));
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining("/control/providers/litellm/models/refresh"), expect.objectContaining({ method: "POST" }));
     expect(screen.queryByRole("button", { name: /execute/i })).not.toBeInTheDocument();
