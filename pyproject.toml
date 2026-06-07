@@ -21,6 +21,8 @@ dependencies = [
   "llama-index-core>=0.14.22",
   "ddgs>=9.14.4",
   "fastembed>=0.4.0,<1",
+  "graphiti-core[falkordb]>=0.29.0,<1",
+  "qdrant-client[fastembed]>=1.18.0,<2",
   "fastapi>=0.135,<0.137",
   "moonshine-voice==0.0.59",
   "speechbrain==1.1.0",
