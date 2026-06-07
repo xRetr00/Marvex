@@ -18,7 +18,7 @@ _SAFE_CHARS = frozenset(
     "0123456789.:-_/"
 )
 
-MemoryBackendKind = Literal["local", "agentmemory"]
+MemoryBackendKind = Literal["local", "agentmemory", "graphiti_qdrant"]
 _DEFAULT_BACKEND: MemoryBackendKind = "local"
 _DEFAULT_DAEMON_URL = "http://localhost:3111"
 
@@ -107,10 +107,67 @@ class MemoryBackendConfig(BaseModel):
         ),
     )
 
+    graphiti_qdrant: "GraphitiQdrantMemoryBackendConfig | None" = Field(
+        default=None,
+        description="Graphiti/FalkorDB + Qdrant/FastEmbed memory service config.",
+    )
+
     @property
     def is_agentmemory_enabled(self) -> bool:
         """Return True only when the agentmemory backend has been explicitly selected."""
         return self.backend == "agentmemory"
+
+    @property
+    def is_graphiti_qdrant_enabled(self) -> bool:
+        """Return True only when the Graphiti/Qdrant backend has been explicitly selected."""
+        return self.backend == "graphiti_qdrant"
+
+
+class GraphitiQdrantMemoryBackendConfig(BaseModel):
+    """Config for Marvex's full local/self-hosted memory backend.
+
+    FalkorDB is the default graph backend for Graphiti. Qdrant uses local
+    persistent storage by default and FastEmbed through qdrant-client.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    namespace: str = Field(default="marvex", min_length=1)
+    graph_backend: Literal["falkordb", "neo4j"] = "falkordb"
+    falkordb_host: str = "localhost"
+    falkordb_port: int = Field(default=6379, ge=1, le=65535)
+    falkordb_username: str | None = None
+    falkordb_password: str | None = None
+    neo4j_uri: str = "bolt://localhost:7687"
+    neo4j_user: str = "neo4j"
+    neo4j_password: str = "password"
+    llm_api_key: str | None = None
+    llm_base_url: str | None = None
+    llm_model: str | None = None
+    llm_small_model: str | None = None
+    llm_client_kind: Literal["openai_responses", "openai_generic"] = "openai_responses"
+    embedding_api_key: str | None = None
+    embedding_base_url: str | None = None
+    graphiti_embedding_model: str = "text-embedding-3-small"
+    graphiti_embedding_dim: int = Field(default=1024, ge=1)
+    reranker_api_key: str | None = None
+    reranker_base_url: str | None = None
+    reranker_model: str | None = None
+    qdrant_path: str = ".marvex-memory/qdrant"
+    qdrant_collection: str = "marvex_memory"
+    embedding_model: str = "BAAI/bge-small-en-v1.5"
+    graph_required: bool = False
+    vector_required: bool = False
+
+    @field_validator("namespace")
+    @classmethod
+    def _validate_namespace(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("namespace must be non-empty")
+        for char in value:
+            if char not in _SAFE_CHARS:
+                raise ValueError(f"namespace contains unsafe character: {char!r}")
+        return value
 
 
 def default_memory_backend_config() -> MemoryBackendConfig:
