@@ -61,8 +61,8 @@ DEP_GROUPS: tuple[DepGroup, ...] = (
         id="tts",
         label="Text-to-Speech",
         feature="tts",
-        packages=("kokoro_onnx", "piper"),
-        install_specs=("kokoro-onnx", "piper-tts"),
+        packages=("supertonic", "piper"),
+        install_specs=("supertonic", "piper-tts"),
     ),
     DepGroup(
         id="stt",

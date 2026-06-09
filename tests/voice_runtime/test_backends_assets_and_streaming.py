@@ -36,7 +36,7 @@ from packages.voice_runtime import (
 def test_backend_registry_selects_main_fallback_manual_and_auto_fallback() -> None:
     registry = build_default_voice_backend_registry(
         stt_backends=(DeterministicSttAdapter("moonshine-v2", text="hello"), DeterministicSttAdapter("sensevoice-small", text="fallback")),
-        tts_backends=(DeterministicTtsAdapter("kokoro-onnx"), DeterministicTtsAdapter("piper-tts")),
+        tts_backends=(DeterministicTtsAdapter("supertonic-v2"), DeterministicTtsAdapter("piper-tts")),
     )
 
     stt = registry.select_stt("main")
@@ -52,15 +52,15 @@ def test_backend_registry_selects_main_fallback_manual_and_auto_fallback() -> No
 
 def test_stt_and_tts_results_are_safe_and_backend_attributed() -> None:
     stt = DeterministicSttAdapter("moonshine-v2", text="turn on the lights")
-    tts = DeterministicTtsAdapter("kokoro-onnx")
+    tts = DeterministicTtsAdapter("supertonic-v2")
 
     transcription = stt.transcribe(TranscriptionRequest(trace_id="trace-1", audio_ref_id="audio-1", duration_ms=320))
-    synthesis = tts.synthesize(SpeechSynthesisRequest(trace_id="trace-1", text="I am checking that.", voice_id="af_heart"))
+    synthesis = tts.synthesize(SpeechSynthesisRequest(trace_id="trace-1", text="I am checking that.", voice_id="M1"))
 
     assert transcription.text == "turn on the lights"
     assert transcription.backend_id == "moonshine-v2"
-    assert synthesis.backend_id == "kokoro-onnx"
-    assert synthesis.voice_id == "af_heart"
+    assert synthesis.backend_id == "supertonic-v2"
+    assert synthesis.voice_id == "M1"
     assert synthesis.raw_audio_persisted is False
     assert "I am checking" not in json.dumps(synthesis.safe_projection())
 
@@ -76,10 +76,10 @@ def test_voice_model_registries_install_remove_download_and_test_without_interna
     )
 
     stt_models.install(manifest)
-    tts_voices.install(manifest.model_copy(update={"model": VoiceModelRef(model_id="af_heart", backend_id="kokoro-onnx", model_kind="tts_voice")}))
+    tts_voices.install(manifest.model_copy(update={"model": VoiceModelRef(model_id="M1", backend_id="supertonic-v2", model_kind="tts_voice")}))
     wakeword_models.install(manifest.model_copy(update={"model": VoiceModelRef(model_id="hey-marvex", backend_id="sherpa-onnx-kws", model_kind="wakeword")}))
     download = stt_models.download(VoiceDownloadRequest(model_id="moonshine-v2-base", backend_id="moonshine-v2", model_kind="stt", source_uri="local://bundled/moonshine"))
-    test = VoiceTestResult.from_request(VoiceTestRequest(test_id="test-tts", backend_id="kokoro-onnx", phrase="Testing voice."), status="passed")
+    test = VoiceTestResult.from_request(VoiceTestRequest(test_id="test-tts", backend_id="supertonic-v2", phrase="Testing voice."), status="passed")
 
     assert download.status == VoiceInstallStatus.INSTALLED
     assert stt_models.list_installed()[0].model.model_id == "moonshine-v2-base"
@@ -107,7 +107,7 @@ def test_sentence_clamper_and_tts_queue_cut_on_safe_boundaries() -> None:
 def test_barge_in_interrupts_playback_and_preserves_safe_trace_state() -> None:
     detector = BargeInDetector(BargeInPolicy(enabled=True, vad_confidence_threshold=0.6))
     event = UserSpeechDuringPlaybackEvent(trace_id="trace-1", confidence=0.88, playback_chunk_id="chunk-1")
-    state = ChunkPlaybackState.playing(chunk_id="chunk-1", backend_id="kokoro-onnx")
+    state = ChunkPlaybackState.playing(chunk_id="chunk-1", backend_id="supertonic-v2")
 
     result = detector.evaluate(event, state)
 
@@ -129,10 +129,10 @@ def test_early_speech_is_rate_limited_and_never_claims_unknown_facts() -> None:
 
 
 def test_voice_personality_safe_projection_controls_pacing_voice_and_sensitive_content() -> None:
-    profile = VoicePersonalityProfile.default().model_copy(update={"active_voice_id": "af_heart"})
+    profile = VoicePersonalityProfile.default().model_copy(update={"active_voice_id": "M1"})
     projection = profile.safe_projection()
 
-    assert projection["active_voice_id"] == "af_heart"
+    assert projection["active_voice_id"] == "M1"
     assert projection["auto_speak_enabled"] is True
     assert projection["sensitive_content_policy"] == "ask"
     assert VoiceRuntimeConfig.default().personality.filler_frequency.value == "medium"

@@ -61,10 +61,12 @@ def test_worker_test_stt_captures_audio_ref_for_runner_without_persistence(tmp_p
     assert "\\x01\\x02" not in serialized
 
 
-def test_worker_warm_models_only_warms_stt_not_tts(tmp_path: Path) -> None:
+def test_worker_warm_models_warms_active_stt_and_tts(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
+    (tmp_path / "voice-assets" / "tts" / "supertonic-v2").mkdir(parents=True)
     manager.install_local(VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True))
+    manager.install_local(VoiceModelInstallRequest(model_id="supertonic-v2", backend_id="supertonic-v2", model_kind="tts_voice", relative_path="tts/supertonic-v2", explicit_user_triggered=True))
     audio_refs = VoiceWorkerAudioRefStore()
     observed_stt: list[str] = []
     observed_tts: list[str] = []
@@ -75,40 +77,38 @@ def test_worker_warm_models_only_warms_stt_not_tts(tmp_path: Path) -> None:
 
     def tts_runner(request, asset):
         observed_tts.append(asset.model_id)
-        return SpeechSynthesisResult.failed(trace_id=request.trace_id, backend_id=request.backend_id or "kokoro-onnx", voice_id=request.voice_id)
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/warm/M1", backend_id=request.backend_id or "supertonic-v2", voice_id=request.voice_id)
 
     backend_runtime = VoiceWorkerBackendRuntime(asset_manager=manager, audio_refs=audio_refs, stt_runner=stt_runner, tts_runner=tts_runner)
     controller = VoiceWorkerController(audio=FakeLocalAudioAdapter(), asset_manager=manager, backend_runtime=backend_runtime)
 
     outcome = controller.warm_models()
 
-    assert outcome == {"stt": "ok"}
+    assert outcome == {"stt": "ok", "tts": "ok"}
     assert observed_stt == ["moonshine-v2"]
-    assert observed_tts == []
+    assert observed_tts == ["supertonic-v2"]
 
 
 def test_worker_generated_audio_sink_creates_ref_without_persisting_audio(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
-    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
+    (tmp_path / "voice-assets" / "tts" / "supertonic-v2").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="supertonic-v2", backend_id="supertonic-v2", model_kind="tts_voice", relative_path="tts/supertonic-v2", explicit_user_triggered=True))
     generated_audio = VoiceWorkerGeneratedAudioSink()
     observed: list[tuple[str, int]] = []
 
     def tts_runner(request, asset):
         ref = generated_audio.remember_audio(trace_id=request.trace_id, voice_id=request.voice_id, pcm=b"private-generated-audio", sample_rate=24_000)
         observed.append((asset.model_id, ref.byte_count))
-        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref=ref.audio_ref_id, backend_id=request.backend_id or "kokoro-onnx", voice_id=request.voice_id, duration_ms=120)
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref=ref.audio_ref_id, backend_id=request.backend_id or "supertonic-v2", voice_id=request.voice_id, duration_ms=120)
 
     backend_runtime = VoiceWorkerBackendRuntime(asset_manager=manager, generated_audio=generated_audio, tts_runner=tts_runner)
     controller = VoiceWorkerController(asset_manager=manager, backend_runtime=backend_runtime)
 
     result = controller.handle(VoiceWorkerCommand(command="test_tts", command_id="cmd-tts-sink", payload={"text": "sensitive response text"}))
-    projection = generated_audio.safe_projection("memory://voice/generated/cmd-tts-sink/af_heart")
+    projection = generated_audio.safe_projection("memory://voice/generated/cmd-tts-sink/M1")
     serialized = json.dumps({"result": result.safe_projection(), "projection": projection}).lower()
 
-    assert observed == [("kokoro-af-heart", len(b"private-generated-audio"))]
+    assert observed == [("supertonic-v2", len(b"private-generated-audio"))]
     assert projection["byte_count"] == len(b"private-generated-audio")
     assert projection["raw_audio_persisted"] is False
     assert result.event.summary["audio_ref_present"] is True

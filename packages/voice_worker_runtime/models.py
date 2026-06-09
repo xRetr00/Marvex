@@ -50,9 +50,8 @@ class VoiceWorkerPrivacyConfig(VoiceRuntimeModel):
 class VoiceWorkerWakewordConfig(VoiceRuntimeModel):
     # Marvex ships as an always-on assistant: the "Hey Marvex" wake word is
     # enabled by default and supervised 24/7 by the backend service. Detection
-    # uses enrolled local-wake references when present; before enrollment the
-    # configured sherpa-onnx KWS backend remains the stopgap and needs its
-    # installed model asset.
+    # uses the configured sherpa-onnx KWS backend and its installed keyword
+    # model asset. Recorded references are diagnostic replay material only.
     enabled: bool = True
     phrase: str = "Hey Marvex"
     backend_id: str = "sherpa-onnx-kws"
@@ -92,8 +91,11 @@ class VoiceWorkerConfig(VoiceRuntimeModel):
     hidden_auto_start_allowed: Literal[False] = False
     heartbeat_interval_ms: int = Field(default=1000, gt=0)
     active_stt_backend_id: str = "moonshine-v2"
-    active_tts_backend_id: str = "kokoro-onnx"
-    active_voice_id: str = "af_heart"
+    active_tts_backend_id: str = "supertonic-v2"
+    active_voice_id: str = "M1"
+    active_tts_speed: float = Field(default=1.05, ge=0.7, le=2.0)
+    active_tts_quality_steps: int = Field(default=8, ge=5, le=12)
+    active_tts_language: str = Field(default="en", min_length=2, max_length=8)
     wakeword: VoiceWorkerWakewordConfig = Field(default_factory=VoiceWorkerWakewordConfig)
     vad: VoiceWorkerVADConfig = Field(default_factory=VoiceWorkerVADConfig)
     audio: VoiceWorkerAudioConfig = Field(default_factory=VoiceWorkerAudioConfig)
@@ -185,9 +187,9 @@ class VoiceWorkerCommand(VoiceRuntimeModel):
         "switch_stt_backend",
         "switch_tts_backend",
         "switch_active_voice",
+        "configure_tts_controls",
         "speak",
         "listen",
-        "record_wake_reference",
     ]
     command_id: str = Field(..., min_length=1)
     trace_id: str | None = Field(default=None, min_length=1)
@@ -216,17 +218,16 @@ class VoiceWorkerStatus(VoiceRuntimeModel):
     config: VoiceWorkerConfig
     heartbeat: VoiceWorkerHeartbeat | None = None
     active_stt_backend_id: str = "moonshine-v2"
-    active_tts_backend_id: str = "kokoro-onnx"
-    active_voice_id: str = "af_heart"
+    active_tts_backend_id: str = "supertonic-v2"
+    active_voice_id: str = "M1"
+    active_tts_speed: float = 1.05
+    active_tts_quality_steps: int = 8
+    active_tts_language: str = "en"
     mic_status: str = "stopped"
     playback_status: str = "stopped"
     wakeword_status: str = "disabled"
-    # Wake backend truth (so the UI/user can see local-wake is actually active):
-    # the backend the listen loop will use, the count of enrolled local-wake
-    # reference samples on disk, and whether the local-wake package is importable.
+    # Wake backend truth: the backend the listen loop will use.
     effective_wakeword_backend_id: str = ""
-    wake_reference_count: int = 0
-    local_wake_available: bool = False
     queued_tts_count: int = 0
     recent_events: tuple[VoiceWorkerEvent, ...] = ()
     error: VoiceWorkerErrorEnvelope | None = None
@@ -253,12 +254,13 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
     active_stt_backend_id: str
     active_tts_backend_id: str
     active_voice_id: str
+    active_tts_speed: float = 1.05
+    active_tts_quality_steps: int = 8
+    active_tts_language: str = "en"
     mic_status: str
     playback_status: str
     wakeword_status: str
     effective_wakeword_backend_id: str = ""
-    wake_reference_count: int = 0
-    local_wake_available: bool = False
     queued_tts_count: int
     health: dict[str, object]
     recent_events: tuple[dict[str, object], ...] = ()
@@ -285,12 +287,13 @@ class SafeVoiceWorkerProjection(VoiceRuntimeModel):
             active_stt_backend_id=status.active_stt_backend_id,
             active_tts_backend_id=status.active_tts_backend_id,
             active_voice_id=status.active_voice_id,
+            active_tts_speed=status.active_tts_speed,
+            active_tts_quality_steps=status.active_tts_quality_steps,
+            active_tts_language=status.active_tts_language,
             mic_status=status.mic_status,
             playback_status=status.playback_status,
             wakeword_status=status.wakeword_status,
             effective_wakeword_backend_id=status.effective_wakeword_backend_id,
-            wake_reference_count=status.wake_reference_count,
-            local_wake_available=status.local_wake_available,
             queued_tts_count=status.queued_tts_count,
             health=VoiceWorkerHealth(
                 lifecycle_state=status.lifecycle_state,

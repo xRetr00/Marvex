@@ -18,7 +18,6 @@ from packages.voice_worker_runtime import (
 )
 from packages.voice_worker_runtime.continuous_capture import FakeContinuousCapture
 from packages.voice_worker_runtime.models import VoiceWorkerEventType
-from packages.voice_worker_runtime.wake_enrollment import wake_reference_dir, write_wake_reference_wav
 
 
 def _frame(tag: str, i: int) -> AudioFrame:
@@ -35,17 +34,6 @@ def _install(tmp_path: Path) -> VoiceAssetManager:
     manager.install_local(
         VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True)
     )
-    return manager
-
-
-def _install_stt_only_with_local_wake_refs(tmp_path: Path) -> VoiceAssetManager:
-    manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    (tmp_path / "voice-assets" / "stt" / "moonshine-v2").mkdir(parents=True)
-    manager.install_local(
-        VoiceModelInstallRequest(model_id="moonshine-v2", backend_id="moonshine-v2", model_kind="stt", relative_path="stt/moonshine-v2", explicit_user_triggered=True)
-    )
-    ref_dir = wake_reference_dir(manager.asset_root)
-    write_wake_reference_wav(ref_dir / "hey-marvex-01.wav", [b"\x01\x00" * 1600], sample_rate=16_000)
     return manager
 
 
@@ -164,8 +152,10 @@ def test_wake_detection_does_not_speak_tts_cue_before_command_capture(tmp_path: 
     assert not any(event.event_type == VoiceWorkerEventType.TTS_STARTED and event.summary.get("listening_cue") is True for event in events)
 
 
-def test_local_wake_references_replace_sherpa_asset_gate(tmp_path: Path):
-    manager = _install_stt_only_with_local_wake_refs(tmp_path)
+def test_continuous_wake_loop_uses_configured_sherpa_backend(tmp_path: Path):
+    """Sherpa remains the configured KWS backend for the continuous wake loop."""
+
+    manager = _install(tmp_path)
     wake_assets = []
     stt_calls = []
 
@@ -178,7 +168,7 @@ def test_local_wake_references_replace_sherpa_asset_gate(tmp_path: Path):
 
     def stt_runner(request, asset):
         stt_calls.append(request.audio_ref_id)
-        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="local wake works", backend_id=asset.backend_id, duration_ms=request.duration_ms, language="en", segments=())
+        return TranscriptionResult.succeeded(trace_id=request.trace_id, text="sherpa wake works", backend_id=asset.backend_id, duration_ms=request.duration_ms, language="en", segments=())
 
     controller = VoiceWorkerController(
         config=_enabled_config(),
@@ -194,10 +184,10 @@ def test_local_wake_references_replace_sherpa_asset_gate(tmp_path: Path):
 
     assert result["started"] is True
     assert result["detections"] >= 1
-    assert wake_assets and set(wake_assets) == {"local-wake"}
+    assert wake_assets and set(wake_assets) == {"sherpa-onnx-kws"}
     assert stt_calls
     completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
-    assert completed.summary.get("normalized_transcript_text") == "local wake works"
+    assert completed.summary.get("normalized_transcript_text") == "sherpa wake works"
 
 
 def test_loop_emits_diagnostics_for_field_observability(tmp_path: Path):
@@ -330,45 +320,6 @@ def test_queued_manual_listen_does_not_expose_filler_transcript(tmp_path: Path):
     completed = next(e for e in reversed(controller.status().recent_events) if e.event_type == VoiceWorkerEventType.TRANSCRIPTION_COMPLETED)
     assert completed.summary.get("transcript_rejected_reason") == "short_filler_or_noise"
     assert "normalized_transcript_text" not in completed.summary
-
-
-def test_record_wake_reference_uses_continuous_capture_when_available(tmp_path: Path):
-    manager = _install(tmp_path)
-    capture = FakeContinuousCapture([_frame("q", 0), _frame("s", 1), _frame("s", 2), _frame("q", 3), _frame("q", 4), _frame("q", 5)])
-
-    class ChunkedAudioMustNotBeUsed:
-        capture_calls = 0
-
-        def capture_frames(self, *, device_id, sample_rate, channel_count, frame_count):
-            self.capture_calls += 1
-            raise AssertionError("wake enrollment must not use chunked capture_frames when continuous capture is available")
-
-        def list_input_devices(self):
-            return ()
-
-        def list_output_devices(self):
-            return ()
-
-        def stop_playback(self):
-            return None
-
-    audio = ChunkedAudioMustNotBeUsed()
-    controller = VoiceWorkerController(
-        config=_enabled_config(),
-        audio=audio,
-        asset_manager=manager,
-        backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager),
-        continuous_capture_factory=lambda: capture,
-    )
-    controller._vad_decider = lambda frame: frame.frame_id.startswith("s")
-
-    result = controller.handle(VoiceWorkerCommand(command="record_wake_reference", command_id="c-ref"))
-
-    assert audio.capture_calls == 0
-    assert capture.active() is False
-    assert result.event.summary.get("record_wake_reference") is True
-    assert result.event.summary.get("capture_mode") == "continuous"
-    assert result.event.summary.get("reference_count") == 1
 
 
 def test_fake_capture_delivers_frames_in_order():

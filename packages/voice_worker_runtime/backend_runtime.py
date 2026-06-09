@@ -98,17 +98,13 @@ _STT_MODELS = {
     "sherpa-onnx-asr": ("sherpa-onnx-asr", "sherpa-onnx", "sherpa_onnx"),
 }
 _TTS_MODELS = {
-    "kokoro-onnx": ("kokoro-af-heart", "kokoro-onnx", "kokoro_onnx"),
+    "supertonic-v2": ("supertonic-v2", "supertonic", "supertonic"),
     "piper-tts": ("piper-default", "piper-tts", "piper"),
     "sherpa-onnx-tts": ("sherpa-onnx-tts", "sherpa-onnx", "sherpa_onnx"),
 }
 _WAKEWORD_MODELS = {
     "sherpa-onnx-kws": ("hey-marvex", "sherpa-onnx", "sherpa_onnx"),
-    # local-wake matches user-recorded reference WAVs via embedding+DTW; the
-    # "model" asset is the speech-embedding ONNX local-wake ships/uses.
-    "local-wake": ("hey-marvex", "local-wake", "lwake"),
 }
-_LOCAL_WAKE_NO_REFERENCES = "local_wake_references_missing_manual_enrollment_required"
 
 
 class VoiceWorkerBackendRuntime:
@@ -141,44 +137,24 @@ class VoiceWorkerBackendRuntime:
         self._tts_runner = tts_runner or VoiceWorkerTtsModelRunner(
             asset_manager=self.asset_manager,
             generated_audio=self.generated_audio,
-            kokoro_factory=lambda *args, **kwargs: self._module_loader("kokoro_onnx").Kokoro(*args, **kwargs),
+            supertonic_factory=lambda *args, **kwargs: self._module_loader("supertonic").TTS(*args, **kwargs),
             voice_loader=lambda *args, **kwargs: self._module_loader("piper").PiperVoice.load(*args, **kwargs),
             sherpa_tts_factory=lambda model_dir: self._module_loader("sherpa_onnx").OfflineTts.from_pre_trained(model_dir),
         )
         self._wakeword_runner: Any = wakeword_runner or SherpaOnnxKwsRunner(
             asset_manager=self.asset_manager,
         )
-        # local-wake backend (DTW over speech embeddings) routed by backend_id.
-        # Lazily built so the sherpa path is unaffected when local-wake is unused.
-        self._local_wake_runner: Any | None = None
         # Optional spoken-language-ID validator (SpeechBrain). Used only to let
         # the English-only Moonshine path ignore non-English utterances.
         self._langid_runner: Any = langid_runner or LanguageIdRunner(asset_manager=self.asset_manager)
 
     def _wakeword_runner_for(self, backend_id: str) -> Any:
-        if self._custom_wakeword_runner or backend_id != "local-wake":
-            return self._wakeword_runner
-        if self._local_wake_runner is None:
-            from .local_wake_adapter import LocalWakeRunner
-            from .wake_enrollment import wake_reference_dir
+        return self._wakeword_runner
 
-            self._local_wake_runner = LocalWakeRunner(
-                asset_manager=self.asset_manager,
-                reference_dir=wake_reference_dir(self.asset_manager.asset_root),
-            )
-        return self._local_wake_runner
+    def warm(self, *, stt_backend_id: str, tts_backend_id: str, voice_id: str, speed: float = 1.05, quality_steps: int = 8, language: str = "en") -> dict[str, str]:
+        """Eagerly load active STT and TTS model objects (best-effort)."""
 
-    def warm(self, *, stt_backend_id: str) -> dict[str, str]:
-        """Eagerly load the active STT model object (best-effort).
-
-        STT has the highest first-use impact for wake/manual capture because the
-        user is waiting after speech has already ended. TTS remains lazy: the
-        runtime ``speak`` command is the authoritative Kokoro/device path, and
-        startup synthesis creates noisy diagnostics that do not reflect whether
-        real reply playback works.
-        """
-
-        outcome: dict[str, str] = {"stt": "skipped"}
+        outcome: dict[str, str] = {"stt": "skipped", "tts": "skipped"}
         try:
             sample_rate = 16_000
             duration_ms = 320
@@ -202,6 +178,19 @@ class VoiceWorkerBackendRuntime:
             outcome["stt"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
         except Exception:
             outcome["stt"] = "error"
+        try:
+            result = self.test_tts(
+                trace_id="voice-warm-tts",
+                backend_id=tts_backend_id,
+                voice_id=voice_id,
+                text="Warm up.",
+                speed=speed,
+                quality_steps=quality_steps,
+                language=language,
+            )
+            outcome["tts"] = "ok" if getattr(result, "status", "") == "succeeded" else "failed"
+        except Exception:
+            outcome["tts"] = "error"
         return outcome
 
     def remember_audio_frames(self, *, trace_id: str, frames: tuple[AudioFrame, ...]) -> VoiceWorkerAudioRef:
@@ -216,15 +205,7 @@ class VoiceWorkerBackendRuntime:
 
     def tts_status(self, backend_id: str, voice_id: str) -> dict[str, object]:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)
-        model_id = voice_id if backend_id == "kokoro-onnx" and voice_id.startswith("kokoro-") else default_model
-        status = self._status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name)
-        if backend_id == "kokoro-onnx" and status["status"] == "ready":
-            voices = self.asset_manager.required_status(model_id="kokoro-voices", backend_id=backend_id, model_kind="tts_voice")
-            if voices.status != "installed":
-                status["status"] = "not_ready"
-                status["exact_blocker"] = "kokoro_voice_asset_missing_manual_install_required"
-                status["paired_model_id"] = "kokoro-voices"
-        return status
+        return self._status(model_id=default_model, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name)
 
     def wakeword_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
@@ -300,10 +281,9 @@ class VoiceWorkerBackendRuntime:
         except Exception:
             return None
 
-    def test_tts(self, *, trace_id: str, backend_id: str, voice_id: str, text: str) -> SpeechSynthesisResult:
+    def test_tts(self, *, trace_id: str, backend_id: str, voice_id: str, text: str, speed: float = 1.05, quality_steps: int = 8, language: str = "en") -> SpeechSynthesisResult:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)
-        model_id = voice_id if backend_id == "kokoro-onnx" and voice_id.startswith("kokoro-") else default_model
-        asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="tts_voice")
+        asset = self.asset_manager.required_status(model_id=default_model, backend_id=backend_id, model_kind="tts_voice")
         # A caller-injected tts_runner is trusted to do its own readiness checks
         # (tests / embedded harnesses), mirroring the stt/wakeword pattern.
         blocker = (
@@ -311,13 +291,17 @@ class VoiceWorkerBackendRuntime:
             if self._custom_tts_runner and asset.status == "installed"
             else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
         )
-        if blocker is None and not self._custom_tts_runner and backend_id == "kokoro-onnx":
-            voices = self.asset_manager.required_status(model_id="kokoro-voices", backend_id=backend_id, model_kind="tts_voice")
-            if voices.status != "installed":
-                blocker = "kokoro_voice_asset_missing_manual_install_required"
         if blocker is not None:
             return SpeechSynthesisResult.failed(trace_id=trace_id, backend_id=backend_id, voice_id=voice_id, error=VoiceErrorEnvelope.backend_error(trace_id=trace_id, backend_id=backend_id, reason_code=blocker))
-        request = SpeechSynthesisRequest(trace_id=trace_id, text=_normalize_tts_text(text), voice_id=voice_id, backend_id=backend_id)
+        request = SpeechSynthesisRequest(
+            trace_id=trace_id,
+            text=_normalize_tts_text(text),
+            voice_id=voice_id,
+            backend_id=backend_id,
+            speed=speed,
+            quality_steps=quality_steps,
+            language=language,
+        )
         try:
             return self._tts_runner(request, asset)
         except Exception:
@@ -351,23 +335,7 @@ class VoiceWorkerBackendRuntime:
             return False, ""
 
     def _wakeword_asset(self, *, backend_id: str, model_id: str) -> VoiceModelInstallResult:
-        if backend_id != "local-wake":
-            return self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
-        try:
-            from .wake_enrollment import list_wake_references, wake_reference_dir
-
-            references = list_wake_references(wake_reference_dir(self.asset_manager.asset_root))
-        except Exception:
-            references = []
-        if not references:
-            return VoiceModelInstallResult(
-                model_id=model_id,
-                backend_id=backend_id,
-                model_kind="wakeword",
-                status="not_installed",
-                exact_blocker=_LOCAL_WAKE_NO_REFERENCES,
-            )
-        return VoiceModelInstallResult(model_id=model_id, backend_id=backend_id, model_kind="wakeword", status="installed", local_path_present=True)
+        return self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
 
     def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str) -> dict[str, object]:
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind=model_kind)

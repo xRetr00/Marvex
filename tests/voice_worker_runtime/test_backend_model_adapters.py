@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 from packages.voice_runtime import AudioFrame, SpeechSynthesisRequest, TranscriptionRequest
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerAudioRefStore, VoiceWorkerGeneratedAudioSink
-from packages.voice_worker_runtime.model_adapters import KokoroOnnxTtsRunner, MoonshineSttRunner, PiperTtsRunner, SenseVoiceSttRunner, SherpaOnnxKwsRunner, SherpaOnnxSttRunner, SherpaOnnxTtsRunner
+from packages.voice_worker_runtime.model_adapters import MoonshineSttRunner, PiperTtsRunner, SenseVoiceSttRunner, SherpaOnnxKwsRunner, SherpaOnnxSttRunner, SherpaOnnxTtsRunner, SupertonicV2TtsRunner
 
 
 def _install(manager: VoiceAssetManager, *, model_id: str, backend_id: str, model_kind: str, relative_path: str):
@@ -81,37 +81,79 @@ def test_sensevoice_runner_uses_funasr_generate_from_resolved_audio_ref(tmp_path
     assert result.segments[0]["text_present"] is True
 
 
-def test_kokoro_runner_synthesizes_to_generated_audio_ref_without_rendering_text(tmp_path: Path) -> None:
+def test_supertonic_v2_runner_uses_voice_style_speed_quality_and_cache(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    asset_dir = manager.asset_root / "tts" / "kokoro-af-heart"
+    asset_dir = manager.asset_root / "tts" / "supertonic-v2"
     asset_dir.mkdir(parents=True)
-    (asset_dir / "model.onnx").write_bytes(b"model")
-    (asset_dir / "voices.npy").write_bytes(b"voices")
-    asset = manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
+    asset = manager.install_local(
+        VoiceModelInstallRequest(
+            model_id="supertonic-v2",
+            backend_id="supertonic-v2",
+            model_kind="tts_voice",
+            relative_path="tts/supertonic-v2",
+            explicit_user_triggered=True,
+        )
+    )
     generated_audio = VoiceWorkerGeneratedAudioSink()
-    observed: dict[str, object] = {}
+    calls: list[tuple[str, object]] = []
 
-    class FakeKokoro:
-        def __init__(self, model_path: str, voices_path: str) -> None:
-            observed["model_path"] = model_path
-            observed["voices_path"] = voices_path
+    class FakeWave:
+        def squeeze(self):
+            return self
 
-        def create(self, text: str, voice: str, speed: float = 1.0, lang: str = "en-us"):
-            observed["text"] = text
-            observed["voice"] = voice
-            return ([0.5, -0.5], 24000)
+        def astype(self, dtype):
+            calls.append(("astype", dtype))
+            return self
 
-    runner = KokoroOnnxTtsRunner(asset_manager=manager, generated_audio=generated_audio, kokoro_factory=FakeKokoro)
-    result = runner(SpeechSynthesisRequest(trace_id="trace-kokoro", text="  private   response  ", voice_id="af_heart", backend_id="kokoro-onnx"), asset)
-    serialized = json.dumps({"result": result.safe_projection(), "audio": generated_audio.safe_projection(result.audio_ref or "")}).lower()
+        def tobytes(self) -> bytes:
+            return b"supertonic-pcm"
+
+    class FakeTTS:
+        def __init__(self, **kwargs) -> None:
+            calls.append(("init", kwargs))
+
+        def get_voice_style(self, *, voice_name: str):
+            calls.append(("style", voice_name))
+            return {"voice": voice_name}
+
+        def synthesize(self, *, text: str, lang: str, voice_style, total_steps: int, speed: float):
+            calls.append(("synthesize", {"text": text, "lang": lang, "voice_style": voice_style, "total_steps": total_steps, "speed": speed}))
+            return FakeWave(), [1.25]
+
+    runner = SupertonicV2TtsRunner(
+        asset_manager=manager,
+        generated_audio=generated_audio,
+        tts_factory=FakeTTS,
+    )
+
+    request = SpeechSynthesisRequest(
+        trace_id="trace-supertonic",
+        text="  private   supertonic response  ",
+        voice_id="F3",
+        backend_id="supertonic-v2",
+        speed=1.35,
+        quality_steps=10,
+        language="en",
+    )
+    result = runner(request, asset)
+    result2 = runner(request.model_copy(update={"trace_id": "trace-supertonic-2"}), asset)
+    serialized = json.dumps(result.safe_projection()).lower()
 
     assert result.status == "succeeded"
-    assert result.audio_ref == "memory://voice/generated/trace-kokoro/af_heart"
-    assert generated_audio.resolve(result.audio_ref) != b""
-    assert observed["text"] == "private response"
-    assert observed["voice"] == "af_heart"
-    assert "private response" not in serialized
-    assert "raw_generated_audio_persisted" in serialized
+    assert result.sample_rate == 44_100
+    assert result.duration_ms == 1250
+    assert result.audio_ref == "memory://voice/generated/trace-supertonic/F3"
+    assert generated_audio.resolve(result.audio_ref) == b"supertonic-pcm"
+    assert result2.status == "succeeded"
+    assert len([call for call in calls if call[0] == "init"]) == 1
+    assert calls[0][1]["model"] == "supertonic-2"
+    assert calls[0][1]["auto_download"] is False
+    assert calls[1] == ("style", "F3")
+    assert calls[2] == (
+        "synthesize",
+        {"text": "private supertonic response", "lang": "en", "voice_style": {"voice": "F3"}, "total_steps": 10, "speed": 1.35},
+    )
+    assert "private supertonic response" not in serialized
 
 
 def test_piper_runner_synthesizes_chunks_to_generated_audio_ref(tmp_path: Path) -> None:

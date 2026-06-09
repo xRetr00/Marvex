@@ -20,8 +20,7 @@ from packages.voice_runtime.base import SCHEMA_VERSION, VoiceRuntimeModel
 REQUIRED_VOICE_ASSETS: tuple[tuple[str, str, str], ...] = (
     ("moonshine-v2", "moonshine-v2", "stt"),
     ("hey-marvex", "sherpa-onnx-kws", "wakeword"),
-    ("kokoro-af-heart", "kokoro-onnx", "tts_voice"),
-    ("kokoro-voices", "kokoro-onnx", "tts_voice"),
+    ("supertonic-v2", "supertonic-v2", "tts_voice"),
 )
 
 

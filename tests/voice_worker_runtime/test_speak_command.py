@@ -21,13 +21,13 @@ from packages.voice_worker_runtime.models import VoiceWorkerEventType
 
 def _backend_with_fake_tts(tmp_path: Path) -> tuple[VoiceWorkerBackendRuntime, VoiceAssetManager, list]:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
+    (tmp_path / "voice-assets" / "tts" / "supertonic-v2").mkdir(parents=True)
     manager.install_local(
         VoiceModelInstallRequest(
-            model_id="kokoro-af-heart",
-            backend_id="kokoro-onnx",
+            model_id="supertonic-v2",
+            backend_id="supertonic-v2",
             model_kind="tts_voice",
-            relative_path="tts/kokoro-af-heart",
+            relative_path="tts/supertonic-v2",
             explicit_user_triggered=True,
         )
     )

@@ -147,6 +147,27 @@ def _normalized_transcript_or_reject_reason(text: str) -> tuple[str, str | None]
     return stripped, None
 
 
+def _payload_float(payload: dict[str, Any], key: str, fallback: float, *, minimum: float, maximum: float) -> float:
+    try:
+        value = float(payload.get(key, fallback))
+    except (TypeError, ValueError):
+        value = fallback
+    return max(minimum, min(maximum, value))
+
+
+def _payload_int(payload: dict[str, Any], key: str, fallback: int, *, minimum: int, maximum: int) -> int:
+    try:
+        value = int(payload.get(key, fallback))
+    except (TypeError, ValueError):
+        value = fallback
+    return max(minimum, min(maximum, value))
+
+
+def _payload_language(payload: dict[str, Any], fallback: str) -> str:
+    value = str(payload.get("language") or fallback or "en").strip().lower()
+    return value if value in {"en", "ko", "es", "pt", "fr"} else "en"
+
+
 class VoiceWorkerController:
     def __init__(
         self,
@@ -217,21 +238,8 @@ class VoiceWorkerController:
 
     def status(self) -> VoiceWorkerStatus:
         self.asset_manager.discover_installed()
-        import importlib.util
-
-        from .wake_enrollment import list_wake_references, wake_reference_dir
 
         effective_backend = self._effective_wake_backend_id()
-        try:
-            reference_count = len(
-                list_wake_references(
-                    wake_reference_dir(self.asset_manager.asset_root),
-                    phrase=self.config.wakeword.phrase,
-                )
-            )
-        except Exception:
-            reference_count = 0
-        local_wake_available = importlib.util.find_spec("lwake") is not None
         return VoiceWorkerStatus(
             worker_id=self.config.worker_id,
             lifecycle_state=self._state,
@@ -241,12 +249,13 @@ class VoiceWorkerController:
             active_stt_backend_id=self.config.active_stt_backend_id,
             active_tts_backend_id=self.config.active_tts_backend_id,
             active_voice_id=self.config.active_voice_id,
+            active_tts_speed=self.config.active_tts_speed,
+            active_tts_quality_steps=self.config.active_tts_quality_steps,
+            active_tts_language=self.config.active_tts_language,
             mic_status="started" if self._state in {VoiceWorkerLifecycleState.RUNNING, VoiceWorkerLifecycleState.PAUSED} else "stopped",
             playback_status=self._playback_status,
             wakeword_status="enabled" if self.config.wakeword.enabled else "disabled",
             effective_wakeword_backend_id=effective_backend,
-            wake_reference_count=reference_count,
-            local_wake_available=local_wake_available,
             queued_tts_count=self._queued_tts_count,
             recent_events=tuple(self._events[-20:]),
             error=self._error,
@@ -701,24 +710,10 @@ class VoiceWorkerController:
     def _effective_wake_backend_id(self) -> str:
         """Wake backend to actually use this session.
 
-        Once the user has enrolled local-wake reference samples (via the in-app
-        recorder), local-wake takes over - it matches their own voice and
-        replaces the brittle sherpa KWS keyword path. Before any references
-        exist, fall back to the configured backend so wake isn't dead pre-
-        enrollment (push-to-talk/listen is always available regardless).
+        Sherpa KWS remains the effective wake backend. Recorded wake references
+        are used for replay diagnostics and keyword tuning, not backend takeover.
         """
 
-        try:
-            from .wake_enrollment import list_wake_references, wake_reference_dir
-
-            references = list_wake_references(
-                wake_reference_dir(self.asset_manager.asset_root),
-                phrase=self.config.wakeword.phrase,
-            )
-            if references:
-                return "local-wake"
-        except Exception:
-            pass
         return self.config.wakeword.backend_id
 
     def _config_for_wake_backend(self, backend_id: str) -> VoiceWorkerConfig:
@@ -798,9 +793,7 @@ class VoiceWorkerController:
         def _locked():
             return lock if lock is not None else nullcontext()
 
-        # Resolve the effective wake backend once for this listen session: once
-        # the user has enrolled local-wake reference samples, local-wake takes
-        # over; otherwise the configured backend (sherpa KWS) is the stopgap.
+        # Resolve the effective wake backend once for this listen session.
         wake_backend_id = self._effective_wake_backend_id()
         _emit({"event": "wake_listen_backend", "backend_id": wake_backend_id})
         blocker = self.backend_runtime.wakeword_readiness_blocker(wake_backend_id)
@@ -1078,10 +1071,15 @@ class VoiceWorkerController:
         return command.trace_id or command.command_id
 
     def warm_models(self) -> dict[str, str]:
-        """Pre-load the active STT model so first capture avoids cold load."""
+        """Pre-load active STT and TTS models so first use avoids cold load."""
 
         return self.backend_runtime.warm(
             stt_backend_id=self.config.active_stt_backend_id,
+            tts_backend_id=self.config.active_tts_backend_id,
+            voice_id=self.config.active_voice_id,
+            speed=self.config.active_tts_speed,
+            quality_steps=self.config.active_tts_quality_steps,
+            language=self.config.active_tts_language,
         )
 
     def run_manual_turn(self, *, trace_id: str, assistant_turn_runner: Callable[[str], Any], policy_decider: Callable[[str], Any]) -> VoiceWorkerTurnRunResult:
@@ -1360,6 +1358,9 @@ class VoiceWorkerController:
             backend_id=str(command.payload.get("backend_id") or self.config.active_tts_backend_id),
             voice_id=str(command.payload.get("voice_id") or self.config.active_voice_id),
             text=str(command.payload.get("text") or "Voice test."),
+            speed=_payload_float(command.payload, "speed", self.config.active_tts_speed, minimum=0.7, maximum=2.0),
+            quality_steps=_payload_int(command.payload, "quality_steps", self.config.active_tts_quality_steps, minimum=5, maximum=12),
+            language=_payload_language(command.payload, self.config.active_tts_language),
         )
         if result.status == "failed" and result.safe_error is not None:
             reason = result.safe_error.details.get("reason_code", "tts_backend_not_ready")
@@ -1397,6 +1398,9 @@ class VoiceWorkerController:
             backend_id=str(command.payload.get("backend_id") or self.config.active_tts_backend_id),
             voice_id=str(command.payload.get("voice_id") or self.config.active_voice_id),
             text=text,
+            speed=_payload_float(command.payload, "speed", self.config.active_tts_speed, minimum=0.7, maximum=2.0),
+            quality_steps=_payload_int(command.payload, "quality_steps", self.config.active_tts_quality_steps, minimum=5, maximum=12),
+            language=_payload_language(command.payload, self.config.active_tts_language),
         )
         if result.status == "failed" and result.safe_error is not None:
             reason = result.safe_error.details.get("reason_code", "tts_backend_not_ready")
@@ -1507,74 +1511,6 @@ class VoiceWorkerController:
             summary={"reason_code": "no_speech", "listen": True},
         )
 
-    def _handle_record_wake_reference(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
-        """Capture one spoken "Hey Marvex" and save it as a local-wake reference WAV.
-
-        Used by the in-app enrollment flow: the shell calls this 4-6 times; each
-        call VAD-endpoints one utterance and writes <slug>-NN.wav into the wake
-        reference dir that LocalWakeRunner reads. Returns the saved path + the
-        running reference count so the UI can show progress.
-        """
-
-        from .wake_enrollment import (
-            list_wake_references,
-            next_reference_path,
-            wake_reference_dir,
-            write_wake_reference_wav,
-        )
-
-        trace_id = self._trace_id_for(command)
-        phrase = str(command.payload.get("phrase") or self.config.wakeword.phrase or "Hey Marvex")
-        if self._continuous_active:
-            return self._record(
-                VoiceWorkerEventType.VAD_SPEECH_ENDED,
-                trace_id=trace_id,
-                summary={"reason_code": "continuous_capture_active", "record_wake_reference": True},
-            )
-        vad_decider = self._resolve_vad_decider()
-        capture_mode = "chunked"
-        capture_factory = self._continuous_capture_factory
-        if capture_factory is not None:
-            capture = capture_factory()
-            capture.start()
-            capture_mode = "continuous"
-            try:
-                frames, reason = self._capture_utterance(
-                    vad_decider=vad_decider,
-                    read_frame=lambda: capture.read(timeout=1.0),
-                )
-            finally:
-                capture.stop()
-        else:
-            frames, reason = self._capture_utterance(vad_decider=vad_decider)
-        if not frames or reason == "no_speech":
-            return self._record(
-                VoiceWorkerEventType.VAD_SPEECH_ENDED,
-                trace_id=trace_id,
-                summary={"reason_code": "no_speech", "record_wake_reference": True, "phrase": phrase, "capture_mode": capture_mode},
-            )
-        reference_dir = wake_reference_dir(self.asset_manager.asset_root)
-        target = next_reference_path(reference_dir, phrase=phrase)
-        status = write_wake_reference_wav(
-            target,
-            [frame.pcm for frame in frames],
-            sample_rate=self.config.audio.sample_rate,
-        )
-        count = len(list_wake_references(reference_dir, phrase=phrase))
-        return self._record(
-            VoiceWorkerEventType.VAD_SPEECH_ENDED,
-            trace_id=trace_id,
-            summary={
-                "record_wake_reference": True,
-                "reference_path": status["path"],
-                "reference_bytes": status["bytes"],
-                "reference_count": count,
-                "phrase": phrase,
-                "endpoint_reason": reason,
-                "capture_mode": capture_mode,
-            },
-        )
-
     def _handle_install_model(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         result = self.asset_manager.install_local(VoiceModelInstallRequest.model_validate(command.payload))
         return self._record(VoiceWorkerEventType.MIC_STARTED, trace_id=self._trace_id_for(command), summary=result.model_dump(mode="json"))
@@ -1594,6 +1530,23 @@ class VoiceWorkerController:
     def _handle_switch_active_voice(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.config = self.config.model_copy(update={"active_voice_id": str(command.payload.get("voice_id") or self.config.active_voice_id)})
         return self._record(VoiceWorkerEventType.TTS_STARTED, trace_id=self._trace_id_for(command), summary={"active_voice_id": self.config.active_voice_id})
+
+    def _handle_configure_tts_controls(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
+        speed = _payload_float(command.payload, "speed", self.config.active_tts_speed, minimum=0.7, maximum=2.0)
+        quality_steps = _payload_int(command.payload, "quality_steps", self.config.active_tts_quality_steps, minimum=5, maximum=12)
+        language = _payload_language(command.payload, self.config.active_tts_language)
+        self.config = self.config.model_copy(
+            update={
+                "active_tts_speed": speed,
+                "active_tts_quality_steps": quality_steps,
+                "active_tts_language": language,
+            }
+        )
+        return self._record(
+            VoiceWorkerEventType.TTS_STARTED,
+            trace_id=self._trace_id_for(command),
+            summary={"active_tts_speed": speed, "active_tts_quality_steps": quality_steps, "active_tts_language": language},
+        )
 
     def _handle_cancel(self, command: VoiceWorkerCommand) -> VoiceWorkerEvent:
         self.audio.stop_playback()

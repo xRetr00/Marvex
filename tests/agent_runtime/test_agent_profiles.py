@@ -3,7 +3,7 @@ from __future__ import annotations
 from packages.intent_runtime import IntentKind
 
 
-def test_default_agent_catalog_separates_main_specialists_and_female_voice() -> None:
+def test_default_agent_catalog_separates_main_specialists_and_active_voice() -> None:
     from packages.agent_runtime import default_agent_catalog, default_persona_catalog
 
     agents = default_agent_catalog()
@@ -11,7 +11,7 @@ def test_default_agent_catalog_separates_main_specialists_and_female_voice() -> 
 
     assert agents.active_agent_id == "agent.main.marvex"
     assert personas.active_persona_id == "persona.marvex.female"
-    assert personas.active_persona().voice_id == "af_heart"
+    assert personas.active_persona().voice_id == "M1"
 
     main = agents.get("agent.main.marvex")
     deep_search = agents.get("agent.deep_search")

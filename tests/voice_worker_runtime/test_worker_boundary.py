@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+from pydantic import ValidationError
+
 from packages.voice_worker_runtime import (
     SafeVoiceWorkerProjection,
     VoiceWorkerCommand,
@@ -61,6 +64,11 @@ def test_worker_lifecycle_pause_resume_stop_and_reload_config_emit_safe_events()
     assert stopped.status.lifecycle_state == VoiceWorkerLifecycleState.STOPPED
     assert stopped.event.event_type == VoiceWorkerEventType.MIC_STOPPED
     assert json.dumps(stopped.status.safe_projection()).lower().find("raw_audio\": true") == -1
+
+
+def test_worker_command_rejects_removed_wake_enrollment_command() -> None:
+    with pytest.raises(ValidationError):
+        VoiceWorkerCommand(command="record_wake_reference", command_id="cmd-removed")
 
 
 def test_worker_reload_config_updates_selected_devices_and_audio_shape() -> None:

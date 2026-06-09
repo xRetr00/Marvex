@@ -217,38 +217,77 @@ def _default_langid_classifier(model_dir: str) -> "Callable[[list[float], int], 
     return classify
 
 
-class KokoroOnnxTtsRunner:
-    def __init__(self, *, asset_manager: VoiceAssetManager, generated_audio: Any, kokoro_factory: Callable[..., Any] | None = None) -> None:
+class SupertonicV2TtsRunner:
+    """Supertonic V2 66M TTS via the official ``supertonic`` Python SDK.
+
+    The SDK defaults to the latest model line, so the adapter pins
+    ``model="supertonic-2"`` explicitly. Model files remain under the Marvex
+    voice asset root and SDK auto-download is disabled; the asset manager and
+    manifest own installation.
+    """
+
+    def __init__(
+        self,
+        *,
+        asset_manager: VoiceAssetManager,
+        generated_audio: Any,
+        tts_factory: Callable[..., Any] | None = None,
+    ) -> None:
         self.asset_manager = asset_manager
         self.generated_audio = generated_audio
-        self.kokoro_factory = kokoro_factory
-        self._kokoro_key: tuple[str, str] | None = None
-        self._kokoro: Any | None = None
+        self.tts_factory = tts_factory
+        self._tts_key: str | None = None
+        self._tts: Any | None = None
+        self._style_cache: dict[str, Any] = {}
+
+    def _resolve_tts(self, path: Path) -> Any:
+        key = str(path)
+        if self._tts is None or self._tts_key != key:
+            factory = self.tts_factory or import_module("supertonic").TTS
+            self._tts = factory(model="supertonic-2", model_dir=str(path), auto_download=False)
+            self._tts_key = key
+            self._style_cache.clear()
+        return self._tts
+
+    def _style(self, tts: Any, voice_id: str) -> Any:
+        voice_name = _normalize_supertonic_voice(voice_id)
+        if voice_name not in self._style_cache:
+            self._style_cache[voice_name] = tts.get_voice_style(voice_name=voice_name)
+        return self._style_cache[voice_name]
 
     def __call__(self, request: SpeechSynthesisRequest, asset: VoiceModelInstallResult) -> SpeechSynthesisResult:
         path = self.asset_manager.resolve_installed_path(asset.model_id)
         if path is None:
             return _tts_failed(request, asset.backend_id, "model_asset_path_not_registered")
-        model_path = _first_existing(path, ("model.onnx", "kokoro.onnx")) if path.is_dir() else path
-        voices_root = path if path.is_dir() else path.parent
-        voices_path = _first_matching(voices_root, ("voices-v1.0.bin", "voices.npy", "*.npy", "voices.bin", "*.bin", "voices.json", "voice.bin"))
-        if model_path is None or voices_path is None:
-            return _tts_failed(request, asset.backend_id, "kokoro_model_or_voice_file_missing")
         try:
-            factory = self.kokoro_factory or import_module("kokoro_onnx").Kokoro
-            key = (str(model_path), str(voices_path))
-            if self._kokoro is None or self._kokoro_key != key:
-                self._kokoro = factory(str(model_path), str(voices_path))
-                self._kokoro_key = key
-            try:
-                samples, sample_rate = self._kokoro.create(_normalize_text(request.text), voice=request.voice_id)
-            except TypeError:
-                samples, sample_rate = self._kokoro.create(_normalize_text(request.text), request.voice_id)
-            pcm = _float_samples_to_pcm_bytes(samples)
-            ref = self.generated_audio.remember_audio(trace_id=request.trace_id, voice_id=request.voice_id, pcm=pcm, sample_rate=int(sample_rate))
-            return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref=ref.audio_ref_id, backend_id=asset.backend_id, voice_id=request.voice_id, sample_rate=int(sample_rate), duration_ms=_audio_duration_ms(byte_count=len(pcm), sample_rate=int(sample_rate)))
-        except Exception:
-            return _tts_failed(request, asset.backend_id, "kokoro_tts_runtime_error")
+            tts = self._resolve_tts(path)
+            style = self._style(tts, request.voice_id)
+            wav, duration = tts.synthesize(
+                text=_normalize_text(request.text),
+                lang=_normalize_language(request.language),
+                voice_style=style,
+                total_steps=int(request.quality_steps),
+                speed=float(request.speed),
+            )
+            sample_rate = int(getattr(tts, "sample_rate", 44_100) or 44_100)
+            pcm = _float_samples_to_pcm_bytes(wav)
+            ref = self.generated_audio.remember_audio(
+                trace_id=request.trace_id,
+                voice_id=_normalize_supertonic_voice(request.voice_id),
+                pcm=pcm,
+                sample_rate=sample_rate,
+            )
+            return SpeechSynthesisResult.succeeded(
+                trace_id=request.trace_id,
+                audio_ref=ref.audio_ref_id,
+                backend_id=asset.backend_id,
+                voice_id=_normalize_supertonic_voice(request.voice_id),
+                sample_rate=sample_rate,
+                duration_ms=_duration_from_supertonic(duration, byte_count=len(pcm), sample_rate=sample_rate),
+            )
+        except Exception as exc:
+            detail = type(exc).__name__
+            return _tts_failed(request, asset.backend_id, f"supertonic_v2_tts_runtime_error:{detail}"[:240])
 
 
 class PiperTtsRunner:
@@ -670,12 +709,12 @@ class VoiceWorkerTtsModelRunner:
         *,
         asset_manager: VoiceAssetManager,
         generated_audio: Any,
-        kokoro_factory: Callable[..., Any] | None = None,
+        supertonic_factory: Callable[..., Any] | None = None,
         voice_loader: Callable[..., Any] | None = None,
         sherpa_tts_factory: Callable[[str], Any] | None = None,
     ) -> None:
         self._runners = {
-            "kokoro-onnx": KokoroOnnxTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, kokoro_factory=kokoro_factory),
+            "supertonic-v2": SupertonicV2TtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, tts_factory=supertonic_factory),
             "piper-tts": PiperTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, voice_loader=voice_loader),
             "sherpa-onnx-tts": SherpaOnnxTtsRunner(asset_manager=asset_manager, generated_audio=generated_audio, tts_factory=sherpa_tts_factory),
         }
@@ -755,6 +794,29 @@ def _funasr_text_and_segments(output: Any) -> tuple[str, tuple[dict[str, object]
 
 def _normalize_text(text: str) -> str:
     return " ".join(text.split()).strip() or "Voice test."
+
+
+def _normalize_supertonic_voice(voice_id: str) -> str:
+    value = " ".join(str(voice_id or "").split()).upper()
+    return value if value in {f"M{i}" for i in range(1, 6)} | {f"F{i}" for i in range(1, 6)} else "M1"
+
+
+def _normalize_language(language: str | None) -> str:
+    value = (language or "en").strip().lower()
+    return value if value in {"en", "ko", "es", "pt", "fr"} else "en"
+
+
+def _duration_from_supertonic(duration: Any, *, byte_count: int, sample_rate: int) -> int:
+    try:
+        if hasattr(duration, "flatten"):
+            flat = duration.flatten()
+            if len(flat):
+                return int(float(flat[0]) * 1000)
+        if isinstance(duration, (list, tuple)) and duration:
+            return int(float(duration[0]) * 1000)
+        return int(float(duration) * 1000)
+    except Exception:
+        return _audio_duration_ms(byte_count=byte_count, sample_rate=sample_rate)
 
 
 def _first_existing(root: Path, names: tuple[str, ...]) -> Path | None:
@@ -882,6 +944,13 @@ _KWS_KEYWORD_THRESHOLD = 0.1
 # SEVERAL plausible pronunciations as separate keyword lines to widen recall:
 # stress on MAR vs MARV, EH vs IH vowel, AA vs AE.
 _COINED_PHONEMES: dict[str, list[str]] = {
+    "HEY": [
+        "HH EY1",
+        "HH EY0",
+        "HH EH1",
+        "HH EH0",
+        "HH HH EY1",
+    ],
     "MARVEX": [
         "M AA1 R V EH1 K S",
         "M AA1 R V EH0 K S",
@@ -889,6 +958,12 @@ _COINED_PHONEMES: dict[str, list[str]] = {
         "M AA0 R V EH1 K S",
         "M AE1 R V EH1 K S",
         "M AA1 R V AH0 K S",
+        "M AA1 R V IH1 K S",
+        "M AA1 R V EH1 K",
+        "M AA1 R V IH0 K",
+        "M AA1 R F EH1 K S",
+        "M AA1 R V EH1 G S",
+        "M ER1 V EH1 K S",
     ],
     "MARVECKS": ["M AA1 R V EH1 K S"],
     "MARVIX": ["M AA1 R V IH1 K S"],
@@ -901,10 +976,8 @@ def _wake_candidates(phrase: str) -> list[str]:
         return []
     last_word = base.split()[-1]
     candidates = [base]
-    for prefix in ("HI", "OK", "HELLO"):
-        variant = f"{prefix} {last_word}"
-        if variant not in candidates:
-            candidates.append(variant)
+    if last_word != base:
+        candidates.append(last_word)
     return candidates
 
 
@@ -965,7 +1038,7 @@ def _phoneme_keyword_pieces(model_root: Path, candidates: list[str], vocabulary:
             continue
         alias_base = "_".join(text.split())
         variant = 0
-        for combo in list(itertools.product(*word_options))[:8]:
+        for combo in list(itertools.product(*word_options))[:64]:
             phones: list[str] = []
             for spelled in combo:
                 phones.extend(spelled.split())

@@ -45,7 +45,7 @@ REQUIRED_DEPENDENCIES = (
     "funasr==1.3.1",
     "sherpa-onnx==1.13.2",
     "sherpa-onnx-core==1.13.2",
-    "kokoro-onnx==0.5.0",
+    "supertonic==1.3.1",
     "piper-tts==1.4.2",
     "stream2sentence==0.3.2",
     "silero-vad==6.2.1",

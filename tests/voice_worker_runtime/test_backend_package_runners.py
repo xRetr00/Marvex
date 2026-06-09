@@ -5,6 +5,7 @@ from pathlib import Path
 from types import SimpleNamespace
 
 from packages.voice_runtime import AudioFrame
+from packages.voice_runtime import SpeechSynthesisResult, TranscriptionResult
 from packages.voice_worker_runtime import VoiceAssetManager, VoiceModelInstallRequest, VoiceWorkerBackendRuntime
 from packages.voice_worker_runtime import backend_runtime
 from packages.voice_worker_runtime import model_adapters
@@ -90,78 +91,77 @@ def test_default_sensevoice_runner_invokes_funasr_automodel(tmp_path: Path) -> N
     assert calls[1] == ("generate", 2, 16_000)
 
 
-def test_default_kokoro_runner_synthesizes_to_generated_audio_ref(tmp_path: Path) -> None:
+def test_supertonic_v2_backend_status_uses_single_model_asset(tmp_path: Path) -> None:
     root = tmp_path / "voice-assets"
     manager = VoiceAssetManager(asset_root=root)
-    asset_dir = root / "tts" / "kokoro-af-heart"
-    asset_dir.mkdir(parents=True)
-    (asset_dir / "model.onnx").write_bytes(b"onnx")
-    (asset_dir / "voices.npy").write_bytes(b"voices")
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart/voices.npy", explicit_user_triggered=True))
-    calls: list[tuple[str, str, str]] = []
-
-    class FakeAudio:
-        def astype(self, dtype):
-            return self
-
-        def tobytes(self) -> bytes:
-            return b"kokoro-pcm"
-
-    class FakeKokoro:
-        def __init__(self, model_path: str, voices_path: str) -> None:
-            calls.append((model_path, voices_path, "init"))
-
-        def create(self, text: str, voice: str):
-            calls.append((text, voice, "create"))
-            return FakeAudio(), 24_000
-
-    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: SimpleNamespace(Kokoro=FakeKokoro))
-
-    result = runtime.test_tts(trace_id="trace-kokoro", backend_id="kokoro-onnx", voice_id="af_heart", text="hello there")
-
-    assert result.status == "succeeded"
-    assert result.audio_ref == "memory://voice/generated/trace-kokoro/af_heart"
-    assert runtime.generated_audio.resolve(result.audio_ref) == b"kokoro-pcm"
-    assert calls[0] == (str(asset_dir / "model.onnx"), str(asset_dir / "voices.npy"), "init")
-    assert calls[1] == ("hello there", "af_heart", "create")
-
-
-def test_kokoro_backend_is_not_ready_until_model_and_voices_are_installed(tmp_path: Path) -> None:
-    root = tmp_path / "voice-assets"
-    manager = VoiceAssetManager(asset_root=root)
-    kokoro_dir = root / "tts" / "kokoro"
-    kokoro_dir.mkdir(parents=True)
-    (kokoro_dir / "kokoro-v1.0.onnx").write_bytes(b"onnx")
-    manager.install_local(
-        VoiceModelInstallRequest(
-            model_id="kokoro-af-heart",
-            backend_id="kokoro-onnx",
-            model_kind="tts_voice",
-            relative_path="tts/kokoro/kokoro-v1.0.onnx",
-            explicit_user_triggered=True,
-        )
-    )
     runtime = VoiceWorkerBackendRuntime(asset_manager=manager, module_loader=lambda name: object())
 
-    missing_voices = runtime.tts_status("kokoro-onnx", "af_heart")
-    assert missing_voices["status"] == "not_ready"
-    assert missing_voices["exact_blocker"] == "kokoro_voice_asset_missing_manual_install_required"
+    missing = runtime.tts_status("supertonic-v2", "M1")
+    assert missing["status"] == "not_ready"
+    assert missing["model_id"] == "supertonic-v2"
+    assert missing["package_name"] == "supertonic"
 
-    (kokoro_dir / "voices-v1.0.bin").write_bytes(b"voices")
+    (root / "tts" / "supertonic-v2").mkdir(parents=True)
     manager.install_local(
         VoiceModelInstallRequest(
-            model_id="kokoro-voices",
-            backend_id="kokoro-onnx",
+            model_id="supertonic-v2",
+            backend_id="supertonic-v2",
             model_kind="tts_voice",
-            relative_path="tts/kokoro/voices-v1.0.bin",
+            relative_path="tts/supertonic-v2",
             explicit_user_triggered=True,
         )
     )
 
-    ready = runtime.tts_status("kokoro-onnx", "af_heart")
+    ready = runtime.tts_status("supertonic-v2", "F5")
     assert ready["status"] == "ready"
     assert ready["exact_blocker"] is None
+
+
+def test_warm_eagerly_loads_active_stt_and_tts(tmp_path: Path) -> None:
+    root = tmp_path / "voice-assets"
+    manager = VoiceAssetManager(asset_root=root)
+    for model_id, backend_id, kind, rel in (
+        ("moonshine-v2", "moonshine-v2", "stt", "stt/moonshine-v2"),
+        ("supertonic-v2", "supertonic-v2", "tts_voice", "tts/supertonic-v2"),
+    ):
+        (root / rel).mkdir(parents=True)
+        manager.install_local(
+            VoiceModelInstallRequest(
+                model_id=model_id,
+                backend_id=backend_id,
+                model_kind=kind,
+                relative_path=rel,
+                explicit_user_triggered=True,
+            )
+        )
+    calls: list[tuple[str, str]] = []
+
+    def stt_runner(request, asset):
+        calls.append(("stt", asset.backend_id))
+        return TranscriptionResult.succeeded(
+            trace_id=request.trace_id,
+            text="",
+            backend_id=asset.backend_id,
+            duration_ms=request.duration_ms,
+        )
+
+    def tts_runner(request, asset):
+        calls.append(("tts", asset.backend_id))
+        return SpeechSynthesisResult.succeeded(
+            trace_id=request.trace_id,
+            audio_ref="memory://voice/generated/warm/M1",
+            backend_id=asset.backend_id,
+            voice_id=request.voice_id,
+            sample_rate=44_100,
+            duration_ms=50,
+        )
+
+    runtime = VoiceWorkerBackendRuntime(asset_manager=manager, stt_runner=stt_runner, tts_runner=tts_runner)
+
+    outcome = runtime.warm(stt_backend_id="moonshine-v2", tts_backend_id="supertonic-v2", voice_id="M1")
+
+    assert outcome == {"stt": "ok", "tts": "ok"}
+    assert calls == [("stt", "moonshine-v2"), ("tts", "supertonic-v2")]
 
 
 def test_sherpa_kws_runner_normalizes_multiword_keyword_aliases(tmp_path: Path, monkeypatch) -> None:

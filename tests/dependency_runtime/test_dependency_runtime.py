@@ -11,6 +11,8 @@ network or pip calls are made.  This validates:
 from __future__ import annotations
 
 import json
+import tomllib
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -34,6 +36,8 @@ from packages.dependency_runtime.install import (
     runtime_install,
 )
 from tests.control_plane_api.asgi_helpers import asgi_call, create_control_plane_test_app
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 # ---------------------------------------------------------------------------
@@ -117,6 +121,41 @@ def test_mcp_and_computer_use_dep_groups_have_install_specs() -> None:
     assert groups["computer_use"].install_specs == ("mcp", "uiautomation")
 
 
+def test_funasr_aliyun_transitive_dependency_is_pinned_to_available_wheel() -> None:
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = pyproject["project"]["dependencies"]
+    assert "aliyun-python-sdk-core-v3==2.13.10" in dependencies
+
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    aliyun = next(package for package in lock["package"] if package["name"] == "aliyun-python-sdk-core-v3")
+    assert aliyun["version"] == "2.13.10"
+    assert "wheels" in aliyun
+
+
+def test_installer_prebuilds_source_only_hydra_antlr_runtime_wheel() -> None:
+    script = (ROOT / "build-installer.ps1").read_text(encoding="utf-8")
+    lock = tomllib.loads((ROOT / "uv.lock").read_text(encoding="utf-8"))
+    third_party_source_only = {
+        f"{package['name']}=={package['version']}"
+        for package in lock["package"]
+        if "wheels" not in package and package["name"] != "marvex"
+    }
+
+    assert third_party_source_only == {
+        "antlr4-python3-runtime==4.9.3",
+        "crcmod==1.7",
+        "jieba==0.42.1",
+        "oss2==2.13.1",
+    }
+    for requirement in third_party_source_only:
+        assert f'Requirement = "{requirement}"' in script
+    assert "pip wheel" in script
+    assert "--no-binary=:all:" in script
+    assert "runtimeDownloadRequirementsFile" in script
+    assert "sourceOnlyPackageNames" in script
+    assert "--find-links $runtimeWheels" in script
+
+
 # ---------------------------------------------------------------------------
 # Feature gate tests
 # ---------------------------------------------------------------------------
@@ -129,7 +168,7 @@ def test_require_feature_returns_false_when_missing() -> None:
 
 def test_is_feature_available_returns_true_when_present() -> None:
     def _fake_find_spec(name: str):
-        return object() if name in ("kokoro_onnx", "piper") else None
+        return object() if name in ("supertonic", "piper") else None
 
     with patch("importlib.util.find_spec", side_effect=_fake_find_spec):
         result = is_feature_available("tts")

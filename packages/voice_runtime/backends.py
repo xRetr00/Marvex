@@ -57,6 +57,9 @@ class SpeechSynthesisRequest(VoiceRuntimeModel):
     text: str = Field(..., min_length=1, max_length=2000)
     voice_id: str
     backend_id: str | None = None
+    speed: float = Field(default=1.05, ge=0.7, le=2.0)
+    quality_steps: int = Field(default=8, ge=5, le=12)
+    language: str = Field(default="en", min_length=2, max_length=8)
     raw_text_persisted: Literal[False] = False
 
 
@@ -215,5 +218,5 @@ class VoiceBackendRegistry:
 
 def build_default_voice_backend_registry(*, stt_backends: tuple[SttBackend, ...] | None = None, tts_backends: tuple[TtsBackend, ...] | None = None) -> VoiceBackendRegistry:
     stt = stt_backends or (PackageBackedSttAdapter("moonshine-v2", "moonshine-voice"), PackageBackedSttAdapter("sensevoice-small", "funasr"), PackageBackedSttAdapter("sherpa-onnx-asr", "sherpa-onnx"))
-    tts = tts_backends or (PackageBackedTtsAdapter("kokoro-onnx", "kokoro-onnx"), PackageBackedTtsAdapter("piper-tts", "piper-tts"), PackageBackedTtsAdapter("sherpa-onnx-tts", "sherpa-onnx"))
-    return VoiceBackendRegistry(stt_backends=stt, tts_backends=tts, main_stt="moonshine-v2", fallback_stt="sensevoice-small", main_tts="kokoro-onnx", fallback_tts="piper-tts")
+    tts = tts_backends or (PackageBackedTtsAdapter("supertonic-v2", "supertonic"), PackageBackedTtsAdapter("piper-tts", "piper-tts"), PackageBackedTtsAdapter("sherpa-onnx-tts", "sherpa-onnx"))
+    return VoiceBackendRegistry(stt_backends=stt, tts_backends=tts, main_stt="moonshine-v2", fallback_stt="sensevoice-small", main_tts="supertonic-v2", fallback_tts="piper-tts")

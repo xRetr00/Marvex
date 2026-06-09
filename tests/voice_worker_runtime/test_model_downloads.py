@@ -24,7 +24,7 @@ def test_shipped_manifest_bundles_stt_and_wakeword_only() -> None:
     downloadable = {asset.model_id for asset in catalog.assets if not asset.bundled}
     # STT + wakeword ship in the installer; everything else downloads at runtime.
     assert bundled == {"moonshine-v2", "hey-marvex"}
-    assert {"kokoro-af-heart", "kokoro-voices", "sensevoice-small"} <= downloadable
+    assert {"supertonic-v2", "sensevoice-small"} <= downloadable
     assert "moonshine-v2" not in downloadable
 
 
@@ -49,7 +49,7 @@ def test_facade_model_catalog_marks_bundled_but_keeps_them_selectable() -> None:
     # Bundled backends stay in the catalog (so the STT picker keeps them) but are
     # flagged so the UI can hide their download action.
     assert assets["moonshine-v2"]["bundled"] is True
-    assert assets["kokoro-af-heart"]["bundled"] is False
+    assert assets["supertonic-v2"]["bundled"] is False
 
 
 def test_asset_manager_downloads_file_source_into_safe_asset_root_and_registers_it(tmp_path: Path) -> None:
@@ -310,12 +310,11 @@ def test_control_plane_status_discovers_bundled_assets_before_reporting_required
     assert required["hey-marvex"]["status"] == "installed"
 
 
-def test_required_registry_tracks_kokoro_voice_bundle_asset(tmp_path: Path) -> None:
+def test_required_registry_tracks_supertonic_v2_asset(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
     required_ids = {item.model_id for item in manager.registry().required}
 
-    assert "kokoro-af-heart" in required_ids
-    assert "kokoro-voices" in required_ids
+    assert "supertonic-v2" in required_ids
 
 
 def test_control_plane_exposes_worker_model_download_endpoint(tmp_path: Path) -> None:

@@ -18,3 +18,9 @@ def test_default_wakeword_threshold_is_sensitive():
 def test_default_phrase_is_hey_marvex():
     cfg = VoiceWorkerConfig.default()
     assert cfg.wakeword.phrase == "Hey Marvex"
+
+
+def test_default_voice_worker_tts_is_supertonic_v2():
+    cfg = VoiceWorkerConfig.default()
+    assert cfg.active_tts_backend_id == "supertonic-v2"
+    assert cfg.active_voice_id == "M1"

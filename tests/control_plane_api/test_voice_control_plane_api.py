@@ -10,7 +10,7 @@ from packages.voice_runtime import DeterministicSttAdapter, DeterministicTtsAdap
 def _app():
     runtime = VoiceRuntime.with_deterministic_backends(
         stt=DeterministicSttAdapter("moonshine-v2", text="hello"),
-        tts=DeterministicTtsAdapter("kokoro-onnx"),
+        tts=DeterministicTtsAdapter("supertonic-v2"),
     )
     facade = VoiceControlPlaneFacade(runtime)
     return create_control_plane_test_app(
@@ -31,7 +31,7 @@ def test_control_plane_voice_status_is_auth_protected_and_safe() -> None:
     assert unauth_payload["code"] == "AUTH_REQUIRED"
     assert status == "200 OK"
     assert payload["summary"]["main_stt_backend_id"] == "moonshine-v2"
-    assert payload["summary"]["main_tts_backend_id"] == "kokoro-onnx"
+    assert payload["summary"]["main_tts_backend_id"] == "supertonic-v2"
     assert payload["settings"]["wakeword"]["phrase"] == "Hey Marvex"
     serialized = json.dumps(payload).lower()
     assert "authorization" not in serialized
@@ -44,7 +44,7 @@ def test_control_plane_voice_selectors_and_toggles_do_not_execute_engines() -> N
     app = _app()
 
     stt_status, _headers, stt = _call(app, "/control/voice/stt/select", method="POST", body={"main_backend_id": "moonshine-v2", "fallback_backend_id": "sensevoice-small"})
-    tts_status, _headers, tts = _call(app, "/control/voice/tts/select", method="POST", body={"main_backend_id": "kokoro-onnx", "fallback_backend_id": "piper-tts", "active_voice_id": "af_heart"})
+    tts_status, _headers, tts = _call(app, "/control/voice/tts/select", method="POST", body={"main_backend_id": "supertonic-v2", "fallback_backend_id": "piper-tts", "active_voice_id": "M1"})
     wake_status, _headers, wake = _call(app, "/control/voice/wakeword", method="POST", body={"always_listening_enabled": True})
     vad_status, _vad_headers, vad = _call(app, "/control/voice/vad", method="POST", body={"aggressiveness": 3, "noisy_room_handling_enabled": True})
     barge_status, _barge_headers, barge = _call(app, "/control/voice/barge-in", method="POST", body={"enabled": True, "cancel_queued_tts": True})
@@ -56,7 +56,7 @@ def test_control_plane_voice_selectors_and_toggles_do_not_execute_engines() -> N
     assert stt["execution_started"] is False
     assert stt["main_backend_id"] == "moonshine-v2"
     assert tts_status == "200 OK"
-    assert tts["active_voice_id"] == "af_heart"
+    assert tts["active_voice_id"] == "M1"
     assert wake_status == "200 OK"
     assert wake["wakeword"]["always_listening_enabled"] is True
     assert wake["wakeword"]["visible_control_required"] is True
@@ -76,10 +76,10 @@ def test_control_plane_voice_selectors_and_toggles_do_not_execute_engines() -> N
 def test_control_plane_voice_model_download_and_voice_tests_are_explicit_and_safe() -> None:
     app = _app()
 
-    download_status, _headers, download = _call(app, "/control/voice/models/download", method="POST", body={"model_id": "af_heart", "backend_id": "kokoro-onnx", "model_kind": "tts_voice", "source_uri": "local://voices/af_heart"})
-    remove_status, _remove_headers, remove = _call(app, "/control/voice/models/remove", method="POST", body={"model_id": "af_heart", "model_kind": "tts_voice"})
+    download_status, _headers, download = _call(app, "/control/voice/models/download", method="POST", body={"model_id": "supertonic-v2", "backend_id": "supertonic-v2", "model_kind": "tts_voice", "source_uri": "local://voices/supertonic-v2"})
+    remove_status, _remove_headers, remove = _call(app, "/control/voice/models/remove", method="POST", body={"model_id": "supertonic-v2", "model_kind": "tts_voice"})
     stt_test_status, _headers, stt_test = _call(app, "/control/voice/test-stt", method="POST", body={"test_id": "stt-test", "backend_id": "moonshine-v2", "sample_ref_id": "sample-1"})
-    tts_test_status, _headers, tts_test = _call(app, "/control/voice/test-tts", method="POST", body={"test_id": "tts-test", "backend_id": "kokoro-onnx", "phrase": "Testing voice."})
+    tts_test_status, _headers, tts_test = _call(app, "/control/voice/test-tts", method="POST", body={"test_id": "tts-test", "backend_id": "supertonic-v2", "phrase": "Testing voice."})
 
     assert download_status == "200 OK"
     assert download["download_started"] is True

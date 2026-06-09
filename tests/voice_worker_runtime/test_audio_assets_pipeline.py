@@ -97,7 +97,7 @@ def test_asset_manager_reports_required_backend_assets_without_raw_paths(tmp_pat
     assert statuses["hey-marvex"].checksum_present is True
     assert str(tmp_path).lower() not in str(serialized).lower()
     assert registry.required_ready_count == 1
-    assert registry.required_blocked_count >= 3
+    assert registry.required_blocked_count >= 2
 
 
 def test_asset_manager_blocks_checksum_mismatch_for_file_assets(tmp_path: Path) -> None:
@@ -119,7 +119,7 @@ def test_asset_manager_blocks_checksum_mismatch_for_file_assets(tmp_path: Path) 
 
 
 def test_worker_full_manual_voice_turn_uses_vad_stt_policy_tts_playback_and_events() -> None:
-    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="status please"), tts=DeterministicTtsAdapter("kokoro-onnx"))
+    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="status please"), tts=DeterministicTtsAdapter("supertonic-v2"))
     controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), voice_runtime=voice_runtime)
     controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
 
@@ -152,7 +152,7 @@ def test_worker_full_manual_voice_turn_uses_vad_stt_policy_tts_playback_and_even
 
 
 def test_worker_manual_voice_turn_tracks_preroll_tail_transcript_and_early_speech() -> None:
-    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="search local docs"), tts=DeterministicTtsAdapter("kokoro-onnx"))
+    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="search local docs"), tts=DeterministicTtsAdapter("supertonic-v2"))
     controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), voice_runtime=voice_runtime)
     controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
 
@@ -181,7 +181,7 @@ def test_worker_live_capture_cycle_segments_speech_with_preroll_tail_and_silence
 
     decisions = [False, False, True, True, True, False, False, False]
     config = VoiceWorkerConfig.default().model_copy(update={"vad": VoiceWorkerConfig.default().vad.model_copy(update={"silence_timeout_ms": 300})})
-    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="open calendar"), tts=DeterministicTtsAdapter("kokoro-onnx"))
+    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="open calendar"), tts=DeterministicTtsAdapter("supertonic-v2"))
     controller = VoiceWorkerController(config=config, audio=ScriptedAudio(), voice_runtime=voice_runtime)
     controller.handle(VoiceWorkerCommand(command="start", command_id="cmd-start"))
 
@@ -211,7 +211,7 @@ def test_worker_live_capture_cycle_segments_speech_with_preroll_tail_and_silence
 
 def test_worker_live_capture_cycle_stops_at_max_utterance_without_assistant_dispatch() -> None:
     config = VoiceWorkerConfig.default().model_copy(update={"vad": VoiceWorkerConfig.default().vad.model_copy(update={"max_utterance_ms": 300})})
-    controller = VoiceWorkerController(config=config, audio=FakeLocalAudioAdapter(), voice_runtime=VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="should not dispatch"), tts=DeterministicTtsAdapter("kokoro-onnx")))
+    controller = VoiceWorkerController(config=config, audio=FakeLocalAudioAdapter(), voice_runtime=VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="should not dispatch"), tts=DeterministicTtsAdapter("supertonic-v2")))
     dispatches: list[str] = []
 
     result = controller.run_live_capture_cycle(
@@ -234,7 +234,7 @@ def test_worker_live_capture_cycle_stops_at_max_utterance_without_assistant_disp
 
 def test_worker_manual_voice_turn_can_dispatch_transcript_to_assistant_turn_spine() -> None:
     store = EndToEndTurnStateStore()
-    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="calculate 2 plus 2"), tts=DeterministicTtsAdapter("kokoro-onnx"))
+    voice_runtime = VoiceRuntime.with_deterministic_backends(stt=DeterministicSttAdapter("moonshine-v2", text="calculate 2 plus 2"), tts=DeterministicTtsAdapter("supertonic-v2"))
     controller = VoiceWorkerController(config=VoiceWorkerConfig.default(), audio=FakeLocalAudioAdapter(), voice_runtime=voice_runtime)
 
     def assistant_turn_runner(transcript: str):
@@ -342,22 +342,20 @@ def test_worker_test_stt_invokes_installed_asset_runner_without_rendering_transc
 
 def test_worker_test_tts_invokes_installed_voice_runner_without_rendering_text(tmp_path: Path) -> None:
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
-    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
+    (tmp_path / "voice-assets" / "tts" / "supertonic-v2").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="supertonic-v2", backend_id="supertonic-v2", model_kind="tts_voice", relative_path="tts/supertonic-v2", explicit_user_triggered=True))
     calls: list[tuple[str, str]] = []
 
     def tts_runner(request, asset):
         calls.append((request.text, asset.model_id))
-        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/af_heart", backend_id=request.backend_id or "kokoro-onnx", voice_id=request.voice_id, duration_ms=180)
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/M1", backend_id=request.backend_id or "supertonic-v2", voice_id=request.voice_id, duration_ms=180)
 
     controller = VoiceWorkerController(asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, tts_runner=tts_runner))
 
     result = controller.handle(VoiceWorkerCommand(command="test_tts", command_id="cmd-tts", payload={"text": "sensitive spoken response"}))
     serialized = json.dumps(result.safe_projection()).lower()
 
-    assert calls == [("sensitive spoken response", "kokoro-af-heart")]
+    assert calls == [("sensitive spoken response", "supertonic-v2")]
     assert result.event.event_type == VoiceWorkerEventType.TTS_STARTED
     assert result.event.summary["status"] == "succeeded"
     assert result.event.summary["audio_ref_present"] is True
@@ -376,20 +374,18 @@ def test_worker_test_tts_plays_generated_audio_when_synthesis_succeeds(tmp_path:
             return super().play_audio(device_id=device_id, audio_ref=audio_ref, sample_rate=sample_rate)
 
     manager = VoiceAssetManager(asset_root=tmp_path / "voice-assets")
-    (tmp_path / "voice-assets" / "tts" / "kokoro-af-heart").mkdir(parents=True)
-    (tmp_path / "voice-assets" / "tts" / "kokoro-voices").mkdir(parents=True)
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-af-heart", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-af-heart", explicit_user_triggered=True))
-    manager.install_local(VoiceModelInstallRequest(model_id="kokoro-voices", backend_id="kokoro-onnx", model_kind="tts_voice", relative_path="tts/kokoro-voices", explicit_user_triggered=True))
+    (tmp_path / "voice-assets" / "tts" / "supertonic-v2").mkdir(parents=True)
+    manager.install_local(VoiceModelInstallRequest(model_id="supertonic-v2", backend_id="supertonic-v2", model_kind="tts_voice", relative_path="tts/supertonic-v2", explicit_user_triggered=True))
     audio = PlaybackAudio()
 
     def tts_runner(request, asset):
-        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/af_heart", backend_id=asset.backend_id, voice_id=request.voice_id, duration_ms=180)
+        return SpeechSynthesisResult.succeeded(trace_id=request.trace_id, audio_ref="memory://voice/generated/cmd-tts/M1", backend_id=asset.backend_id, voice_id=request.voice_id, duration_ms=180)
 
     controller = VoiceWorkerController(audio=audio, asset_manager=manager, backend_runtime=VoiceWorkerBackendRuntime(asset_manager=manager, tts_runner=tts_runner))
 
     result = controller.handle(VoiceWorkerCommand(command="test_tts", command_id="cmd-tts", payload={"text": "play this"}))
 
-    assert audio.played_refs == ["memory://voice/generated/cmd-tts/af_heart"]
+    assert audio.played_refs == ["memory://voice/generated/cmd-tts/M1"]
     assert result.status.playback_status in {"playing", "completed"}
     assert result.status.safe_projection()["telemetry"]["playback_events"] >= 1
 
@@ -429,10 +425,10 @@ def test_worker_status_projection_includes_health_events_errors_and_model_status
     # Wakeword is enabled by default now, so a test with no installed KWS asset
     # surfaces the missing-asset blocker rather than the not-enabled one.
     assert projection["error"]["reason_code"] == "wakeword_model_not_installed"
-    assert projection["model_assets"]["required_blocked_count"] >= 4
+    assert projection["model_assets"]["required_blocked_count"] >= 3
     assert projection["stt_backend_status"]["active_backend_id"] == "moonshine-v2"
     assert projection["stt_backend_status"]["status"] == "not_ready"
-    assert projection["tts_backend_status"]["active_backend_id"] == "kokoro-onnx"
+    assert projection["tts_backend_status"]["active_backend_id"] == "supertonic-v2"
     assert projection["tts_backend_status"]["status"] == "not_ready"
     assert projection["wakeword_model_status"]["model_id"] == "hey-marvex"
     assert projection["wakeword_model_status"]["status"] == "not_installed"

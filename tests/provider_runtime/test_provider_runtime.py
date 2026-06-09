@@ -131,7 +131,7 @@ def test_create_litellm_provider_receives_base_url_timeout_and_api_key():
     assert provider._config.timeout_seconds == 9
 
 
-def test_create_litellm_provider_normalizes_native_base_url_to_proxy_mode():
+def test_create_litellm_provider_normalizes_openrouter_base_url_to_openrouter_mode():
     from packages.adapters.providers.litellm import LiteLLMProvider
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -145,8 +145,8 @@ def test_create_litellm_provider_normalizes_native_base_url_to_proxy_mode():
     )
 
     assert isinstance(provider, LiteLLMProvider)
-    assert provider._config.base_url == "https://openrouter.ai/api/v1/"
-    assert provider._config.provider_mode == "litellm_proxy"
+    assert provider._config.base_url is None
+    assert provider._config.provider_mode == "litellm_openrouter"
 
 
 def test_create_litellm_provider_normalizes_google_ai_studio_openai_base_url_to_sdk_mode():

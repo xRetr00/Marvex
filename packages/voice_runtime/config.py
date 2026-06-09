@@ -143,7 +143,9 @@ class VoicePersonalityProfile(VoiceRuntimeModel):
     confirmation_style: ConfirmationStyle = ConfirmationStyle.SHORT
     error_recovery_style: ErrorRecoveryStyle = ErrorRecoveryStyle.BRIEF
     sensitive_content_policy: SensitiveContentSpeakingPolicy = SensitiveContentSpeakingPolicy.ASK
-    active_voice_id: str = "af_heart"
+    active_voice_id: str = "M1"
+    active_tts_speed: float = Field(default=1.05, ge=0.7, le=2.0)
+    active_tts_quality_steps: int = Field(default=8, ge=5, le=12)
     auto_speak_enabled: bool = True
     speak_confirmations: bool = True
 

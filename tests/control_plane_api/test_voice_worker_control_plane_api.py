@@ -52,7 +52,7 @@ def test_control_plane_voice_worker_device_tests_and_backend_switches_are_safe()
     wake_status, _wake_headers, wake = _call(app, "/control/voice/worker/test-wakeword", method="POST")
     stt_status, _stt_headers, stt = _call(app, "/control/voice/worker/stt/switch", method="POST", body={"backend_id": "sensevoice-small"})
     tts_status, _tts_headers, tts = _call(app, "/control/voice/worker/tts/switch", method="POST", body={"backend_id": "piper-tts"})
-    voice_status, _voice_headers, voice = _call(app, "/control/voice/worker/voice/switch", method="POST", body={"voice_id": "af_heart"})
+    voice_status, _voice_headers, voice = _call(app, "/control/voice/worker/voice/switch", method="POST", body={"voice_id": "M1"})
 
     assert devices_status == "200 OK"
     assert devices["input_devices"][0]["device_id"] == "input-default"
@@ -67,8 +67,17 @@ def test_control_plane_voice_worker_device_tests_and_backend_switches_are_safe()
     assert tts_status == "200 OK"
     assert tts["status"]["active_tts_backend_id"] == "piper-tts"
     assert voice_status == "200 OK"
-    assert voice["status"]["active_voice_id"] == "af_heart"
+    assert voice["status"]["active_voice_id"] == "M1"
     assert "raw_audio\": true" not in json.dumps(playback).lower()
+
+
+def test_control_plane_voice_worker_record_wake_reference_endpoint_is_removed() -> None:
+    app = _app()
+
+    status, _headers, payload = _call(app, "/control/voice/worker/record-wake-reference", method="POST", body={"phrase": "Hey Marvex"})
+
+    assert status == "404 Not Found"
+    assert payload["details"]["reason"] == "voice_worker_endpoint_not_found"
 
 
 def test_control_plane_voice_worker_reload_config_selects_devices_without_audio_persistence() -> None:
@@ -226,7 +235,7 @@ def test_control_plane_voice_worker_model_install_status_uses_safe_local_paths(t
     assert install["exact_blocker"] == "model_path_not_found_under_voice_asset_root"
     assert assets_status == "200 OK"
     assert assets["installed_count"] == 0
-    assert assets["required_blocked_count"] >= 4
+    assert assets["required_blocked_count"] >= 3
     assert remove_status == "200 OK"
     assert remove["removed"] is False
 
@@ -242,5 +251,5 @@ def test_control_plane_voice_worker_exposes_safe_model_catalog() -> None:
     # hide their download action; downloadable models carry bundled=false.
     by_id = {asset["model_id"]: asset for asset in catalog["assets"]}
     assert by_id["moonshine-v2"]["bundled"] is True
-    assert by_id["kokoro-af-heart"]["bundled"] is False
+    assert by_id["supertonic-v2"]["bundled"] is False
     assert all(asset["explicit_user_triggered"] is True for asset in catalog["assets"])

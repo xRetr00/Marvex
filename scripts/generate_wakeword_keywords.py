@@ -19,15 +19,11 @@ from pathlib import Path
 # recall for the "Hey Marvex" wake phrase.
 DEFAULT_PHRASES: tuple[str, ...] = (
     "HEY MARVEX",
-    "HI MARVEX",
-    "HELLO MARVEX",
-    "OK MARVEX",
-    "HEY MARVECKS",
-    "HEY MARVIX",
+    "MARVEX",
 )
 
-DEFAULT_BOOST = 1.5
-DEFAULT_THRESHOLD = 0.20
+DEFAULT_BOOST = 2.0
+DEFAULT_THRESHOLD = 0.10
 
 
 def format_keyword_line(pieces: list[str], *, boost: float, threshold: float, text: str) -> str:
@@ -37,10 +33,30 @@ def format_keyword_line(pieces: list[str], *, boost: float, threshold: float, te
 
 # ARPAbet phonemes for the coined wake word (not in the en.phone lexicon used by
 # the phoneme-based zh-en KWS model). "Marvex" => MAR-veks. Verified to detect.
-COINED_PHONEMES: dict[str, str] = {
-    "MARVEX": "M AA1 R V EH1 K S",
-    "MARVECKS": "M AA1 R V EH1 K S",
-    "MARVIX": "M AA1 R V IH1 K S",
+COINED_PHONEMES: dict[str, tuple[str, ...]] = {
+    "HEY": (
+        "HH EY1",
+        "HH EY0",
+        "HH EH1",
+        "HH EH0",
+        "HH HH EY1",
+    ),
+    "MARVEX": (
+        "M AA1 R V EH1 K S",
+        "M AA1 R V EH0 K S",
+        "M AA1 R V IH0 K S",
+        "M AA0 R V EH1 K S",
+        "M AE1 R V EH1 K S",
+        "M AA1 R V AH0 K S",
+        "M AA1 R V IH1 K S",
+        "M AA1 R V EH1 K",
+        "M AA1 R V IH0 K",
+        "M AA1 R F EH1 K S",
+        "M AA1 R V EH1 G S",
+        "M ER1 V EH1 K S",
+    ),
+    "MARVECKS": ("M AA1 R V EH1 K S",),
+    "MARVIX": ("M AA1 R V IH1 K S",),
 }
 
 
@@ -78,16 +94,27 @@ def _phoneme_pieces(model_dir: Path, phrases: tuple[str, ...]) -> list[tuple[str
             lexicon[parts[0].upper()] = " ".join(parts[1:])
     out: list[tuple[str, list[str]]] = []
     for phrase in phrases:
-        phones: list[str] = []
+        word_options: list[tuple[str, ...]] = []
         ok = True
         for word in phrase.upper().split():
-            spelled = COINED_PHONEMES.get(word) or lexicon.get(word)
-            if not spelled:
+            options = COINED_PHONEMES.get(word) or ((lexicon[word],) if word in lexicon else ())
+            if not options:
                 ok = False
                 break
-            phones.extend(spelled.split())
-        if ok and phones:
-            out.append((phrase, phones))
+            word_options.append(options)
+        if not ok:
+            continue
+        import itertools
+
+        variant = 0
+        for combo in list(itertools.product(*word_options))[:64]:
+            phones: list[str] = []
+            for spelled in combo:
+                phones.extend(spelled.split())
+            if phones:
+                alias = phrase if variant == 0 else f"{phrase}_{variant}"
+                out.append((alias, phones))
+                variant += 1
     return out
 
 

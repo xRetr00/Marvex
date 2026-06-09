@@ -16,6 +16,7 @@ ALLOWED_IMPORT_PREFIXES = (
     "json",
     "os",
     "pathlib",
+    "packages.version",
     "packages.voice_worker_runtime",
     "pydantic",
     "services.voice_worker",
@@ -44,7 +45,7 @@ FORBIDDEN_AUDIO_IMPORTS = (
     "sounddevice",
     "moonshine",
     "funasr",
-    "kokoro",
+    "supertonic",
     "piper",
 )
 EXPECTED_FILES = {"README.md", "__init__.py", "models.py", "controller.py", "main.py"}
