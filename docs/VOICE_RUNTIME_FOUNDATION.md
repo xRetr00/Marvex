@@ -13,7 +13,7 @@ VoiceRuntime does not own intent routing, tools, memory, provider routing, capab
 - STT main: Moonshine v2 via `moonshine-voice==0.0.59`.
 - STT fallback: SenseVoice-Small path via `funasr==1.3.1`.
 - Secondary ASR/wakeword/TTS/VAD seam: `sherpa-onnx==1.13.2` plus `sherpa-onnx-core==1.13.2`.
-- TTS main: `kokoro-onnx==0.5.0`.
+- TTS main: Supertonic V2 via `supertonic==1.3.1`, pinned in the adapter as `model="supertonic-2"`.
 - TTS fallback: `piper-tts==1.4.2`.
 - Sentence chunking: `stream2sentence==0.3.2` behind a conservative sentence clamp seam that falls back to local punctuation clamping if package execution fails.
 - VAD main/fallback: `silero-vad==6.2.1` and `webrtcvad-wheels==2.0.14`, imported through concrete adapters with safe silence fallback on package/runtime errors.

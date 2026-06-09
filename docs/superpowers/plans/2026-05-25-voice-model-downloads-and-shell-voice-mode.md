@@ -18,7 +18,7 @@
 - Modify: `tests/scripts/test_fetch_voice_models.py`
 
 - [ ] Add a failing worker test showing archive downloads must be extracted into the requested asset directory before install registration.
-- [ ] Add a failing Kokoro readiness test showing `kokoro-onnx` is not ready until both the model file and the voices file are installed.
+- [ ] Superseded: the old paired TTS readiness path was replaced by the single Supertonic V2 asset.
 - [ ] Add a failing manifest test showing the active Moonshine package backend uses the Moonshine CDN layout instead of a sherpa ASR archive.
 - [ ] Run `.\.venv\Scripts\pytest tests\voice_worker_runtime\test_model_downloads.py tests\voice_worker_runtime\test_backend_runtime_refs.py tests\scripts\test_fetch_voice_models.py -q` and confirm the new tests fail before production changes.
 
@@ -33,8 +33,8 @@
 
 - [ ] Add archive extraction support to `VoiceAssetManager.download` through an explicit `extract` request field.
 - [ ] Add a safe voice model catalog endpoint for shell UI consumption.
-- [ ] Treat Kokoro model and voices as paired readiness requirements.
-- [ ] Make the Kokoro runner resolve sibling voices files when the installed model asset points at a single ONNX file.
+- [ ] Treat Supertonic V2 as a single required installed TTS asset.
+- [ ] Keep TTS model execution isolated behind the worker adapter boundary.
 - [ ] Update manifest source URIs to current canonical sources researched on 2026-05-25.
 
 ### Task 3: Shell Voice Mode Tab

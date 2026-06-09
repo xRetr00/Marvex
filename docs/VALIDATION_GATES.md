@@ -4,7 +4,7 @@ Validation gates are mandatory before finishing any task, including a one-line h
 
 ## Voice Worker Runtime Boundary Gate
 
-`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, trace-carrying command/result projections, health/version JSONL commands, safe cancellation metadata, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, explicit local model downloads, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Kokoro/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
+`scripts/check_voice_worker_runtime_boundaries.py` verifies the dedicated local voice worker process boundary. It requires `packages/voice_worker_runtime`, the worker contract models, trace-carrying command/result projections, health/version JSONL commands, safe cancellation metadata, no hidden auto-start, no raw audio/transcript persistence defaults, `Hey Marvex` wakeword policy, loopback-only subprocess launch, protected Control Plane worker endpoints, microphone/playback selectors, safe model readiness/checksum reporting, explicit local model downloads, readiness-aware installed-asset backend runtime markers, package-specific Moonshine/SenseVoice/Supertonic/Piper model adapter markers, worker-safe telemetry summaries, Control Plane web worker controls, `sounddevice==0.5.5`, and `docs/VOICE_WORKER_RUNTIME.md` safety wording.
 
 Targeted integration tests cover the current process-ready worker slice: JSONL command trace propagation, health/version command roundtrips, explicit stop shutdown, loopback-only host rejection, and structured invalid-command `VoiceWorkerErrorEnvelope` responses.
 
@@ -806,7 +806,7 @@ Protected boundaries:
 - Early speech cannot claim facts without evidence, and barge-in must interrupt playback/queued speech state.
 - STT, TTS, wakeword, VAD, voice/model downloads, voice tests, backend selectors, voice personality, audio retention, and telemetry summaries must be visible through protected Control Plane APIs/web views only.
 
-Adopted backend dependencies: Moonshine v2 through `moonshine-voice`, SenseVoice-Small through `funasr`, `sherpa-onnx` plus `sherpa-onnx-core`, `kokoro-onnx`, `piper-tts`, `stream2sentence`, `silero-vad`, and `webrtcvad-wheels`. Actual model/voice downloads remain explicit user-triggered operations into safe local model directories.
+Adopted backend dependencies: Moonshine v2 through `moonshine-voice`, SenseVoice-Small through `funasr`, `sherpa-onnx` plus `sherpa-onnx-core`, Supertonic through `supertonic`, `piper-tts`, `stream2sentence`, `silero-vad`, and `webrtcvad-wheels`. Actual model/voice downloads remain explicit user-triggered operations into safe local model directories.
 
 Blocked: hidden recording, raw audio/transcript persistence by default, frontend engine execution, direct Local API tool/provider execution, VoiceRuntime-owned service daemon behavior, Orb/Face UI, desktop overlay, vision, and proactive non-voice behavior.
 
