@@ -349,8 +349,42 @@ function Prepare-Runtime-Resources {
         Write-Error-Exit "Failed to export locked runtime requirements: $exportOutput"
     }
     $distWheelhouse = Join-Path $RepoRoot "dist"
+    $sourceOnlyWheels = @(
+        @{ Requirement = "antlr4-python3-runtime==4.9.3"; PackageName = "antlr4-python3-runtime"; WheelPattern = "antlr4_python3_runtime-4.9.3-*.whl" },
+        @{ Requirement = "crcmod==1.7"; PackageName = "crcmod"; WheelPattern = "crcmod-1.7-*.whl" },
+        @{ Requirement = "jieba==0.42.1"; PackageName = "jieba"; WheelPattern = "jieba-0.42.1-*.whl" },
+        @{ Requirement = "oss2==2.13.1"; PackageName = "oss2"; WheelPattern = "oss2-2.13.1-*.whl" }
+    )
+    foreach ($sourceOnlyWheel in $sourceOnlyWheels) {
+        $sourceOnlyRequirement = $sourceOnlyWheel.Requirement
+        Write-Host "  Building source-only compatibility wheel: $sourceOnlyRequirement"
+        $sourceWheelOutput = uv run python -m pip wheel --no-binary=:all: --no-deps --wheel-dir $runtimeWheels $sourceOnlyRequirement 2>&1
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error-Exit "Failed to build source-only compatibility wheel '$sourceOnlyRequirement': $sourceWheelOutput"
+        }
+        $builtWheel = Get-ChildItem -Path $runtimeWheels -Filter $sourceOnlyWheel.WheelPattern -File -ErrorAction SilentlyContinue |
+            Select-Object -First 1
+        if (-not $builtWheel) {
+            Write-Error-Exit "Source-only compatibility wheel '$sourceOnlyRequirement' was not created in $runtimeWheels"
+        }
+    }
+    $runtimeDownloadRequirementsFile = Join-Path $env:TEMP "marvex-runtime-download-requirements.txt"
+    $sourceOnlyPackageNames = @($sourceOnlyWheels | ForEach-Object { $_.PackageName })
+    Get-Content -Path $requirementsFile |
+        Where-Object {
+            $line = $_.TrimStart()
+            $keep = $true
+            foreach ($sourceOnlyPackageName in $sourceOnlyPackageNames) {
+                if ($line -match ("^" + [regex]::Escape($sourceOnlyPackageName) + "==")) {
+                    $keep = $false
+                    break
+                }
+            }
+            $keep
+        } |
+        Set-Content -LiteralPath $runtimeDownloadRequirementsFile -Encoding UTF8
     Write-Host "  Downloading locked dependency wheels..."
-    $downloadOutput = uv run python -m pip download --only-binary=:all: --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $requirementsFile 2>&1
+    $downloadOutput = uv run python -m pip download --only-binary=:all: --find-links $runtimeWheels --find-links $distWheelhouse --index-url https://pypi.org/simple --dest $runtimeWheels --requirement $runtimeDownloadRequirementsFile 2>&1
     if ($LASTEXITCODE -ne 0) {
         Write-Error-Exit "Failed to download dependency wheels: $downloadOutput"
     }
@@ -361,6 +395,7 @@ function Prepare-Runtime-Resources {
         Write-Error-Exit "Runtime wheelhouse contains non-wheel artifacts: $names"
     }
     Remove-Item -Path $requirementsFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -Path $runtimeDownloadRequirementsFile -Force -ErrorAction SilentlyContinue
     Write-Success "Locked dependency wheels downloaded to $runtimeWheels"
     
     # Find uv.exe (bundled or system)

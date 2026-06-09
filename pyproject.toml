@@ -17,7 +17,6 @@ dependencies = [
   "semantic-router==0.1.15",
   "Authlib==1.7.2",
   "browser-use==0.11.13",
-  "local-wake>=0.1.2",
   "llama-index-core>=0.14.22",
   "ddgs>=9.14.4",
   "trafilatura>=2.0.0,<3",
@@ -29,7 +28,6 @@ dependencies = [
   "speechbrain==1.1.0",
   "sherpa-onnx==1.13.2",
   "sentencepiece==0.2.1",
-  "kokoro-onnx==0.5.0",
   "piper-tts==1.4.2",
   "stream2sentence==0.3.2",
   "silero-vad==6.2.1",
@@ -40,6 +38,9 @@ dependencies = [
   "pywinauto>=0.6; sys_platform == \"win32\"",
   "uiautomation>=2.0; sys_platform == \"win32\"",
   "uvicorn==0.47.0",
+  "supertonic==1.3.1",
+  "funasr==1.3.1",
+  "aliyun-python-sdk-core-v3==2.13.10",
 ]
 
 [project.scripts]
