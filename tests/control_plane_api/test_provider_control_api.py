@@ -232,7 +232,7 @@ def test_litellm_connection_with_base_url_defaults_to_proxy_responses_mode() -> 
     assert provider["provider_mode"] == "litellm_proxy"
 
 
-def test_litellm_connection_with_native_mode_and_base_url_uses_proxy_responses_mode() -> None:
+def test_litellm_connection_with_openrouter_base_url_uses_openrouter_sdk_mode() -> None:
     control = InMemoryProviderControl()
 
     payload = control.set_connection(
@@ -242,8 +242,8 @@ def test_litellm_connection_with_native_mode_and_base_url_uses_proxy_responses_m
     )
 
     provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
-    assert provider["base_url"] == "https://openrouter.ai/api/v1/"
-    assert provider["provider_mode"] == "litellm_proxy"
+    assert provider["base_url"] == ""
+    assert provider["provider_mode"] == "litellm_openrouter"
 
 
 def test_litellm_google_ai_studio_openai_base_url_uses_sdk_responses_mode() -> None:

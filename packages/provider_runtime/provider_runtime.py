@@ -48,7 +48,10 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         store = _litellm_conversation_store()
         base_url = _clean_optional_string(config.base_url)
         provider_mode = _clean_optional_string(config.provider_mode)
-        if _is_google_ai_studio_openai_base_url(base_url):
+        if _is_openrouter_openai_base_url(base_url):
+            base_url = None
+            provider_mode = "litellm_openrouter"
+        elif _is_google_ai_studio_openai_base_url(base_url):
             # Google's OpenAI-compatible endpoint documents chat/completions.
             # Marvex's LiteLLM path must stay Responses-API based, so route
             # Google AI Studio through LiteLLM SDK translation instead.
@@ -191,6 +194,17 @@ def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
         parsed.scheme in {"http", "https"}
         and parsed.netloc.lower() == "generativelanguage.googleapis.com"
         and "openai" in parsed.path.rstrip("/").lower().split("/")
+    )
+
+
+def _is_openrouter_openai_base_url(value: str | None) -> bool:
+    if value is None:
+        return False
+    parsed = urlparse(value.strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.netloc.lower() == "openrouter.ai"
+        and parsed.path.rstrip("/").lower() in {"", "/api/v1", "/api/v1/openai"}
     )
 
 

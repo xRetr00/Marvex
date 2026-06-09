@@ -5,6 +5,7 @@ import os
 from dataclasses import dataclass, field
 from collections.abc import Callable
 from importlib import import_module
+from pathlib import Path
 from typing import Any
 from urllib.error import URLError
 from urllib.parse import urlparse
@@ -130,6 +131,8 @@ class InMemoryProviderControl:
             self._load_from_disk(self._persistence_path)
 
     def provider_catalog(self) -> dict[str, Any]:
+        for row in self._providers.values():
+            self._sync_secret_presence(row)
         return {
             "schema_version": SCHEMA_VERSION,
             "active_provider_id": self.active_provider_id,
@@ -185,7 +188,10 @@ class InMemoryProviderControl:
         cleaned_base_url = str(base_url or "").strip()
         if cleaned_base_url and not _safe_provider_base_url(cleaned_base_url):
             raise ValueError("invalid_base_url")
-        if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
+        if provider_id == "litellm" and _is_openrouter_openai_base_url(cleaned_base_url):
+            cleaned_base_url = ""
+            provider_mode = "litellm_openrouter"
+        elif provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
             cleaned_base_url = ""
             provider_mode = "litellm_sdk"
         elif provider_id == "litellm" and provider_mode == "litellm_openrouter":
@@ -252,7 +258,10 @@ class InMemoryProviderControl:
 
     def secret_value(self, provider_id: str) -> str | None:
         value = self._secrets.get(provider_id)
-        return value if isinstance(value, str) and value.strip() else None
+        if isinstance(value, str) and value.strip():
+            return value
+        row = self._providers.get(provider_id)
+        return _provider_env_secret(provider_id, row)
 
     def refresh_models(self, provider_id: str) -> dict[str, Any]:
         row = self._provider(provider_id)
@@ -354,6 +363,9 @@ class InMemoryProviderControl:
                 cleaned_mode = _clean_provider_mode(provider_mode)
                 if cleaned_mode:
                     row.provider_mode = cleaned_mode
+            if provider_id == "litellm" and _is_openrouter_openai_base_url(row.base_url):
+                row.base_url = ""
+                row.provider_mode = "litellm_openrouter"
             if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(row.base_url):
                 row.base_url = ""
                 row.provider_mode = "litellm_sdk"
@@ -440,6 +452,17 @@ class InMemoryProviderControl:
                 return _dedupe(self._model_discovery(provider_id, secret))
             except TypeError:
                 return _dedupe(self._model_discovery(provider_id))
+
+    def _sync_secret_presence(self, row: ProviderControlState) -> None:
+        if row.provider_id in self._secrets:
+            return
+        secret = _provider_env_secret(row.provider_id, row)
+        if secret:
+            row.secret_present = True
+            row.secret_display = _mask_secret(secret)
+        else:
+            row.secret_present = False
+            row.secret_display = ""
 
 
 def handle_provider_control_request(
@@ -569,6 +592,41 @@ def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
         and parsed.netloc.lower() == "generativelanguage.googleapis.com"
         and "openai" in parsed.path.rstrip("/").lower().split("/")
     )
+
+
+def _is_openrouter_openai_base_url(value: str | None) -> bool:
+    if value is None:
+        return False
+    parsed = urlparse(value.strip())
+    return (
+        parsed.scheme in {"http", "https"}
+        and parsed.netloc.lower() == "openrouter.ai"
+        and parsed.path.rstrip("/").lower() in {"", "/api/v1", "/api/v1/openai"}
+    )
+
+
+def _provider_env_secret(provider_id: str, row: ProviderControlState | None = None) -> str | None:
+    if provider_id == "lmstudio_responses":
+        return _first_env(
+            "MARVEX_LMSTUDIO_RESPONSES_API_KEY",
+            "LMSTUDIO_RESPONSES_API_KEY",
+            "MARVEX_LMSTUDIO_API_KEY",
+            "LMSTUDIO_API_KEY",
+        )
+    if provider_id == "litellm":
+        names = ["MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"]
+        if row is None or _litellm_row_uses_openrouter(row):
+            names.extend(["MARVEX_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"])
+        return _first_env(*names)
+    return None
+
+
+def _litellm_row_uses_openrouter(row: ProviderControlState) -> bool:
+    if row.provider_mode == "litellm_openrouter":
+        return True
+    if _is_openrouter_openai_base_url(row.base_url):
+        return True
+    return any(model.startswith("openrouter/") for model in [row.active_model, *row.models])
 
 
 def _model_id_suggests_vision(model: str) -> bool:
@@ -788,7 +846,46 @@ def _first_env(*names: str) -> str | None:
         value = os.environ.get(name)
         if value and value.strip():
             return value.strip()
+    for name in names:
+        value = _env_file_value(name)
+        if value:
+            return value
     return None
+
+
+def _env_file_value(name: str) -> str | None:
+    for path in _env_file_candidates():
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            continue
+        for raw_line in lines:
+            line = raw_line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            key, value = line.split("=", 1)
+            if key.strip() != name:
+                continue
+            cleaned = value.strip().strip('"').strip("'")
+            return cleaned or None
+    return None
+
+
+def _env_file_candidates() -> list[Path]:
+    candidates: list[Path] = []
+    explicit = os.environ.get("MARVEX_ENV_FILE", "").strip()
+    if explicit:
+        candidates.append(Path(explicit))
+    cwd = Path.cwd().resolve()
+    candidates.extend([cwd / ".env", *(parent / ".env" for parent in cwd.parents)])
+    seen: set[str] = set()
+    unique: list[Path] = []
+    for candidate in candidates:
+        key = str(candidate)
+        if key not in seen:
+            unique.append(candidate)
+            seen.add(key)
+    return unique
 
 
 def _split_models(value: str | None) -> list[str]:
