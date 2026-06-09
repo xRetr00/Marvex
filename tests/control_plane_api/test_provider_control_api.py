@@ -154,6 +154,17 @@ def test_in_memory_provider_secret_projection_includes_prefix_suffix_without_raw
     assert "sk-real-secret-value" not in serialized
 
 
+def test_provider_catalog_includes_openrouter_as_dedicated_provider() -> None:
+    control = InMemoryProviderControl()
+
+    catalog = control.provider_catalog()
+
+    provider = next(row for row in catalog["providers"] if row["provider_id"] == "openrouter")
+    assert provider["label"] == "OpenRouter"
+    assert provider["provider_mode"] == "openrouter_sdk"
+    assert provider["supports_custom_base_url"] is False
+
+
 def test_in_memory_provider_model_refresh_uses_injected_loopback_discovery() -> None:
     control = InMemoryProviderControl(model_discovery=lambda provider_id: ["qwen2.5-coder-7b"] if provider_id == "lmstudio_responses" else [])
 
@@ -232,7 +243,7 @@ def test_litellm_connection_with_base_url_defaults_to_proxy_responses_mode() -> 
     assert provider["provider_mode"] == "litellm_proxy"
 
 
-def test_litellm_connection_with_openrouter_base_url_uses_openrouter_sdk_mode() -> None:
+def test_litellm_connection_with_openrouter_base_url_stays_proxy_mode() -> None:
     control = InMemoryProviderControl()
 
     payload = control.set_connection(
@@ -242,8 +253,8 @@ def test_litellm_connection_with_openrouter_base_url_uses_openrouter_sdk_mode() 
     )
 
     provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
-    assert provider["base_url"] == ""
-    assert provider["provider_mode"] == "litellm_openrouter"
+    assert provider["base_url"] == "https://openrouter.ai/api/v1/"
+    assert provider["provider_mode"] == "litellm_proxy"
 
 
 def test_litellm_google_ai_studio_openai_base_url_uses_sdk_responses_mode() -> None:
@@ -259,18 +270,19 @@ def test_litellm_google_ai_studio_openai_base_url_uses_sdk_responses_mode() -> N
     assert provider["provider_mode"] == "litellm_sdk"
 
 
-def test_litellm_openrouter_mode_clears_base_url_for_sdk_responses_path() -> None:
+def test_litellm_openrouter_mode_is_not_accepted() -> None:
     control = InMemoryProviderControl()
 
-    payload = control.set_connection(
-        "litellm",
-        base_url="https://openrouter.ai/api/v1/",
-        provider_mode="litellm_openrouter",
-    )
-
-    provider = next(row for row in payload["providers"] if row["provider_id"] == "litellm")
-    assert provider["base_url"] == ""
-    assert provider["provider_mode"] == "litellm_openrouter"
+    try:
+        control.set_connection(
+            "litellm",
+            base_url="https://openrouter.ai/api/v1/",
+            provider_mode="litellm_openrouter",
+        )
+    except ValueError as exc:
+        assert str(exc) == "invalid_provider_mode"
+    else:
+        raise AssertionError("litellm_openrouter mode should be rejected")
 
 
 def test_provider_automation_model_keeps_browser_computer_choice_separate() -> None:

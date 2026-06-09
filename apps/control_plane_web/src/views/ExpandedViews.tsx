@@ -159,8 +159,8 @@ export function ProviderSettingsView({ snapshot }: { snapshot: import("../lib/sc
               <option value="native">native</option>
               <option value="litellm_sdk">litellm_sdk</option>
               <option value="litellm_proxy">litellm_proxy</option>
-              <option value="litellm_openrouter">litellm_openrouter</option>
               <option value="openai_compatible">openai_compatible</option>
+              <option value="openrouter_sdk">openrouter_sdk</option>
             </select>
           </label>
           <label className="grid gap-1 text-sm font-medium" htmlFor="active-model">

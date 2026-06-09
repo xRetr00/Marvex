@@ -9,6 +9,8 @@ LiteLLMProvider = None
 LiteLLMProviderConfig = None
 LMStudioResponsesProvider = None
 LMStudioResponsesProviderConfig = None
+OpenRouterProvider = None
+OpenRouterProviderConfig = None
 
 # Process-singleton conversation store so successive ``create_provider`` calls
 # in the same Python process share LiteLLM message history. Without this, each
@@ -22,6 +24,7 @@ class ProviderRuntimeConfig:
     provider_name: str
     lmstudio_responses_api_key: str | None = None
     litellm_api_key: str | None = None
+    openrouter_api_key: str | None = None
     base_url: str | None = None
     provider_mode: str | None = None
     timeout_seconds: float | None = None
@@ -34,7 +37,7 @@ class _StructuredOutputRequestContext:
     turn_id: str
 
 
-_STRUCTURED_OUTPUT_PROVIDER_NAMES = frozenset({"litellm", "lmstudio_responses"})
+_STRUCTURED_OUTPUT_PROVIDER_NAMES = frozenset({"litellm", "lmstudio_responses", "openrouter"})
 
 
 def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
@@ -48,17 +51,12 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
         store = _litellm_conversation_store()
         base_url = _clean_optional_string(config.base_url)
         provider_mode = _clean_optional_string(config.provider_mode)
-        if _is_openrouter_openai_base_url(base_url):
-            base_url = None
-            provider_mode = "litellm_openrouter"
-        elif _is_google_ai_studio_openai_base_url(base_url):
+        if _is_google_ai_studio_openai_base_url(base_url):
             # Google's OpenAI-compatible endpoint documents chat/completions.
             # Marvex's LiteLLM path must stay Responses-API based, so route
             # Google AI Studio through LiteLLM SDK translation instead.
             base_url = None
             provider_mode = "litellm_sdk"
-        elif provider_mode == "litellm_openrouter":
-            base_url = None
         elif base_url is not None and provider_mode in {None, "native", "litellm_sdk"}:
             provider_mode = "litellm_proxy"
         provider_config_kwargs = {
@@ -91,6 +89,17 @@ def create_provider(config: ProviderRuntimeConfig) -> ProviderPort:
             return provider_class(
                 config=config_class(**provider_config_kwargs)
             )
+        return provider_class()
+    if config.provider_name == "openrouter":
+        provider_class = _openrouter_provider_class()
+        config_class = _openrouter_provider_config_class()
+        provider_config_kwargs = {}
+        if _has_openrouter_api_key(config):
+            provider_config_kwargs["api_key"] = str(config.openrouter_api_key)
+        if config.timeout_seconds is not None:
+            provider_config_kwargs["timeout_seconds"] = config.timeout_seconds
+        if provider_config_kwargs:
+            return provider_class(config_class(**provider_config_kwargs))
         return provider_class()
     raise ValueError(f"unsupported provider: {config.provider_name}")
 
@@ -150,6 +159,20 @@ def _lmstudio_responses_provider_config_class():
     return LMStudioResponsesProviderConfig
 
 
+def _openrouter_provider_class():
+    global OpenRouterProvider
+    if OpenRouterProvider is None:
+        from packages.adapters.providers.openrouter import OpenRouterProvider
+    return OpenRouterProvider
+
+
+def _openrouter_provider_config_class():
+    global OpenRouterProviderConfig
+    if OpenRouterProviderConfig is None:
+        from packages.adapters.providers.openrouter import OpenRouterProviderConfig
+    return OpenRouterProviderConfig
+
+
 def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
     if config.provider_name != "lmstudio_responses" and _has_lmstudio_responses_api_key(
         config
@@ -159,6 +182,8 @@ def _validate_provider_specific_config(config: ProviderRuntimeConfig) -> None:
         )
     if config.provider_name != "litellm" and _has_litellm_api_key(config):
         raise ValueError("litellm_api_key is only supported for litellm")
+    if config.provider_name != "openrouter" and _has_openrouter_api_key(config):
+        raise ValueError("openrouter_api_key is only supported for openrouter")
     if config.provider_name == "fake" and _clean_optional_string(config.base_url) is not None:
         raise ValueError("base_url is only supported for network provider adapters")
     if config.provider_name == "fake" and config.timeout_seconds is not None:
@@ -179,6 +204,11 @@ def _has_litellm_api_key(config: ProviderRuntimeConfig) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _has_openrouter_api_key(config: ProviderRuntimeConfig) -> bool:
+    value = config.openrouter_api_key
+    return isinstance(value, str) and bool(value.strip())
+
+
 def _clean_optional_string(value: str | None) -> str | None:
     if value is None:
         return None
@@ -194,17 +224,6 @@ def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
         parsed.scheme in {"http", "https"}
         and parsed.netloc.lower() == "generativelanguage.googleapis.com"
         and "openai" in parsed.path.rstrip("/").lower().split("/")
-    )
-
-
-def _is_openrouter_openai_base_url(value: str | None) -> bool:
-    if value is None:
-        return False
-    parsed = urlparse(value.strip())
-    return (
-        parsed.scheme in {"http", "https"}
-        and parsed.netloc.lower() == "openrouter.ai"
-        and parsed.path.rstrip("/").lower() in {"", "/api/v1", "/api/v1/openai"}
     )
 
 

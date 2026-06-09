@@ -55,6 +55,25 @@ describe("ControlPlaneSettings", () => {
               secret_display: secretPresent ? "sk-p****cret" : "",
               secret_value_present: false,
             },
+            {
+              provider_id: "openrouter",
+              label: "OpenRouter",
+              configured: false,
+              healthy: true,
+              active_model: "openai/gpt-oss-20b:free",
+              automation_model: "openai/gpt-oss-20b:free",
+              models: ["openai/gpt-oss-20b:free"],
+              multi_models: [],
+              base_url: "",
+              provider_mode: "openrouter_sdk",
+              supports_custom_base_url: false,
+              automation_model_capabilities: { vision: false },
+              automation_policy: { vision_required: false },
+              automation_validation: { ready: true, reason_code: null },
+              secret_present: false,
+              secret_display: "",
+              secret_value_present: false,
+            },
           ],
           raw_secret_persisted: false,
         };
@@ -90,7 +109,8 @@ describe("ControlPlaneSettings", () => {
     expect(await screen.findByText("Web search")).toBeInTheDocument();
     expect(await screen.findByLabelText("SearXNG URL")).toHaveValue("http://127.0.0.1:8888");
     expect(await screen.findByLabelText("Multi-model candidate")).toBeInTheDocument();
-    expect(await screen.findByRole("option", { name: /LiteLLM OpenRouter/i })).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /^OpenRouter$/i })).toBeInTheDocument();
+    expect(screen.queryByRole("option", { name: /LiteLLM OpenRouter/i })).not.toBeInTheDocument();
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
     expect((await screen.findAllByText("local-mcp")).length).toBeGreaterThan(0);

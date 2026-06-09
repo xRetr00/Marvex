@@ -92,6 +92,7 @@ def handle_stream_command(controller: ProviderWorkerController, line: str):
             timeout_seconds=_optional_float(payload.get("timeout_seconds")),
             lmstudio_responses_api_key=_optional_string(payload.get("lmstudio_responses_api_key")),
             litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+            openrouter_api_key=_optional_string(payload.get("openrouter_api_key")),
         )
         for frame in frames:
             yield {"command": "stream", "trace_id": trace_id, **frame}
@@ -148,6 +149,7 @@ def handle_jsonl_command(
                     payload.get("lmstudio_responses_api_key")
                 ),
                 litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+                openrouter_api_key=_optional_string(payload.get("openrouter_api_key")),
             )
         if command == "cancel_response":
             return controller.cancel_response(
@@ -161,6 +163,7 @@ def handle_jsonl_command(
                     payload.get("lmstudio_responses_api_key")
                 ),
                 litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+                openrouter_api_key=_optional_string(payload.get("openrouter_api_key")),
             )
         if command == "delete_response":
             return controller.delete_response(
@@ -174,6 +177,7 @@ def handle_jsonl_command(
                     payload.get("lmstudio_responses_api_key")
                 ),
                 litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+                openrouter_api_key=_optional_string(payload.get("openrouter_api_key")),
             )
         if command == "structured_output":
             return controller.map_structured_output(
@@ -190,6 +194,7 @@ def handle_jsonl_command(
                     payload.get("lmstudio_responses_api_key")
                 ),
                 litellm_api_key=_optional_string(payload.get("litellm_api_key")),
+                openrouter_api_key=_optional_string(payload.get("openrouter_api_key")),
             )
         return _validation_result(trace_id=trace_id, reason="unsupported_command")
     except Exception:

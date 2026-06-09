@@ -117,6 +117,20 @@ class InMemoryProviderControl:
                 supports_custom_base_url=True,
                 secret_present=False,
             ),
+            ProviderControlState(
+                provider_id="openrouter",
+                label="OpenRouter",
+                configured=False,
+                healthy=False,
+                active_model="",
+                automation_model="",
+                models=[],
+                multi_models=[],
+                base_url="",
+                provider_mode="openrouter_sdk",
+                supports_custom_base_url=False,
+                secret_present=False,
+            ),
         )
         self._providers = {row.provider_id: row for row in rows}
         self._secrets: dict[str, str] = {}
@@ -201,14 +215,9 @@ class InMemoryProviderControl:
         cleaned_base_url = str(base_url or "").strip()
         if cleaned_base_url and not _safe_provider_base_url(cleaned_base_url):
             raise ValueError("invalid_base_url")
-        if provider_id == "litellm" and _is_openrouter_openai_base_url(cleaned_base_url):
-            cleaned_base_url = ""
-            provider_mode = "litellm_openrouter"
-        elif provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
+        if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(cleaned_base_url):
             cleaned_base_url = ""
             provider_mode = "litellm_sdk"
-        elif provider_id == "litellm" and provider_mode == "litellm_openrouter":
-            cleaned_base_url = ""
         elif provider_id == "litellm" and cleaned_base_url and provider_mode in {None, "native", "litellm_sdk"}:
             provider_mode = "litellm_proxy"
         row.base_url = cleaned_base_url
@@ -378,14 +387,9 @@ class InMemoryProviderControl:
                 cleaned_mode = _clean_provider_mode(provider_mode)
                 if cleaned_mode:
                     row.provider_mode = cleaned_mode
-            if provider_id == "litellm" and _is_openrouter_openai_base_url(row.base_url):
-                row.base_url = ""
-                row.provider_mode = "litellm_openrouter"
             if provider_id == "litellm" and _is_google_ai_studio_openai_base_url(row.base_url):
                 row.base_url = ""
                 row.provider_mode = "litellm_sdk"
-            if provider_id == "litellm" and row.provider_mode == "litellm_openrouter":
-                row.base_url = ""
             if provider_id == "litellm" and row.base_url and row.provider_mode in {"litellm_sdk", "native"}:
                 row.provider_mode = "litellm_proxy"
             models = row_data.get("models")
@@ -644,7 +648,7 @@ def _mask_secret(value: str) -> str:
 
 def _clean_provider_mode(value: str) -> str:
     cleaned = value.strip()
-    return cleaned if cleaned in {"native", "litellm_sdk", "litellm_proxy", "litellm_openrouter", "openai_compatible"} else ""
+    return cleaned if cleaned in {"native", "litellm_sdk", "litellm_proxy", "openai_compatible", "openrouter_sdk"} else ""
 
 
 def _safe_provider_base_url(value: str) -> bool:
@@ -663,17 +667,6 @@ def _is_google_ai_studio_openai_base_url(value: str | None) -> bool:
     )
 
 
-def _is_openrouter_openai_base_url(value: str | None) -> bool:
-    if value is None:
-        return False
-    parsed = urlparse(value.strip())
-    return (
-        parsed.scheme in {"http", "https"}
-        and parsed.netloc.lower() == "openrouter.ai"
-        and parsed.path.rstrip("/").lower() in {"", "/api/v1", "/api/v1/openai"}
-    )
-
-
 def _provider_env_secret(provider_id: str, row: ProviderControlState | None = None) -> str | None:
     if provider_id == "lmstudio_responses":
         return _first_env(
@@ -683,10 +676,9 @@ def _provider_env_secret(provider_id: str, row: ProviderControlState | None = No
             "LMSTUDIO_API_KEY",
         )
     if provider_id == "litellm":
-        names = ["MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"]
-        if row is None or _litellm_row_uses_openrouter(row):
-            names.extend(["MARVEX_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"])
-        return _first_env(*names)
+        return _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY")
+    if provider_id == "openrouter":
+        return _first_env("MARVEX_OPENROUTER_API_KEY", "OPENROUTER_API_KEY")
     return None
 
 
@@ -770,14 +762,6 @@ def _windows_dpapi(value: str, *, protect: bool) -> str | None:
         return None
 
 
-def _litellm_row_uses_openrouter(row: ProviderControlState) -> bool:
-    if row.provider_mode == "litellm_openrouter":
-        return True
-    if _is_openrouter_openai_base_url(row.base_url):
-        return True
-    return any(model.startswith("openrouter/") for model in [row.active_model, *row.models])
-
-
 def _model_id_suggests_vision(model: str) -> bool:
     normalized = "".join(character.lower() if character.isalnum() else "-" for character in model)
     markers = (
@@ -826,6 +810,17 @@ def _default_model_discovery(provider_id: str, secret: str | None = None, base_u
             configured.extend(_openai_compatible_models(effective_base_url, api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY")))
         configured.extend(_litellm_sdk_models(api_key=secret or _first_env("MARVEX_LITELLM_API_KEY", "LITELLM_API_KEY"), api_base=effective_base_url))
         return _dedupe(configured)
+    if provider_id == "openrouter":
+        configured = _split_models(
+            _first_env("MARVEX_OPENROUTER_MODELS", "OPENROUTER_MODELS", "OPENROUTER_MODEL")
+        )
+        configured.extend(
+            _openai_compatible_models(
+                "https://openrouter.ai/api/v1",
+                api_key=secret or _first_env("MARVEX_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"),
+            )
+        )
+        return _dedupe(configured)
     return []
 
 
@@ -841,6 +836,8 @@ def _default_model_metadata(
         return _lmstudio_model_metadata(effective_base_url, api_key=secret)
     if provider_id == "litellm":
         return _litellm_model_metadata(models, api_base=base_url)
+    if provider_id == "openrouter":
+        return _litellm_model_metadata(models, api_base="https://openrouter.ai/api/v1")
     return {}
 
 

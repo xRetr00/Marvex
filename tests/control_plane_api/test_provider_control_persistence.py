@@ -76,24 +76,27 @@ def test_project_env_provider_keys_are_provider_specific_and_not_projected_raw(t
         encoding="utf-8",
     )
     monkeypatch.setenv("MARVEX_ENV_FILE", str(env_file))
+    monkeypatch.delenv("MARVEX_LMSTUDIO_RESPONSES_API_KEY", raising=False)
+    monkeypatch.delenv("LMSTUDIO_RESPONSES_API_KEY", raising=False)
+    monkeypatch.delenv("MARVEX_LMSTUDIO_API_KEY", raising=False)
+    monkeypatch.delenv("LMSTUDIO_API_KEY", raising=False)
     monkeypatch.delenv("MARVEX_LITELLM_API_KEY", raising=False)
     monkeypatch.delenv("LITELLM_API_KEY", raising=False)
+    monkeypatch.delenv("MARVEX_OPENROUTER_API_KEY", raising=False)
+    monkeypatch.delenv("OPENROUTER_API_KEY", raising=False)
 
     control = InMemoryProviderControl(persistence_path=str(tmp_path / "provider_control.json"))
-    control.set_connection(
-        "litellm",
-        base_url="https://openrouter.ai/api/v1/",
-        provider_mode="native",
-    )
-
     assert control.secret_value("lmstudio_responses") == "lmstudio-secret-for-test"
-    assert control.secret_value("litellm") == "openrouter-secret-for-test"
+    assert control.secret_value("openrouter") == "openrouter-secret-for-test"
+    assert control.secret_value("litellm") is None
 
     catalog = control.provider_catalog()
     lmstudio = next(row for row in catalog["providers"] if row["provider_id"] == "lmstudio_responses")
+    openrouter = next(row for row in catalog["providers"] if row["provider_id"] == "openrouter")
     litellm = next(row for row in catalog["providers"] if row["provider_id"] == "litellm")
     assert lmstudio["secret_present"] is True
-    assert litellm["secret_present"] is True
+    assert openrouter["secret_present"] is True
+    assert litellm["secret_present"] is False
     serialized = json.dumps(catalog)
     assert "lmstudio-secret-for-test" not in serialized
     assert "openrouter-secret-for-test" not in serialized
@@ -223,7 +226,7 @@ def test_persistence_migrates_litellm_proxy_base_url_from_sdk_mode(tmp_path: Pat
     assert row["provider_mode"] == "litellm_proxy"
 
 
-def test_persistence_migrates_openrouter_base_url_to_litellm_openrouter_mode(tmp_path: Path) -> None:
+def test_persistence_keeps_openrouter_base_url_as_litellm_proxy_mode(tmp_path: Path) -> None:
     state = tmp_path / "providers.json"
     state.write_text(
         json.dumps(
@@ -245,5 +248,5 @@ def test_persistence_migrates_openrouter_base_url_to_litellm_openrouter_mode(tmp
     control = InMemoryProviderControl(persistence_path=str(state))
     row = next(item for item in control.provider_catalog()["providers"] if item["provider_id"] == "litellm")
 
-    assert row["base_url"] == ""
-    assert row["provider_mode"] == "litellm_openrouter"
+    assert row["base_url"] == "https://openrouter.ai/api/v1/"
+    assert row["provider_mode"] == "litellm_proxy"

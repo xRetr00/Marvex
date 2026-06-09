@@ -33,6 +33,16 @@ def test_create_lmstudio_responses_provider_returns_provider_port_compatible_pro
     assert isinstance(provider, LMStudioResponsesProvider)
 
 
+def test_create_openrouter_provider_returns_provider_port_compatible_provider():
+    from packages.adapters.providers.openrouter import OpenRouterProvider
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    provider = create_provider(ProviderRuntimeConfig(provider_name="openrouter"))
+
+    assert isinstance(provider, ProviderPort)
+    assert isinstance(provider, OpenRouterProvider)
+
+
 def test_create_lmstudio_responses_provider_accepts_lmstudio_specific_fake_api_key():
     from packages.adapters.providers.lmstudio_responses import LMStudioResponsesProvider
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
@@ -81,6 +91,7 @@ def test_provider_runtime_config_supports_additive_connection_fields():
         "provider_name",
         "lmstudio_responses_api_key",
         "litellm_api_key",
+        "openrouter_api_key",
         "base_url",
         "provider_mode",
         "timeout_seconds",
@@ -131,7 +142,7 @@ def test_create_litellm_provider_receives_base_url_timeout_and_api_key():
     assert provider._config.timeout_seconds == 9
 
 
-def test_create_litellm_provider_normalizes_openrouter_base_url_to_openrouter_mode():
+def test_create_litellm_provider_does_not_normalize_openrouter_base_url_to_openrouter_mode():
     from packages.adapters.providers.litellm import LiteLLMProvider
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
@@ -145,8 +156,8 @@ def test_create_litellm_provider_normalizes_openrouter_base_url_to_openrouter_mo
     )
 
     assert isinstance(provider, LiteLLMProvider)
-    assert provider._config.base_url is None
-    assert provider._config.provider_mode == "litellm_openrouter"
+    assert provider._config.base_url == "https://openrouter.ai/api/v1/"
+    assert provider._config.provider_mode == "litellm_proxy"
 
 
 def test_create_litellm_provider_normalizes_google_ai_studio_openai_base_url_to_sdk_mode():
@@ -167,23 +178,28 @@ def test_create_litellm_provider_normalizes_google_ai_studio_openai_base_url_to_
     assert provider._config.provider_mode == "litellm_sdk"
 
 
-def test_create_litellm_provider_openrouter_mode_uses_sdk_without_base_url():
-    from packages.adapters.providers.litellm import LiteLLMProvider
+def test_create_openrouter_provider_receives_api_key_and_timeout():
+    from packages.adapters.providers.openrouter import OpenRouterProvider
     from packages.provider_runtime import ProviderRuntimeConfig, create_provider
 
     provider = create_provider(
         ProviderRuntimeConfig(
-            provider_name="litellm",
-            litellm_api_key="sk-or-test",
-            base_url="https://openrouter.ai/api/v1/",
-            provider_mode="litellm_openrouter",
+            provider_name="openrouter",
+            openrouter_api_key="sk-or-test",
+            timeout_seconds=12,
         )
     )
 
-    assert isinstance(provider, LiteLLMProvider)
+    assert isinstance(provider, OpenRouterProvider)
     assert provider._config.api_key == "sk-or-test"
-    assert provider._config.base_url is None
-    assert provider._config.provider_mode == "litellm_openrouter"
+    assert provider._config.timeout_seconds == 12
+
+
+def test_non_openrouter_provider_rejects_openrouter_api_key():
+    from packages.provider_runtime import ProviderRuntimeConfig, create_provider
+
+    with pytest.raises(ValueError, match="openrouter_api_key is only supported for openrouter"):
+        create_provider(ProviderRuntimeConfig(provider_name="fake", openrouter_api_key="sk-or-test"))
 
 
 def test_non_litellm_provider_rejects_litellm_api_key():

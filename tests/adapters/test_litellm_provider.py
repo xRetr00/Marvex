@@ -279,7 +279,7 @@ def test_litellm_openai_compatible_mode_preserves_prefixed_model_ids(monkeypatch
     assert calls[0]["model"] == "openai/gpt-4o-mini"
 
 
-def test_litellm_openrouter_mode_prefixes_providerless_openrouter_model_ids(monkeypatch):
+def test_litellm_does_not_prefix_openrouter_models(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
     from packages.adapters.providers.litellm import litellm_provider
 
@@ -291,20 +291,17 @@ def test_litellm_openrouter_mode_prefixes_providerless_openrouter_model_ids(monk
 
     monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
-    LiteLLMProvider(
-        LiteLLMProviderConfig(
-            api_key="sk-or-test",
-            provider_mode="litellm_openrouter",
-        )
-    ).send(make_request().model_copy(update={"model": "deepseek/deepseek-v4-flash"}))
+    LiteLLMProvider(LiteLLMProviderConfig(api_key="sk-or-test")).send(
+        make_request().model_copy(update={"model": "deepseek/deepseek-v4-flash"})
+    )
 
-    assert calls[0]["model"] == "openrouter/deepseek/deepseek-v4-flash"
+    assert calls[0]["model"] == "deepseek/deepseek-v4-flash"
     assert calls[0]["api_key"] == "sk-or-test"
     assert "api_base" not in calls[0]
     assert "messages" not in calls[0]
 
 
-def test_litellm_openrouter_mode_preserves_already_prefixed_model_ids(monkeypatch):
+def test_litellm_preserves_explicit_openrouter_model_ids_without_special_mode(monkeypatch):
     from packages.adapters.providers.litellm import LiteLLMProvider, LiteLLMProviderConfig
     from packages.adapters.providers.litellm import litellm_provider
 
@@ -316,9 +313,9 @@ def test_litellm_openrouter_mode_preserves_already_prefixed_model_ids(monkeypatc
 
     monkeypatch.setattr(litellm_provider.litellm, "responses", fake_responses)
 
-    LiteLLMProvider(
-        LiteLLMProviderConfig(provider_mode="litellm_openrouter")
-    ).send(make_request().model_copy(update={"model": "openrouter/openai/gpt-oss-20b:free"}))
+    LiteLLMProvider().send(
+        make_request().model_copy(update={"model": "openrouter/openai/gpt-oss-20b:free"})
+    )
 
     assert calls[0]["model"] == "openrouter/openai/gpt-oss-20b:free"
 

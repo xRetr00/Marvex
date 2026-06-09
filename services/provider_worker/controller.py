@@ -40,7 +40,7 @@ from .models import (
 
 
 ProviderFactory = Callable[[ProviderRuntimeConfig], object]
-_CONCRETE_PROVIDER_IDS = frozenset({"fake", "lmstudio_responses", "litellm"})
+_CONCRETE_PROVIDER_IDS = frozenset({"fake", "lmstudio_responses", "litellm", "openrouter"})
 
 
 class ProviderWorkerState(str, Enum):
@@ -110,6 +110,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
         litellm_api_key: str | None = None,
+        openrouter_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         decision_projection: ProviderWorkerSelectionProjection | None = None
         try:
@@ -144,6 +145,7 @@ class ProviderWorkerController:
                             timeout_seconds=timeout_seconds,
                             lmstudio_responses_api_key=lmstudio_responses_api_key,
                             litellm_api_key=litellm_api_key,
+                            openrouter_api_key=openrouter_api_key,
                         )
                     )
                     response = provider.send(request)  # type: ignore[attr-defined]
@@ -208,6 +210,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
         litellm_api_key: str | None = None,
+        openrouter_api_key: str | None = None,
     ):
         """Drive a provider stream, yielding frame dicts for the JSONL transport.
 
@@ -234,6 +237,7 @@ class ProviderWorkerController:
                     timeout_seconds=timeout_seconds,
                     lmstudio_responses_api_key=lmstudio_responses_api_key,
                     litellm_api_key=litellm_api_key,
+                    openrouter_api_key=openrouter_api_key,
                 )
             )
             stream_send = getattr(provider, "stream_send", None)
@@ -301,6 +305,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
         litellm_api_key: str | None = None,
+        openrouter_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         return self._response_control(
             command="cancel_response",
@@ -312,6 +317,7 @@ class ProviderWorkerController:
             timeout_seconds=timeout_seconds,
             lmstudio_responses_api_key=lmstudio_responses_api_key,
             litellm_api_key=litellm_api_key,
+            openrouter_api_key=openrouter_api_key,
         )
 
     def delete_response(
@@ -325,6 +331,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
         litellm_api_key: str | None = None,
+        openrouter_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         return self._response_control(
             command="delete_response",
@@ -336,6 +343,7 @@ class ProviderWorkerController:
             timeout_seconds=timeout_seconds,
             lmstudio_responses_api_key=lmstudio_responses_api_key,
             litellm_api_key=litellm_api_key,
+            openrouter_api_key=openrouter_api_key,
         )
 
     def _response_control(
@@ -350,6 +358,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None,
         lmstudio_responses_api_key: str | None,
         litellm_api_key: str | None,
+        openrouter_api_key: str | None,
     ) -> ProviderWorkerCommandResult:
         cleaned = response_id.strip()
         if not cleaned:
@@ -376,6 +385,7 @@ class ProviderWorkerController:
                     timeout_seconds=timeout_seconds,
                     lmstudio_responses_api_key=lmstudio_responses_api_key,
                     litellm_api_key=litellm_api_key,
+                    openrouter_api_key=openrouter_api_key,
                 )
             )
             method_name = "cancel_response" if command == "cancel_response" else "delete_response"
@@ -465,11 +475,11 @@ class ProviderWorkerController:
         return ProviderCandidate(
             provider_id=provider_id,
             model=request.model,
-            supports_tools=provider_id in {"litellm", "lmstudio_responses"},
+            supports_tools=provider_id in {"litellm", "lmstudio_responses", "openrouter"},
             context_length=128000,
-            locality="cloud" if provider_id == "litellm" else "local",
+            locality="cloud" if provider_id in {"litellm", "openrouter"} else "local",
             healthy=provider_id not in self.config.unavailable_provider_ids,
-            cost_tier="low" if provider_id == "litellm" else "free",
+            cost_tier="low" if provider_id in {"litellm", "openrouter"} else "free",
         )
 
     def _is_success(self, response: ProviderResponse) -> bool:
@@ -598,6 +608,7 @@ class ProviderWorkerController:
         timeout_seconds: float | None = None,
         lmstudio_responses_api_key: str | None = None,
         litellm_api_key: str | None = None,
+        openrouter_api_key: str | None = None,
     ) -> ProviderWorkerCommandResult:
         if target_contract != "AssistantFinalResponse":
             return self._error_result(
@@ -631,6 +642,7 @@ class ProviderWorkerController:
                         provider_name=provider_name,
                         lmstudio_responses_api_key=lmstudio_responses_api_key,
                         litellm_api_key=litellm_api_key,
+                        openrouter_api_key=openrouter_api_key,
                         base_url=base_url,
                         provider_mode=provider_mode,
                         timeout_seconds=timeout_seconds,
@@ -700,6 +712,7 @@ def _provider_runtime_config(
     timeout_seconds: float | None = None,
     lmstudio_responses_api_key: str | None = None,
     litellm_api_key: str | None = None,
+    openrouter_api_key: str | None = None,
 ) -> ProviderRuntimeConfig:
     if provider_name == "fake":
         return ProviderRuntimeConfig(provider_name=provider_name)
@@ -707,6 +720,7 @@ def _provider_runtime_config(
         provider_name=provider_name,
         lmstudio_responses_api_key=lmstudio_responses_api_key,
         litellm_api_key=litellm_api_key,
+        openrouter_api_key=openrouter_api_key,
         base_url=base_url,
         provider_mode=provider_mode,
         timeout_seconds=timeout_seconds,

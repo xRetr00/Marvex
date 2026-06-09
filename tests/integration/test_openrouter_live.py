@@ -46,16 +46,15 @@ def _openrouter_api_key() -> str | None:
 
 
 @pytest.mark.live
-def test_litellm_openrouter_live_responses_smoke() -> None:
+def test_openrouter_provider_live_responses_smoke() -> None:
     api_key = _openrouter_api_key()
     if api_key is None:
         pytest.skip("set MARVEX_OPENROUTER_API_KEY or OPENROUTER_API_KEY for live OpenRouter smoke")
 
     provider = create_provider(
         ProviderRuntimeConfig(
-            provider_name="litellm",
-            litellm_api_key=api_key,
-            provider_mode="litellm_openrouter",
+            provider_name="openrouter",
+            openrouter_api_key=api_key,
             timeout_seconds=45,
         )
     )

@@ -723,6 +723,8 @@ class _ProviderWorkerProcessProvider:
                 out["lmstudio_responses_api_key"] = self._provider_secret
             elif self._provider_name == "litellm":
                 out["litellm_api_key"] = self._provider_secret
+            elif self._provider_name == "openrouter":
+                out["openrouter_api_key"] = self._provider_secret
         return out
 
     def send(self, request: ProviderRequest) -> ProviderResponse:
@@ -831,6 +833,8 @@ class _ProviderWorkerProcessProvider:
                 payload["lmstudio_responses_api_key"] = self._provider_secret
             elif self._provider_name == "litellm":
                 payload["litellm_api_key"] = self._provider_secret
+            elif self._provider_name == "openrouter":
+                payload["openrouter_api_key"] = self._provider_secret
         result = self._worker_client.request(payload, timeout_seconds=self._timeout_seconds)
         if not isinstance(result, dict) or result.get("ok") is not True:
             raise RuntimeError(f"ProviderWorker {command} failed.")
@@ -870,6 +874,8 @@ class _ProviderWorkerProcessProvider:
                 command["lmstudio_responses_api_key"] = self._provider_secret
             elif self._provider_name == "litellm":
                 command["litellm_api_key"] = self._provider_secret
+            elif self._provider_name == "openrouter":
+                command["openrouter_api_key"] = self._provider_secret
         try:
             payload = self._worker_client.request(
                 command,
@@ -1289,7 +1295,7 @@ class _CoreServiceProviderWorkerTurnExecutor:
                     ProviderCandidate(
                         provider_id=provider_name,
                         model=model,
-                        supports_tools=provider_name in {"litellm", "lmstudio_responses", "provider_worker"},
+                        supports_tools=provider_name in {"litellm", "lmstudio_responses", "openrouter", "provider_worker"},
                         context_length=self._model_context_window or 4096,
                         locality="local",
                         healthy=True,
