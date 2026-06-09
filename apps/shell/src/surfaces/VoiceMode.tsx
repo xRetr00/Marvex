@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ButtonHTMLAttributes, ReactNode, CSSProperties } from "react";
-import { Download, Mic, MicOff, Play, Radio, RefreshCw, Volume2 } from "lucide-react";
+import { Download, Mic, MicOff, Play, Radio, RefreshCw, SlidersHorizontal, Volume2 } from "lucide-react";
 import {
+  configureVoiceWorkerTtsControls,
   downloadVoiceModelGroup,
   fetchVoiceModelCatalog,
   fetchVoiceWorkerStatus,
@@ -84,11 +85,16 @@ export function VoiceMode() {
     return optionList(catalog.filter((asset) => asset.model_kind === "stt").map((asset) => asset.model_id), status?.active_stt_backend_id ?? "moonshine-v2");
   }, [catalog, status?.active_stt_backend_id]);
   const ttsOptions = useMemo(() => {
-    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.backend_id), status?.active_tts_backend_id ?? "kokoro-onnx");
+    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.backend_id), status?.active_tts_backend_id ?? "supertonic-v2");
   }, [catalog, status?.active_tts_backend_id]);
   const voiceOptions = useMemo(() => {
-    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.model_id), status?.active_voice_id ?? "af_heart");
-  }, [catalog, status?.active_voice_id]);
+    if ((status?.active_tts_backend_id ?? "supertonic-v2") === "supertonic-v2") {
+      return optionList(SUPERTONIC_VOICES, status?.active_voice_id ?? "M1");
+    }
+    return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.model_id), status?.active_voice_id ?? "M1");
+  }, [catalog, status?.active_tts_backend_id, status?.active_voice_id]);
+  const ttsSpeed = status?.active_tts_speed ?? 1.05;
+  const ttsQualitySteps = status?.active_tts_quality_steps ?? 8;
 
   const run = async (label: string, action: () => Promise<unknown>) => {
     setBusy(label);
@@ -145,8 +151,14 @@ export function VoiceMode() {
 
       <section style={gridStyle}>
         <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
-        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "kokoro-onnx"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
-        <SelectField label="Voice" value={status?.active_voice_id ?? "af_heart"} options={voiceOptions} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
+        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "supertonic-v2"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
+        <SelectField label="Voice" value={status?.active_voice_id ?? "M1"} options={voiceOptions} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
+        <TtsControlField
+          speed={ttsSpeed}
+          qualitySteps={ttsQualitySteps}
+          busy={Boolean(busy)}
+          onApply={(next) => void run("Update TTS controls", () => configureVoiceWorkerTtsControls({ ...next, language: status?.active_tts_language ?? "en" }))}
+        />
       </section>
 
       <section style={gridStyle}>
@@ -243,6 +255,22 @@ function SelectField({ label, value, options, onChange }: { label: string; value
   );
 }
 
+function TtsControlField({ speed, qualitySteps, busy, onApply }: { speed: number; qualitySteps: number; busy: boolean; onApply: (next: { speed: number; qualitySteps: number }) => void }) {
+  return (
+    <div style={{ ...panelStyle, gap: 10, display: "flex", flexDirection: "column" }}>
+      <span style={{ color: "var(--muted-foreground)", fontSize: 12, fontWeight: 650, display: "inline-flex", alignItems: "center", gap: 6 }}><SlidersHorizontal size={14} /> TTS controls</span>
+      <label style={controlLabelStyle}>
+        <span>Speed {speed.toFixed(2)}</span>
+        <input aria-label="TTS speed" disabled={busy} type="range" min={0.7} max={2} step={0.05} value={speed} onChange={(event) => onApply({ speed: Number(event.currentTarget.value), qualitySteps })} />
+      </label>
+      <label style={controlLabelStyle}>
+        <span>Quality {qualitySteps}</span>
+        <input aria-label="TTS quality" disabled={busy} type="range" min={5} max={12} step={1} value={qualitySteps} onChange={(event) => onApply({ speed, qualitySteps: Number(event.currentTarget.value) })} />
+      </label>
+    </div>
+  );
+}
+
 function optionList(values: Array<string | undefined>, active: string): Array<{ id: string; label: string }> {
   const ids = new Set<string>();
   if (active) ids.add(active);
@@ -252,6 +280,8 @@ function optionList(values: Array<string | undefined>, active: string): Array<{ 
   }
   return [...ids].map((id) => ({ id, label: id }));
 }
+
+const SUPERTONIC_VOICES = ["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"];
 
 function catalogTargetsFor(
   required: Record<string, unknown>,
@@ -306,6 +336,15 @@ const selectStyle: CSSProperties = {
   background: "var(--secondary)",
   color: "var(--foreground)",
   padding: "0 10px",
+};
+
+const controlLabelStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "72px minmax(0, 1fr)",
+  alignItems: "center",
+  gap: 10,
+  fontSize: 12,
+  color: "var(--foreground)",
 };
 
 const iconButtonStyle: CSSProperties = {

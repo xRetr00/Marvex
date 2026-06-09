@@ -426,15 +426,15 @@ export function VoiceRuntimeView() {
     queryClient.invalidateQueries({ queryKey: ["voice-worker-wakeword-supervisor"] });
   };
   const stt = useMutation({ mutationFn: () => selectVoiceStt({ main_backend_id: "moonshine-v2", fallback_backend_id: "sensevoice-small" }), onSuccess: refresh });
-  const tts = useMutation({ mutationFn: () => selectVoiceTts({ main_backend_id: "kokoro-onnx", fallback_backend_id: "piper-tts", active_voice_id: "af_heart" }), onSuccess: refresh });
+  const tts = useMutation({ mutationFn: () => selectVoiceTts({ main_backend_id: "supertonic-v2", fallback_backend_id: "piper-tts", active_voice_id: "M1" }), onSuccess: refresh });
   const wakeword = useMutation({ mutationFn: () => updateWakeword(true), onSuccess: refresh });
   const vad = useMutation({ mutationFn: updateVoiceVad, onSuccess: refresh });
   const bargeIn = useMutation({ mutationFn: updateVoiceBargeIn, onSuccess: refresh });
   const earlySpeech = useMutation({ mutationFn: updateVoiceEarlySpeech, onSuccess: refresh });
   const personality = useMutation({ mutationFn: updateVoicePersonality, onSuccess: refresh });
   const retention = useMutation({ mutationFn: updateVoiceRetention, onSuccess: refresh });
-  const download = useMutation({ mutationFn: () => downloadVoiceModel({ model_id: "af_heart", backend_id: "kokoro-onnx", model_kind: "tts_voice", source_uri: "local://voices/af_heart" }), onSuccess: refresh });
-  const remove = useMutation({ mutationFn: () => removeVoiceModel({ model_id: "af_heart", model_kind: "tts_voice" }), onSuccess: refresh });
+  const download = useMutation({ mutationFn: () => downloadVoiceModel({ model_id: "supertonic-v2", backend_id: "supertonic-v2", model_kind: "tts_voice", source_uri: "local://voices/supertonic-v2" }), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: () => removeVoiceModel({ model_id: "supertonic-v2", model_kind: "tts_voice" }), onSuccess: refresh });
   const sttTest = useMutation({ mutationFn: testVoiceStt });
   const ttsTest = useMutation({ mutationFn: testVoiceTts });
   const workerStart = useMutation({ mutationFn: startVoiceWorker, onSuccess: refreshWorker });
@@ -454,8 +454,8 @@ export function VoiceRuntimeView() {
   const workerStt = useMutation({ mutationFn: testVoiceWorkerStt, onSuccess: refreshWorker });
   const workerTts = useMutation({ mutationFn: testVoiceWorkerTts, onSuccess: refreshWorker });
   const workerSwitchStt = useMutation({ mutationFn: () => switchVoiceWorkerSttBackend({ backend_id: "moonshine-v2" }), onSuccess: refreshWorker });
-  const workerSwitchTts = useMutation({ mutationFn: () => switchVoiceWorkerTtsBackend({ backend_id: "kokoro-onnx" }), onSuccess: refreshWorker });
-  const workerSwitchVoice = useMutation({ mutationFn: () => switchVoiceWorkerActiveVoice({ voice_id: "af_heart" }), onSuccess: refreshWorker });
+  const workerSwitchTts = useMutation({ mutationFn: () => switchVoiceWorkerTtsBackend({ backend_id: "supertonic-v2" }), onSuccess: refreshWorker });
+  const workerSwitchVoice = useMutation({ mutationFn: () => switchVoiceWorkerActiveVoice({ voice_id: "M1" }), onSuccess: refreshWorker });
   const workerInstallWakeword = useMutation({ mutationFn: () => installVoiceWorkerModel({ model_id: "hey-marvex", backend_id: "sherpa-onnx-kws", model_kind: "wakeword", relative_path: "wakeword/hey-marvex" }), onSuccess: refreshWorker });
   const workerRemoveWakeword = useMutation({ mutationFn: () => removeVoiceWorkerModel({ model_id: "hey-marvex" }), onSuccess: refreshWorker });
   if (query.isLoading) return <InlineState message="Loading voice runtime controls..." />;
@@ -514,15 +514,15 @@ export function VoiceRuntimeView() {
         <CardHeader><CardTitle>Voice Runtime</CardTitle></CardHeader>
         <CardContent className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
           <Button variant="outline" onClick={() => stt.mutate()}><Mic className="mr-2" size={16} />Use Moonshine / SenseVoice</Button>
-          <Button variant="outline" onClick={() => tts.mutate()}><Volume2 className="mr-2" size={16} />Use Kokoro / Piper</Button>
+          <Button variant="outline" onClick={() => tts.mutate()}><Volume2 className="mr-2" size={16} />Use Supertonic / Piper</Button>
           <Button variant="outline" onClick={() => wakeword.mutate()}><Mic className="mr-2" size={16} />Enable Hey Marvex</Button>
           <Button variant="outline" onClick={() => vad.mutate()}>Set VAD</Button>
           <Button variant="outline" onClick={() => bargeIn.mutate()}>Set Barge-In</Button>
           <Button variant="outline" onClick={() => earlySpeech.mutate()}>Set Early Speech</Button>
           <Button variant="outline" onClick={() => personality.mutate()}>Set Personality</Button>
           <Button variant="outline" onClick={() => retention.mutate()}>Set Retention</Button>
-          <Button variant="outline" onClick={() => download.mutate()}>Install af_heart</Button>
-          <Button variant="outline" onClick={() => remove.mutate()}><Trash2 className="mr-2" size={16} />Remove af_heart</Button>
+          <Button variant="outline" onClick={() => download.mutate()}>Install Supertonic V2</Button>
+          <Button variant="outline" onClick={() => remove.mutate()}><Trash2 className="mr-2" size={16} />Remove Supertonic V2</Button>
           <Button variant="outline" onClick={() => sttTest.mutate()}>Test STT</Button>
           <Button variant="outline" onClick={() => ttsTest.mutate()}>Test TTS</Button>
         </CardContent>

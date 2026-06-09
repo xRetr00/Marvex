@@ -539,7 +539,7 @@ fn resource_env_paths(
     }
     // The voice asset root must be WRITABLE: the bundled STT + wakeword models
     // ship read-only in the resource dir and are seeded into this root, while the
-    // remaining models (Kokoro TTS, etc.) are downloaded into it at runtime via
+    // remaining models (Supertonic TTS, etc.) are downloaded into it at runtime via
     // the manifest. So always resolve to a writable location, then seed the
     // bundled assets into it without clobbering anything already downloaded.
     let bundled_voice_assets = resource_dir

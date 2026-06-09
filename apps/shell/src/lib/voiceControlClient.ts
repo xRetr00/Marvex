@@ -26,10 +26,11 @@ export type VoiceWorkerStatus = {
   active_stt_backend_id: string;
   active_tts_backend_id: string;
   active_voice_id: string;
+  active_tts_speed?: number;
+  active_tts_quality_steps?: number;
+  active_tts_language?: string;
   wakeword_status: string;
   effective_wakeword_backend_id?: string;
-  wake_reference_count?: number;
-  local_wake_available?: boolean;
   model_assets?: {
     installed?: Array<Record<string, unknown>>;
     installed_count?: number;
@@ -79,8 +80,13 @@ export function testVoiceWorkerStt(): Promise<VoiceWorkerStatus> {
   return controlRequest("/voice/worker/test-stt", "POST", {}) as Promise<VoiceWorkerStatus>;
 }
 
-export function testVoiceWorkerTts(text = "Voice test."): Promise<VoiceWorkerStatus> {
-  return controlRequest("/voice/worker/test-tts", "POST", { text }) as Promise<VoiceWorkerStatus>;
+export function testVoiceWorkerTts(text = "Voice test.", options?: { speed?: number; qualitySteps?: number; language?: string }): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/test-tts", "POST", {
+    text,
+    speed: options?.speed,
+    quality_steps: options?.qualitySteps,
+    language: options?.language
+  }) as Promise<VoiceWorkerStatus>;
 }
 
 export function switchVoiceWorkerStt(backendId: string): Promise<VoiceWorkerStatus> {
@@ -93,6 +99,14 @@ export function switchVoiceWorkerTts(backendId: string): Promise<VoiceWorkerStat
 
 export function switchVoiceWorkerVoice(voiceId: string): Promise<VoiceWorkerStatus> {
   return controlRequest("/voice/worker/voice/switch", "POST", { voice_id: voiceId }) as Promise<VoiceWorkerStatus>;
+}
+
+export function configureVoiceWorkerTtsControls(options: { speed: number; qualitySteps: number; language?: string }): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/tts/configure", "POST", {
+    speed: options.speed,
+    quality_steps: options.qualitySteps,
+    language: options.language
+  }) as Promise<VoiceWorkerStatus>;
 }
 
 /** Speak an assistant reply through the worker's active TTS (closes the voice loop). */
@@ -108,16 +122,6 @@ export function speakVoiceWorker(text: string, options?: { bargeIn?: boolean }):
  */
 export function listenVoiceWorker(): Promise<VoiceWorkerStatus> {
   return controlRequest("/voice/worker/listen", "POST", {}) as Promise<VoiceWorkerStatus>;
-}
-
-/**
- * Record one "Hey Marvex" reference sample for the local-wake backend (in-app
- * enrollment). Call 4-6 times; each VAD-endpoints one utterance and saves a
- * reference WAV. The worker returns the saved path + running reference count in
- * the latest event summary.
- */
-export function recordWakeReference(phrase = "Hey Marvex"): Promise<VoiceWorkerStatus> {
-  return controlRequest("/voice/worker/record-wake-reference", "POST", { phrase }) as Promise<VoiceWorkerStatus>;
 }
 
 /**

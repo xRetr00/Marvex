@@ -254,7 +254,7 @@ export async function testVoiceStt() {
 }
 
 export async function testVoiceTts() {
-  return voiceActionSchema.parse(await readJson("/voice/test-tts", { method: "POST", body: JSON.stringify({ test_id: "control-plane-tts", backend_id: "kokoro-onnx", phrase: "Testing voice." }) }));
+  return voiceActionSchema.parse(await readJson("/voice/test-tts", { method: "POST", body: JSON.stringify({ test_id: "control-plane-tts", backend_id: "supertonic-v2", phrase: "Testing voice." }) }));
 }
 
 export async function fetchVoiceWorkerStatus() {

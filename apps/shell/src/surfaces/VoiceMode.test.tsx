@@ -9,21 +9,24 @@ const status = {
   lifecycle_state: "stopped",
   process_started: false,
   active_stt_backend_id: "moonshine-v2",
-  active_tts_backend_id: "kokoro-onnx",
-  active_voice_id: "af_heart",
+  active_tts_backend_id: "supertonic-v2",
+  active_voice_id: "M1",
+  active_tts_speed: 1.05,
+  active_tts_quality_steps: 8,
+  active_tts_language: "en",
   wakeword_status: "enabled",
   model_assets: {
     installed: [],
     installed_count: 0,
     required: [
       { model_id: "moonshine-v2", backend_id: "moonshine-v2", model_kind: "stt", status: "not_installed", exact_blocker: "model_path_not_found_under_voice_asset_root" },
-      { model_id: "kokoro-af-heart", backend_id: "kokoro-onnx", model_kind: "tts_voice", status: "not_installed", exact_blocker: "model_path_not_found_under_voice_asset_root" }
+      { model_id: "supertonic-v2", backend_id: "supertonic-v2", model_kind: "tts_voice", status: "not_installed", exact_blocker: "model_path_not_found_under_voice_asset_root" }
     ],
     required_ready_count: 0,
     required_blocked_count: 2
   },
   stt_backend_status: { status: "not_ready", exact_blocker: "model_asset_missing_manual_install_required" },
-  tts_backend_status: { status: "not_ready", exact_blocker: "kokoro_voice_asset_missing_manual_install_required" },
+  tts_backend_status: { status: "not_ready", exact_blocker: "model_asset_missing_manual_install_required" },
   wakeword_model_status: { readiness_status: "not_ready", readiness_blocker: "model_asset_missing_manual_install_required" }
 };
 
@@ -62,6 +65,16 @@ const catalog = {
       explicit_user_triggered: true
     },
     {
+      model_id: "supertonic-v2",
+      backend_id: "supertonic-v2",
+      model_kind: "tts_voice",
+      relative_path: "tts/supertonic-v2/config.json",
+      source_uri: "https://huggingface.co/Supertone/supertonic-2/resolve/main/config.json",
+      extract: false,
+      required: true,
+      explicit_user_triggered: true
+    },
+    {
       model_id: "piper-en-us",
       backend_id: "piper-tts",
       model_kind: "tts_voice",
@@ -85,6 +98,7 @@ vi.mock("@/lib/voiceControlClient", () => ({
   switchVoiceWorkerStt: vi.fn(async () => status),
   switchVoiceWorkerTts: vi.fn(async () => status),
   switchVoiceWorkerVoice: vi.fn(async () => status),
+  configureVoiceWorkerTtsControls: vi.fn(async () => status),
   downloadVoiceModel: vi.fn(async () => ({ status: "installed" })),
   downloadVoiceModelGroup: vi.fn(async (_assets, onProgress) => {
     onProgress?.({ asset: catalog.assets[0], completed: 1, total: 2 });
@@ -104,18 +118,24 @@ describe("VoiceMode", () => {
     expect(await screen.findByText("Voice control deck")).toBeInTheDocument();
     expect(await screen.findByText("Model asset cards")).toBeInTheDocument();
     expect(screen.getByLabelText("STT model")).toHaveValue("moonshine-v2");
-    expect(screen.getByLabelText("TTS library")).toHaveValue("kokoro-onnx");
-    expect(screen.getByLabelText("Voice")).toHaveValue("af_heart");
+    expect(screen.getByLabelText("TTS library")).toHaveValue("supertonic-v2");
+    expect(screen.getByLabelText("Voice")).toHaveValue("M1");
+    expect(screen.getByLabelText("TTS speed")).toHaveValue("1.05");
+    expect(screen.getByLabelText("TTS quality")).toHaveValue("8");
     expect(screen.getByRole("option", { name: "whisper-large-v3" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "piper-tts" })).toBeInTheDocument();
-    expect(screen.getByRole("option", { name: "piper-en-us" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Download piper-en-us" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "F3" })).toBeInTheDocument();
     expect(screen.getAllByText("moonshine-v2").length).toBeGreaterThan(0);
-    expect(screen.getByText("kokoro-af-heart")).toBeInTheDocument();
+    expect(screen.getAllByText("supertonic-v2").length).toBeGreaterThan(0);
 
     await user.selectOptions(screen.getByLabelText("TTS library"), "piper-tts");
+    await user.selectOptions(screen.getByLabelText("Voice"), "F3");
+    await user.click(screen.getByLabelText("TTS quality"));
     await user.click(screen.getByRole("button", { name: "Download moonshine-v2" }));
 
     await waitFor(() => expect(voiceClient.switchVoiceWorkerTts).toHaveBeenCalledWith("piper-tts"));
+    await waitFor(() => expect(voiceClient.switchVoiceWorkerVoice).toHaveBeenCalledWith("F3"));
     await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets.filter((asset) => asset.model_id === "moonshine-v2"), expect.any(Function)));
     expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });

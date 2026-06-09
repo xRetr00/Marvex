@@ -15,7 +15,7 @@ describe("shell command bridge", () => {
     await submitChatTurn("hello", {
       agent_profile_id: "agent.deep_search",
       persona_profile_id: "persona.marvex.female",
-      selected_voice_id: "af_heart"
+      selected_voice_id: "M1"
     });
 
     expect(mockedInvoke).toHaveBeenCalledWith("submit_chat_turn", {
@@ -23,7 +23,7 @@ describe("shell command bridge", () => {
       metadata: {
         agent_profile_id: "agent.deep_search",
         persona_profile_id: "persona.marvex.female",
-        selected_voice_id: "af_heart"
+        selected_voice_id: "M1"
       },
       previousResponseId: undefined
     });

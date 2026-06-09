@@ -26,7 +26,6 @@ import { MarvexChatShell, type MarvexChatClarification } from "@/components/chat
 import { Status, StatusIndicator, StatusLabel } from "@/components/status-for-ui/status";
 import { StartupScreen } from "@/components/marvex/StartupScreen";
 import { StatusView } from "@/components/marvex/StatusView";
-import { WakeEnrollment } from "@/components/marvex/WakeEnrollment";
 import { LogsView } from "@/components/marvex/LogsView";
 import { VoiceMode } from "./VoiceMode";
 import { ControlPlaneSettings } from "./ControlPlaneSettings";
@@ -1038,8 +1037,6 @@ export function ChatApp() {
             )}
             {activeTab === "voice" && (
               <div style={{ flex: 1, overflow: "auto", padding: 20, display: "flex", flexDirection: "column", gap: 24 }}>
-                <WakeEnrollment />
-                <div style={{ height: 1, background: "var(--border)" }} />
                 <VoiceMode
                 />
               </div>

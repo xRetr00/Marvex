@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { controlRequest } from "./shellCommands";
-import { downloadVoiceModel, downloadVoiceModelGroup, fetchVoiceModelCatalog, switchVoiceWorkerStt, switchVoiceWorkerTts, switchVoiceWorkerVoice } from "./voiceControlClient";
+import { configureVoiceWorkerTtsControls, downloadVoiceModel, downloadVoiceModelGroup, fetchVoiceModelCatalog, switchVoiceWorkerStt, switchVoiceWorkerTts, switchVoiceWorkerVoice, testVoiceWorkerTts } from "./voiceControlClient";
 
 vi.mock("./shellCommands", () => ({
   controlRequest: vi.fn(async () => ({ ok: true }))
@@ -12,8 +12,10 @@ describe("voice control client", () => {
   it("calls worker endpoints for selectors and explicit downloads", async () => {
     await fetchVoiceModelCatalog();
     await switchVoiceWorkerStt("moonshine-v2");
-    await switchVoiceWorkerTts("kokoro-onnx");
-    await switchVoiceWorkerVoice("af_heart");
+    await switchVoiceWorkerTts("supertonic-v2");
+    await switchVoiceWorkerVoice("M1");
+    await configureVoiceWorkerTtsControls({ speed: 1.1, qualitySteps: 10, language: "en" });
+    await testVoiceWorkerTts("Voice test.", { speed: 1.1, qualitySteps: 10, language: "en" });
     await downloadVoiceModel({
       model_id: "hey-marvex",
       backend_id: "sherpa-onnx-kws",
@@ -26,8 +28,10 @@ describe("voice control client", () => {
 
     expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/models/catalog", "GET");
     expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/stt/switch", "POST", { backend_id: "moonshine-v2" });
-    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/tts/switch", "POST", { backend_id: "kokoro-onnx" });
-    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/voice/switch", "POST", { voice_id: "af_heart" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/tts/switch", "POST", { backend_id: "supertonic-v2" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/voice/switch", "POST", { voice_id: "M1" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/tts/configure", "POST", { speed: 1.1, quality_steps: 10, language: "en" });
+    expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/test-tts", "POST", { text: "Voice test.", speed: 1.1, quality_steps: 10, language: "en" });
     expect(mockedControlRequest).toHaveBeenCalledWith("/voice/worker/models/download", "POST", {
       model_id: "hey-marvex",
       backend_id: "sherpa-onnx-kws",
