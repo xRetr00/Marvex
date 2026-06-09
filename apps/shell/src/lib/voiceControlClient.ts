@@ -23,6 +23,15 @@ export type VoiceWorkerStatus = {
   schema_version: string;
   lifecycle_state: string;
   process_started: boolean;
+  config?: {
+    audio?: {
+      input_device_id?: string | null;
+      output_device_id?: string | null;
+      sample_rate?: number;
+      channel_count?: number;
+      frame_duration_ms?: number;
+    };
+  };
   active_stt_backend_id: string;
   active_tts_backend_id: string;
   active_voice_id: string;
@@ -44,6 +53,28 @@ export type VoiceWorkerStatus = {
   recent_events?: Array<Record<string, unknown>>;
 };
 
+export type VoiceAudioDevice = {
+  device_id: string;
+  label: string;
+  host_api?: string;
+  max_input_channels?: number;
+  max_output_channels?: number;
+  default_sample_rate?: number;
+  is_input?: boolean;
+  is_output?: boolean;
+  is_default_input?: boolean;
+  is_default_output?: boolean;
+};
+
+export type VoiceWorkerDevices = {
+  schema_version: string;
+  input_devices: VoiceAudioDevice[];
+  output_devices: VoiceAudioDevice[];
+  selected_input_device_id?: string | null;
+  selected_output_device_id?: string | null;
+  raw_audio_persisted?: false;
+};
+
 export type VoiceModelCatalog = {
   schema_version: string;
   assets: VoiceModelCatalogAsset[];
@@ -62,6 +93,10 @@ export function fetchVoiceWorkerStatus(): Promise<VoiceWorkerStatus> {
 
 export function fetchVoiceWorkerAssets(): Promise<VoiceWorkerStatus["model_assets"]> {
   return controlRequest("/voice/worker/assets", "GET") as Promise<VoiceWorkerStatus["model_assets"]>;
+}
+
+export function fetchVoiceWorkerDevices(): Promise<VoiceWorkerDevices> {
+  return controlRequest("/voice/worker/devices", "GET") as Promise<VoiceWorkerDevices>;
 }
 
 export function fetchVoiceModelCatalog(): Promise<VoiceModelCatalog> {
@@ -107,6 +142,17 @@ export function configureVoiceWorkerTtsControls(options: { speed: number; qualit
     quality_steps: options.qualitySteps,
     language: options.language
   }) as Promise<VoiceWorkerStatus>;
+}
+
+export function reloadVoiceWorkerConfig(options: { inputDeviceId?: string | null; outputDeviceId?: string | null }): Promise<VoiceWorkerStatus> {
+  const body: Record<string, unknown> = {};
+  if ("inputDeviceId" in options) body.input_device_id = options.inputDeviceId;
+  if ("outputDeviceId" in options) body.output_device_id = options.outputDeviceId;
+  return controlRequest("/voice/worker/reload-config", "POST", body) as Promise<VoiceWorkerStatus>;
+}
+
+export function testVoiceWorkerMic(deviceId?: string | null): Promise<VoiceWorkerStatus> {
+  return controlRequest("/voice/worker/test-mic", "POST", { device_id: deviceId ?? undefined }) as Promise<VoiceWorkerStatus>;
 }
 
 /** Speak an assistant reply through the worker's active TTS (closes the voice loop). */
@@ -185,6 +231,21 @@ export function partialTranscriptFromStatus(status: VoiceWorkerStatus | null | u
       const text = summary && typeof summary.partial_transcript_text === "string" ? summary.partial_transcript_text.trim() : "";
       return text || null;
     }
+  }
+  return null;
+}
+
+export function wakeDetectionFromStatus(status: VoiceWorkerStatus | null | undefined): { eventId: string; confidence?: number } | null {
+  const events = (status as { recent_events?: Array<Record<string, unknown>> } | null | undefined)?.recent_events;
+  if (!Array.isArray(events)) return null;
+  for (let i = events.length - 1; i >= 0; i -= 1) {
+    const event = events[i];
+    if (!event || typeof event !== "object") continue;
+    if ((event as { event_type?: unknown }).event_type !== "wakeword_detected") continue;
+    const summary = (event as { summary?: Record<string, unknown> }).summary;
+    const rawConfidence = summary?.confidence;
+    const confidence = typeof rawConfidence === "number" ? rawConfidence : undefined;
+    return { eventId: String((event as { event_id?: unknown }).event_id ?? ""), confidence };
   }
   return null;
 }

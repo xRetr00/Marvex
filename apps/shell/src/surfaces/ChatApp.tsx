@@ -11,7 +11,7 @@ import { providerResponseIdFromTurnResult } from "@/lib/turnResultHelpers";
 import { deleteCachedSession, estimateSessionTokens, loadCachedMessages, renameCachedSession, saveCachedMessages, rememberSession, listCachedSessions, type SessionMeta, type StoredMessage } from "@/lib/sessionStore";
 import { fetchProviders, refreshProviderModels, selectProviderModel, selectProviderReasoningEffort, type ProviderCatalog, type ProviderRow } from "@/lib/providerControlClient";
 import { useBackendStatus, type WakewordState } from "@/lib/backendStatus";
-import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
+import { fetchVoiceWorkerStatus, speakVoiceWorker, listenVoiceWorker, startVoiceWorker, transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus, wakeDetectionFromStatus, type VoiceWorkerStatus } from "@/lib/voiceControlClient";
 import { runVoiceTurnWithSpeech } from "@/lib/voiceTurnSpeech";
 import { voiceProgressSpeech, pickListeningCue } from "@/lib/voiceFillers";
 import { activityLabel, type ActivityStep } from "@/lib/activityLabels";
@@ -188,6 +188,7 @@ export function ChatApp() {
   const voiceListenPendingRef = useRef(false);
   const voiceCaptureTargetRef = useRef<VoiceCaptureTarget | null>(null);
   const manualVoiceCuePlayedRef = useRef(false);
+  const lastWakeCueEventRef = useRef("");
   const voiceSessionGenerationRef = useRef(0);
   const ignoreNextVoiceTranscriptRef = useRef(false);
   const requestVoiceListenRef = useRef<(withCue?: boolean, generation?: number) => void>(() => undefined);
@@ -768,6 +769,13 @@ export function ChatApp() {
           if (cancelled) return;
           const transcript = transcriptFromStatus(status);
           if (!transcript) {
+            const wake = wakeDetectionFromStatus(status);
+            if (wake?.eventId && wake.eventId !== lastWakeCueEventRef.current) {
+              lastWakeCueEventRef.current = wake.eventId;
+              const cue = randomListeningCue();
+              setVoiceSessionCue(cue);
+              void speakVoiceWorker(cue, { bargeIn: false }).catch(() => undefined);
+            }
             // Preview the live streaming partial in the composer so the user sees
             // their words appear while speaking. Only overwrite our own preview
             // (or an empty box) so typed text is never clobbered.
@@ -1161,14 +1169,9 @@ const miniSessionBtn: React.CSSProperties = {
 };
 
 function WakewordBadge({ state }: { state: WakewordState }) {
-  const map: Record<WakewordState, { label: string; color: string }> = {
-    running: { label: "Hey Marvex • on", color: "#34d399" },
-    enabled: { label: "Hey Marvex • on", color: "#34d399" },
-    not_ready: { label: "Wake word • setup", color: "#f59e0b" },
-    disabled: { label: "Wake word • off", color: "#9ca3af" },
-    unknown: { label: "Wake word • …", color: "#9ca3af" },
-  };
-  const { label, color } = map[state];
+  const awake = state === "running" || state === "enabled";
+  const label = awake ? "Wake word • Awake" : "Wake word • Dormant";
+  const color = awake ? "#34d399" : "#9ca3af";
   return (
     <span title="Wake word engine status" style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 11, padding: "4px 9px", borderRadius: 999, border: "1px solid var(--border)", background: "var(--secondary)", color: "var(--foreground)" }}>
       <Ear size={12} style={{ color }} />

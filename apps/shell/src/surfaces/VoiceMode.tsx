@@ -5,15 +5,19 @@ import {
   configureVoiceWorkerTtsControls,
   downloadVoiceModelGroup,
   fetchVoiceModelCatalog,
+  fetchVoiceWorkerDevices,
   fetchVoiceWorkerStatus,
+  reloadVoiceWorkerConfig,
   startVoiceWorker,
   stopVoiceWorker,
   switchVoiceWorkerStt,
   switchVoiceWorkerTts,
   switchVoiceWorkerVoice,
+  testVoiceWorkerMic,
   testVoiceWorkerStt,
   testVoiceWorkerTts,
   type VoiceModelCatalogAsset,
+  type VoiceWorkerDevices,
   type VoiceWorkerStatus
 } from "@/lib/voiceControlClient";
 
@@ -26,25 +30,28 @@ type ModelDownloadState = {
 
 export function VoiceMode() {
   const [status, setStatus] = useState<VoiceWorkerStatus | null>(null);
+  const [devices, setDevices] = useState<VoiceWorkerDevices | null>(null);
   const [catalog, setCatalog] = useState<VoiceModelCatalogAsset[]>([]);
   const [busy, setBusy] = useState<string | null>(null);
   const [downloads, setDownloads] = useState<Record<string, ModelDownloadState>>({});
   const [message, setMessage] = useState("Loading voice worker...");
 
   const load = async () => {
-    const [nextStatus, nextCatalog] = await Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog()]);
+    const [nextStatus, nextCatalog, nextDevices] = await Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog(), fetchVoiceWorkerDevices()]);
     setStatus(nextStatus);
     setCatalog(nextCatalog.assets ?? []);
+    setDevices(nextDevices);
     setMessage("Voice worker control is connected.");
   };
 
   useEffect(() => {
     let cancelled = false;
-    void Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog()])
-      .then(([nextStatus, nextCatalog]) => {
+    void Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog(), fetchVoiceWorkerDevices()])
+      .then(([nextStatus, nextCatalog, nextDevices]) => {
         if (cancelled) return;
         setStatus(nextStatus);
         setCatalog(nextCatalog.assets ?? []);
+        setDevices(nextDevices);
         setMessage("Voice worker control is connected.");
       })
       .catch(() => {
@@ -95,6 +102,19 @@ export function VoiceMode() {
   }, [catalog, status?.active_tts_backend_id, status?.active_voice_id]);
   const ttsSpeed = status?.active_tts_speed ?? 1.05;
   const ttsQualitySteps = status?.active_tts_quality_steps ?? 8;
+  const inputDeviceOptions = useMemo(() => {
+    const inputs = devices?.input_devices ?? [];
+    return inputs.map((device) => ({ id: device.device_id, label: device.is_default_input ? `${device.label}` : device.label }));
+  }, [devices]);
+  const selectedInputDeviceId = useMemo(() => {
+    return (
+      devices?.selected_input_device_id
+      ?? status?.config?.audio?.input_device_id
+      ?? devices?.input_devices.find((device) => device.is_default_input)?.device_id
+      ?? devices?.input_devices[0]?.device_id
+      ?? ""
+    );
+  }, [devices, status?.config?.audio?.input_device_id]);
 
   const run = async (label: string, action: () => Promise<unknown>) => {
     setBusy(label);
@@ -131,6 +151,23 @@ export function VoiceMode() {
     }
   };
 
+  const runMicTest = async () => {
+    const label = "Test mic";
+    setBusy(label);
+    try {
+      const nextStatus = await testVoiceWorkerMic(selectedInputDeviceId || undefined);
+      await load();
+      const summary = latestEventSummary(nextStatus, "mic_started");
+      const rms = numberSummary(summary?.rms_level);
+      const peak = numberSummary(summary?.peak_level);
+      setMessage(rms !== null && peak !== null ? `Mic level RMS ${rms.toFixed(2)}, peak ${peak.toFixed(2)}.` : "Test mic requested.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : `${label} failed.`);
+    } finally {
+      setBusy(null);
+    }
+  };
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16, maxWidth: 920 }}>
       <section style={panelStyle}>
@@ -153,6 +190,7 @@ export function VoiceMode() {
         <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
         <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "supertonic-v2"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
         <SelectField label="Voice" value={status?.active_voice_id ?? "M1"} options={voiceOptions} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
+        <SelectField label="Input microphone" value={selectedInputDeviceId} options={inputDeviceOptions} onChange={(value) => void run("Select input microphone", () => reloadVoiceWorkerConfig({ inputDeviceId: value }))} />
         <TtsControlField
           speed={ttsSpeed}
           qualitySteps={ttsQualitySteps}
@@ -172,6 +210,7 @@ export function VoiceMode() {
           <h3 style={{ margin: 0, fontSize: 13, letterSpacing: 0, color: "var(--foreground)", fontWeight: 750 }}>Model asset cards</h3>
           <div style={{ display: "flex", gap: 8 }}>
             <TextButton disabled={Boolean(busy)} onClick={() => void run("Test STT", testVoiceWorkerStt)}><Play size={14} /> Test STT</TextButton>
+            <TextButton disabled={Boolean(busy) || !selectedInputDeviceId} onClick={() => void runMicTest()}><Mic size={14} /> Test mic</TextButton>
             <TextButton disabled={Boolean(busy)} onClick={() => void run("Test TTS", () => testVoiceWorkerTts())}><Volume2 size={14} /> Test TTS</TextButton>
           </div>
         </div>
@@ -253,6 +292,22 @@ function SelectField({ label, value, options, onChange }: { label: string; value
       </select>
     </label>
   );
+}
+
+function latestEventSummary(status: VoiceWorkerStatus | null | undefined, eventType: string): Record<string, unknown> | null {
+  const events = status?.recent_events;
+  if (!Array.isArray(events)) return null;
+  for (let index = events.length - 1; index >= 0; index -= 1) {
+    const event = events[index];
+    if (event?.event_type !== eventType) continue;
+    const summary = event.summary;
+    return summary && typeof summary === "object" ? summary as Record<string, unknown> : null;
+  }
+  return null;
+}
+
+function numberSummary(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function TtsControlField({ speed, qualitySteps, busy, onApply }: { speed: number; qualitySteps: number; busy: boolean; onApply: (next: { speed: number; qualitySteps: number }) => void }) {

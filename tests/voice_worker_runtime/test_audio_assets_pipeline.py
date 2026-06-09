@@ -497,6 +497,29 @@ def test_sounddevice_adapter_uses_real_runtime_api_shape(monkeypatch) -> None:
     assert [call[0] for call in calls] == ["rec", "wait", "rec", "wait", "play", "wait", "stop"]
 
 
+def test_sounddevice_adapter_mic_level_uses_absolute_peak_and_rms(monkeypatch) -> None:
+    import numpy as np
+
+    fake_sd = SimpleNamespace(
+        default=SimpleNamespace(device=(0, 1)),
+        query_devices=lambda: (
+            {"name": "Mic", "max_input_channels": 1, "max_output_channels": 0, "default_samplerate": 16000},
+            {"name": "Speaker", "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 24000},
+        ),
+        rec=lambda frames, samplerate, channels, dtype, device=None: np.array([[-0.75], [0.25]], dtype=np.float32),
+        wait=lambda: None,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", fake_sd)
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    level = SoundDeviceAudioAdapter().test_mic_level(device_id=None, duration_ms=100)
+
+    assert level.device_id == "0"
+    assert level.peak_level == 0.75
+    assert 0.55 < level.rms_level < 0.57
+
+
 def test_sounddevice_adapter_play_audio_resolves_real_pcm_via_resolver(monkeypatch) -> None:
     played_data: list[object] = []
     fake_sd = __import__("types").SimpleNamespace(

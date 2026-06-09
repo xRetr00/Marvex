@@ -90,9 +90,25 @@ const catalog = {
 
 vi.mock("@/lib/voiceControlClient", () => ({
   fetchVoiceWorkerStatus: vi.fn(async () => status),
+  fetchVoiceWorkerDevices: vi.fn(async () => ({
+    schema_version: "1",
+    input_devices: [
+      { device_id: "0", label: "Quiet laptop mic", is_input: true, is_default_input: true },
+      { device_id: "19", label: "Krisp Microphone", is_input: true, is_default_input: false }
+    ],
+    output_devices: [],
+    selected_input_device_id: null,
+    selected_output_device_id: null,
+    raw_audio_persisted: false
+  })),
   fetchVoiceModelCatalog: vi.fn(async () => catalog),
   startVoiceWorker: vi.fn(async () => status),
   stopVoiceWorker: vi.fn(async () => status),
+  reloadVoiceWorkerConfig: vi.fn(async () => status),
+  testVoiceWorkerMic: vi.fn(async () => ({
+    ...status,
+    recent_events: [{ event_type: "mic_started", event_id: "mic-level", summary: { status: "passed", device_id: "19", peak_level: 0.75, rms_level: 0.32 } }]
+  })),
   testVoiceWorkerStt: vi.fn(async () => status),
   testVoiceWorkerTts: vi.fn(async () => status),
   switchVoiceWorkerStt: vi.fn(async () => status),
@@ -120,6 +136,9 @@ describe("VoiceMode", () => {
     expect(screen.getByLabelText("STT model")).toHaveValue("moonshine-v2");
     expect(screen.getByLabelText("TTS library")).toHaveValue("supertonic-v2");
     expect(screen.getByLabelText("Voice")).toHaveValue("M1");
+    expect(screen.getByLabelText("Input microphone")).toHaveValue("0");
+    expect(screen.getByRole("option", { name: "Quiet laptop mic" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "Krisp Microphone" })).toBeInTheDocument();
     expect(screen.getByLabelText("TTS speed")).toHaveValue("1.05");
     expect(screen.getByLabelText("TTS quality")).toHaveValue("8");
     expect(screen.getByRole("option", { name: "whisper-large-v3" })).toBeInTheDocument();
@@ -131,11 +150,15 @@ describe("VoiceMode", () => {
 
     await user.selectOptions(screen.getByLabelText("TTS library"), "piper-tts");
     await user.selectOptions(screen.getByLabelText("Voice"), "F3");
+    await user.selectOptions(screen.getByLabelText("Input microphone"), "19");
+    await user.click(screen.getByRole("button", { name: "Test mic" }));
     await user.click(screen.getByLabelText("TTS quality"));
     await user.click(screen.getByRole("button", { name: "Download moonshine-v2" }));
 
     await waitFor(() => expect(voiceClient.switchVoiceWorkerTts).toHaveBeenCalledWith("piper-tts"));
     await waitFor(() => expect(voiceClient.switchVoiceWorkerVoice).toHaveBeenCalledWith("F3"));
+    await waitFor(() => expect(voiceClient.reloadVoiceWorkerConfig).toHaveBeenCalledWith({ inputDeviceId: "19" }));
+    await waitFor(() => expect(voiceClient.testVoiceWorkerMic).toHaveBeenCalledWith("0"));
     await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets.filter((asset) => asset.model_id === "moonshine-v2"), expect.any(Function)));
     expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });

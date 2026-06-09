@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus } from "./voiceControlClient";
+import { transcriptFromStatus, voiceRejectionFromStatus, partialTranscriptFromStatus, wakeDetectionFromStatus } from "./voiceControlClient";
 
 describe("transcriptFromStatus", () => {
   it("returns the latest transcription_completed normalized_transcript_text", () => {
@@ -90,5 +90,22 @@ describe("partialTranscriptFromStatus", () => {
       ],
     } as never;
     expect(partialTranscriptFromStatus(status)).toBeNull();
+  });
+});
+
+describe("wakeDetectionFromStatus", () => {
+  it("returns the latest wakeword_detected event with confidence", () => {
+    const status = {
+      recent_events: [
+        { event_id: "wake-1", event_type: "wakeword_detected", summary: { confidence: 0.41 } },
+        { event_id: "wake-2", event_type: "wakeword_detected", summary: { confidence: 0.93 } },
+      ],
+    } as never;
+    expect(wakeDetectionFromStatus(status)).toEqual({ eventId: "wake-2", confidence: 0.93 });
+  });
+
+  it("returns null when no wakeword detection is present", () => {
+    expect(wakeDetectionFromStatus({ recent_events: [{ event_id: "e1", event_type: "mic_started", summary: {} }] } as never)).toBeNull();
+    expect(wakeDetectionFromStatus(null)).toBeNull();
   });
 });

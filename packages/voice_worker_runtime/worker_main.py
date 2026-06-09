@@ -69,6 +69,7 @@ def run_worker_contract_loop(
         if capture is None:
             _write_tick_telemetry({"event": "wake_listen", "detected": False, "reason_code": "no_real_microphone"})
             return
+        _write_loop_diagnostic({"event": "wake_listen_audio_device", **_input_device_diagnostic(controller)})
         _write_tick_telemetry({"event": "wake_listen", "detected": False, "reason_code": "continuous_capture_started"})
         try:
             import os as _os
@@ -179,6 +180,30 @@ def _build_continuous_capture(controller: VoiceWorkerController):
     )
 
 
+def _input_device_diagnostic(controller: VoiceWorkerController) -> dict[str, object]:
+    cfg = controller.config
+    configured = cfg.audio.input_device_id
+    try:
+        devices = controller.audio.list_input_devices()
+    except Exception:
+        devices = ()
+    selected = None
+    if configured:
+        selected = next((device for device in devices if device.device_id == configured), None)
+    if selected is None:
+        selected = next((device for device in devices if getattr(device, "is_default_input", False)), None)
+    if selected is None and devices:
+        selected = devices[0]
+    return {
+        "configured_input_device_id": configured or "",
+        "resolved_input_device_id": selected.device_id if selected else "",
+        "resolved_input_device_label": selected.label if selected else "",
+        "is_default_input": bool(getattr(selected, "is_default_input", False)) if selected else False,
+        "sample_rate": cfg.audio.sample_rate,
+        "channel_count": cfg.audio.channel_count,
+    }
+
+
 def _write_tick_telemetry(tick: dict[str, object]) -> None:
     # Preserve the caller's event name and reason_code: forcing every line to
     # "wakeword_supervisor_tick" and dropping reason_code made the field logs
@@ -261,6 +286,11 @@ def _write_loop_diagnostic(payload: dict[str, object]) -> None:
         "min_capture_rms",
         "endpoint_reason",
         "reference_count",
+        "configured_input_device_id",
+        "resolved_input_device_id",
+        "resolved_input_device_label",
+        "is_default_input",
+        "channel_count",
     ):
         if key in payload:
             safe[key] = payload[key]

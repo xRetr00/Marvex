@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from array import array
 from collections.abc import Callable, Iterable
-from math import floor
+from math import floor, sqrt
 from typing import Literal, Protocol
 
 from pydantic import Field
@@ -20,6 +20,8 @@ class VoiceAudioDevice(VoiceRuntimeModel):
     default_sample_rate: int = 16_000
     is_input: bool = False
     is_output: bool = False
+    is_default_input: bool = False
+    is_default_output: bool = False
 
     def safe_projection(self) -> dict[str, object]:
         return safe_mapping(self.model_dump(mode="json"))
@@ -72,10 +74,10 @@ class FakeLocalAudioAdapter:
         self.active_ticks = 0
 
     def list_input_devices(self) -> tuple[VoiceAudioDevice, ...]:
-        return (VoiceAudioDevice(device_id="input-default", label="Default microphone", max_input_channels=1, is_input=True),)
+        return (VoiceAudioDevice(device_id="input-default", label="Default microphone", max_input_channels=1, is_input=True, is_default_input=True),)
 
     def list_output_devices(self) -> tuple[VoiceAudioDevice, ...]:
-        return (VoiceAudioDevice(device_id="output-default", label="Default speaker", max_output_channels=2, default_sample_rate=24_000, is_output=True),)
+        return (VoiceAudioDevice(device_id="output-default", label="Default speaker", max_output_channels=2, default_sample_rate=24_000, is_output=True, is_default_output=True),)
 
     def test_mic_level(self, *, device_id: str | None, duration_ms: int) -> MicLevelResult:
         selected = device_id or self.list_input_devices()[0].device_id
@@ -141,21 +143,23 @@ class SoundDeviceAudioAdapter:
 
     def _devices(self) -> tuple[VoiceAudioDevice, ...]:
         devices = []
+        default_input_id, default_output_id = _default_device_ids(self._sounddevice())
         for index, item in enumerate(self._sounddevice().query_devices()):
             input_channels = int(item.get("max_input_channels", 0))
             output_channels = int(item.get("max_output_channels", 0))
-            devices.append(VoiceAudioDevice(device_id=str(index), label=str(item.get("name", f"device-{index}")), host_api="sounddevice", max_input_channels=input_channels, max_output_channels=output_channels, default_sample_rate=int(item.get("default_samplerate", 16_000)), is_input=input_channels > 0, is_output=output_channels > 0))
+            device_id = str(index)
+            devices.append(VoiceAudioDevice(device_id=device_id, label=str(item.get("name", f"device-{index}")), host_api="sounddevice", max_input_channels=input_channels, max_output_channels=output_channels, default_sample_rate=int(item.get("default_samplerate", 16_000)), is_input=input_channels > 0, is_output=output_channels > 0, is_default_input=device_id == default_input_id, is_default_output=device_id == default_output_id))
         return tuple(devices)
 
     def test_mic_level(self, *, device_id: str | None, duration_ms: int) -> MicLevelResult:
         sd = self._sounddevice()
         sample_rate = 16_000
         samples = max(1, int(sample_rate * duration_ms / 1000))
-        recording = sd.rec(samples, samplerate=sample_rate, channels=1, dtype="float32", device=_device_arg(device_id))
+        selected_device_id = device_id or _default_device_ids(sd)[0] or _first_input_device_id(self.list_input_devices()) or "default"
+        recording = sd.rec(samples, samplerate=sample_rate, channels=1, dtype="float32", device=_device_arg(selected_device_id))
         sd.wait()
-        peak = _bounded_level(recording.max() if getattr(recording, "size", 0) else 0)
-        rms = _bounded_level(recording.mean() if getattr(recording, "size", 0) else 0)
-        return MicLevelResult(device_id=device_id or "default", status="passed", duration_ms=duration_ms, peak_level=peak, rms_level=rms)
+        peak, rms = _recording_peak_and_rms(recording)
+        return MicLevelResult(device_id=selected_device_id, status="passed", duration_ms=duration_ms, peak_level=peak, rms_level=rms)
 
     def capture_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int) -> Iterable[AudioFrame]:
         sd = self._sounddevice()
@@ -317,6 +321,74 @@ def _device_arg(device_id: str | None) -> int | str | None:
     if device_id is None:
         return None
     return int(device_id) if device_id.isdigit() else device_id
+
+
+def _default_device_ids(sd: object) -> tuple[str | None, str | None]:
+    try:
+        default = getattr(sd, "default", None)
+        device = getattr(default, "device", None)
+    except Exception:
+        return None, None
+    if isinstance(device, (list, tuple)):
+        input_id = _device_id_from_default(device[0] if len(device) > 0 else None)
+        output_id = _device_id_from_default(device[1] if len(device) > 1 else None)
+        return input_id, output_id
+    resolved = _device_id_from_default(device)
+    return resolved, None
+
+
+def _device_id_from_default(value: object) -> str | None:
+    try:
+        number = int(value)  # type: ignore[arg-type]
+    except Exception:
+        return None
+    return str(number) if number >= 0 else None
+
+
+def _first_input_device_id(devices: tuple[VoiceAudioDevice, ...]) -> str | None:
+    return devices[0].device_id if devices else None
+
+
+def _recording_peak_and_rms(recording: object) -> tuple[float, float]:
+    try:
+        import numpy as np
+
+        values = np.asarray(recording, dtype=np.float32)
+        if values.size == 0:
+            return 0.0, 0.0
+        peak = _bounded_level(float(np.max(np.abs(values))))
+        rms = _bounded_level(float(np.sqrt(np.mean(np.square(values)))))
+        return peak, rms
+    except Exception:
+        pass
+    try:
+        raw_values = list(recording)  # type: ignore[arg-type]
+    except Exception:
+        raw_values = []
+    flat: list[float] = []
+    for value in raw_values:
+        if isinstance(value, (list, tuple)):
+            for item in value:
+                try:
+                    flat.append(float(item))
+                except Exception:
+                    pass
+            continue
+        try:
+            flat.append(float(value))
+        except Exception:
+            pass
+    if not flat:
+        legacy_peak = getattr(recording, "max", None)
+        legacy_mean = getattr(recording, "mean", None)
+        if callable(legacy_peak) or callable(legacy_mean):
+            peak_value = legacy_peak() if callable(legacy_peak) else 0
+            mean_value = legacy_mean() if callable(legacy_mean) else 0
+            return _bounded_level(peak_value), _bounded_level(mean_value)
+        return 0.0, 0.0
+    peak = _bounded_level(max(abs(value) for value in flat))
+    rms = _bounded_level(sqrt(sum(value * value for value in flat) / len(flat)))
+    return peak, rms
 
 
 def _pcm_to_float_array(pcm: bytes) -> list[float]:

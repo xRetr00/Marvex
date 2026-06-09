@@ -49,6 +49,8 @@ class VoiceWorkerControlPlaneFacade:
                 "schema_version": "1",
                 "input_devices": [device.safe_projection() for device in self.controller.audio.list_input_devices()],
                 "output_devices": [device.safe_projection() for device in self.controller.audio.list_output_devices()],
+                "selected_input_device_id": self.controller.config.audio.input_device_id,
+                "selected_output_device_id": self.controller.config.audio.output_device_id,
                 "raw_audio_persisted": False,
             }
 
