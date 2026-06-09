@@ -20,6 +20,7 @@ import {
   type VoiceWorkerDevices,
   type VoiceWorkerStatus
 } from "@/lib/voiceControlClient";
+import { loadVoiceSettings, updateVoiceSettings } from "@/lib/voiceSettings";
 
 type ModelDownloadState = {
   state: "downloading" | "complete" | "failed";
@@ -36,6 +37,35 @@ export function VoiceMode() {
   const [downloads, setDownloads] = useState<Record<string, ModelDownloadState>>({});
   const [message, setMessage] = useState("Loading voice worker...");
 
+  const applyPersistedSettings = async (nextStatus: VoiceWorkerStatus, nextDevices: VoiceWorkerDevices, nextCatalog: VoiceModelCatalogAsset[]) => {
+    const settings = loadVoiceSettings();
+    const calls: Array<Promise<unknown>> = [];
+    const sttBackendIds = new Set(nextCatalog.filter((asset) => asset.model_kind === "stt").map((asset) => asset.backend_id));
+    const ttsBackendIds = new Set(nextCatalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.backend_id));
+    const inputDeviceIds = new Set((nextDevices.input_devices ?? []).map((device) => device.device_id));
+    if (settings.sttBackendId !== nextStatus.active_stt_backend_id && sttBackendIds.has(settings.sttBackendId)) {
+      calls.push(switchVoiceWorkerStt(settings.sttBackendId));
+    }
+    if (settings.ttsBackendId !== nextStatus.active_tts_backend_id && ttsBackendIds.has(settings.ttsBackendId)) {
+      calls.push(switchVoiceWorkerTts(settings.ttsBackendId));
+    }
+    if (settings.voiceId !== nextStatus.active_voice_id) {
+      calls.push(switchVoiceWorkerVoice(settings.voiceId));
+    }
+    if (
+      settings.ttsSpeed !== (nextStatus.active_tts_speed ?? 1.05)
+      || settings.ttsQualitySteps !== (nextStatus.active_tts_quality_steps ?? 8)
+      || settings.ttsLanguage !== (nextStatus.active_tts_language ?? "en")
+    ) {
+      calls.push(configureVoiceWorkerTtsControls({ speed: settings.ttsSpeed, qualitySteps: settings.ttsQualitySteps, language: settings.ttsLanguage }));
+    }
+    const configuredInput = nextStatus.config?.audio?.input_device_id ?? nextDevices.selected_input_device_id ?? null;
+    if (settings.inputDeviceId && inputDeviceIds.has(settings.inputDeviceId) && settings.inputDeviceId !== configuredInput) {
+      calls.push(reloadVoiceWorkerConfig({ inputDeviceId: settings.inputDeviceId }));
+    }
+    if (calls.length > 0) await Promise.all(calls);
+  };
+
   const load = async () => {
     const [nextStatus, nextCatalog, nextDevices] = await Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog(), fetchVoiceWorkerDevices()]);
     setStatus(nextStatus);
@@ -49,10 +79,16 @@ export function VoiceMode() {
     void Promise.all([fetchVoiceWorkerStatus(), fetchVoiceModelCatalog(), fetchVoiceWorkerDevices()])
       .then(([nextStatus, nextCatalog, nextDevices]) => {
         if (cancelled) return;
-        setStatus(nextStatus);
-        setCatalog(nextCatalog.assets ?? []);
-        setDevices(nextDevices);
-        setMessage("Voice worker control is connected.");
+        return applyPersistedSettings(nextStatus, nextDevices, nextCatalog.assets ?? [])
+          .then(async () => {
+            if (cancelled) return;
+            const [refreshedStatus, refreshedDevices] = await Promise.all([fetchVoiceWorkerStatus(), fetchVoiceWorkerDevices()]);
+            if (cancelled) return;
+            setStatus(refreshedStatus);
+            setCatalog(nextCatalog.assets ?? []);
+            setDevices(refreshedDevices);
+            setMessage("Voice worker control is connected.");
+          });
       })
       .catch(() => {
         if (!cancelled) setMessage("Voice worker control is unavailable.");
@@ -89,7 +125,7 @@ export function VoiceMode() {
     return map;
   }, [catalog]);
   const sttOptions = useMemo(() => {
-    return optionList(catalog.filter((asset) => asset.model_kind === "stt").map((asset) => asset.model_id), status?.active_stt_backend_id ?? "moonshine-v2");
+    return backendOptionList(catalog.filter((asset) => asset.model_kind === "stt"), status?.active_stt_backend_id ?? "moonshine-v2");
   }, [catalog, status?.active_stt_backend_id]);
   const ttsOptions = useMemo(() => {
     return optionList(catalog.filter((asset) => asset.model_kind === "tts_voice").map((asset) => asset.backend_id), status?.active_tts_backend_id ?? "supertonic-v2");
@@ -187,15 +223,20 @@ export function VoiceMode() {
       </section>
 
       <section style={gridStyle}>
-        <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", () => switchVoiceWorkerStt(value))} />
-        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "supertonic-v2"} options={ttsOptions} onChange={(value) => void run("Switch TTS", () => switchVoiceWorkerTts(value))} />
-        <SelectField label="Voice" value={status?.active_voice_id ?? "M1"} options={voiceOptions} onChange={(value) => void run("Switch voice", () => switchVoiceWorkerVoice(value))} />
-        <SelectField label="Input microphone" value={selectedInputDeviceId} options={inputDeviceOptions} onChange={(value) => void run("Select input microphone", () => reloadVoiceWorkerConfig({ inputDeviceId: value }))} />
+        <SelectField label="STT model" value={status?.active_stt_backend_id ?? "moonshine-v2"} options={sttOptions} onChange={(value) => void run("Switch STT", async () => { const result = await switchVoiceWorkerStt(value); updateVoiceSettings({ sttBackendId: value }); return result; })} />
+        <SelectField label="TTS library" value={status?.active_tts_backend_id ?? "supertonic-v2"} options={ttsOptions} onChange={(value) => void run("Switch TTS", async () => { const result = await switchVoiceWorkerTts(value); updateVoiceSettings({ ttsBackendId: value }); return result; })} />
+        <SelectField label="Voice" value={status?.active_voice_id ?? "M1"} options={voiceOptions} onChange={(value) => void run("Switch voice", async () => { const result = await switchVoiceWorkerVoice(value); updateVoiceSettings({ voiceId: value }); return result; })} />
+        <SelectField label="Input microphone" value={selectedInputDeviceId} options={inputDeviceOptions} onChange={(value) => void run("Select input microphone", async () => { const result = await reloadVoiceWorkerConfig({ inputDeviceId: value }); updateVoiceSettings({ inputDeviceId: value }); return result; })} />
         <TtsControlField
           speed={ttsSpeed}
           qualitySteps={ttsQualitySteps}
           busy={Boolean(busy)}
-          onApply={(next) => void run("Update TTS controls", () => configureVoiceWorkerTtsControls({ ...next, language: status?.active_tts_language ?? "en" }))}
+          onApply={(next) => void run("Update TTS controls", async () => {
+            const language = status?.active_tts_language ?? "en";
+            const result = await configureVoiceWorkerTtsControls({ ...next, language });
+            updateVoiceSettings({ ttsSpeed: next.speed, ttsQualitySteps: next.qualitySteps, ttsLanguage: language });
+            return result;
+          })}
         />
       </section>
 
@@ -334,6 +375,17 @@ function optionList(values: Array<string | undefined>, active: string): Array<{ 
     if (normalized) ids.add(normalized);
   }
   return [...ids].map((id) => ({ id, label: id }));
+}
+
+function backendOptionList(assets: VoiceModelCatalogAsset[], active: string): Array<{ id: string; label: string }> {
+  const options = new Map<string, string>();
+  if (active) options.set(active, active);
+  for (const asset of assets) {
+    const backendId = String(asset.backend_id ?? "").trim();
+    if (!backendId || options.has(backendId)) continue;
+    options.set(backendId, String(asset.model_id ?? backendId));
+  }
+  return [...options].map(([id, label]) => ({ id, label }));
 }
 
 const SUPERTONIC_VOICES = ["M1", "M2", "M3", "M4", "M5", "F1", "F2", "F3", "F4", "F5"];

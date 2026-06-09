@@ -90,6 +90,7 @@ describe("ControlPlaneSettings", () => {
     expect(await screen.findByText("Web search")).toBeInTheDocument();
     expect(await screen.findByLabelText("SearXNG URL")).toHaveValue("http://127.0.0.1:8888");
     expect(await screen.findByLabelText("Multi-model candidate")).toBeInTheDocument();
+    expect(await screen.findByRole("option", { name: /LiteLLM OpenRouter/i })).toBeInTheDocument();
     expect(await screen.findByText("Browser automation")).toBeInTheDocument();
     expect(await screen.findByText("trace-1")).toBeInTheDocument();
     expect((await screen.findAllByText("local-mcp")).length).toBeGreaterThan(0);

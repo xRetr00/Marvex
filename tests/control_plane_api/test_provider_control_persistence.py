@@ -100,6 +100,73 @@ def test_project_env_provider_keys_are_provider_specific_and_not_projected_raw(t
     assert catalog["raw_secret_persisted"] is False
 
 
+def test_protected_secret_store_round_trips_provider_specific_keys(tmp_path: Path) -> None:
+    state = tmp_path / "provider_control.json"
+    secret_state = tmp_path / "provider_secrets.json"
+
+    def protect(value: str) -> str | None:
+        return f"protected:{value[::-1]}"
+
+    def unprotect(value: str) -> str | None:
+        prefix = "protected:"
+        return value.removeprefix(prefix)[::-1] if value.startswith(prefix) else None
+
+    first = InMemoryProviderControl(
+        persistence_path=str(state),
+        secret_persistence_path=str(secret_state),
+        secret_protector=protect,
+        secret_unprotector=unprotect,
+    )
+    first.set_secret("litellm", "sk-litellm-secret")
+    first.set_secret("lmstudio_responses", "sk-lmstudio-secret")
+
+    contents = secret_state.read_text(encoding="utf-8")
+    assert "sk-litellm-secret" not in contents
+    assert "sk-lmstudio-secret" not in contents
+
+    second = InMemoryProviderControl(
+        persistence_path=str(state),
+        secret_persistence_path=str(secret_state),
+        secret_protector=protect,
+        secret_unprotector=unprotect,
+    )
+
+    assert second.secret_value("litellm") == "sk-litellm-secret"
+    assert second.secret_value("lmstudio_responses") == "sk-lmstudio-secret"
+    catalog = second.provider_catalog()
+    litellm = next(row for row in catalog["providers"] if row["provider_id"] == "litellm")
+    lmstudio = next(row for row in catalog["providers"] if row["provider_id"] == "lmstudio_responses")
+    assert litellm["secret_present"] is True
+    assert lmstudio["secret_present"] is True
+    assert catalog["raw_secret_persisted"] is False
+
+
+def test_remove_secret_removes_protected_secret_store_entry(tmp_path: Path) -> None:
+    secret_state = tmp_path / "provider_secrets.json"
+
+    def protect(value: str) -> str | None:
+        return f"protected:{value}"
+
+    def unprotect(value: str) -> str | None:
+        return value.removeprefix("protected:") if value.startswith("protected:") else None
+
+    first = InMemoryProviderControl(
+        secret_persistence_path=str(secret_state),
+        secret_protector=protect,
+        secret_unprotector=unprotect,
+    )
+    first.set_secret("litellm", "sk-litellm-secret")
+    first.remove_secret("litellm")
+
+    second = InMemoryProviderControl(
+        secret_persistence_path=str(secret_state),
+        secret_protector=protect,
+        secret_unprotector=unprotect,
+    )
+
+    assert second.secret_value("litellm") is None
+
+
 def test_unknown_persistence_file_does_not_crash(tmp_path: Path) -> None:
     state = tmp_path / "does_not_exist_yet.json"
     control = InMemoryProviderControl(persistence_path=str(state))

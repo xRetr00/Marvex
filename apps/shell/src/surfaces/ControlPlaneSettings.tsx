@@ -267,6 +267,7 @@ export function ControlPlaneSettings() {
             <span>Provider mode</span>
             <select aria-label="Provider mode" value={providerModeDraft} onChange={(event) => setProviderModeDraft(event.target.value)} style={select}>
               <option value="litellm_sdk">LiteLLM SDK</option>
+              <option value="litellm_openrouter">LiteLLM OpenRouter</option>
               <option value="litellm_proxy">LiteLLM proxy</option>
               <option value="openai_compatible">OpenAI-compatible URL</option>
               <option value="native">Native provider</option>
@@ -279,7 +280,7 @@ export function ControlPlaneSettings() {
           <div style={actions}>
             <Button size="sm" onClick={onSaveConnection} disabled={!activeProvider || Boolean(busy)}><Save size={14} />Save endpoint</Button>
           </div>
-          <Muted>Use this for LiteLLM proxy, OmniRoute, LM Studio, or any OpenAI-compatible `/v1` endpoint.</Muted>
+          <Muted>Use LiteLLM OpenRouter for OpenRouter keys. Use LiteLLM proxy only for a real LiteLLM proxy endpoint.</Muted>
         </Panel>
       </section>
 

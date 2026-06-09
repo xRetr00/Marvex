@@ -83,6 +83,9 @@ class InMemoryProviderControl:
         on_change: Callable[[dict[str, Any]], None] | None = None,
         model_discovery: ProviderModelDiscovery | None = None,
         persistence_path: str | None = None,
+        secret_persistence_path: str | None = None,
+        secret_protector: Callable[[str], str | None] | None = None,
+        secret_unprotector: Callable[[str], str | None] | None = None,
     ) -> None:
         litellm_base_url = _first_env("MARVEX_LITELLM_BASE_URL", "LITELLM_BASE_URL") or ""
         rows = providers or (
@@ -127,8 +130,18 @@ class InMemoryProviderControl:
         # plaintext credentials off disk.
         env_path = os.environ.get("MARVEX_PROVIDER_CONTROL_STATE", "").strip()
         self._persistence_path = persistence_path or env_path or None
+        secret_env_path = os.environ.get("MARVEX_PROVIDER_SECRET_STATE", "").strip()
+        self._secret_persistence_path = (
+            secret_persistence_path
+            or secret_env_path
+            or _default_secret_persistence_path(self._persistence_path)
+        )
+        self._secret_protector = secret_protector or _protect_secret_for_current_user
+        self._secret_unprotector = secret_unprotector or _unprotect_secret_for_current_user
         if self._persistence_path:
             self._load_from_disk(self._persistence_path)
+        if self._secret_persistence_path:
+            self._load_secrets_from_disk(self._secret_persistence_path)
 
     def provider_catalog(self) -> dict[str, Any]:
         for row in self._providers.values():
@@ -247,6 +260,7 @@ class InMemoryProviderControl:
         row.secret_display = _mask_secret(secret_value)
         self._secrets[provider_id] = secret_value.strip()
         row.configured = True
+        self._save_secrets_to_disk()
         return self._changed()
 
     def remove_secret(self, provider_id: str) -> dict[str, Any]:
@@ -254,6 +268,7 @@ class InMemoryProviderControl:
         row.secret_present = False
         row.secret_display = ""
         self._secrets.pop(provider_id, None)
+        self._save_secrets_to_disk()
         return self._changed()
 
     def secret_value(self, provider_id: str) -> str | None:
@@ -442,6 +457,60 @@ class InMemoryProviderControl:
             # a write failure (filesystem full, perms, etc.).
             return
 
+    def _load_secrets_from_disk(self, path: str) -> None:
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError):
+            return
+        providers = data.get("providers") if isinstance(data, dict) else None
+        if not isinstance(providers, list):
+            return
+        for row_data in providers:
+            if not isinstance(row_data, dict):
+                continue
+            provider_id = row_data.get("provider_id")
+            protected = row_data.get("protected_secret")
+            if not isinstance(provider_id, str) or provider_id not in self._providers:
+                continue
+            if not isinstance(protected, str) or not protected.strip():
+                continue
+            try:
+                secret = self._secret_unprotector(protected.strip())
+            except Exception:
+                secret = None
+            if not isinstance(secret, str) or not secret.strip():
+                continue
+            cleaned = secret.strip()
+            self._secrets[provider_id] = cleaned
+            row = self._providers[provider_id]
+            row.secret_present = True
+            row.secret_display = _mask_secret(cleaned)
+
+    def _save_secrets_to_disk(self) -> None:
+        if not self._secret_persistence_path:
+            return
+        rows: list[dict[str, str]] = []
+        for provider_id, secret in sorted(self._secrets.items()):
+            if not isinstance(secret, str) or not secret.strip():
+                continue
+            try:
+                protected = self._secret_protector(secret.strip())
+            except Exception:
+                protected = None
+            if not isinstance(protected, str) or not protected.strip():
+                continue
+            rows.append({"provider_id": provider_id, "protected_secret": protected.strip()})
+        snapshot = {"schema_version": SCHEMA_VERSION, "providers": rows}
+        try:
+            directory = os.path.dirname(self._secret_persistence_path)
+            if directory:
+                os.makedirs(directory, exist_ok=True)
+            with open(self._secret_persistence_path, "w", encoding="utf-8") as handle:
+                json.dump(snapshot, handle, sort_keys=True)
+        except OSError:
+            return
+
     def _discover_models(self, provider_id: str) -> list[str]:
         secret = self.secret_value(provider_id)
         try:
@@ -619,6 +688,86 @@ def _provider_env_secret(provider_id: str, row: ProviderControlState | None = No
             names.extend(["MARVEX_OPENROUTER_API_KEY", "OPENROUTER_API_KEY"])
         return _first_env(*names)
     return None
+
+
+def _default_secret_persistence_path(provider_state_path: str | None) -> str | None:
+    if provider_state_path:
+        return os.path.join(os.path.dirname(provider_state_path), "provider_secrets.json")
+    explicit_data_dir = os.environ.get("MARVEX_DATA_DIR", "").strip()
+    base = (
+        explicit_data_dir
+        or os.environ.get("LOCALAPPDATA", "").strip()
+        or os.environ.get("APPDATA", "").strip()
+        or os.environ.get("XDG_DATA_HOME", "").strip()
+    )
+    if not base:
+        return None
+    return os.path.join(base, "com.marvex.shell", "provider_secrets.json")
+
+
+def _protect_secret_for_current_user(value: str) -> str | None:
+    if os.name != "nt":
+        return None
+    return _windows_dpapi(value, protect=True)
+
+
+def _unprotect_secret_for_current_user(value: str) -> str | None:
+    if os.name != "nt":
+        return None
+    return _windows_dpapi(value, protect=False)
+
+
+def _windows_dpapi(value: str, *, protect: bool) -> str | None:
+    try:
+        import base64
+        import ctypes
+        from ctypes import wintypes
+
+        class DATA_BLOB(ctypes.Structure):
+            _fields_ = [
+                ("cbData", wintypes.DWORD),
+                ("pbData", ctypes.POINTER(ctypes.c_char)),
+            ]
+
+        if protect:
+            data = value.encode("utf-8")
+        else:
+            data = base64.b64decode(value.encode("ascii"))
+        buffer = ctypes.create_string_buffer(data)
+        in_blob = DATA_BLOB(len(data), ctypes.cast(buffer, ctypes.POINTER(ctypes.c_char)))
+        out_blob = DATA_BLOB()
+        crypt32 = ctypes.windll.crypt32
+        kernel32 = ctypes.windll.kernel32
+        ok = (
+            crypt32.CryptProtectData(
+                ctypes.byref(in_blob),
+                None,
+                None,
+                None,
+                None,
+                0,
+                ctypes.byref(out_blob),
+            )
+            if protect
+            else crypt32.CryptUnprotectData(
+                ctypes.byref(in_blob),
+                None,
+                None,
+                None,
+                None,
+                0,
+                ctypes.byref(out_blob),
+            )
+        )
+        if not ok:
+            return None
+        try:
+            output = ctypes.string_at(out_blob.pbData, out_blob.cbData)
+        finally:
+            kernel32.LocalFree(out_blob.pbData)
+        return base64.b64encode(output).decode("ascii") if protect else output.decode("utf-8")
+    except Exception:
+        return None
 
 
 def _litellm_row_uses_openrouter(row: ProviderControlState) -> bool:

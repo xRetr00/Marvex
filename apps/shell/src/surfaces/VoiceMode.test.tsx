@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { VoiceMode } from "./VoiceMode";
 import * as voiceClient from "@/lib/voiceControlClient";
+import { saveVoiceSettings, loadVoiceSettings, defaultVoiceSettings } from "@/lib/voiceSettings";
 
 const status = {
   schema_version: "1",
@@ -75,6 +76,16 @@ const catalog = {
       explicit_user_triggered: true
     },
     {
+      model_id: "sensevoice-small",
+      backend_id: "sensevoice-small",
+      model_kind: "stt",
+      relative_path: "stt/sensevoice-small/model.onnx",
+      source_uri: "https://models.example.test/sensevoice-small/model.onnx",
+      extract: false,
+      required: false,
+      explicit_user_triggered: true
+    },
+    {
       model_id: "piper-en-us",
       backend_id: "piper-tts",
       model_kind: "tts_voice",
@@ -124,7 +135,11 @@ vi.mock("@/lib/voiceControlClient", () => ({
 }));
 
 describe("VoiceMode", () => {
-  afterEach(() => cleanup());
+  afterEach(() => {
+    cleanup();
+    localStorage.clear();
+    vi.clearAllMocks();
+  });
 
   it("shows STT/TTS selectors, model assets, and explicit backend actions", async () => {
     const user = userEvent.setup();
@@ -142,6 +157,7 @@ describe("VoiceMode", () => {
     expect(screen.getByLabelText("TTS speed")).toHaveValue("1.05");
     expect(screen.getByLabelText("TTS quality")).toHaveValue("8");
     expect(screen.getByRole("option", { name: "whisper-large-v3" })).toBeInTheDocument();
+    expect(screen.getByRole("option", { name: "sensevoice-small" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "piper-tts" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Download piper-en-us" })).toBeInTheDocument();
     expect(screen.getByRole("option", { name: "F3" })).toBeInTheDocument();
@@ -160,6 +176,7 @@ describe("VoiceMode", () => {
     await waitFor(() => expect(voiceClient.reloadVoiceWorkerConfig).toHaveBeenCalledWith({ inputDeviceId: "19" }));
     await waitFor(() => expect(voiceClient.testVoiceWorkerMic).toHaveBeenCalledWith("0"));
     await waitFor(() => expect(voiceClient.downloadVoiceModelGroup).toHaveBeenCalledWith(catalog.assets.filter((asset) => asset.model_id === "moonshine-v2"), expect.any(Function)));
+    expect(loadVoiceSettings()).toMatchObject({ ttsBackendId: "piper-tts", voiceId: "F3", inputDeviceId: "19" });
     expect(screen.getByText("Download moonshine-v2 requested.")).toBeInTheDocument();
   });
 
@@ -171,5 +188,25 @@ describe("VoiceMode", () => {
     expect(screen.queryByRole("button", { name: "Hands-free voice session" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Hold to talk" })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Stop voice session" })).not.toBeInTheDocument();
+  });
+
+  it("applies persisted voice choices when Voice Mode connects", async () => {
+    saveVoiceSettings({
+      ...defaultVoiceSettings,
+      sttBackendId: "sensevoice-small",
+      ttsBackendId: "supertonic-v2",
+      voiceId: "F2",
+      ttsSpeed: 1.2,
+      ttsQualitySteps: 10,
+      inputDeviceId: "19",
+    });
+
+    render(<VoiceMode />);
+
+    expect(await screen.findByRole("heading", { name: "Voice Mode" })).toBeInTheDocument();
+    await waitFor(() => expect(voiceClient.switchVoiceWorkerStt).toHaveBeenCalledWith("sensevoice-small"));
+    await waitFor(() => expect(voiceClient.switchVoiceWorkerVoice).toHaveBeenCalledWith("F2"));
+    await waitFor(() => expect(voiceClient.configureVoiceWorkerTtsControls).toHaveBeenCalledWith({ speed: 1.2, qualitySteps: 10, language: "en" }));
+    await waitFor(() => expect(voiceClient.reloadVoiceWorkerConfig).toHaveBeenCalledWith({ inputDeviceId: "19" }));
   });
 });

@@ -520,6 +520,37 @@ def test_sounddevice_adapter_mic_level_uses_absolute_peak_and_rms(monkeypatch) -
     assert 0.55 < level.rms_level < 0.57
 
 
+def test_sounddevice_adapter_detects_duck_typed_default_input_device(monkeypatch) -> None:
+    import numpy as np
+
+    class _DefaultPair:
+        def __getitem__(self, index: int) -> int:
+            return (1, 3)[index]
+
+    fake_sd = SimpleNamespace(
+        default=SimpleNamespace(device=_DefaultPair()),
+        query_devices=lambda: (
+            {"name": "Microsoft Sound Mapper - Input", "max_input_channels": 2, "max_output_channels": 0, "default_samplerate": 44100},
+            {"name": "Microphone (Realtek(R) Audio)", "max_input_channels": 2, "max_output_channels": 0, "default_samplerate": 44100},
+            {"name": "Microsoft Sound Mapper - Output", "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 44100},
+            {"name": "Display Audio", "max_input_channels": 0, "max_output_channels": 2, "default_samplerate": 44100},
+        ),
+        rec=lambda frames, samplerate, channels, dtype, device=None: np.array([[0.2], [0.4]], dtype=np.float32),
+        wait=lambda: None,
+    )
+    monkeypatch.setitem(__import__("sys").modules, "sounddevice", fake_sd)
+
+    from packages.voice_worker_runtime import SoundDeviceAudioAdapter
+
+    adapter = SoundDeviceAudioAdapter()
+    devices = adapter.list_input_devices()
+    level = adapter.test_mic_level(device_id=None, duration_ms=100)
+
+    assert devices[0].is_default_input is False
+    assert devices[1].is_default_input is True
+    assert level.device_id == "1"
+
+
 def test_sounddevice_adapter_play_audio_resolves_real_pcm_via_resolver(monkeypatch) -> None:
     played_data: list[object] = []
     fake_sd = __import__("types").SimpleNamespace(

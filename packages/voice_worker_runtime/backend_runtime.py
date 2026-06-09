@@ -201,11 +201,11 @@ class VoiceWorkerBackendRuntime:
 
     def stt_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_STT_MODELS, backend_id, default_model=backend_id)
-        return self._status(model_id=model_id, backend_id=backend_id, model_kind="stt", package_name=package_name, module_name=module_name)
+        return self._status(model_id=model_id, backend_id=backend_id, model_kind="stt", package_name=package_name, module_name=module_name, custom_runner_ready=self._custom_stt_runner)
 
     def tts_status(self, backend_id: str, voice_id: str) -> dict[str, object]:
         default_model, package_name, module_name = _resolve(_TTS_MODELS, backend_id, default_model=voice_id)
-        return self._status(model_id=default_model, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name)
+        return self._status(model_id=default_model, backend_id=backend_id, model_kind="tts_voice", package_name=package_name, module_name=module_name, custom_runner_ready=self._custom_tts_runner)
 
     def wakeword_status(self, backend_id: str) -> dict[str, object]:
         model_id, package_name, module_name = _resolve(_WAKEWORD_MODELS, backend_id, default_model="hey-marvex")
@@ -337,10 +337,10 @@ class VoiceWorkerBackendRuntime:
     def _wakeword_asset(self, *, backend_id: str, model_id: str) -> VoiceModelInstallResult:
         return self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind="wakeword")
 
-    def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str) -> dict[str, object]:
+    def _status(self, *, model_id: str, backend_id: str, model_kind: str, package_name: str, module_name: str, custom_runner_ready: bool = False) -> dict[str, object]:
         asset = self.asset_manager.required_status(model_id=model_id, backend_id=backend_id, model_kind=model_kind)
         package = _package_status(package_name=package_name, module_name=module_name)
-        blocker = self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
+        blocker = None if custom_runner_ready and asset.status == "installed" else self._readiness_blocker(asset=asset, package_name=package_name, module_name=module_name)
         return {
             "active_backend_id": backend_id,
             "model_id": model_id,

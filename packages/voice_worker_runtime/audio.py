@@ -155,11 +155,11 @@ class SoundDeviceAudioAdapter:
         sd = self._sounddevice()
         sample_rate = 16_000
         samples = max(1, int(sample_rate * duration_ms / 1000))
-        selected_device_id = device_id or _default_device_ids(sd)[0] or _first_input_device_id(self.list_input_devices()) or "default"
+        selected_device_id = device_id or _default_device_ids(sd)[0]
         recording = sd.rec(samples, samplerate=sample_rate, channels=1, dtype="float32", device=_device_arg(selected_device_id))
         sd.wait()
         peak, rms = _recording_peak_and_rms(recording)
-        return MicLevelResult(device_id=selected_device_id, status="passed", duration_ms=duration_ms, peak_level=peak, rms_level=rms)
+        return MicLevelResult(device_id=selected_device_id or "default", status="passed", duration_ms=duration_ms, peak_level=peak, rms_level=rms)
 
     def capture_frames(self, *, device_id: str | None, sample_rate: int, channel_count: int, frame_count: int) -> Iterable[AudioFrame]:
         sd = self._sounddevice()
@@ -329,12 +329,19 @@ def _default_device_ids(sd: object) -> tuple[str | None, str | None]:
         device = getattr(default, "device", None)
     except Exception:
         return None, None
-    if isinstance(device, (list, tuple)):
-        input_id = _device_id_from_default(device[0] if len(device) > 0 else None)
-        output_id = _device_id_from_default(device[1] if len(device) > 1 else None)
+    if isinstance(device, (list, tuple)) or hasattr(device, "__getitem__"):
+        input_id = _device_id_from_pair(device, 0)
+        output_id = _device_id_from_pair(device, 1)
         return input_id, output_id
     resolved = _device_id_from_default(device)
     return resolved, None
+
+
+def _device_id_from_pair(value: object, index: int) -> str | None:
+    try:
+        return _device_id_from_default(value[index])  # type: ignore[index]
+    except Exception:
+        return None
 
 
 def _device_id_from_default(value: object) -> str | None:
@@ -343,10 +350,6 @@ def _device_id_from_default(value: object) -> str | None:
     except Exception:
         return None
     return str(number) if number >= 0 else None
-
-
-def _first_input_device_id(devices: tuple[VoiceAudioDevice, ...]) -> str | None:
-    return devices[0].device_id if devices else None
 
 
 def _recording_peak_and_rms(recording: object) -> tuple[float, float]:
