@@ -71,7 +71,7 @@ markers = [
 
 [dependency-groups]
 dev = [
-    "pip>=26,<27",
+    "pip>=26.1.2,<27",
     "pyinstaller==6.17.0",
     "pytest>=9.0.3,<10",
 ]
