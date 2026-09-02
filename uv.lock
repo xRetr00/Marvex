@@ -417,7 +417,7 @@ wheels = [
 
 [[package]]
 name = "banks"
-version = "2.4.2"
+version = "2.4.5"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "deprecated" },
@@ -427,9 +427,9 @@ dependencies = [
     { name = "platformdirs" },
     { name = "pydantic" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bd/51/08fb68d23f4b0f6256fe85dc86e9576941550f890b079352fba719e07b39/banks-2.4.2.tar.gz", hash = "sha256:cda6013bd377ea7b701933578bfb9370fc21ad70bc13cedfc3f5cb2c034ca3dc", size = 188633, upload-time = "2026-04-27T12:15:22.021Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/a1/b5/4784ee9518b97f9f69c714a4303f9a6186a7e4ff2349f89e24767e9754d9/banks-2.4.5.tar.gz", hash = "sha256:ff575732fc67d5493a73c21e0d7268bc49e86fff02b0b8735e8efb9fcb9af3a4", size = 190822, upload-time = "2026-07-07T08:14:12.055Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/00/b6/8dc5477681b782e2f99de703e7a99828883364b9e03a60d3e2c47053d56a/banks-2.4.2-py3-none-any.whl", hash = "sha256:5fe407cc48c101f3e13d1cf732b83b8246003337612f13c0705d2e81f6faffb7", size = 35050, upload-time = "2026-04-27T12:15:20.785Z" },
+    { url = "https://files.pythonhosted.org/packages/50/b0/4d34cb2fe538aeb6d4b0723b3339cb932120db084a5c9a3c6966a26bbe1b/banks-2.4.5-py3-none-any.whl", hash = "sha256:ac2e0091b4c79379d4773c9d04a138a0d937ee27c5803bf0142acc6d6769eea1", size = 36145, upload-time = "2026-07-07T08:14:10.974Z" },
 ]
 
 [[package]]
@@ -946,34 +946,34 @@ wheels = [
 
 [package.optional-dependencies]
 cudart = [
-    { name = "nvidia-cuda-runtime", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-runtime" },
 ]
 cufft = [
-    { name = "nvidia-cufft", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cufft" },
 ]
 cufile = [
-    { name = "nvidia-cufile", marker = "sys_platform == 'linux'" },
+    { name = "nvidia-cufile" },
 ]
 cupti = [
-    { name = "nvidia-cuda-cupti", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-cupti" },
 ]
 curand = [
-    { name = "nvidia-curand", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-curand" },
 ]
 cusolver = [
-    { name = "nvidia-cusolver", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cusolver" },
 ]
 cusparse = [
-    { name = "nvidia-cusparse", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cusparse" },
 ]
 nvjitlink = [
-    { name = "nvidia-nvjitlink", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-nvjitlink" },
 ]
 nvrtc = [
-    { name = "nvidia-cuda-nvrtc", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-cuda-nvrtc" },
 ]
 nvtx = [
-    { name = "nvidia-nvtx", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+    { name = "nvidia-nvtx" },
 ]
 
 [[package]]
@@ -7182,8 +7182,8 @@ name = "pywinauto"
 version = "0.6.9"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "comtypes", marker = "sys_platform == 'win32'" },
-    { name = "pywin32", marker = "sys_platform == 'win32'" },
+    { name = "comtypes" },
+    { name = "pywin32" },
     { name = "six" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/2c/85/cc65e3b64e7473cc86c07f0b5c415d509402c03ef19dadc39c583835eb5f/pywinauto-0.6.9.tar.gz", hash = "sha256:94d710bfa796df245250f952ffa65d97233d9807bcd42e052b71b81af469b6de", size = 434734, upload-time = "2025-01-06T11:30:01.801Z" }
@@ -8125,8 +8125,8 @@ name = "standard-aifc"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
-    { name = "standard-chunk", marker = "python_full_version >= '3.13'" },
+    { name = "audioop-lts" },
+    { name = "standard-chunk" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/c4/53/6050dc3dde1671eb3db592c13b55a8005e5040131f7509cef0215212cb84/standard_aifc-3.13.0.tar.gz", hash = "sha256:64e249c7cb4b3daf2fdba4e95721f811bde8bdfc43ad9f936589b7bb2fae2e43", size = 15240, upload-time = "2024-10-30T16:01:31.772Z" }
 wheels = [
@@ -8147,7 +8147,7 @@ name = "standard-sunau"
 version = "3.13.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "audioop-lts", marker = "python_full_version >= '3.13'" },
+    { name = "audioop-lts" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/66/e3/ce8d38cb2d70e05ffeddc28bb09bad77cfef979eb0a299c9117f7ed4e6a9/standard_sunau-3.13.0.tar.gz", hash = "sha256:b319a1ac95a09a2378a8442f403c66f4fd4b36616d6df6ae82b8e536ee790908", size = 9368, upload-time = "2024-10-30T16:01:41.626Z" }
 wheels = [
